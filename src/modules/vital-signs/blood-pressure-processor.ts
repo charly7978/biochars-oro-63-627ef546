@@ -16,7 +16,6 @@ export class BloodPressureProcessor {
   private measurementStartTime: number | null = null;
   private lastAnalysisTime: number = 0; // Track last analysis time
   private isFingerPresent: boolean = false;
-  private isPaused: boolean = false; // Flag for pause state
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
   private lastValidMeasurement: { systolic: number; diastolic: number } | null = null;
@@ -37,128 +36,129 @@ export class BloodPressureProcessor {
   }
 
   public calculateBloodPressure(values: number[]): { systolic: number; diastolic: number } | null {
-    // If paused, return the last known intermediate result without processing
-    if (this.isPaused) {
-        // console.log("BP Processor Paused");
-        return this.lastInstantResult;
-    }
-
-    // Basic checks (data length, finger presence - though finger check might be redundant now)
     if (!values || values.length < this.MIN_SAMPLES) {
-      return this.lastInstantResult; 
+      return this.lastInstantResult; // Return last known result if not enough data
     }
+
+    // Verificar si hay un dedo presente basado en la amplitud de la señal
     const currentAmplitude = Math.max(...values) - Math.min(...values);
-    this.isFingerPresent = currentAmplitude > 0.1; 
+    this.isFingerPresent = currentAmplitude > 0.1;
+
     if (!this.isFingerPresent) {
-        // This condition might be handled externally now, but as fallback:
-        this.resetMeasurement(); // If finger lost internally, reset completely
-        return null;
+      this.resetMeasurement();
+      return null; // Return null if finger is not present
     }
 
-    // Start measurement if not already started
+    // Iniciar medición si no está en curso
     if (this.measurementStartTime === null) {
-      console.log("BP Measurement Starting...");
       this.measurementStartTime = Date.now();
-      this.lastAnalysisTime = 0; 
+      this.lastAnalysisTime = 0; // Reset last analysis time
       this.resetBuffers();
-      this.lastInstantResult = null; 
-      this.analyzer.startMeasurement(); 
+      this.lastInstantResult = null; // Reset last instant result
+      this.analyzer.startMeasurement(); // Start analyzer measurement period
     }
 
-    // Process signal (assuming SignalCoreProcessor is stateful and handles buffering)
+    // Procesar señal a través del SignalCoreProcessor
+    // This could be optimized if SignalCoreProcessor accepts arrays
     values.forEach(value => {
       this.signalProcessor.processSignal(value);
     });
+
     const bpChannel = this.signalProcessor.getChannel('bloodPressure');
-    if (!bpChannel) return this.lastInstantResult;
+    if (!bpChannel) {
+      return this.lastInstantResult;
+    }
+
+    // Obtener señal procesada
     const processedValues = bpChannel.getValues();
-    if (processedValues.length < this.MIN_SAMPLES) return this.lastInstantResult;
+    if (processedValues.length < this.MIN_SAMPLES) {
+      return this.lastInstantResult;
+    }
 
     const now = Date.now();
-    let currentAnalysisResult: { systolic: number; diastolic: number; quality?: number } | null = null;
+    let currentAnalysisResult: { systolic: number; diastolic: number; quality: number } | null = null;
 
-    // Run analysis periodically (throttling)
+    // --- Run analysis only once per second ---
     if (now - this.lastAnalysisTime >= this.ANALYSIS_INTERVAL) {
+      // Analizar forma de onda PPG con el Analyzer
+      // Pass only the last 150 samples (5 seconds) to the analyzer
       const analyzerInput = processedValues.length > 150 ? processedValues.slice(-150) : processedValues;
-      if (analyzerInput.length >= this.MIN_SAMPLES) { 
-          currentAnalysisResult = this.analyzer.analyze(analyzerInput); // Use 'currentAnalysisResult' directly
+      
+      if (analyzerInput.length >= this.MIN_SAMPLES) { // Ensure we still have enough samples after slicing
+          const analysisResult = this.analyzer.analyze(analyzerInput);
           this.lastAnalysisTime = now;
-          if (currentAnalysisResult && currentAnalysisResult.systolic > 0 && currentAnalysisResult.diastolic > 0) {
-            this.lastInstantResult = { 
-                systolic: Math.round(currentAnalysisResult.systolic), 
-                diastolic: Math.round(currentAnalysisResult.diastolic) 
+    
+          if (analysisResult && analysisResult.systolic > 0 && analysisResult.diastolic > 0) {
+            // Store the valid result from the analyzer
+            currentAnalysisResult = analysisResult;
+    
+            // Use only analyzer result for now
+            this.lastInstantResult = {
+              systolic: Math.round(analysisResult.systolic),
+              diastolic: Math.round(analysisResult.diastolic)
             };
-            // Update buffers only when a new valid analysis is done AND not paused
-            if (!this.isPaused) { 
-                 this.updateBuffers(this.lastInstantResult.systolic, this.lastInstantResult.diastolic);
-            }
-          } 
+    
+            // Update buffers only when a new analysis is done
+            this.updateBuffers(this.lastInstantResult.systolic, this.lastInstantResult.diastolic);
+          }
+          // If analysisResult is null or invalid, lastInstantResult remains unchanged
       }
     }
+    // --- End of periodic analysis ---
 
-    // Check if measurement duration has elapsed
+    // Verificar si la medición está completa
     const elapsedTime = now - (this.measurementStartTime || now);
     if (elapsedTime >= this.MEASUREMENT_DURATION) {
-      console.log(`BP Measurement Complete (${elapsedTime}ms). Calculating final result...`);
+      // Calcular resultado final
       const finalResult = this.calculateFinalResult();
-      this.resetMeasurement(); // Reset after finishing the 30s cycle
-      return finalResult; 
+      this.resetMeasurement(); // Reset after final calculation
+      return finalResult; // Return final result
     }
 
-    // Return the latest intermediate result during the measurement
+    // Retornar el último resultado instantáneo válido durante la medición
     return this.lastInstantResult;
   }
 
-  // --- Pause and Resume Methods --- 
-  public pauseMeasurement(): void {
-      if (!this.isPaused && this.measurementStartTime !== null) {
-          this.isPaused = true;
-          console.log("BP Measurement Paused");
-      }
-  }
-
-  public resumeMeasurement(): void {
-      if (this.isPaused) {
-          this.isPaused = false;
-          console.log("BP Measurement Resumed");
-          // No need to adjust startTime, elapsedTime calculation handles the gap
-      }
-  }
-
   private calculateFinalResult(): { systolic: number; diastolic: number } | null {
+    // Filtrar valores válidos
     const validSystolic = this.systolicBuffer.filter(v => v > 0);
     const validDiastolic = this.diastolicBuffer.filter(v => v > 0);
-    const minRequiredReadings = (this.MEASUREMENT_DURATION / this.ANALYSIS_INTERVAL) * 0.3; 
+
+    // Require at least a few seconds of valid data for final result
+    const minRequiredReadings = (this.MEASUREMENT_DURATION / this.ANALYSIS_INTERVAL) * 0.3; // e.g., 30% of expected readings
+
     if (validSystolic.length < minRequiredReadings || validDiastolic.length < minRequiredReadings) {
        console.warn(`BP Final Result: Not enough valid readings (${validSystolic.length} systolic, ${validDiastolic.length} diastolic). Returning last valid or zero.`);
-       return this.lastValidMeasurement || { systolic: 0, diastolic: 0 };
+       return this.lastValidMeasurement || { systolic: 0, diastolic: 0 }; // Return last overall valid or zero if none
     }
+
+    // Calcular medianas
     const systolic = this.calculateMedian(validSystolic);
     const diastolic = this.calculateMedian(validDiastolic);
-    this.lastValidMeasurement = { systolic, diastolic }; 
+
+    this.lastValidMeasurement = { systolic, diastolic }; // Store this as the last overall valid measurement
     console.log(`BP Final Result: S:${systolic}, D:${diastolic} from ${validSystolic.length} readings.`);
     return this.lastValidMeasurement;
   }
 
   private calculateMedian(values: number[]): number {
-    if (values.length === 0) return 0; 
+    if (values.length === 0) return 0; // Avoid errors on empty array
     const sorted = [...values].sort((a, b) => a - b);
     const middle = Math.floor(sorted.length / 2);
+
     if (sorted.length % 2 === 0) {
       return Math.round((sorted[middle - 1] + sorted[middle]) / 2);
     }
     return Math.round(sorted[middle]);
   }
 
-  // Full reset for the BP measurement cycle
   private resetMeasurement(): void {
-    console.log("Resetting BP Measurement Cycle.");
     this.measurementStartTime = null;
     this.lastAnalysisTime = 0;
-    this.lastInstantResult = null; 
-    this.isPaused = false; // Ensure not paused on reset
+    this.lastInstantResult = null; // Clear intermediate result on reset
+    // Don't reset lastValidMeasurement here, keep it until next successful measurement
     this.resetBuffers();
-    this.analyzer.reset(); // Reset the underlying analyzer as well
+    // No need to reset analyzer here, it resets internally or via VitalSignsProcessor
   }
 
   private resetBuffers(): void {
@@ -166,22 +166,53 @@ export class BloodPressureProcessor {
     this.diastolicBuffer = [];
   }
 
+  // Update buffers only when a new analysis is performed
   private updateBuffers(systolic: number, diastolic: number): void {
-     if (systolic > 0 && diastolic > 0) { 
+     if (systolic > 0 && diastolic > 0) { // Only buffer valid readings
        this.systolicBuffer.push(systolic);
        this.diastolicBuffer.push(diastolic);
+
+       // Optional: Limit buffer size if needed, though median calculation handles outliers
+       // if (this.systolicBuffer.length > SOME_MAX_BUFFER_LIMIT) {
+       //   this.systolicBuffer.shift();
+       //   this.diastolicBuffer.shift();
+       // }
      }
   }
 
-  // Public reset called by VitalSignsProcessor
   public reset(): void {
-    this.resetMeasurement(); // Perform the full internal reset
-    this.lastValidMeasurement = null; 
-    this.signalProcessor.reset(); // Reset internal signal core processor
-    // Analyzer is reset within resetMeasurement
+    this.resetMeasurement();
+    this.lastValidMeasurement = null; // Full reset clears everything
+    this.signalProcessor.reset();
+    this.analyzer.reset();
+    // if (this.neuralModel) this.neuralModel.reset(); // If re-enabled
   }
-  
-  // --- Feature extraction methods (kept for now, potential redundancy) ---
+
+  // Feature extraction and quality calculation might be redundant if analyzer does it
+  // Consider removing these if BloodPressureAnalyzer handles them internally
+
+  private calculateSignalQuality(signal: number[]): number {
+    if (signal.length < 2) return 0;
+    const amplitude = Math.max(...signal) - Math.min(...signal);
+    const noise = this.calculateSignalNoise(signal);
+    if (noise === 0) return amplitude > 0 ? 100 : 0; // Avoid division by zero
+    const snr = amplitude / noise;
+    return Math.min(100, Math.max(0, snr * 50)); // Scale SNR to 0-100 quality
+  }
+
+  private calculateSignalNoise(signal: number[]): number {
+    if (signal.length < 2) return 0;
+    let noise = 0;
+    for (let i = 1; i < signal.length; i++) {
+      noise += Math.abs(signal[i] - signal[i-1]);
+    }
+    // Average absolute difference as noise estimate
+    return noise / (signal.length -1) ;
+  }
+
+  // --- Feature Extraction (Potentially redundant if analyzer handles it) ---
+  // Keeping these for now, but consider moving logic entirely into BloodPressureAnalyzer
+
   private extractPPGFeatures(values: number[], peakIndices: number[], valleyIndices: number[]): {
     amplitude: number;
     peakSlope: number;

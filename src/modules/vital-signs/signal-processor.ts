@@ -31,8 +31,8 @@ export class SignalProcessor extends BaseProcessor {
   
   // Signal quality variables - thresholds can be tuned
   private readonly MIN_QUALITY_FOR_FINGER = 45;
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 1500;
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05;
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.25;
   
   constructor() {
     super(); // Initializes this.ppgValues = []
@@ -67,40 +67,45 @@ export class SignalProcessor extends BaseProcessor {
   }
 
   /**
-   * Updates the internal finger detection state based on amplitude of filtered signal.
-   * TEMPORARILY Simplified for debugging camera instability.
+   * Updates the internal finger detection state based on validator and quality.
+   * This logic might be better placed within the validator or a dedicated class.
    */
   private updateFingerDetectionStatus(): void {
+       const qualityValue = this.quality.calculateSignalQuality(this.ppgValues.slice(-30)); // Quality based on recent filtered values
+       const fingerDetectedByPattern = this.signalValidator.isFingerDetected();
+       
        // Calculate amplitude on recent filtered values
        let amplitude = 0;
        const recentFiltered = this.ppgValues.slice(-30);
        if (recentFiltered.length > 10) { 
          amplitude = Math.max(...recentFiltered) - Math.min(...recentFiltered);
        }
-       const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE; // Using the adjusted 0.05 threshold
+       const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
 
-       // --- Simplified Logic --- 
-       this.fingerDetectionConfirmed = hasValidAmplitude; // Directly use amplitude check
-       // Reset confirmation timer logic is bypassed for now
-       if (!hasValidAmplitude && this.fingerDetectionStartTime !== null) {
-           // Reset start time if amplitude is lost
-           this.fingerDetectionStartTime = null; 
-       } else if (hasValidAmplitude && this.fingerDetectionStartTime === null) {
-           // Set start time if amplitude is detected (though timer not used currently)
-           this.fingerDetectionStartTime = Date.now();
+       const currentDetectionStatus = (fingerDetectedByPattern && hasValidAmplitude) || this.fingerDetectionConfirmed;
+
+       if (currentDetectionStatus && !this.fingerDetectionConfirmed) {
+         const now = Date.now();
+         if (!this.fingerDetectionStartTime) {
+           this.fingerDetectionStartTime = now;
+         }
+         if (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME) {
+           this.fingerDetectionConfirmed = true;
+           this.rhythmBasedFingerDetection = true; // Assuming pattern implies rhythm
+           console.log("Signal processor: Finger CONFIRMED by rhythm pattern + amplitude");
+         }
+       } else if (!currentDetectionStatus && this.fingerDetectionConfirmed) {
+          console.log("Signal processor: Finger detection LOST");
+          this.fingerDetectionConfirmed = false;
+          this.fingerDetectionStartTime = null;
+          this.rhythmBasedFingerDetection = false;
        }
-       // Bypassing quality and pattern check for now
-       // const qualityValue = this.quality.calculateSignalQuality(recentFiltered);
-       // const fingerDetectedByPattern = this.signalValidator.isFingerDetected();
-       // const currentDetectionStatus = (fingerDetectedByPattern && hasValidAmplitude) || this.fingerDetectionConfirmed;
-       // ... (complex confirmation logic removed) ...
   }
 
   /**
-   * Returns the current finger detection status (Simplified: based on amplitude).
+   * Returns the current finger detection status.
    */
   public isFingerDetected(): boolean {
-      // Directly return the state updated by updateFingerDetectionStatus
       return this.fingerDetectionConfirmed;
   }
   

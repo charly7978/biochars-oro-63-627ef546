@@ -9,6 +9,7 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
+import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
@@ -29,6 +30,7 @@ export class VitalSignsProcessor {
   private hydrationEstimator: HydrationEstimator;
   
   // Validators and calculators
+  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   // Throttling state
@@ -49,6 +51,7 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.hydrationEstimator = new HydrationEstimator();
+    this.signalValidator = new SignalValidator(0.02, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
@@ -65,35 +68,22 @@ export class VitalSignsProcessor {
     
     // 2. Get the updated filtered buffer
     const ppgValues = this.signalProcessor.getFilteredPPGValues();
-
-    // 3. Check finger presence (using a robust method)
-    const isFingerCurrentlyDetected = this.signalProcessor.isFingerDetected();
-    // --- DEBUG LOG --- 
-    // console.log(`Finger Detected: ${isFingerCurrentlyDetected}, Buffer Length: ${ppgValues.length}`);
-    // --------------- 
     
-    // --- Handle Finger Loss/Return --- 
-    if (!isFingerCurrentlyDetected) {
-        if (this.lastValidResult !== ResultFactory.createEmptyResults()) {
-            console.log("VitalSignsProcessor: Finger lost/signal unstable. Pausing BP, resetting others.");
-            this.bpProcessor.pauseMeasurement(); // Pause BP measurement
-            // Reset instant processors (optional, but cleans state)
-            this.spo2Processor.reset();
-            this.glucoseProcessor.reset();
-            this.lipidProcessor.reset();
-            this.hydrationEstimator.reset();
-            this.arrhythmiaProcessor.reset();
-            // Keep SignalProcessor buffer, but reset its detection confirmation state?
-            // For now, SignalProcessor reset is handled internally if pattern is lost.
-            this.lastCalculationTime = 0; // Reset throttle timer
-            this.lastValidResult = ResultFactory.createEmptyResults(); // Clear last results
+    // 3. --- TEMP: Relaxed Finger Check for Debugging ---
+    const MIN_RAW_AMPLITUDE_THRESHOLD = 0.01; 
+    if (Math.abs(ppgValue) < MIN_RAW_AMPLITUDE_THRESHOLD) { 
+        // If signal is lost, reset calculation time and return empty results immediately
+        if (!this.lastValidResult.spo2 && !this.lastValidResult.heartRate) {
+            // Avoid console spam if already empty
+        } else {
+             console.log("VitalSignsProcessor: Raw signal near zero, resetting.");
         }
-        return ResultFactory.createEmptyResults(); 
-    } else {
-        // Finger is present (or detected again), ensure BP measurement is resumed
-        this.bpProcessor.resumeMeasurement();
+        this.signalProcessor.reset(); 
+        this.lastCalculationTime = 0; // Ensure next valid signal triggers calculation
+        this.lastValidResult = ResultFactory.createEmptyResults();
+        return this.lastValidResult;
     }
-    // --- End Finger Handling --- 
+    // --- End TEMP Check ---
 
     // 4. Check if we have enough data points in the central buffer
     if (ppgValues.length < 15) { 
@@ -103,9 +93,12 @@ export class VitalSignsProcessor {
     // --- Throttling --- 
     const now = Date.now();
     if (now - this.lastCalculationTime < this.CALCULATION_INTERVAL_MS) {
+        // Not enough time passed, return the last calculated result
         return this.lastValidResult;
     }
-    this.lastCalculationTime = now;
+    
+    // --- Enough time passed, proceed with calculations --- 
+    this.lastCalculationTime = now; 
 
     // Process arrhythmia data 
     const arrhythmiaResult = rrData && 
@@ -132,37 +125,30 @@ export class VitalSignsProcessor {
 
     const spo2 = spo2Window.length >= MIN_SAMPLES_SHORT ?
                  Math.round(this.spo2Processor.calculateSpO2(spo2Window)) : 0;
-    console.log(`>>> SpO2 Raw Calc: ${spo2}`); // DEBUG
     
     const bpResult = bpWindow.length >= MIN_SAMPLES_MEDIUM ?
                      this.bpProcessor.calculateBloodPressure(bpWindow) :
                      null;
-    console.log(`>>> BP Raw Result: ${JSON.stringify(bpResult)}`); // DEBUG
     const bp = bpResult || { systolic: 0, diastolic: 0 }; 
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
-    console.log(`>>> BP Formatted: ${pressure}`); // DEBUG
     
     const glucose = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                     Math.round(this.glucoseProcessor.calculateGlucose(recentPpgValues)) : 0;
     const glucoseConfidence = this.glucoseProcessor.getConfidence(); 
-    console.log(`>>> Glucose Raw Calc: ${glucose}, Confidence: ${glucoseConfidence}`); // DEBUG
     
     const lipidsResult = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                        this.lipidProcessor.calculateLipids(recentPpgValues) :
                        { totalCholesterol: 0, triglycerides: 0 };
     const lipids = lipidsResult;
     const lipidsConfidence = this.lipidProcessor.getConfidence();
-    console.log(`>>> Lipids Raw Calc: ${JSON.stringify(lipids)}, Confidence: ${lipidsConfidence}`); // DEBUG
     
     const hydration = recentPpgValues.length >= MIN_SAMPLES_MEDIUM ?
                       Math.round(this.hydrationEstimator.analyze(recentPpgValues)) : 0;
-    console.log(`>>> Hydration Raw Calc: ${hydration}`); // DEBUG
     
     const heartRate = bufferLength >= MIN_SAMPLES_MEDIUM ? 
                        Math.round(this.signalProcessor.calculateHeartRate()) : 0;
-    console.log(`>>> Heart Rate Raw Calc: ${heartRate}`); // DEBUG
 
     // Confidence & Final Values 
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -174,8 +160,6 @@ export class VitalSignsProcessor {
       totalCholesterol: Math.round(lipids.totalCholesterol),
       triglycerides: Math.round(lipids.triglycerides)
     } : { totalCholesterol: 0, triglycerides: 0 };
-    console.log(`>>> Glucose Final: ${finalGlucose}, Lipids Final: ${JSON.stringify(finalLipids)}`); // DEBUG
-    
     const hemoglobin = Math.round(this.calculateHemoglobin(spo2));
 
     // --- Update lastValidResult --- 
@@ -214,24 +198,19 @@ export class VitalSignsProcessor {
     return base - (maxReduction * reductionFactor);
   }
 
-  // Renamed original reset to avoid conflict, called by reset() and signal loss
-  private resetProcessorsAndState(): void {
-    this.signalProcessor.reset(); // Resets buffer & finger detection state
-    this.spo2Processor.reset();
-    this.bpProcessor.reset(); // BP full reset here
-    this.arrhythmiaProcessor.reset();
-    this.glucoseProcessor.reset();
-    this.lipidProcessor.reset();
-    this.hydrationEstimator.reset();
-    this.lastCalculationTime = 0; 
-    this.lastValidResult = ResultFactory.createEmptyResults();
-  }
-
   /**
    * Reset the processor to ensure a clean state
    */
   public reset(): VitalSignsResult | null {
-    this.resetProcessorsAndState();
+    this.signalProcessor.reset(); 
+    this.spo2Processor.reset();
+    this.bpProcessor.reset();
+    this.arrhythmiaProcessor.reset();
+    this.glucoseProcessor.reset();
+    this.lipidProcessor.reset();
+    this.hydrationEstimator.reset();
+    this.lastCalculationTime = 0; // Reset throttle timer
+    this.lastValidResult = ResultFactory.createEmptyResults(); // Reset last result
     console.log("VitalSignsProcessor: Reset complete.");
     return null; 
   }
