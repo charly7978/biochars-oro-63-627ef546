@@ -94,7 +94,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       const result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Identificar cada latido arrítmico individualmente
+      // Identificar cada latido arrítmico individualmente de forma más precisa
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
@@ -103,19 +103,19 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Marcar explícitamente cada latido arrítmico individualmente
+        // Ventana más amplia pero precisa para cada latido arrítmico individual
         let windowWidth = 400; // Ancho predeterminado
         
         // Ajustar ventana basada en intervalos RR reales si están disponibles
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.5)); // Ventana más amplia
         }
         
-        // Ventana estrecha para marcar solo este latido específico como arrítmico
-        const startWindow = arrhythmiaTime - windowWidth/6;
-        const endWindow = arrhythmiaTime + windowWidth/6;
+        // Ventana para marcar este latido específico como arrítmico
+        const startWindow = arrhythmiaTime - windowWidth/4; // Más amplio para no perder latidos
+        const endWindow = arrhythmiaTime + windowWidth/4;
         
         addArrhythmiaWindow(startWindow, endWindow);
         
@@ -123,13 +123,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           time: new Date(arrhythmiaTime).toISOString(),
           windowStart: new Date(startWindow).toISOString(),
           windowEnd: new Date(endWindow).toISOString(),
-          status: result.arrhythmiaStatus
+          status: result.arrhythmiaStatus,
+          arrithmiaCount: getArrhythmiaCounter()
         });
         
-        // Activar feedback solo para latidos arrítmicos específicos
+        // Activar feedback solo para latidos arrítmicos específicos con intervalo mínimo
         if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
           lastArrhythmiaTriggeredRef.current = currentTime;
           const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
+          
+          // Usar la función centralizada para notificar arritmias
           FeedbackService.signalArrhythmia(count);
           
           console.log("useVitalSignsProcessor: Notificación de arritmia activada", {
