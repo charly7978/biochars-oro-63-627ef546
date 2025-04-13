@@ -13,18 +13,17 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     if (!enabled) return;
     
     try {
-      if (!audioCtxRef.current) {
+      // Only initialize audio context when needed, not on component mount
+      if (!audioCtxRef.current && typeof window !== 'undefined') {
         audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
       
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'running') {
-        audioCtxRef.current.resume().catch(console.error);
-      }
-      
-      if ('vibrate' in navigator) {
+      // Try to request vibration permission by using a minimal vibration test
+      if ('vibrate' in navigator && !vibrationPermissionRequestedRef.current) {
         try {
-          navigator.vibrate(1);
+          navigator.vibrate(0); // Using 0 to just request permission without actual vibration
           vibrationPermissionRequestedRef.current = true;
+          console.log("Vibration permission requested");
         } catch (err) {
           console.error('Vibration permission error:', err);
         }
@@ -43,11 +42,6 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
           console.error('Oscillator cleanup error:', err);
         }
       }
-      
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(console.error);
-        audioCtxRef.current = null;
-      }
     };
   }, [enabled]);
 
@@ -62,16 +56,24 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     lastTriggerTimeRef.current = now;
     const normalizedIntensity = Math.max(0.3, Math.min(1.0, intensity));
     
+    // ONLY vibrate, no sound (centralized in PPGSignalMeter)
     if ('vibrate' in navigator) {
       try {
         if (type === 'normal') {
-          navigator.vibrate(200 * normalizedIntensity);
+          // Strong single vibration for normal heartbeats
+          const duration = Math.round(100 * normalizedIntensity);
+          navigator.vibrate(duration);
+          console.log(`Vibration triggered: normal (${duration}ms)`);
         } else if (type === 'arrhythmia') {
-          navigator.vibrate([200, 100, 200]);
+          // Special pattern for arrhythmias: triple pulse
+          navigator.vibrate([100, 30, 100, 30, 100]);
+          console.log("Vibration triggered: arrhythmia pattern");
         }
       } catch (error) {
         console.error('Vibration error:', error);
       }
+    } else {
+      console.warn('Vibration API not available on this device');
     }
   };
 
