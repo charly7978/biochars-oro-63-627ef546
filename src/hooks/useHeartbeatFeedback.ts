@@ -1,79 +1,98 @@
 
 import { useEffect, useRef } from 'react';
 
+/**
+ * Tipos de retroalimentación para latidos
+ */
 export type HeartbeatFeedbackType = 'normal' | 'arrhythmia';
 
+/**
+ * Hook que proporciona retroalimentación táctil y auditiva para los latidos cardíacos
+ * @param enabled Activa o desactiva la retroalimentación
+ * @returns Función para activar la retroalimentación con tipo específico
+ */
 export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const oscillatorRef = useRef<OscillatorNode | null>(null);
   const lastTriggerTimeRef = useRef<number>(0);
-  const vibrationPermissionRequestedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (!enabled) return;
-    
-    try {
-      // Only initialize audio context when needed, not on component mount
-      if (!audioCtxRef.current && typeof window !== 'undefined') {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      
-      // Try to request vibration permission by using a minimal vibration test
-      if ('vibrate' in navigator && !vibrationPermissionRequestedRef.current) {
-        try {
-          navigator.vibrate(0); // Using 0 to just request permission without actual vibration
-          vibrationPermissionRequestedRef.current = true;
-          console.log("Vibration permission requested");
-        } catch (err) {
-          console.error('Vibration permission error:', err);
-        }
-      }
-    } catch (err) {
-      console.error('Audio context initialization error:', err);
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     
+    // Cleanup al desmontar
     return () => {
-      if (oscillatorRef.current) {
-        try {
-          oscillatorRef.current.stop();
-          oscillatorRef.current.disconnect();
-          oscillatorRef.current = null;
-        } catch (err) {
-          console.error('Oscillator cleanup error:', err);
-        }
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+        audioCtxRef.current.close().catch(err => {
+          console.error('Error cerrando el contexto de audio:', err);
+        });
       }
     };
   }, [enabled]);
 
-  const trigger = (type: HeartbeatFeedbackType = 'normal', intensity: number = 0.7) => {
+  /**
+   * Activa la retroalimentación táctil y auditiva
+   * @param type Tipo de retroalimentación: normal o arritmia
+   */
+  const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled) return;
     
     const now = Date.now();
-    const MIN_TRIGGER_INTERVAL = 250;
+    const MIN_TRIGGER_INTERVAL = 200; // 200ms entre vibraciones para evitar saturación
     
-    if (now - lastTriggerTimeRef.current < MIN_TRIGGER_INTERVAL) return;
+    if (now - lastTriggerTimeRef.current < MIN_TRIGGER_INTERVAL) {
+      return; // Evitar vibraciones demasiado frecuentes
+    }
     
     lastTriggerTimeRef.current = now;
-    const normalizedIntensity = Math.max(0.3, Math.min(1.0, intensity));
-    
-    // ONLY vibrate, no sound (centralized in PPGSignalMeter)
+
+    // Patrones de vibración claramente diferenciados
     if ('vibrate' in navigator) {
       try {
         if (type === 'normal') {
-          // Strong single vibration for normal heartbeats
-          const duration = Math.round(100 * normalizedIntensity);
-          navigator.vibrate(duration);
-          console.log(`Vibration triggered: normal (${duration}ms)`);
+          // Vibración simple para latido normal
+          navigator.vibrate(50);
+          console.log('Vibración normal activada');
         } else if (type === 'arrhythmia') {
-          // Special pattern for arrhythmias: triple pulse
-          navigator.vibrate([100, 30, 100, 30, 100]);
-          console.log("Vibration triggered: arrhythmia pattern");
+          // Patrón de vibración distintivo para arritmia (pulso doble más fuerte)
+          navigator.vibrate([60, 70, 120]);
+          console.log('Vibración de arritmia activada');
         }
       } catch (error) {
-        console.error('Vibration error:', error);
+        console.error('Error al activar vibración:', error);
       }
-    } else {
-      console.warn('Vibration API not available on this device');
+    }
+
+    // Generar un bip con características según el tipo
+    if (audioCtxRef.current) {
+      try {
+        const ctx = audioCtxRef.current;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        if (type === 'normal') {
+          // Tono normal para latido regular
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        } else if (type === 'arrhythmia') {
+          // Tono más grave y duradero para arritmia
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        }
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        osc.start();
+        // Mayor duración para arritmias
+        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+      } catch (error) {
+        console.error('Error generando audio:', error);
+      }
     }
   };
 

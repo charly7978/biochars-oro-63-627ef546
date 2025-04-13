@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -29,7 +30,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Arrhythmia tracking
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 5000; // Aumentado a 5 segundos para evitar alertas excesivas
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
   
   const { 
     arrhythmiaWindows, 
@@ -73,19 +74,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
-   * Process PPG signal directly - mejorado para detección precisa de arritmias
-   * No simulation or reference values are used
+   * Process PPG signal directly
+   * No simulation or reference values
    */
-  const processSignal = (
-    value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null }, 
-    externalWeakSignal: boolean = false
-  ): VitalSignsResult => {
-    // Enhanced weak signal detection with more precise tracking
-    const { 
-      isWeakSignal: detectedWeakSignal, 
-      updatedWeakSignalsCount 
-    } = checkSignalQuality(
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
+    // Check for weak signal to detect finger removal using centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
       weakSignalsCountRef.current,
       {
@@ -93,61 +87,64 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         maxWeakSignalCount: MAX_WEAK_SIGNALS
       }
     );
-
-    const isWeakSignal = detectedWeakSignal || externalWeakSignal;
+    
     weakSignalsCountRef.current = updatedWeakSignalsCount;
-
+    
+    // Process signal directly - no simulation
     try {
-      const result = processVitalSignal(value, rrData, isWeakSignal);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Improved arrhythmia detection with more precise windowing
+      // Verificar y manejar eventos de arritmia más precisamente
       if (result && 
           result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
         
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Dynamic window calculation based on real RR intervals
-        let windowWidth = 350; 
+        // Window based on real heart rate
+        let windowWidth = 400;
         
+        // Adjust based on real RR intervals
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(250, Math.min(600, avgInterval * 1.2));
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
         
-        const startWindow = arrhythmiaTime - windowWidth/3;
-        const endWindow = arrhythmiaTime + windowWidth/3;
+        // Add visualization window - solo para el latido exacto
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/4, arrhythmiaTime + windowWidth/4);
         
-        addArrhythmiaWindow(startWindow, endWindow);
-        
-        console.log("Precise Arrhythmia Detection", {
+        console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
           time: new Date(arrhythmiaTime).toISOString(),
-          windowStart: new Date(startWindow).toISOString(),
-          windowEnd: new Date(endWindow).toISOString()
+          windowWidth,
+          status: result.arrhythmiaStatus
         });
         
-        // Centralized arrhythmia notification with controlled intervals
+        // Trigger feedback for arrhythmia
         if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
           lastArrhythmiaTriggeredRef.current = currentTime;
           const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
-          
           FeedbackService.signalArrhythmia(count);
         }
       }
       
+      // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
+      // Save valid results
       if (result && result.heartRate > 0) {
         setLastValidResults(result);
       }
       
+      // Return processed result
       return result;
     } catch (error) {
-      console.error("Signal Processing Error:", error);
+      console.error("Error processing vital signs:", error);
       
+      // Return safe fallback values on error that include heartRate
       return {
         spo2: 0,
         heartRate: 0,
@@ -196,7 +193,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults,
+    lastValidResults: lastValidResults, // Return last valid results
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
