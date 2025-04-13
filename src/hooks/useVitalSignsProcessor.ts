@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -77,9 +76,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly - mejorado para detección precisa de arritmias
    * No simulation or reference values are used
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }, initialWeakSignal: boolean = false): VitalSignsResult => {
-    // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+  const processSignal = (
+    value: number, 
+    rrData?: { intervals: number[], lastPeakTime: number | null }, 
+    externalWeakSignal: boolean = false
+  ): VitalSignsResult => {
+    // Enhanced weak signal detection
+    const { 
+      isWeakSignal: detectedWeakSignal, 
+      updatedWeakSignalsCount 
+    } = checkSignalQuality(
       value,
       weakSignalsCountRef.current,
       {
@@ -87,9 +93,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         maxWeakSignalCount: MAX_WEAK_SIGNALS
       }
     );
-    
+
+    const isWeakSignal = detectedWeakSignal || externalWeakSignal;
     weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
+
     // Process signal directly - no simulation
     try {
       const result = processVitalSignal(value, rrData, isWeakSignal);
@@ -207,7 +214,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults, // Return last valid results
+    lastValidResults: lastValidResults,
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
