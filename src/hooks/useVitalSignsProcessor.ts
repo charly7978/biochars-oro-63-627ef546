@@ -121,6 +121,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Return safe fallback values on error that include hydration
       return {
         spo2: 0,
+        heartRate: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
         glucose: 0,
