@@ -1,4 +1,3 @@
-
 export interface SignalChannelConfig {
   bufferSize?: number;
   sampleRate?: number;
