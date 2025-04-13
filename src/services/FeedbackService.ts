@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -24,26 +25,33 @@ const loadSound = (url: string): HTMLAudioElement => {
 };
 
 export const FeedbackService = {
-  // Retroalimentación háptica
+  // Retroalimentación háptica con patrones fuertes y distintivos
   vibrate: (pattern: number | number[] = 200) => {
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
+        console.log('Vibración activada:', pattern);
       } catch (error) {
         console.error('Error al activar vibración:', error);
       }
+    } else {
+      console.log('Vibración no soportada en este dispositivo');
     }
   },
 
-  // Retroalimentación háptica específica para arritmias
+  // Retroalimentación háptica específica para arritmias - patrón muy distintivo
   vibrateArrhythmia: () => {
     if ('vibrate' in navigator) {
       try {
         // Patrón más distintivo para arritmias (triple pulso con pausa)
-        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
+        const pattern = [100, 50, 100, 50, 100, 300, 100];
+        navigator.vibrate(pattern);
+        console.log('Vibración de arritmia activada:', pattern);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
       }
+    } else {
+      console.log('Vibración no soportada en este dispositivo');
     }
   },
 
@@ -69,6 +77,9 @@ export const FeedbackService = {
       const audio = loadSound(soundUrl);
       // Reiniciar el audio si ya está reproduciéndose
       audio.currentTime = 0;
+      
+      // Volumen completo para garantizar que se escuche
+      audio.volume = 1.0;
       
       const playPromise = audio.play();
       if (playPromise !== undefined) {
@@ -110,7 +121,7 @@ export const FeedbackService = {
     FeedbackService.showToast('Error', message, 'error');
   },
 
-  // Retroalimentación para arritmia detectada
+  // Retroalimentación para arritmia detectada - más fuerte y distintiva
   signalArrhythmia: (count: number) => {
     FeedbackService.vibrateArrhythmia();
     FeedbackService.playSound('heartbeat');

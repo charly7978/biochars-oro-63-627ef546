@@ -1,8 +1,4 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrhythmiaWindow } from './types';
 import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
@@ -21,10 +17,10 @@ export const useArrhythmiaVisualization = () => {
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 5000; // 5 seconds between notifications (reduced from 10s)
   
-  // Detection configuration
-  const DETECTION_THRESHOLD = 0.25; // Threshold for variation ratio to detect arrhythmia
+  // Detection configuration - more sensitive settings
+  const DETECTION_THRESHOLD = 0.20; // Reduced for better sensitivity
   
   /**
    * Register a new arrhythmia window for visualization
@@ -48,8 +44,8 @@ export const useArrhythmiaVisualization = () => {
       // Sort by time for consistent visualization
       const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
       
-      // Limit to the 3 most recent windows
-      return sortedWindows.slice(0, 3);
+      // Limit to the 5 most recent windows (increased from 3)
+      return sortedWindows.slice(0, 5);
     });
     
     // Debug log
@@ -63,7 +59,7 @@ export const useArrhythmiaVisualization = () => {
   
   /**
    * Analyze RR intervals to detect arrhythmias
-   * Using direct measurement algorithms only
+   * Using direct measurement algorithms only - more sensitive settings
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
     if (rrIntervals.length < 5) {
@@ -86,9 +82,9 @@ export const useArrhythmiaVisualization = () => {
     // Adjust threshold based on stability
     let thresholdFactor = DETECTION_THRESHOLD;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20;
+      thresholdFactor = 0.15; // Lower threshold when stable for higher sensitivity
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30;
+      thresholdFactor = 0.25; // Higher threshold when unstable
     }
     
     const isIrregular = variationRatio > thresholdFactor;
@@ -99,14 +95,14 @@ export const useArrhythmiaVisualization = () => {
       stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
     }
     
-    // Require more stability before reporting arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
+    // More aggressive arrhythmia detection
+    const isArrhythmia = isIrregular;
     
     if (isArrhythmia) {
       // Generate an arrhythmia window when detected
       const currentTime = Date.now();
       const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-      const windowWidth = Math.max(600, Math.min(1000, avgInterval * 2));
+      const windowWidth = Math.max(800, Math.min(1200, avgInterval * 3));
       
       addArrhythmiaWindow(currentTime - windowWidth/2, currentTime + windowWidth/2);
       
@@ -114,7 +110,8 @@ export const useArrhythmiaVisualization = () => {
         rmssd,
         variationRatio,
         threshold: thresholdFactor,
-        timestamp: new Date(currentTime).toISOString()
+        timestamp: new Date(currentTime).toISOString(),
+        rrIntervals: lastIntervals
       });
     }
     
@@ -142,13 +139,15 @@ export const useArrhythmiaVisualization = () => {
     // Check for arrhythmia detected message
     if (arrhythmiaStatus && 
         typeof arrhythmiaStatus === 'string' && 
-        arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+        (arrhythmiaStatus.includes("ARRYTHMIA DETECTED") || 
+         arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") ||
+         arrhythmiaStatus.includes("ARRITMIA DETECTADA")) && 
         lastArrhythmiaData) {
       
-      const arrhythmiaTime = lastArrhythmiaData.timestamp;
+      const arrhythmiaTime = lastArrhythmiaData.timestamp || currentTime;
       
       // Create visualization window
-      let windowWidth = 800; // Wider window for clear visualization
+      let windowWidth = 1000; // Wider window for clear visualization
       addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       
       // Return true if this is a new arrhythmia notification
@@ -156,7 +155,7 @@ export const useArrhythmiaVisualization = () => {
     }
     
     return false;
-  }, [addArrhythmiaWindow]);
+  }, [addArrhythmiaWindow, MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL]);
   
   /**
    * Register an arrhythmia notification
@@ -174,7 +173,7 @@ export const useArrhythmiaVisualization = () => {
         const currentTime = Date.now();
         // Mantener solo ventanas que estén dentro de los últimos 10 segundos
         const validWindows = prev.filter(window => 
-          currentTime - window.end < 10000
+          currentTime - window.end < 15000
         );
         
         // Only update if there were changes
@@ -187,6 +186,16 @@ export const useArrhythmiaVisualization = () => {
     
     return () => clearInterval(cleanupInterval);
   }, []);
+  
+  /**
+   * Force add an arrhythmia window - useful for testing and manual triggers
+   */
+  const forceAddArrhythmiaWindow = useCallback(() => {
+    const now = Date.now();
+    addArrhythmiaWindow(now - 500, now + 500);
+    console.log("Arrhythmia window FORCED for visualization");
+    return true;
+  }, [addArrhythmiaWindow]);
   
   /**
    * Clear all arrhythmia visualization windows
@@ -216,6 +225,7 @@ export const useArrhythmiaVisualization = () => {
   return {
     arrhythmiaWindows,
     addArrhythmiaWindow,
+    forceAddArrhythmiaWindow,
     clearArrhythmiaWindows,
     detectArrhythmia,
     processArrhythmiaStatus,

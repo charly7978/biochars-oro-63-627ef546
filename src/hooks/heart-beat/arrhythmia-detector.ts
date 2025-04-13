@@ -17,7 +17,7 @@ export function useArrhythmiaDetector() {
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
   
   // Arrhythmia detection constants
-  const DETECTION_THRESHOLD = 0.25;
+  const DETECTION_THRESHOLD = 0.20; // Reduced threshold for better sensitivity
   const MIN_INTERVAL = 300; // 300ms minimum (200 BPM max)
   const MAX_INTERVAL = 2000; // 2000ms maximum (30 BPM min)
   
@@ -52,9 +52,9 @@ export function useArrhythmiaDetector() {
     // Adjust threshold based on stability
     let thresholdFactor = DETECTION_THRESHOLD;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20; // Lower threshold when stable
+      thresholdFactor = 0.15; // Lower threshold when stable for higher sensitivity
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30; // Higher threshold when unstable
+      thresholdFactor = 0.25; // Higher threshold when unstable
     }
     
     // Determine if rhythm is irregular
@@ -67,8 +67,8 @@ export function useArrhythmiaDetector() {
       stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
     }
     
-    // Require more stability for confirmed arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
+    // More aggressive arrhythmia detection
+    const isArrhythmia = isIrregular && stabilityCounterRef.current < 25;
     
     // Update HRV data
     heartRateVariabilityRef.current.push(variationRatio);
@@ -77,8 +77,18 @@ export function useArrhythmiaDetector() {
     }
     
     // Update arrhythmia state
-    lastIsArrhythmiaRef.current = isArrhythmia;
+    lastIsArrhythmiaRef.current = currentBeatIsArrhythmiaRef.current;
     currentBeatIsArrhythmiaRef.current = isArrhythmia;
+
+    // Log detection for debugging
+    if (isArrhythmia) {
+      console.log('Arrhythmia detected:', {
+        rmssd,
+        variationRatio,
+        threshold: thresholdFactor,
+        timestamp: new Date().toISOString()
+      });
+    }
     
     return {
       rmssd,
