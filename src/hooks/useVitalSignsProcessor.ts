@@ -76,7 +76,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly - mejorado para detección precisa de arritmias
    * No simulation or reference values are used
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }, isWeakSignal: boolean = false): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
