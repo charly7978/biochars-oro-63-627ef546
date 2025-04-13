@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -76,7 +77,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly - mejorado para detección precisa de arritmias
    * No simulation or reference values are used
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }, isWeakSignal: boolean = false): VitalSignsResult => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }, initialWeakSignal: boolean = false): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
