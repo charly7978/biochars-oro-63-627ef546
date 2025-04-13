@@ -3,7 +3,7 @@ import { useCallback, useRef } from 'react';
 
 /**
  * Hook for arrhythmia detection in heart beat signals
- * Processes only real data with no simulations
+ * Solo procesa datos reales
  */
 export function useArrhythmiaDetector() {
   // Reference for HRV data
@@ -24,7 +24,7 @@ export function useArrhythmiaDetector() {
   
   /**
    * Detect arrhythmia based on RR interval variations
-   * Using only real data - no simulations
+   * Solo usa datos reales
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
     if (rrIntervals.length < 5) {
@@ -69,7 +69,7 @@ export function useArrhythmiaDetector() {
       stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
     }
     
-    // Direct arrhythmia detection - no simulations
+    // Detección de arritmia directa - solo datos reales
     const isArrhythmia = isIrregular && stabilityCounterRef.current < 25;
     
     // Update HRV data
