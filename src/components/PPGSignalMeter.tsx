@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -25,6 +24,7 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
+  arrhythmiaWindows?: { start: number, end: number }[];
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -40,7 +40,8 @@ const PPGSignalMeter = memo(({
   arrhythmiaStatus,
   rawArrhythmiaData,
   preserveResults = false,
-  isArrhythmia = false
+  isArrhythmia = false,
+  arrhythmiaWindows = []
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -58,7 +59,6 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const currentArrhythmiaSegmentRef = useRef<ArrhythmiaSegment | null>(null);
   const lastArrhythmiaStateRef = useRef<boolean>(false);
-  const arrhythmiaWindowsRef = useRef<{start: number, end: number}[]>([]);
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
@@ -83,7 +83,7 @@ const PPGSignalMeter = memo(({
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  const ARRHYTHMIA_HIGHLIGHT_DURATION = 2000; // Duración de la visualización de arritmia en ms
+  const ARRHYTHMIA_HIGHLIGHT_DURATION = 2000;
 
   const BEEP_PRIMARY_FREQUENCY = 880;
   const BEEP_SECONDARY_FREQUENCY = 440;
@@ -123,62 +123,15 @@ const PPGSignalMeter = memo(({
     };
   }, []);
 
-  // Efecto para actualizar la referencia de ventanas de arritmia cuando cambia rawArrhythmiaData
   useEffect(() => {
-    if (rawArrhythmiaData && isArrhythmia) {
-      const currentTime = Date.now();
-      // Verificar si hay ventanas de arritmia recientes (en los últimos 500ms)
-      const hasRecentWindow = arrhythmiaWindowsRef.current.some(
-        window => currentTime - window.start < 500
-      );
-      
-      // Solo agregar una nueva ventana si no hay ventanas recientes
-      if (!hasRecentWindow) {
-        const windowWidth = 600; // Ancho de la ventana de arritmia en ms
-        const startTime = rawArrhythmiaData.timestamp - windowWidth / 2;
-        const endTime = rawArrhythmiaData.timestamp + windowWidth / 2;
-        
-        arrhythmiaWindowsRef.current.push({
-          start: startTime,
-          end: endTime
-        });
-        
-        // Limitar a las 3 ventanas más recientes
-        if (arrhythmiaWindowsRef.current.length > 3) {
-          arrhythmiaWindowsRef.current = arrhythmiaWindowsRef.current.slice(-3);
-        }
-        
-        console.log("Nueva ventana de arritmia registrada:", {
-          start: new Date(startTime).toISOString(),
-          end: new Date(endTime).toISOString(),
-          windowCount: arrhythmiaWindowsRef.current.length
-        });
-      }
-    }
-  }, [rawArrhythmiaData, isArrhythmia]);
-
-  const playBeep = useCallback(async (volume = BEEP_VOLUME, isArrhythmia = false) => {
-    try {
-      const now = Date.now();
-      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
-          timeSinceLastBeep: now - lastBeepTimeRef.current,
-          minInterval: MIN_BEEP_INTERVAL_MS
-        });
-        return false;
-      }
-      
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
-      
-      lastBeepTimeRef.current = now;
-      pendingBeepPeakIdRef.current = null;
-      
-      return true;
-    } catch (err) {
-      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
-      return false;
-    }
-  }, [triggerHeartbeatFeedback, MIN_BEEP_INTERVAL_MS]);
+    console.log("PPGSignalMeter: Arrhythmia windows updated:", {
+      windowCount: arrhythmiaWindows.length,
+      windows: arrhythmiaWindows.map(w => ({
+        start: new Date(w.start).toISOString(),
+        end: new Date(w.end).toISOString()
+      }))
+    });
+  }, [arrhythmiaWindows]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -192,7 +145,6 @@ const PPGSignalMeter = memo(({
         dataBufferRef.current.clear();
       }
       peaksRef.current = [];
-      arrhythmiaWindowsRef.current = [];
       baselineRef.current = null;
       lastValueRef.current = null;
       setResultsVisible(false);
@@ -362,45 +314,52 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
-  // Función para dibujar zonas de arritmia
   const drawArrhythmiaZones = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    // Dibujar todas las ventanas de arritmia activas
-    arrhythmiaWindowsRef.current.forEach((window, index) => {
-      // Solo dibujar ventanas que estén dentro del tiempo visible
+    arrhythmiaWindows.forEach((window, index) => {
       if (now - window.start < WINDOW_WIDTH_MS) {
         const startX = ctx.canvas.width - ((now - window.start) * ctx.canvas.width / WINDOW_WIDTH_MS);
         const endX = ctx.canvas.width - ((now - window.end) * ctx.canvas.width / WINDOW_WIDTH_MS);
         const width = endX - startX;
         
-        // Dibujar rectángulo de fondo para la zona de arritmia
         ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
         ctx.fillRect(startX, 0, width, ctx.canvas.height);
         
-        // Dibujar bordes verticales para la zona de arritmia
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(220, 38, 38, 0.5)';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
         
-        // Línea vertical izquierda
         ctx.moveTo(startX, 0);
         ctx.lineTo(startX, ctx.canvas.height);
-        
-        // Línea vertical derecha
         ctx.moveTo(endX, 0);
         ctx.lineTo(endX, ctx.canvas.height);
         
         ctx.stroke();
         ctx.setLineDash([]);
         
-        // Etiqueta de arritmia en la parte superior
         ctx.fillStyle = '#DC2626';
         ctx.font = 'bold 20px Inter';
         ctx.textAlign = 'center';
         ctx.fillText('ARRITMIA', startX + width/2, 30);
+        
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.6)';
+        const symbolSize = 18;
+        const symbolX = startX + width/2;
+        const symbolY = 60;
+        ctx.moveTo(symbolX, symbolY - symbolSize);
+        ctx.lineTo(symbolX + symbolSize, symbolY + symbolSize);
+        ctx.lineTo(symbolX - symbolSize, symbolY + symbolSize);
+        ctx.closePath();
+        ctx.fill();
+        
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = 'bold 16px Inter';
+        ctx.textAlign = 'center';
+        ctx.fillText('!', symbolX, symbolY + symbolSize - 2);
       }
     });
-  }, [WINDOW_WIDTH_MS]);
+  }, [WINDOW_WIDTH_MS, arrhythmiaWindows]);
 
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
@@ -435,16 +394,13 @@ const PPGSignalMeter = memo(({
       }
       
       if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        // Verificar si este pico está dentro de una ventana de arritmia
-        const isInArrhythmiaWindow = arrhythmiaWindowsRef.current.some(
+        const isInArrhythmiaWindow = arrhythmiaWindows.some(
           window => currentPoint.time >= window.start && currentPoint.time <= window.end
         );
         
-        // Verificar si el punto ya está marcado como arritmia
         const isPointArrhythmia = currentPoint.isArrhythmia || false;
         
-        // Combinar ambas condiciones
-        const finalIsArrhythmia = isInArrhythmiaWindow || isPointArrhythmia;
+        const finalIsArrhythmia = isInArrhythmiaWindow || isPointArrhythmia || isArrhythmia;
         
         potentialPeaks.push({
           index: i,
@@ -475,7 +431,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY]);
+  }, [MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, arrhythmiaWindows, isArrhythmia]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -509,7 +465,6 @@ const PPGSignalMeter = memo(({
       drawGrid(renderCtx);
     }
     
-    // Dibujar las zonas de arritmia antes de la señal
     drawArrhythmiaZones(renderCtx, now);
     
     if (preserveResults && !isFingerDetected) {
@@ -539,8 +494,7 @@ const PPGSignalMeter = memo(({
     
     let currentIsArrhythmia = false;
     
-    // Verificar si el punto actual está dentro de una ventana de arritmia
-    const isInArrhythmiaWindow = arrhythmiaWindowsRef.current.some(
+    const isInArrhythmiaWindow = arrhythmiaWindows.some(
       window => now >= window.start && now <= window.end
     );
     
@@ -579,11 +533,10 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - currentPoint.value;
         
-        // Determinar si el segmento de línea está en una zona de arritmia
         const isInArrhythmiaZone = 
           currentPoint.isArrhythmia || 
           prevPoint.isArrhythmia || 
-          arrhythmiaWindowsRef.current.some(window => 
+          arrhythmiaWindows.some(window => 
             (currentPoint.time >= window.start && currentPoint.time <= window.end) ||
             (prevPoint.time >= window.start && prevPoint.time <= window.end)
           );
@@ -601,12 +554,10 @@ const PPGSignalMeter = memo(({
         const y = canvas.height / 2 - 50 - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
-          // Verificar si este pico está dentro de una ventana de arritmia
-          const isInArrhythmiaZone = arrhythmiaWindowsRef.current.some(window => 
+          const isInArrhythmiaZone = arrhythmiaWindows.some(window => 
             peak.time >= window.start && peak.time <= window.end
           );
           
-          // Combinar todas las formas de detectar si es una arritmia
           const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
           renderCtx.beginPath();
@@ -615,20 +566,17 @@ const PPGSignalMeter = memo(({
           renderCtx.fill();
           
           if (isPeakArrhythmia) {
-            // Círculo externo pulsante para arritmias
             renderCtx.beginPath();
             renderCtx.arc(x, y, 12, 0, Math.PI * 2);
             renderCtx.strokeStyle = '#FEF7CD';
             renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            // Texto de arritmia más visible
             renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
             
-            // Efecto de resplandor rojo para destacar la arritmia
             renderCtx.beginPath();
             renderCtx.arc(x, y, 20, 0, Math.PI * 2);
             const gradient = renderCtx.createRadialGradient(x, y, 5, x, y, 20);
@@ -663,15 +611,13 @@ const PPGSignalMeter = memo(({
       const latestPeak = peaksRef.current.length > 0 ? peaksRef.current[peaksRef.current.length - 1] : null;
       const isPeakArrhythmia = latestPeak ? latestPeak.isArrhythmia : false;
       
-      // Buscar si el pico está dentro de una ventana de arritmia
-      const isInArrhythmiaZone = latestPeak ? arrhythmiaWindowsRef.current.some(window => 
+      const isInArrhythmiaZone = latestPeak ? arrhythmiaWindows.some(window => 
         latestPeak.time >= window.start && latestPeak.time <= window.end
       ) : false;
       
-      // Combinar todas las formas de detectar si es una arritmia
       const finalIsArrhythmia = isPeakArrhythmia || isInArrhythmiaZone || isArrhythmia;
       
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep", {
+      console.log("PPGSignalMeter: Circle drawn, playing beep", {
         isPeakArrhythmia,
         isArrhythmia,
         isInArrhythmiaZone,
@@ -688,7 +634,7 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, IMMEDIATE_RENDERING, 
     FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES,
-    drawArrhythmiaZones
+    drawArrhythmiaZones, arrhythmiaWindows
   ]);
 
   useEffect(() => {
@@ -702,7 +648,6 @@ const PPGSignalMeter = memo(({
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     peaksRef.current = [];
-    arrhythmiaWindowsRef.current = [];
     pendingBeepPeakIdRef.current = null;
     onReset();
   }, [onReset]);

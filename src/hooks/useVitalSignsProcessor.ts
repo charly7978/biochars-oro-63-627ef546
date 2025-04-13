@@ -28,14 +28,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
   
-  // Arrhythmia tracking
-  const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
-  
+  // Centralized arrhythmia tracking
   const { 
     arrhythmiaWindows, 
     addArrhythmiaWindow, 
-    clearArrhythmiaWindows 
+    clearArrhythmiaWindows,
+    processArrhythmiaStatus,
+    registerArrhythmiaNotification
   } = useArrhythmiaVisualization();
   
   const { 
@@ -93,39 +92,17 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Process signal directly - no simulation
     try {
       let result = processVitalSignal(value, rrData, isWeakSignal);
-      const currentTime = Date.now();
       
-      // Verificar y manejar eventos de arritmia más precisamente
-      if (result && 
-          result.arrhythmiaStatus && 
-          typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.lastArrhythmiaData) {
+      // Process and handle arrhythmia events with our centralized system
+      if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
+        const shouldNotify = processArrhythmiaStatus(
+          result.arrhythmiaStatus, 
+          result.lastArrhythmiaData
+        );
         
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-        
-        // Window based on real heart rate
-        let windowWidth = 800; // Ventana más amplia para visualización clara
-        
-        // Adjust based on real RR intervals
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(600, Math.min(1200, avgInterval * 2)); // Ventana más grande y visible
-        }
-        
-        // Add visualization window con margen extra para mejor visualización
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
-        
-        console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
-          time: new Date(arrhythmiaTime).toISOString(),
-          windowWidth,
-          status: result.arrhythmiaStatus
-        });
-        
-        // Trigger feedback for arrhythmia
-        if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
-          lastArrhythmiaTriggeredRef.current = currentTime;
+        // Trigger feedback for arrhythmia if needed
+        if (shouldNotify) {
+          registerArrhythmiaNotification();
           const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
           FeedbackService.signalArrhythmia(count);
         }
@@ -170,7 +147,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
-    lastArrhythmiaTriggeredRef.current = 0;
     
     return null;
   };
@@ -184,7 +160,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
-    lastArrhythmiaTriggeredRef.current = 0;
     clearLog();
   };
 
