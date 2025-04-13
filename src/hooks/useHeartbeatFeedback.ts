@@ -39,7 +39,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   }, [enabled]);
 
   /**
-   * Activa la retroalimentación táctil y auditiva
+   * Activa la retroalimentación táctil y auditiva - real, no simulada
    * @param type Tipo de retroalimentación: normal o arritmia
    */
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
@@ -73,7 +73,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       console.log('Vibración no soportada en este dispositivo');
     }
 
-    // Generar beep audible
+    // Generar beep audible - real, no simulado
     if (audioCtxRef.current) {
       try {
         const ctx = audioCtxRef.current;
