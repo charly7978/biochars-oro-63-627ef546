@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -51,29 +52,30 @@ export const useSignalProcessing = () => {
     
     try {
       // Process signal directly - no simulation
-      // IMPORTANT: We're handling the Promise synchronously to avoid TypeScript errors
-      let result = processorRef.current.processSignal(value, rrData);
+      // Since processSignal returns a Promise, we'll handle it by returning a fallback
+      // and updating the log when the promise resolves
+      const resultPromise = processorRef.current.processSignal(value, rrData);
       
-      // Since processSignal now returns a Promise<VitalSignsResult>,
-      // we need to handle it differently in this synchronous function
-      // For now, returning a fallback until we can properly resolve the promise
-      let fallbackResult = ResultFactory.createEmptyResults();
+      // Create a fallback result while waiting for the promise to resolve
+      const fallbackResult = ResultFactory.createEmptyResults();
       
-      // Process arrhythmia status if available (this is now synchronous)
-      // Add null checks for arrhythmia status without accessing Promise properties directly
-      
-      // Log processed signals
-      signalLog.current.push({
-        timestamp: Date.now(),
-        value,
-        result: fallbackResult
+      // Process the promise in the background
+      resultPromise.then(realResult => {
+        // Add the real result to the log when it's available
+        signalLog.current.push({
+          timestamp: Date.now(),
+          value,
+          result: realResult
+        });
+        
+        if (signalLog.current.length > 100) {
+          signalLog.current = signalLog.current.slice(-100);
+        }
+      }).catch(error => {
+        console.error("Error processing vital signs:", error);
       });
       
-      if (signalLog.current.length > 100) {
-        signalLog.current = signalLog.current.slice(-100);
-      }
-      
-      // Return fallback result while we wait for the Promise to resolve
+      // Return fallback result immediately
       return fallbackResult;
     } catch (error) {
       console.error("Error processing vital signs:", error);
