@@ -237,7 +237,7 @@ const PPGSignalMeter = memo(({
         ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
         ctx.fillRect(i, j, 10, 10);
       }
-    }
+    }\
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
@@ -544,7 +544,7 @@ const PPGSignalMeter = memo(({
         
         // Try to play beep for this peak if it hasn't played yet
         if (!peak.beepPlayed && isMonitoringRef.current) {
-          const peakIsCurrent = (now - peak.time < 300);
+          const peakIsCurrent = (now - peak.time < 300);\
           
           if (peakIsCurrent) {
             playBeep(0.7, peak.isArrhythmia).then(success => {
@@ -615,7 +615,7 @@ const PPGSignalMeter = memo(({
     const smoothedValue = smoothValue(value, lastValueRef.current);
     lastValueRef.current = smoothedValue;
     
-    const normalizedValue = smoothedValue - (baselineRef.current || 0);
+    const normalizedValue = smoothedValue - (baselineRef.current || 0);\
     const scaledValue = normalizedValue * verticalScale;
     
     let currentIsArrhythmia = false;
@@ -747,4 +747,3 @@ const PPGSignalMeter = memo(({
   ]);
 
   useEffect(() => {
-    animation
