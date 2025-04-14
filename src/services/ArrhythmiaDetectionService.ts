@@ -43,10 +43,18 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.2; // 20% threshold for HRV variation
+  private readonly DETECTION_THRESHOLD: number = 0.25; // Increased from 0.2 to reduce false positives
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 5000; // 5 seconds between notifications
+  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 8000; // Increased from 5000 to 8000ms
+  
+  // False positive prevention
+  private falsePositiveCounter: number = 0;
+  private readonly MAX_FALSE_POSITIVES: number = 3;
+  private lastDetectionTime: number = 0;
+  private arrhythmiaConfirmationCounter: number = 0;
+  private readonly REQUIRED_CONFIRMATIONS: number = 2; // Requiere al menos 2 detecciones para confirmar
+  private readonly CONFIRMATION_WINDOW_MS: number = 10000; // Ventana de 10 segundos para confirmación
   
   private constructor() {}
 
@@ -89,30 +97,64 @@ class ArrhythmiaDetectionService {
    * Only uses real data - no simulation
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
+    const currentTime = Date.now();
+    
+    // Protección contra llamadas frecuentes - previene detecciones falsas por ruido
+    if (currentTime - this.lastDetectionTime < 200) {
+      return {
+        isArrhythmia: this.currentBeatIsArrhythmia,
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: currentTime
+      };
+    }
+    
+    this.lastDetectionTime = currentTime;
+    
+    // Requiere al menos 5 intervalos para un análisis confiable
     if (rrIntervals.length < 5) {
       return {
         isArrhythmia: false,
         rmssd: 0,
         rrVariation: 0,
-        timestamp: Date.now()
+        timestamp: currentTime
       };
     }
     
     // Get the 5 most recent intervals for analysis
     const lastIntervals = rrIntervals.slice(-5);
     
+    // Verificar que los intervalos sean fisiológicamente válidos
+    const validIntervals = lastIntervals.filter(
+      interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
+    );
+    
+    // Si menos del 80% de los intervalos son válidos, no es confiable
+    if (validIntervals.length < lastIntervals.length * 0.8) {
+      // Resetear detección para evitar falsos positivos por ruido
+      this.stabilityCounter = Math.min(this.stabilityCounter + 1, 30);
+      this.currentBeatIsArrhythmia = false;
+      
+      return {
+        isArrhythmia: false,
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: currentTime
+      };
+    }
+    
     // Calculate RMSSD (Root Mean Square of Successive Differences)
-    const rmssd = calculateRMSSD(lastIntervals);
+    const rmssd = calculateRMSSD(validIntervals);
     
     // Calculate variation ratio (normalized variability)
-    const variationRatio = calculateRRVariation(lastIntervals);
+    const variationRatio = calculateRRVariation(validIntervals);
     
     // Adjust threshold based on stability
     let thresholdFactor = this.DETECTION_THRESHOLD;
     if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.15; // Lower threshold when stable for higher sensitivity
+      thresholdFactor = 0.20; // Increased from 0.15 to reduce false positives
     } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.25; // Higher threshold when unstable
+      thresholdFactor = 0.30; // Increased from 0.25 to reduce false positives
     }
     
     // Determine if rhythm is irregular
@@ -121,12 +163,13 @@ class ArrhythmiaDetectionService {
     // Update stability counter
     if (!isIrregular) {
       this.stabilityCounter = Math.min(30, this.stabilityCounter + 1);
+      this.falsePositiveCounter = Math.max(0, this.falsePositiveCounter - 1);
     } else {
-      this.stabilityCounter = Math.max(0, this.stabilityCounter - 2);
+      this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
     }
     
     // Detection of arrhythmia (real data only)
-    const isArrhythmia = isIrregular && this.stabilityCounter < 25;
+    const potentialArrhythmia = isIrregular && this.stabilityCounter < 20; // Changed from 25 to 20
     
     // Update HRV data
     this.heartRateVariability.push(variationRatio);
@@ -134,20 +177,47 @@ class ArrhythmiaDetectionService {
       this.heartRateVariability.shift();
     }
     
-    // Update arrhythmia state
-    this.lastIsArrhythmia = this.currentBeatIsArrhythmia;
-    this.currentBeatIsArrhythmia = isArrhythmia;
+    // Procesamiento para confirmar arritmia - requiere confirmación múltiple
+    let confirmedArrhythmia = false;
     
-    // Create arrhythmia window for visualization if needed
-    if (isArrhythmia) {
-      this.handleArrhythmiaDetection(lastIntervals, rmssd, variationRatio, thresholdFactor);
+    if (potentialArrhythmia) {
+      // Si es un nuevo evento potencial de arritmia
+      if (!this.currentBeatIsArrhythmia) {
+        this.arrhythmiaConfirmationCounter++;
+        
+        // Verificar si hemos acumulado suficientes confirmaciones
+        if (this.arrhythmiaConfirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
+          confirmedArrhythmia = true;
+          this.arrhythmiaConfirmationCounter = 0;
+        } else {
+          // Todavía no confirmada, pero seguimos registrando
+          console.log(`Potential arrhythmia detected, confirmation ${this.arrhythmiaConfirmationCounter}/${this.REQUIRED_CONFIRMATIONS}`);
+        }
+      }
+    } else {
+      // Si ha pasado mucho tiempo sin confirmación, resetear contador
+      if (currentTime - this.lastArrhythmiaTriggeredTime > this.CONFIRMATION_WINDOW_MS) {
+        this.arrhythmiaConfirmationCounter = 0;
+      }
     }
-
+    
+    // Actualizar estado de arritmia
+    this.lastIsArrhythmia = this.currentBeatIsArrhythmia;
+    
+    // Solo actualizar a true si está confirmada
+    if (confirmedArrhythmia) {
+      this.currentBeatIsArrhythmia = true;
+      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatio, thresholdFactor);
+    } else if (!potentialArrhythmia) {
+      // Resetear solo si no hay potencial arritmia
+      this.currentBeatIsArrhythmia = false;
+    }
+    
     return {
       rmssd,
       rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
+      timestamp: currentTime,
+      isArrhythmia: this.currentBeatIsArrhythmia
     };
   }
   
@@ -162,17 +232,27 @@ class ArrhythmiaDetectionService {
   ): void {
     const currentTime = Date.now();
     
+    // Verificar tiempo desde última arritmia para evitar múltiples alertas
+    const timeSinceLastTriggered = currentTime - this.lastArrhythmiaTriggeredTime;
+    if (timeSinceLastTriggered <= this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+      return; // Demasiado pronto, ignorar
+    }
+    
     // Log detection for debugging
-    console.log('Arrhythmia detected:', {
+    console.log('CONFIRMED Arrhythmia detected:', {
       rmssd,
       variationRatio,
       threshold,
+      stabilityCounter: this.stabilityCounter,
       timestamp: new Date(currentTime).toISOString()
     });
     
     // Create an arrhythmia window
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    const windowWidth = Math.max(800, Math.min(1200, avgInterval * 3));
+    
+    // Ventana más corta para reducir falsos positivos
+    const windowWidth = Math.max(800, Math.min(1200, avgInterval * 2.5));
+    
     const arrhythmiaWindow = {
       start: currentTime - windowWidth/2,
       end: currentTime + windowWidth/2
@@ -181,16 +261,18 @@ class ArrhythmiaDetectionService {
     // Add window to collection
     this.addArrhythmiaWindow(arrhythmiaWindow);
     
-    // Maybe trigger notification
-    const timeSinceLastTriggered = currentTime - this.lastArrhythmiaTriggeredTime;
-    if (timeSinceLastTriggered > this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
-      this.arrhythmiaCount++;
-      this.lastArrhythmiaTriggeredTime = currentTime;
-      
-      // Trigger special feedback for arrhythmia
-      AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
-      
-      // Show toast notification
+    // Actualizar contadores
+    this.arrhythmiaCount++;
+    this.lastArrhythmiaTriggeredTime = currentTime;
+    
+    // Trigger special feedback for arrhythmia
+    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
+    
+    // Limitar número de notificaciones
+    const shouldShowToast = this.arrhythmiaCount <= 3 || this.arrhythmiaCount % 3 === 0;
+    
+    // Show toast notification (limitado para no saturar)
+    if (shouldShowToast) {
       if (this.arrhythmiaCount === 1) {
         toast({
           title: '¡Atención!',
@@ -207,6 +289,11 @@ class ArrhythmiaDetectionService {
         });
       }
     }
+    
+    // Auto-cleanup para evitar detecciones continuas
+    setTimeout(() => {
+      this.currentBeatIsArrhythmia = false;
+    }, windowWidth);
   }
   
   /**
@@ -283,6 +370,12 @@ class ArrhythmiaDetectionService {
     this.arrhythmiaWindows = this.arrhythmiaWindows.filter(window => 
       currentTime - window.end < 15000 // Keep only windows from the last 15 seconds
     );
+    
+    // También resetear el estado si ha pasado mucho tiempo desde la última arritmia
+    if (this.currentBeatIsArrhythmia && currentTime - this.lastArrhythmiaTriggeredTime > 20000) {
+      console.log("Auto-resetting arrhythmia state due to timeout");
+      this.currentBeatIsArrhythmia = false;
+    }
   }
   
   /**
@@ -316,6 +409,8 @@ class ArrhythmiaDetectionService {
     this.arrhythmiaCount = 0;
     this.lastArrhythmiaTriggeredTime = 0;
     this.arrhythmiaWindows = [];
+    this.falsePositiveCounter = 0;
+    this.arrhythmiaConfirmationCounter = 0;
     
     console.log("ArrhythmiaDetectionService: All detection data reset");
   }
