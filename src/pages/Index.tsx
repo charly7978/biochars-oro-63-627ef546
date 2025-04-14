@@ -10,6 +10,8 @@ import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import MonitorButton from "@/components/MonitorButton";
+import { Droplet } from "lucide-react";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
