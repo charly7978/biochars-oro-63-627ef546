@@ -10,7 +10,9 @@ class AudioFeedbackService {
   private static instance: AudioFeedbackService;
   private audioContext: AudioContext | null = null;
   private lastTriggerTime: number = 0;
+  private lastVibrateTime: number = 0;
   private readonly MIN_TRIGGER_INTERVAL_MS: number = 150;
+  private readonly MIN_VIBRATE_INTERVAL_MS: number = 300;
   
   // Audio settings
   private readonly NORMAL_BEEP_FREQUENCY: number = 880;
@@ -104,6 +106,10 @@ class AudioFeedbackService {
       oscillator.stop(ctx.currentTime + ((type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_DURATION_MS : this.NORMAL_BEEP_DURATION_MS) / 1000) + 0.02);
 
       console.log(`AudioFeedbackService: Beep de ${type} reproducido exitosamente`);
+      
+      // Ensure vibration is also triggered
+      this.vibrate(type);
+      
       return true;
     } catch (error) {
       console.error("AudioFeedbackService: Error playing beep:", error);
@@ -112,21 +118,61 @@ class AudioFeedbackService {
   }
 
   private vibrate(type: HeartbeatFeedbackType = 'normal'): void {
+    // Check if vibration is available
     if (!('vibrate' in navigator)) {
-      console.log('Vibración no soportada en este dispositivo');
+      console.log('Vibration not supported on this device');
       return;
     }
+    
+    const now = Date.now();
+    if (now - this.lastVibrateTime < this.MIN_VIBRATE_INTERVAL_MS) {
+      console.log('Skipping vibration - too soon after last vibration');
+      return;
+    }
+    
+    this.lastVibrateTime = now;
 
     try {
+      // Multiple attempts with different patterns to maximize chances of working
       if (type === 'normal') {
+        // Try first pattern
         navigator.vibrate(60);
-        console.log('Vibración normal activada');
+        
+        // Set a fallback after a short delay
+        setTimeout(() => {
+          if (window.navigator && window.navigator.vibrate) {
+            // Try a stronger pattern
+            window.navigator.vibrate([30, 30, 30]);
+          }
+        }, 10);
+        
+        console.log('Normal vibration activated with fallback');
       } else if (type === 'arrhythmia') {
+        // Stronger pattern for arrhythmia
         navigator.vibrate([70, 50, 140]);
-        console.log('Vibración de arritmia activada');
+        
+        // Set a fallback after a short delay
+        setTimeout(() => {
+          if (window.navigator && window.navigator.vibrate) {
+            // Try a varied pattern
+            window.navigator.vibrate([100, 30, 100, 30, 100]);
+          }
+        }, 10);
+        
+        console.log('Arrhythmia vibration activated with fallback');
       }
     } catch (error) {
-      console.error('Error al activar vibración:', error);
+      console.error('Error activating vibration:', error);
+      
+      // Try a final fallback with a simpler pattern
+      try {
+        if (window.navigator && window.navigator.vibrate) {
+          window.navigator.vibrate(100);
+          console.log('Fallback vibration attempted');
+        }
+      } catch (e) {
+        console.error('Even fallback vibration failed:', e);
+      }
     }
   }
 

@@ -17,10 +17,13 @@ export const useArrhythmiaVisualization = () => {
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
   const windowGenerationCounterRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 6000; // 6 seconds between notifications
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 8000; // 8 seconds between notifications
   
   // Detection configuration
-  const DETECTION_THRESHOLD = 0.22; // Increased from 0.20 to 0.22 para reducir falsos positivos
+  const DETECTION_THRESHOLD = 0.24; // Increased from 0.22 to 0.24 para reducir falsos positivos
+  
+  // Window tracking to ensure consistent visualization
+  const activeWindowsRef = useRef<{[key: string]: boolean}>({});
   
   /**
    * Register a new arrhythmia window for visualization
@@ -31,13 +34,22 @@ export const useArrhythmiaVisualization = () => {
       const currentTime = Date.now();
       
       // Evitar añadir ventanas muy cortas
-      if (end - start < 800) {
+      if (end - start < 1000) { // Increased from 800 to 1000
         console.log("Arrhythmia window rejected - too short", { duration: end - start });
         return prev;
       }
       
+      // Generate a unique ID for this window based on its timing
+      const windowId = `${Math.round(start/100)}-${Math.round(end/100)}`;
+      
+      // Check if we're already tracking this window
+      if (activeWindowsRef.current[windowId]) {
+        console.log(`Window ${windowId} already being tracked, not duplicating`);
+        return prev;
+      }
+      
       const hasRecentWindow = prev.some(window => 
-        Math.abs(window.start - start) < 800 && Math.abs(window.end - end) < 800
+        Math.abs(window.start - start) < 1000 && Math.abs(window.end - end) < 1000 // Increased from 800 to 1000
       );
       
       if (hasRecentWindow) {
@@ -50,6 +62,9 @@ export const useArrhythmiaVisualization = () => {
       
       // Add new arrhythmia window
       const newWindows = [...prev, { start, end }];
+      
+      // Add to active windows tracking
+      activeWindowsRef.current[windowId] = true;
       
       // Sort by time for consistent visualization - newest first
       const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
@@ -65,6 +80,12 @@ export const useArrhythmiaVisualization = () => {
         duration: end - start,
         windowsCount: limitedWindows.length
       });
+      
+      // Setup auto-cleanup for this specific window
+      setTimeout(() => {
+        delete activeWindowsRef.current[windowId];
+        console.log(`Window ${windowId} removed from active tracking`);
+      }, (end - start) + 25000); // Keep tracking for duration + 25 seconds
       
       return limitedWindows;
     });
@@ -94,9 +115,9 @@ export const useArrhythmiaVisualization = () => {
     // Adjust threshold based on stability
     let thresholdFactor = DETECTION_THRESHOLD;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.18; // Increased from 0.15 to 0.18
+      thresholdFactor = 0.20; // Increased from 0.18 to 0.20
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.28; // Increased from 0.25 to 0.28
+      thresholdFactor = 0.30; // Increased from 0.28 to 0.30
     }
     
     const isIrregular = variationRatio > thresholdFactor;
@@ -108,19 +129,20 @@ export const useArrhythmiaVisualization = () => {
     }
     
     // Arrhythmia detection
-    const isArrhythmia = isIrregular && stabilityCounterRef.current < 22; // Changed from 25 to 22
+    const isArrhythmia = isIrregular && stabilityCounterRef.current < 20; // Changed from 22 to 20
     
     if (isArrhythmia) {
       // Generate an arrhythmia window when detected
       const currentTime = Date.now();
       
       // Solo generar ventana si ha pasado tiempo suficiente desde la última
-      if (currentTime - lastArrhythmiaTriggeredRef.current > 3000) {
+      if (currentTime - lastArrhythmiaTriggeredRef.current > 3500) { // Increased from 3000 to 3500
         const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
         // Ventana más ancha para mejor visualización
-        const windowWidth = Math.max(1000, Math.min(1500, avgInterval * 3.5));
+        const windowWidth = Math.max(1200, Math.min(1800, avgInterval * 4.0)); // Increased from 3.5 to 4.0
         
         addArrhythmiaWindow(currentTime - windowWidth/2, currentTime + windowWidth/2);
+        lastArrhythmiaTriggeredRef.current = currentTime;
         
         console.log("Arrhythmia detected in visualization", {
           rmssd,
@@ -129,6 +151,16 @@ export const useArrhythmiaVisualization = () => {
           timestamp: new Date(currentTime).toISOString(),
           rrIntervals: lastIntervals
         });
+        
+        // Try to vibrate device
+        try {
+          if ('vibrate' in navigator) {
+            navigator.vibrate([100, 50, 100, 50, 150]);
+            console.log('Vibration triggered for arrhythmia visualization');
+          }
+        } catch (error) {
+          console.error('Error triggering vibration:', error);
+        }
       }
     }
     
@@ -145,7 +177,7 @@ export const useArrhythmiaVisualization = () => {
       timestamp: Date.now(),
       isArrhythmia
     };
-  }, [addArrhythmiaWindow]);
+  }, [addArrhythmiaWindow, DETECTION_THRESHOLD]);
   
   /**
    * Process arrhythmia detection from signal processor results
@@ -167,10 +199,20 @@ export const useArrhythmiaVisualization = () => {
       const timeElapsed = currentTime - lastArrhythmiaTriggeredRef.current;
       if (timeElapsed > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
         // Create visualization window with amplio tamaño para visualización clara
-        const windowWidth = 1500; // Increased from 1000 to 1500ms
+        const windowWidth = 1800; // Increased from 1500 to 1800ms
         
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
         lastArrhythmiaTriggeredRef.current = currentTime;
+        
+        // Try to vibrate device
+        try {
+          if ('vibrate' in navigator) {
+            navigator.vibrate([100, 50, 100, 50, 150]);
+            console.log('Vibration triggered for arrhythmia status');
+          }
+        } catch (error) {
+          console.error('Error triggering vibration:', error);
+        }
         
         // Return true to indicate a new notification should be shown
         return true;
@@ -217,8 +259,19 @@ export const useArrhythmiaVisualization = () => {
   const forceAddArrhythmiaWindow = useCallback(() => {
     const now = Date.now();
     // Crear una ventana visible y amplia
-    addArrhythmiaWindow(now - 800, now + 800);
+    addArrhythmiaWindow(now - 900, now + 900); // Increased from 800 to 900
     console.log("Arrhythmia window FORCED for visualization");
+    
+    // Try to vibrate device
+    try {
+      if ('vibrate' in navigator) {
+        navigator.vibrate([100, 50, 100, 50, 150]);
+        console.log('Vibration triggered for forced arrhythmia');
+      }
+    } catch (error) {
+      console.error('Error triggering vibration:', error);
+    }
+    
     return true;
   }, [addArrhythmiaWindow]);
   
@@ -233,6 +286,7 @@ export const useArrhythmiaVisualization = () => {
     lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
     windowGenerationCounterRef.current = 0;
+    activeWindowsRef.current = {};
     console.log("All arrhythmia windows cleared");
   }, []);
   
@@ -247,6 +301,7 @@ export const useArrhythmiaVisualization = () => {
     lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
     windowGenerationCounterRef.current = 0;
+    activeWindowsRef.current = {};
   }, [clearArrhythmiaWindows]);
   
   return {
