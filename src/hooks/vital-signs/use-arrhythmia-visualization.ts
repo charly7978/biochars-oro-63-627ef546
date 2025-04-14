@@ -20,7 +20,7 @@ export const useArrhythmiaVisualization = () => {
   const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 8000; // 8 seconds between notifications
   
   // Detection configuration
-  const DETECTION_THRESHOLD = 0.24; // Increased from 0.22 to 0.24 para reducir falsos positivos
+  const DETECTION_THRESHOLD = 0.26; // Increased from 0.24 to 0.26 para reducir más los falsos positivos
   
   // Window tracking to ensure consistent visualization
   const activeWindowsRef = useRef<{[key: string]: boolean}>({});
@@ -34,7 +34,7 @@ export const useArrhythmiaVisualization = () => {
       const currentTime = Date.now();
       
       // Evitar añadir ventanas muy cortas
-      if (end - start < 1000) { // Increased from 800 to 1000
+      if (end - start < 1200) { // Increased from 1000 to 1200
         console.log("Arrhythmia window rejected - too short", { duration: end - start });
         return prev;
       }
@@ -49,7 +49,7 @@ export const useArrhythmiaVisualization = () => {
       }
       
       const hasRecentWindow = prev.some(window => 
-        Math.abs(window.start - start) < 1000 && Math.abs(window.end - end) < 1000 // Increased from 800 to 1000
+        Math.abs(window.start - start) < 1200 && Math.abs(window.end - end) < 1200 // Increased from 1000 to 1200
       );
       
       if (hasRecentWindow) {
@@ -85,7 +85,7 @@ export const useArrhythmiaVisualization = () => {
       setTimeout(() => {
         delete activeWindowsRef.current[windowId];
         console.log(`Window ${windowId} removed from active tracking`);
-      }, (end - start) + 25000); // Keep tracking for duration + 25 seconds
+      }, (end - start) + 30000); // Increased from 25000 to 30000 - Keep tracking for duration + 30 seconds
       
       return limitedWindows;
     });
@@ -115,9 +115,9 @@ export const useArrhythmiaVisualization = () => {
     // Adjust threshold based on stability
     let thresholdFactor = DETECTION_THRESHOLD;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20; // Increased from 0.18 to 0.20
+      thresholdFactor = 0.22; // Increased from 0.20 to 0.22
     } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30; // Increased from 0.28 to 0.30
+      thresholdFactor = 0.32; // Increased from 0.30 to 0.32
     }
     
     const isIrregular = variationRatio > thresholdFactor;
@@ -129,17 +129,17 @@ export const useArrhythmiaVisualization = () => {
     }
     
     // Arrhythmia detection
-    const isArrhythmia = isIrregular && stabilityCounterRef.current < 20; // Changed from 22 to 20
+    const isArrhythmia = isIrregular && stabilityCounterRef.current < 18; // Changed from 20 to 18
     
     if (isArrhythmia) {
       // Generate an arrhythmia window when detected
       const currentTime = Date.now();
       
       // Solo generar ventana si ha pasado tiempo suficiente desde la última
-      if (currentTime - lastArrhythmiaTriggeredRef.current > 3500) { // Increased from 3000 to 3500
+      if (currentTime - lastArrhythmiaTriggeredRef.current > 4000) { // Increased from 3500 to 4000
         const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
         // Ventana más ancha para mejor visualización
-        const windowWidth = Math.max(1200, Math.min(1800, avgInterval * 4.0)); // Increased from 3.5 to 4.0
+        const windowWidth = Math.max(1300, Math.min(1900, avgInterval * 4.0)); // Increased from 1200/1800 to 1300/1900
         
         addArrhythmiaWindow(currentTime - windowWidth/2, currentTime + windowWidth/2);
         lastArrhythmiaTriggeredRef.current = currentTime;
