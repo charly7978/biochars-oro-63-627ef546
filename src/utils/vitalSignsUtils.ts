@@ -44,20 +44,20 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   // Algoritmo para detección de picos y valles en datos reales
   for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
-    // Detección de picos
+    // Detección de picos (orientados hacia arriba)
     if (
-      v >= values[i - 1] * 0.95 &&
-      v >= values[i + 1] * 0.95
+      v >= values[i - 1] * 1.05 &&
+      v >= values[i + 1] * 1.05
     ) {
       const localMin = Math.min(values[i - 1], values[i + 1]);
       if (v - localMin > 0.02) {
         peakIndices.push(i);
       }
     }
-    // Detección de valles
+    // Detección de valles (orientados hacia abajo)
     if (
-      v <= values[i - 1] * 1.05 &&
-      v <= values[i + 1] * 1.05
+      v <= values[i - 1] * 0.95 &&
+      v <= values[i + 1] * 0.95
     ) {
       const localMax = Math.max(values[i - 1], values[i + 1]);
       if (localMax - v > 0.02) {
