@@ -58,7 +58,7 @@ const PPGSignalMeter = memo(({
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
 
-  const WINDOW_WIDTH_MS = 4500;
+  const WINDOW_WIDTH_MS = 3000;
   const CANVAS_WIDTH = 1100;
   const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
@@ -70,13 +70,13 @@ const PPGSignalMeter = memo(({
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 350;
+  const MIN_PEAK_DISTANCE_MS = 300;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  const MIN_BEEP_INTERVAL_MS = 350;
+  const MIN_BEEP_INTERVAL_MS = 300;
 
   const playBeep = useCallback(async (volume: number = 0.7, isArrhythmic: boolean = false) => {
     const now = Date.now();
