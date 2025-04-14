@@ -514,7 +514,7 @@ const PPGSignalMeter = memo(({
     const smoothedValue = smoothValue(value, lastValueRef.current);
     lastValueRef.current = smoothedValue;
     
-    const normalizedValue = smoothedValue - (baselineRef.current || 0);
+    const normalizedValue = (smoothedValue - (baselineRef.current || 0));
     const scaledValue = normalizedValue * verticalScale;
     
     let currentIsArrhythmia = false;
@@ -553,10 +553,10 @@ const PPGSignalMeter = memo(({
         const currentPoint = points[i];
         
         const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y1 = (canvas.height / 2 - 50) + prevPoint.value;
+        const y1 = (canvas.height / 2 - 50) - prevPoint.value;
         
         const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y2 = (canvas.height / 2 - 50) + currentPoint.value;
+        const y2 = (canvas.height / 2 - 50) - currentPoint.value;
         
         const isInArrhythmiaZone = 
           currentPoint.isArrhythmia || 
@@ -576,7 +576,7 @@ const PPGSignalMeter = memo(({
       
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = canvas.height / 2 - 50 + peak.value;
+        const y = (canvas.height / 2 - 50) - peak.value;
         
         if (x >= 0 && x <= canvas.width) {
           const isInArrhythmiaZone = arrhythmiaWindows.some(window => 

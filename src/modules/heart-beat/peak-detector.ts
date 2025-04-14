@@ -30,11 +30,11 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic - ajustado para orientación correcta
+  // Peak detection logic - ajustado para orientación correcta (picos hacia arriba)
   const isPeak =
-    derivative > -config.derivativeThreshold && // Cambiado para detectar picos orientados hacia arriba
+    derivative > config.derivativeThreshold && // Corregido para detectar picos orientados hacia arriba
     normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.98;
+    lastValue > baseline * 1.02;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
@@ -85,7 +85,7 @@ export function confirmPeak(
       
       // Confirm peak if followed by decreasing values - ajustado para orientación correcta
       const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
-      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
+      const goingDown2 = len > 3 ? updatedBuffer[len - 2] < updatedBuffer[len - 3] : false;
 
       if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;
