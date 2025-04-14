@@ -747,3 +747,4 @@ const PPGSignalMeter = memo(({
   ]);
 
   useEffect(() => {
+    animation
