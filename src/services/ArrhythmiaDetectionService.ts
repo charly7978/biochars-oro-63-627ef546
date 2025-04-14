@@ -43,20 +43,33 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.25; // Increased from 0.2 to reduce false positives
+  private readonly DETECTION_THRESHOLD: number = 0.28; // Increased from 0.25 to 0.28
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 8000; // Increased from 5000 to 8000ms
+  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
   
   // False positive prevention
   private falsePositiveCounter: number = 0;
   private readonly MAX_FALSE_POSITIVES: number = 3;
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 2; // Requiere al menos 2 detecciones para confirmar
-  private readonly CONFIRMATION_WINDOW_MS: number = 10000; // Ventana de 10 segundos para confirmación
+  private readonly REQUIRED_CONFIRMATIONS: number = 3; // Increased from 2 to 3 para mayor exigencia
+  private readonly CONFIRMATION_WINDOW_MS: number = 12000; // Increased from 10000 to 12000
   
-  private constructor() {}
+  // Cleanup interval
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  private constructor() {
+    // Configurar limpieza automática periódica
+    this.setupAutomaticCleanup();
+  }
+
+  private setupAutomaticCleanup(): void {
+    // Limpiar ventanas de arritmia viejas cada 3 segundos
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupOldWindows();
+    }, 3000);
+  }
 
   public static getInstance(): ArrhythmiaDetectionService {
     if (!ArrhythmiaDetectionService.instance) {
@@ -100,7 +113,7 @@ class ArrhythmiaDetectionService {
     const currentTime = Date.now();
     
     // Protección contra llamadas frecuentes - previene detecciones falsas por ruido
-    if (currentTime - this.lastDetectionTime < 200) {
+    if (currentTime - this.lastDetectionTime < 250) { // Increased from 200 to 250ms
       return {
         isArrhythmia: this.currentBeatIsArrhythmia,
         rmssd: 0,
@@ -152,9 +165,9 @@ class ArrhythmiaDetectionService {
     // Adjust threshold based on stability
     let thresholdFactor = this.DETECTION_THRESHOLD;
     if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.20; // Increased from 0.15 to reduce false positives
+      thresholdFactor = 0.23; // Increased from 0.20 to 0.23
     } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.30; // Increased from 0.25 to reduce false positives
+      thresholdFactor = 0.33; // Increased from 0.30 to 0.33
     }
     
     // Determine if rhythm is irregular
@@ -169,7 +182,7 @@ class ArrhythmiaDetectionService {
     }
     
     // Detection of arrhythmia (real data only)
-    const potentialArrhythmia = isIrregular && this.stabilityCounter < 20; // Changed from 25 to 20
+    const potentialArrhythmia = isIrregular && this.stabilityCounter < 18; // Changed from 20 to 18
     
     // Update HRV data
     this.heartRateVariability.push(variationRatio);
@@ -250,15 +263,15 @@ class ArrhythmiaDetectionService {
     // Create an arrhythmia window
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
-    // Ventana más corta para reducir falsos positivos
-    const windowWidth = Math.max(800, Math.min(1200, avgInterval * 2.5));
+    // Ventana más grande para asegurar visualización
+    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 3));
     
     const arrhythmiaWindow = {
       start: currentTime - windowWidth/2,
       end: currentTime + windowWidth/2
     };
     
-    // Add window to collection
+    // Add window to collection and broadcast to listeners
     this.addArrhythmiaWindow(arrhythmiaWindow);
     
     // Actualizar contadores
@@ -367,12 +380,19 @@ class ArrhythmiaDetectionService {
    */
   public cleanupOldWindows(): void {
     const currentTime = Date.now();
-    this.arrhythmiaWindows = this.arrhythmiaWindows.filter(window => 
-      currentTime - window.end < 15000 // Keep only windows from the last 15 seconds
+    // Filtrar solo ventanas recientes (menos de 20 segundos)
+    const oldWindows = this.arrhythmiaWindows.filter(window => 
+      currentTime - window.end < 20000 // Increased from 15000 to 20000ms
     );
     
+    // Solo actualizar si hay cambios
+    if (oldWindows.length !== this.arrhythmiaWindows.length) {
+      console.log(`Cleaned up old arrhythmia windows: removed ${this.arrhythmiaWindows.length - oldWindows.length} windows`);
+      this.arrhythmiaWindows = oldWindows;
+    }
+    
     // También resetear el estado si ha pasado mucho tiempo desde la última arritmia
-    if (this.currentBeatIsArrhythmia && currentTime - this.lastArrhythmiaTriggeredTime > 20000) {
+    if (this.currentBeatIsArrhythmia && currentTime - this.lastArrhythmiaTriggeredTime > 25000) { // Increased from 20000 to 25000ms
       console.log("Auto-resetting arrhythmia state due to timeout");
       this.currentBeatIsArrhythmia = false;
     }

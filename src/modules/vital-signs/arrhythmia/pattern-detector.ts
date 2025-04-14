@@ -14,7 +14,7 @@ export class ArrhythmiaPatternDetector {
   private readonly PATTERN_BUFFER_SIZE = 20; // Increased for better pattern analysis
   private readonly ANOMALY_HISTORY_SIZE = 30;
   private readonly MIN_ANOMALY_PATTERN_LENGTH = 6; // Increased from 5 to 6 para mayor exigencia
-  private readonly PATTERN_MATCH_THRESHOLD = 0.82; // Increased from 0.75 to 0.82
+  private readonly PATTERN_MATCH_THRESHOLD = 0.85; // Increased from 0.82 to 0.85 para reducir falsos positivos
   private readonly SIGNAL_DECLINE_THRESHOLD = 0.3;
 
   // Tracking time-based pattern consistency
@@ -29,10 +29,14 @@ export class ArrhythmiaPatternDetector {
   
   // Falso positivo prevención
   private detectionHistory: boolean[] = [];
-  private readonly DETECTION_HISTORY_SIZE = 5;
+  private readonly DETECTION_HISTORY_SIZE = 6; // Increased from 5 to 6 para reducir falsos positivos
   private detectionCount: number = 0;
   private lastDetectionTime: number = 0;
-  private readonly MIN_DETECTION_INTERVAL_MS = 5000;
+  private readonly MIN_DETECTION_INTERVAL_MS = 8000; // Increased from 5000 to 8000 ms
+  
+  // Calibración del patrón
+  private stabilityCounter: number = 0;
+  private readonly MAX_STABILITY = 20;
 
   /**
    * Update pattern buffer with real data
@@ -66,6 +70,13 @@ export class ArrhythmiaPatternDetector {
     this.patternBuffer.push(value);
     if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
       this.patternBuffer.shift();
+    }
+    
+    // Actualizar contador de estabilidad
+    if (Math.abs(value) < 0.3) {
+      this.stabilityCounter = Math.min(this.MAX_STABILITY, this.stabilityCounter + 1);
+    } else {
+      this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
     }
     
     // Update anomaly scores based on real data
@@ -118,6 +129,7 @@ export class ArrhythmiaPatternDetector {
     this.peakTimestamps = [];
     this.detectionHistory = [];
     this.detectionCount = 0;
+    this.stabilityCounter = 0;
   }
   
   /**
@@ -141,27 +153,32 @@ export class ArrhythmiaPatternDetector {
     const signalRange = maxVal - minVal;
     
     // If the signal range is too small, it's likely not a real finger
-    if (signalRange < 0.08) { // Increased from 0.05 to 0.08
+    if (signalRange < 0.10) { // Increased from 0.08 to 0.10
       return false;
     }
     
     // Verify signal quality before proceeding
     const avgSignal = this.patternBuffer.reduce((sum, val) => sum + val, 0) / this.patternBuffer.length;
-    if (avgSignal < 0.1) {
+    if (avgSignal < 0.15) { // Increased from 0.1 to 0.15
       return false; // Señal muy débil, probablemente ruido
+    }
+    
+    // Si la estabilidad es alta, es menos probable que sea una arritmia
+    if (this.stabilityCounter > this.MAX_STABILITY * 0.7) {
+      return false;
     }
     
     // Analyze rhythm consistency for natural heartbeat detection
     let arrhythmiaDetected = false;
     
-    if (this.heartRateIntervals.length >= 4) { // Increased from 3 to 4
+    if (this.heartRateIntervals.length >= 5) { // Increased from 4 to 5
       const avgInterval = this.heartRateIntervals.reduce((sum, val) => sum + val, 0) / this.heartRateIntervals.length;
       
       // Calculate rhythm consistency (natural heartbeats have consistent timing)
       let consistentIntervals = 0;
       for (let i = 0; i < this.heartRateIntervals.length; i++) {
         const deviation = Math.abs(this.heartRateIntervals[i] - avgInterval) / avgInterval;
-        if (deviation > 0.30) { // Increased from 0.25 to 0.30 para mayor exigencia
+        if (deviation > 0.32) { // Increased from 0.30 to 0.32
           consistentIntervals++;
         }
       }
@@ -169,7 +186,7 @@ export class ArrhythmiaPatternDetector {
       const inconsistencyRatio = consistentIntervals / this.heartRateIntervals.length;
       
       // For arrhythmia, we want inconsistent intervals
-      if (inconsistencyRatio > 0.5 && avgInterval >= 400 && avgInterval <= 1500) { // Increased from 0.4 to 0.5
+      if (inconsistencyRatio > 0.55 && avgInterval >= 400 && avgInterval <= 1500) { // Increased from 0.5 to 0.55
         const estimatedBPM = Math.round(60000 / avgInterval);
         
         // Verificación adicional: los intervalos deben ser muy variables
@@ -181,14 +198,14 @@ export class ArrhythmiaPatternDetector {
           const currInterval = this.heartRateIntervals[i];
           const variation = Math.abs(currInterval - prevInterval) / ((currInterval + prevInterval) / 2);
           
-          if (variation > 0.25) {
+          if (variation > 0.28) { // Increased from 0.25 to 0.28
             validIntervalCount++;
             totalVariation += variation;
           }
         }
         
-        if (validIntervalCount >= this.heartRateIntervals.length * 0.4 && 
-            totalVariation / validIntervalCount > 0.3) {
+        if (validIntervalCount >= this.heartRateIntervals.length * 0.45 && // Increased from 0.4 to 0.45
+            totalVariation / validIntervalCount > 0.33) { // Increased from 0.3 to 0.33
           
           console.log(`Arrhythmic pattern confirmed: ${estimatedBPM} BPM with ${Math.round(inconsistencyRatio*100)}% inconsistency`);
           arrhythmiaDetected = true;
@@ -200,7 +217,7 @@ export class ArrhythmiaPatternDetector {
     const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
     
     // Feature 1: Significant variations in real data
-    const significantVariations = recentPattern.filter(v => v > 0.5).length; // Increased from 0.4 to 0.5
+    const significantVariations = recentPattern.filter(v => v > 0.52).length; // Increased from 0.5 to 0.52
     const variationRatio = significantVariations / recentPattern.length;
     
     // Feature 2: Pattern consistency in real data
@@ -234,9 +251,9 @@ export class ArrhythmiaPatternDetector {
       timingIrregularityScore = Math.min(1, avgVariation * 2);
     }
     
-    // Combine features with weighted scoring
-    const patternScore = (variationRatio * 0.3) + (anomalyRatio * 0.15) + 
-                        (oscillationRatio * 0.25) + (timingIrregularityScore * 0.3);
+    // Combine features with weighted scoring - increased weights for more reliable features
+    const patternScore = (variationRatio * 0.25) + (anomalyRatio * 0.15) + 
+                        (oscillationRatio * 0.25) + (timingIrregularityScore * 0.35);
     
     // La detección basada en patrones debe cumplir un umbral más estricto
     const patternDetected = patternScore > this.PATTERN_MATCH_THRESHOLD;
@@ -252,7 +269,7 @@ export class ArrhythmiaPatternDetector {
     
     // Para confirmar arritmia, necesitamos varias detecciones positivas
     const positiveCount = this.detectionHistory.filter(d => d).length;
-    const finalResult = positiveCount >= this.DETECTION_HISTORY_SIZE * 0.6;
+    const finalResult = positiveCount >= this.DETECTION_HISTORY_SIZE * 0.65; // Increased from 0.6 to 0.65
     
     if (finalResult) {
       this.detectionCount++;
