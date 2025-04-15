@@ -1,19 +1,16 @@
 
-import { RRAnalysisResult } from '../arrhythmia/types';
-
-export interface RRIntervalData {
-  intervals: number[];
-  lastPeakTime: number | null;
-}
+import { RRData } from "../../core/signal/PeakDetector";
 
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
-  filteredValue?: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  rrData?: RRIntervalData;
+  rrData: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
 }
 
 export interface UseHeartBeatReturn {
@@ -25,5 +22,4 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-  arrhythmiaCount?: number;
 }

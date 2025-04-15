@@ -1,79 +1,62 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { useCallback, useRef } from 'react';
-import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
 
-/**
- * Hook for arrhythmia detection based on real RR interval data
- * No simulation or data manipulation is used - direct measurement only
- */
-export function useArrhythmiaDetector() {
+interface ArrhythmiaResult {
+  isArrhythmia: boolean;
+  confidence: number;
+}
+
+export const useArrhythmiaDetector = () => {
   const heartRateVariabilityRef = useRef<number[]>([]);
   const stabilityCounterRef = useRef<number>(0);
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+  
+  const detectArrhythmia = useCallback((rrIntervals: number[]): ArrhythmiaResult => {
+    if (rrIntervals.length < 3) {
+      return { isArrhythmia: false, confidence: 0 };
+    }
 
-  /**
-   * Analyze real RR intervals to detect arrhythmias 
-   * Using direct measurement algorithms only
-   */
-  const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (rrIntervals.length < 5) {
-      return {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: Date.now(),
-        isArrhythmia: false
-      };
+    // Calculate RR interval variability
+    const variability = [];
+    for (let i = 1; i < rrIntervals.length; i++) {
+      const prevInterval = rrIntervals[i-1];
+      const currentInterval = rrIntervals[i];
+      const percentVariation = Math.abs(currentInterval - prevInterval) / prevInterval * 100;
+      variability.push(percentVariation);
+    }
+
+    // Store the last variability values
+    heartRateVariabilityRef.current = [...variability];
+    if (heartRateVariabilityRef.current.length > 10) {
+      heartRateVariabilityRef.current = heartRateVariabilityRef.current.slice(-10);
     }
     
-    const lastIntervals = rrIntervals.slice(-5);
+    // Check if recent variability exceeds threshold
+    const recentVariability = heartRateVariabilityRef.current.slice(-3);
+    const avgVariability = recentVariability.reduce((sum, val) => sum + val, 0) / recentVariability.length;
     
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    const rmssd = calculateRMSSD(lastIntervals);
+    const HIGH_VARIABILITY_THRESHOLD = 20; // 20% variation threshold
+    const isHighVariability = avgVariability > HIGH_VARIABILITY_THRESHOLD;
     
-    // Calculate RR variation
-    const variationRatio = calculateRRVariation(lastIntervals);
-    
-    // More strict threshold
-    let thresholdFactor = 0.25;
-    if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20;
-    } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30;
-    }
-    
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    if (!isIrregular) {
-      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
+    // Update arrhythmia stability counter
+    if (isHighVariability) {
+      stabilityCounterRef.current += 1;
     } else {
-      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
+      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 1);
     }
     
-    // Require more stability before reporting arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
+    // Declare arrhythmia if consistent high variability
+    const ARRHYTHMIA_STABILITY_THRESHOLD = 3;
+    const isArrhythmia = stabilityCounterRef.current >= ARRHYTHMIA_STABILITY_THRESHOLD;
     
-    heartRateVariabilityRef.current.push(variationRatio);
-    if (heartRateVariabilityRef.current.length > 20) {
-      heartRateVariabilityRef.current.shift();
-    }
+    const confidence = Math.min(1.0, stabilityCounterRef.current / ARRHYTHMIA_STABILITY_THRESHOLD);
     
-    return {
-      rmssd,
-      rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
-    };
+    lastIsArrhythmiaRef.current = isArrhythmia;
+    return { isArrhythmia, confidence };
   }, []);
 
-  /**
-   * Reset all tracking data
-   */
   const reset = useCallback(() => {
     heartRateVariabilityRef.current = [];
     stabilityCounterRef.current = 0;
@@ -91,4 +74,4 @@ export function useArrhythmiaDetector() {
     currentBeatIsArrhythmiaRef,
     reset
   };
-}
+};
