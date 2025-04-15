@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -318,7 +319,7 @@ const PPGSignalMeter = memo(({
       const windowStartTime = window.start;
       const windowEndTime = window.end;
       
-      const windowVisible = (now - windowStartTime < WINDOW_WIDTH_MS || now - windowEndTime < WINDOW_WIDTH_MS);\
+      const windowVisible = (now - windowStartTime < WINDOW_WIDTH_MS || now - windowEndTime < WINDOW_WIDTH_MS);
       
       if (windowVisible) {
         const startX = ctx.canvas.width - ((now - windowStartTime) * ctx.canvas.width / WINDOW_WIDTH_MS);
@@ -461,7 +462,7 @@ const PPGSignalMeter = memo(({
   }, [MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, arrhythmiaWindows, isArrhythmia]);
 
   const drawSignal = useCallback((ctx: CanvasRenderingContext2D, points: PPGDataPointExtended[]) => {
-    if (points.length === 0) return;\
+    if (points.length === 0) return;
     
     const now = Date.now();
     const xScale = ctx.canvas.width / WINDOW_WIDTH_MS;
@@ -744,4 +745,50 @@ const PPGSignalMeter = memo(({
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, IMMEDIATE_RENDERING, 
-    FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
+    FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES,
+    drawArrhythmiaZones, arrhythmiaWindows
+  ]);
+
+  useEffect(() => {
+    animationFrameRef.current = requestAnimationFrame(renderSignal);
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [renderSignal]);
+
+  return (
+    <div className="relative w-full">
+      <div className="relative">
+        <canvas
+          ref={canvasRef}
+          className="w-full rounded-lg bg-gradient-to-t from-zinc-800 to-zinc-900 shadow-lg"
+          width={CANVAS_WIDTH}
+          height={CANVAS_HEIGHT}
+          style={{ aspectRatio: `${CANVAS_WIDTH} / ${CANVAS_HEIGHT}` }}
+        />
+        
+        <div className="absolute left-0 right-0 top-0 p-4 flex justify-between">
+          <div 
+            className={`px-3 py-1.5 rounded-full bg-gradient-to-r ${getQualityColor(quality)} text-white text-sm font-semibold shadow-md`}
+          >
+            {getQualityText(quality)}
+          </div>
+          
+          {!isFingerDetected && !preserveResults && (
+            <div className="flex items-center space-x-2 px-3 py-1.5 bg-gradient-to-r from-indigo-500 to-indigo-600 rounded-full shadow-md">
+              <Fingerprint className="w-4 h-4 text-white" />
+              <span className="text-white text-sm font-semibold">
+                Coloque su dedo en la cámara
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+export default PPGSignalMeter;
