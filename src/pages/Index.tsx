@@ -235,15 +235,14 @@ const Index = () => {
     let processingFps = 0;
 
     const processImage = async () => {
-      // Log Start
       // console.log("processImage: Loop start. isMonitoring:", isMonitoring);
 
       if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
         if (isMonitoring) {
           console.error(`processImage: Stopping. isMonitoring=${isMonitoring}, stream=${!!stream}, track=${!!videoTrack}, trackState=${videoTrack?.readyState}`);
-          stopMonitoring(); // Use stopMonitoring which clears state
+          stopMonitoring();
         }
-        return; // Exit the loop
+        return;
       }
 
       const now = Date.now();
@@ -251,27 +250,22 @@ const Index = () => {
 
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
-          // Log before grabFrame
-          // console.log(`processImage: Ready to grabFrame. Track state: ${videoTrack.readyState}`);
-          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
+          // *** START EXTREME SIMPLIFICATION ***
+          console.time("FrameProcessingTotal");
+          console.log("processImage: Loop running (Simplified - No Frame Grab/Draw/Process)");
 
-          console.time("FrameProcessingTotal"); // Start total timer
+          /* // Commented out actual frame processing
+          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
           console.time("grabFrame");
           const frame = await imageCapture.grabFrame();
           console.timeEnd("grabFrame");
-          // Log after grabFrame
-          // console.log(`processImage: Frame grabbed. Size: ${frame.width}x${frame.height}`);
 
           const targetWidth = Math.min(320, frame.width);
           const targetHeight = Math.min(240, frame.height);
-
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
-
           if (!tempCtx) throw new Error("Canvas context lost during loop");
 
-          // Log before drawImage
-          // console.log("processImage: Drawing frame to canvas...");
           console.time("drawImage");
           tempCtx.drawImage(
             frame,
@@ -279,54 +273,49 @@ const Index = () => {
             0, 0, targetWidth, targetHeight
           );
           console.timeEnd("drawImage");
-          // Log after drawImage
-          // console.log("processImage: Frame drawn.");
-
-          // Close the frame to free up memory, especially important!
           frame.close();
 
-          // Log before getImageData
-          // console.log("processImage: Getting image data...");
           console.time("getImageData");
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
           console.timeEnd("getImageData");
-          // Log after getImageData
-          // console.log("processImage: Image data obtained.");
-
-          // Log before processFrame call
-          // console.log("processImage: Calling processFrame(imageData)...");
+          
           console.time("processFrameHook");
-          processFrame(imageData);
+          // processFrame(imageData); // Call commented out
           console.timeEnd("processFrameHook");
-          // Log after processFrame call
-          // console.log("processImage: processFrame call completed.");
+          */
 
+           // Simulate processing time slightly
+           await new Promise(resolve => setTimeout(resolve, 5)); 
+         
+          // Call processFrame with null to test if the call itself causes issues
+           // console.log("processImage: Calling processFrame(null) for testing...");
+           // processFrame(null as any); 
+           // console.log("processImage: Call to processFrame(null) completed.");
+
+          // --- Update timing and FPS (keep this part) ---
           frameCount++;
           lastProcessTime = now;
-
-          // --- FPS Calculation (Keep as is) ---
           if (now - lastFpsUpdateTime > 1000) {
             processingFps = frameCount;
-            // console.log(`Processing FPS: ${processingFps}`); // Optional FPS log
+            // console.log(`Processing FPS (Simplified Loop): ${processingFps}`);
             frameCount = 0;
             lastFpsUpdateTime = now;
           }
-          console.timeEnd("FrameProcessingTotal"); // End total timer
+          console.timeEnd("FrameProcessingTotal");
+          // *** END EXTREME SIMPLIFICATION ***
 
         } catch (error) {
-          console.timeEnd("FrameProcessingTotal"); // Ensure timer ends even on error
-          // Log error details
-          console.error("processImage: Error caught inside loop:", error);
+          console.timeEnd("FrameProcessingTotal");
+          console.error("processImage: Error caught inside simplified loop:", error);
           if (error instanceof DOMException) {
             console.error(`processImage: DOMException Name: ${error.name}, Message: ${error.message}`);
           }
           console.error(`processImage: Stopping monitoring due to error. trackState: ${videoTrack?.readyState}`);
-          stopMonitoring(); // Stop monitoring on any error within the loop
-          return; // Exit loop on error
+          stopMonitoring();
+          return;
         }
       }
 
-      // Request next frame ONLY if still monitoring
       if (isMonitoring) {
         requestAnimationFrame(processImage);
       } else {
