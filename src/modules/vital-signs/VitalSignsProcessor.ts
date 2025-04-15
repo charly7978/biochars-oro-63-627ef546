@@ -66,18 +66,8 @@ export class VitalSignsProcessor {
     // Apply filtering, quality check, and finger detection using SignalProcessor
     const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
 
-    // If finger is not detected or quality is too low, return empty results
-    // Use a reasonable quality threshold (e.g., from SignalProcessor's logic or a constant)
-    const MIN_QUALITY_THRESHOLD = 30; // Example threshold, adjust as needed
-    if (!fingerDetected || quality < MIN_QUALITY_THRESHOLD) {
-       // Optionally log why processing stopped
-       // console.log(`VitalSignsProcessor: Stopping - Finger Detected: ${fingerDetected}, Quality: ${quality}`);
-      // Reset processors if finger is lost to avoid using stale data
-      if (!fingerDetected) {
-        this.reset();
-      }
-      return ResultFactory.createEmptyResults();
-    }
+    // --- Continue processing even if fingerDetected is false or quality is low initially --- 
+    // The UI will use the fingerDetected and quality flags from the result to decide what to display.
 
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
