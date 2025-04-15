@@ -1,3 +1,5 @@
+import { SignalFilter } from '@/core/signal-processing/filters/SignalFilter';
+
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -31,28 +33,29 @@ export class HeartBeatProcessor {
   // Variable para controlar el estado de monitoreo
   private isMonitoring = false;
 
-  signalBuffer = [];
-  medianBuffer = [];
-  movingAverageBuffer = [];
-  smoothedValue = 0;
-  audioContext = null;
+  signalBuffer: number[] = [];
+  audioContext: AudioContext | null = null;
   lastBeepTime = 0;
-  lastPeakTime = null;
-  previousPeakTime = null;
-  bpmHistory = [];
+  lastPeakTime: number | null = null;
+  previousPeakTime: number | null = null;
+  bpmHistory: number[] = [];
   baseline = 0;
   lastValue = 0;
-  values = [];
+  values: number[] = [];
   startTime = 0;
-  peakConfirmationBuffer = [];
+  peakConfirmationBuffer: number[] = [];
   lastConfirmedPeak = false;
   smoothBPM = 0;
   BPM_ALPHA = 0.2;
-  peakCandidateIndex = null;
+  peakCandidateIndex: number | null = null;
   peakCandidateValue = 0;
   rrIntervals: number[] = [];
 
+  // Instantiate the centralized filter
+  private signalFilter: SignalFilter;
+
   constructor() {
+    this.signalFilter = new SignalFilter(); // Initialize the filter
     this.initAudio();
     this.startTime = Date.now();
   }
@@ -191,30 +194,6 @@ export class HeartBeatProcessor {
     return Date.now() - this.startTime < this.WARMUP_TIME_MS;
   }
 
-  medianFilter(value) {
-    this.medianBuffer.push(value);
-    if (this.medianBuffer.length > this.MEDIAN_FILTER_WINDOW) {
-      this.medianBuffer.shift();
-    }
-    const sorted = [...this.medianBuffer].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
-  }
-
-  calculateMovingAverage(value) {
-    this.movingAverageBuffer.push(value);
-    if (this.movingAverageBuffer.length > this.MOVING_AVERAGE_WINDOW) {
-      this.movingAverageBuffer.shift();
-    }
-    const sum = this.movingAverageBuffer.reduce((a, b) => a + b, 0);
-    return sum / this.movingAverageBuffer.length;
-  }
-
-  calculateEMA(value) {
-    this.smoothedValue =
-      this.EMA_ALPHA * value + (1 - this.EMA_ALPHA) * this.smoothedValue;
-    return this.smoothedValue;
-  }
-
   processSignal(value: number): {
     bpm: number;
     confidence: number;
@@ -239,54 +218,65 @@ export class HeartBeatProcessor {
       this.initAudio(); // Inicializar audio
     }
     
-    // Aplicar filtros para reducir ruido
-    const medVal = this.medianFilter(value);
-    const movAvgVal = this.calculateMovingAverage(medVal);
-    const smoothed = this.calculateEMA(movAvgVal);
-
-    // Almacenar en buffer para análisis
-    this.signalBuffer.push(smoothed);
+    // Store the raw value in the general signal buffer for potential other uses
+    this.signalBuffer.push(value);
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
 
-    // Esperar suficientes datos
+    // Get recent values needed for filters (adjust sizes as needed)
+    const medianRecentBuffer = this.signalBuffer.length >= this.MEDIAN_FILTER_WINDOW - 1
+                             ? this.signalBuffer.slice(-(this.MEDIAN_FILTER_WINDOW - 1))
+                             : [];
+    const movingAvgRecentBuffer = this.signalBuffer.length >= this.MOVING_AVERAGE_WINDOW - 1
+                                ? this.signalBuffer.slice(-(this.MOVING_AVERAGE_WINDOW - 1))
+                                : [];
+
+    // Apply filters using the centralized SignalFilter instance
+    const medVal = this.signalFilter.applyMedianFilter(value, medianRecentBuffer, this.MEDIAN_FILTER_WINDOW);
+    // Note: SMA is now applied to the EMA result, matching the original logic order
+    // Apply EMA filter first
+    const emaVal = this.signalFilter.applyEMAFilter(medVal, this.EMA_ALPHA);
+    // Apply SMA filter to the EMA result
+    const smoothed = this.signalFilter.applySMAFilter(emaVal, movingAvgRecentBuffer, this.MOVING_AVERAGE_WINDOW);
+
+    // Esperar suficientes datos (use the main signal buffer length)
     if (this.signalBuffer.length < 30) {
       return {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        filteredValue: smoothed,
+        filteredValue: smoothed, // Return the final smoothed value
         arrhythmiaCount: 0
       };
     }
 
-    // Actualizar línea base
+    // Actualizar línea base (using the final smoothed value)
     this.baseline =
       this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
 
-    // Normalizar señal
+    // Normalizar señal (using the final smoothed value)
     const normalizedValue = smoothed - this.baseline;
     this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
 
-    // Calcular derivada para detección de picos
+    // Calcular derivada para detección de picos (using the final smoothed value)
     this.values.push(smoothed);
     if (this.values.length > 3) {
       this.values.shift();
     }
 
-    let smoothDerivative = smoothed - this.lastValue;
+    let smoothDerivative = smoothed - this.lastValue; // Still uses last SMOOTHED value for derivative
     if (this.values.length === 3) {
       smoothDerivative = (this.values[2] - this.values[0]) / 2;
     }
 
     // Detectar si es un pico
     const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
-    
-    // CORRECCIÓN: Guardar el valor actual antes de actualizar el último valor
-    // para usarlo en la próxima comparación
-    this.lastValue = normalizedValue;
-    
+
+    // CORRECCIÓN: Guardar el valor normalizado actual antes de actualizar el último valor
+    // para usarlo en la próxima comparación in detectPeak
+    this.lastValue = normalizedValue; // THIS SHOULD BE normalizedValue based on detectPeak logic
+
     // CORRECCIÓN: Reproducir beep inmediatamente en el pico, no en la confirmación posterior
     if (isPeak && Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
       this.playBeep(confidence * this.BEEP_VOLUME);
@@ -320,8 +310,8 @@ export class HeartBeatProcessor {
       bpm: Math.round(this.getFinalBPM()),
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
-      filteredValue: smoothed,
-      arrhythmiaCount: 0
+      filteredValue: smoothed, // Return the final smoothed value
+      arrhythmiaCount: 0 // Keep arrhythmia logic separate for now
     };
   }
 
@@ -372,7 +362,8 @@ export class HeartBeatProcessor {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.peakConfirmationBuffer = [];
-    this.values = [];
+    this.values = []; // Reset derivative buffer
+    this.lastValue = 0; // Reset last normalized value used in peak detection
     console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
 
@@ -492,8 +483,6 @@ export class HeartBeatProcessor {
 
   reset() {
     this.signalBuffer = [];
-    this.medianBuffer = [];
-    this.movingAverageBuffer = [];
     this.peakConfirmationBuffer = [];
     this.bpmHistory = [];
     this.values = [];
@@ -504,13 +493,15 @@ export class HeartBeatProcessor {
     this.lastBeepTime = 0;
     this.baseline = 0;
     this.lastValue = 0;
-    this.smoothedValue = 0;
     this.startTime = Date.now();
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.rrIntervals = [];
-    
+
+    // Reset the filter's internal state (like lastEMA)
+    this.signalFilter.reset();
+
     // Intentar asegurar que el contexto de audio esté activo
     if (this.audioContext && this.audioContext.state !== 'running') {
       this.audioContext.resume().catch(err => {

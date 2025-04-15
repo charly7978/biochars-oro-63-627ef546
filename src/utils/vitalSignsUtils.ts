@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -108,21 +107,6 @@ export function calculateAmplitude(
 }
 
 /**
- * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
- */
-export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
-  filteredValue: number;
-  updatedBuffer: number[];
-} {
-  const updatedBuffer = [...buffer, value];
-  if (updatedBuffer.length > windowSize) {
-    updatedBuffer.shift();
-  }
-  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
-  return { filteredValue, updatedBuffer };
-}
-
-/**
  * Amplifica la señal real de forma adaptativa basada en su amplitud
  * Sin uso de datos simulados
  */
@@ -150,4 +134,13 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   
   return amplifiedValue;
+}
+
+/**
+ * Calculate perfusion index based on real AC and DC components
+ * No simulation is used
+ */
+export function calculatePerfusionIndex(ac: number, dc: number): number {
+  if (dc === 0) return 0;
+  return ac / dc;
 }

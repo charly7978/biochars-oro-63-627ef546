@@ -3,7 +3,7 @@
  */
 
 import { BaseProcessor } from './processors/base-processor';
-import { SignalFilter } from './processors/signal-filter';
+import { SignalFilter } from '@/core/signal-processing/filters/SignalFilter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
@@ -30,33 +30,17 @@ export class SignalProcessor extends BaseProcessor {
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
   private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
   
+  // Define filter parameters used in this processor
+  private readonly MEDIAN_WINDOW_SIZE = 3; // Example: Specific value for this processor
+  private readonly EMA_ALPHA = 0.2;         // Example: Specific value for this processor
+  private readonly SMA_WINDOW_SIZE = 5;         // Example: Specific value for this processor
+  
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
-  }
-  
-  /**
-   * Apply Moving Average filter to real values
-   */
-  public applySMAFilter(value: number): number {
-    return this.filter.applySMAFilter(value, this.ppgValues);
-  }
-  
-  /**
-   * Apply Exponential Moving Average filter to real data
-   */
-  public applyEMAFilter(value: number, alpha?: number): number {
-    return this.filter.applyEMAFilter(value, this.ppgValues, alpha);
-  }
-  
-  /**
-   * Apply median filter to real data
-   */
-  public applyMedianFilter(value: number): number {
-    return this.filter.applyMedianFilter(value, this.ppgValues);
   }
   
   /**
@@ -82,14 +66,22 @@ export class SignalProcessor extends BaseProcessor {
     // Track the signal for pattern detection
     this.signalValidator.trackSignalForPatternDetection(value);
     
-    // Step 1: Median filter to remove outliers
-    const medianFiltered = this.applyMedianFilter(value);
+    // Get recent values needed for filters (using processor-specific window sizes)
+    const medianRecentBuffer = this.ppgValues.length >= this.MEDIAN_WINDOW_SIZE - 1
+                             ? this.ppgValues.slice(-(this.MEDIAN_WINDOW_SIZE - 1))
+                             : [];
+     const smaRecentBuffer = this.ppgValues.length >= this.SMA_WINDOW_SIZE - 1
+                             ? this.ppgValues.slice(-(this.SMA_WINDOW_SIZE - 1))
+                             : [];
     
-    // Step 2: Low pass filter to smooth the signal
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
+    // Step 1: Median filter to remove outliers
+    const medianFiltered = this.filter.applyMedianFilter(value, medianRecentBuffer, this.MEDIAN_WINDOW_SIZE);
+    
+    // Step 2: Low pass filter (EMA) to smooth the signal
+    const lowPassFiltered = this.filter.applyEMAFilter(medianFiltered, this.EMA_ALPHA);
     
     // Step 3: Moving average for final smoothing
-    const smaFiltered = this.applySMAFilter(lowPassFiltered);
+    const smaFiltered = this.filter.applySMAFilter(lowPassFiltered, smaRecentBuffer, this.SMA_WINDOW_SIZE);
     
     // Calculate noise level of real signal
     this.quality.updateNoiseLevel(value, smaFiltered);
@@ -97,9 +89,12 @@ export class SignalProcessor extends BaseProcessor {
     // Calculate signal quality (0-100)
     const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
     
-    // Store the filtered value in the buffer
+    // Store the filtered value in the processor's main buffer
     this.ppgValues.push(smaFiltered);
-    if (this.ppgValues.length > 30) {
+    // Keep buffer size manageable (e.g., 30 seconds at 30Hz = 900? Adjust as needed)
+    // Using a smaller buffer for general processing, maybe 60?
+    const MAX_BUFFER_SIZE = 60;
+    if (this.ppgValues.length > MAX_BUFFER_SIZE) {
       this.ppgValues.shift();
     }
     
@@ -178,6 +173,7 @@ export class SignalProcessor extends BaseProcessor {
    */
   public reset(): void {
     super.reset();
+    this.filter.reset();
     this.quality.reset();
     this.signalValidator.resetFingerDetection();
     this.fingerDetectionConfirmed = false;
