@@ -10,7 +10,7 @@ export const cleanupServices = () => {
   AudioFeedbackService.cleanUp();
   
   // Clean up ArrhythmiaDetectionService
-  ArrhythmiaDetectionService.reset();
+  ArrhythmiaDetectionService.cleanUp();
   
   console.log('All services cleaned up successfully');
 };
