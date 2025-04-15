@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -29,7 +30,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Arrhythmia tracking
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 3000; // Reducido a 3 segundos para mayor sensibilidad
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
   
   const { 
     arrhythmiaWindows, 
@@ -73,8 +74,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
-   * Process PPG signal directly - mejorado para detección precisa de arritmias
-   * No simulation or reference values are used
+   * Process PPG signal directly
+   * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
@@ -91,10 +92,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     try {
-      const result = processVitalSignal(value, rrData, isWeakSignal);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Identificar cada latido arrítmico individualmente de forma más precisa
+      // Verificar y manejar eventos de arritmia más precisamente
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
@@ -103,42 +104,30 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Ventana más amplia pero precisa para cada latido arrítmico individual
-        let windowWidth = 400; // Ancho predeterminado
+        // Window based on real heart rate
+        let windowWidth = 800; // Ventana más amplia para visualización clara
         
-        // Ajustar ventana basada en intervalos RR reales si están disponibles
+        // Adjust based on real RR intervals
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.5)); // Ventana más amplia
+          windowWidth = Math.max(600, Math.min(1200, avgInterval * 2)); // Ventana más grande y visible
         }
         
-        // Ventana para marcar este latido específico como arrítmico
-        const startWindow = arrhythmiaTime - windowWidth/4; // Más amplio para no perder latidos
-        const endWindow = arrhythmiaTime + windowWidth/4;
+        // Add visualization window con margen extra para mejor visualización
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
         
-        addArrhythmiaWindow(startWindow, endWindow);
-        
-        console.log("useVitalSignsProcessor: Marcando latido arrítmico individual", {
+        console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
           time: new Date(arrhythmiaTime).toISOString(),
-          windowStart: new Date(startWindow).toISOString(),
-          windowEnd: new Date(endWindow).toISOString(),
-          status: result.arrhythmiaStatus,
-          arrithmiaCount: getArrhythmiaCounter()
+          windowWidth,
+          status: result.arrhythmiaStatus
         });
         
-        // Activar feedback solo para latidos arrítmicos específicos con intervalo mínimo
+        // Trigger feedback for arrhythmia
         if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
           lastArrhythmiaTriggeredRef.current = currentTime;
           const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
-          
-          // Usar la función centralizada para notificar arritmias
           FeedbackService.signalArrhythmia(count);
-          
-          console.log("useVitalSignsProcessor: Notificación de arritmia activada", {
-            count,
-            timeSinceLastNotification: currentTime - lastArrhythmiaTriggeredRef.current
-          });
         }
       }
       
