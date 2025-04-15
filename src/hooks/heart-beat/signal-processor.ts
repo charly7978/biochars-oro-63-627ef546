@@ -1,103 +1,115 @@
 
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import FingerDetectionService from '@/services/FingerDetectionService';
+import { HeartBeatConfig } from '../../modules/heart-beat/config';
 import { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
-  createWeakSignalResult,
+  createWeakSignalResult, 
   handlePeakDetection,
   updateLastValidBpm,
   processLowConfidenceResult
 } from './signal-processing';
 
-export const useSignalProcessor = () => {
-  // Reference values
+export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
+  const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);
+  const calibrationCounterRef = useRef<number>(0);
   const lastSignalQualityRef = useRef<number>(0);
+  
+  // Simple reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
-  
-  // Constants
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 15;
-  
-  /**
-   * Process signal and detect heartbeats using a consolidated approach
-   * Only processes real data - no simulation
-   */
+  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
+
   const processSignal = useCallback((
-    value: number, 
-    currentBPM: number, 
-    confidence: number, 
-    processor: any, 
-    requestBeep: (value: number) => boolean,
+    value: number,
+    currentBPM: number,
+    confidence: number,
+    processor: any,
+    requestImmediateBeep: (value: number) => boolean,
     isMonitoringRef: React.MutableRefObject<boolean>,
     lastRRIntervalsRef: React.MutableRefObject<number[]>,
-    currentBeatIsArrhythmiaRef: any
+    currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
   ): HeartBeatResult => {
-    // Validate input
-    if (!processor || typeof value !== 'number') {
-      return createWeakSignalResult(ArrhythmiaDetectionService.getArrhythmiaCount());
+    if (!processor) {
+      return createWeakSignalResult();
     }
-    
-    // Check if signal is weak and update counters
-    const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
-      value,
-      consecutiveWeakSignalsRef.current,
-      { lowSignalThreshold: 0.05, maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS }
-    );
-    
-    // Update state
-    consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
-    lastSignalQualityRef.current = confidence * 100;
-    
-    // Check if signal should be processed
-    if (isWeakSignal || !shouldProcessMeasurement(value)) {
-      return createWeakSignalResult(ArrhythmiaDetectionService.getArrhythmiaCount());
-    }
-    
-    // Process signal with real hardware
-    const result = processor.processSignal(value);
-    
-    // Update FingerDetectionService with processed signal
-    FingerDetectionService.updateDetection(
-      value, 
-      result.confidence * 100, 
-      result.isPeak
-    );
-    
-    // Handle peak detection
-    if (result.isPeak) {
-      handlePeakDetection(result, lastPeakTimeRef, isMonitoringRef);
+
+    try {
+      calibrationCounterRef.current++;
       
-      // Attempt to play beep sound
-      requestBeep(value);
+      // Check for weak signal - fixed property access
+      const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
+        value, 
+        consecutiveWeakSignalsRef.current, 
+        {
+          lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
+          maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
+        }
+      );
+      
+      consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
+      
+      if (isWeakSignal) {
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
+      }
+      
+      // Only process signals with sufficient amplitude
+      if (!shouldProcessMeasurement(value)) {
+        return createWeakSignalResult(processor.getArrhythmiaCounter());
+      }
+      
+      // Process real signal
+      const result = processor.processSignal(value);
+      const rrData = processor.getRRIntervals();
+      
+      if (rrData && rrData.intervals.length > 0) {
+        lastRRIntervalsRef.current = [...rrData.intervals];
+      }
+      
+      // Handle peak detection - fixed argument count
+      handlePeakDetection(
+        result, 
+        lastPeakTimeRef, 
+        isMonitoringRef
+      );
+      
+      // Update last valid BPM if it's reasonable
+      updateLastValidBpm(result, lastValidBpmRef);
+      
+      lastSignalQualityRef.current = result.confidence;
+
+      // Process result - fixed argument count
+      return processLowConfidenceResult(
+        result, 
+        currentBPM
+      );
+    } catch (error) {
+      console.error('useHeartBeatProcessor: Error processing signal', error);
+      return {
+        bpm: currentBPM,
+        confidence: 0,
+        isPeak: false,
+        arrhythmiaCount: 0,
+        rrData: {
+          intervals: [],
+          lastPeakTime: null
+        }
+      };
     }
-    
-    // Update last valid BPM
-    updateLastValidBpm(result, lastValidBpmRef);
-    
-    // Process low confidence results
-    const processedResult = processLowConfidenceResult(result, currentBPM);
-    
-    // Add finger detection status
-    processedResult.fingerDetected = FingerDetectionService.isFingerDetected();
-    
-    return processedResult;
   }, []);
-  
-  /**
-   * Reset all counters and references
-   */
+
   const reset = useCallback(() => {
     lastPeakTimeRef.current = null;
+    consistentBeatsCountRef.current = 0;
     lastValidBpmRef.current = 0;
+    calibrationCounterRef.current = 0;
     lastSignalQualityRef.current = 0;
     consecutiveWeakSignalsRef.current = 0;
-    console.log("Signal processor reset");
   }, []);
-  
+
   return {
     processSignal,
     reset,
@@ -107,4 +119,4 @@ export const useSignalProcessor = () => {
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS
   };
-};
+}

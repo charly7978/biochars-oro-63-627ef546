@@ -294,11 +294,17 @@ class ArrhythmiaDetectionService {
     // Show toast notification (limited to avoid saturation)
     if (shouldShowToast) {
       if (this.arrhythmiaCount === 1) {
-        toast.error('¡Atención! Se ha detectado una posible arritmia', {
+        toast({
+          title: '¡Atención!',
+          description: 'Se ha detectado una posible arritmia',
+          variant: 'destructive',
           duration: 6000
         });
       } else {
-        toast.error(`Arritmia detectada. Se han detectado ${this.arrhythmiaCount} posibles arritmias`, {
+        toast({
+          title: 'Arritmia detectada',
+          description: `Se han detectado ${this.arrhythmiaCount} posibles arritmias`,
+          variant: 'destructive',
           duration: 6000
         });
       }

@@ -7,7 +7,6 @@ import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import FingerDetectionService from '@/services/FingerDetectionService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -167,9 +166,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
     
-    // Reset services
+    // Reset ArrhythmiaDetectionService
     ArrhythmiaDetectionService.reset();
-    FingerDetectionService.reset();
   }, [resetArrhythmiaDetector, resetSignalProcessor]);
 
   const startMonitoring = useCallback(() => {
