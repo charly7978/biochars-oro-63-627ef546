@@ -32,7 +32,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     reset: resetSignalProcessor,
     lastPeakTimeRef,
     lastValidBpmRef,
-    lastSignalQualityRef
+    lastSignalQualityRef,
+    consecutiveWeakSignalsRef,
+    MAX_CONSECUTIVE_WEAK_SIGNALS
   } = useSignalProcessor();
 
   useEffect(() => {
@@ -86,14 +88,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
     
     const signalQuality = lastSignalQualityRef.current;
+    const weakSignals = consecutiveWeakSignalsRef.current;
     
     // Only play beep if signal quality is good enough
-    if (signalQuality > 0.3) {
+    if (signalQuality > 0.3 || weakSignals < MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2));
     }
     
     return false;
-  }, []);
+  }, [MAX_CONSECUTIVE_WEAK_SIGNALS]);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
@@ -176,6 +179,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       lastPeakTimeRef.current = null;
       lastProcessedPeakTimeRef.current = 0;
+      consecutiveWeakSignalsRef.current = 0;
     }
   }, []);
 

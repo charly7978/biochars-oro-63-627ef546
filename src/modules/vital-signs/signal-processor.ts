@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,7 +7,6 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
-import FingerDetectionService from '@/services/FingerDetectionService';
 
 /**
  * Signal processor for real PPG signals
@@ -21,6 +19,11 @@ export class SignalProcessor extends BaseProcessor {
   private quality: SignalQuality;
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
+  
+  // Finger detection state
+  private rhythmBasedFingerDetection: boolean = false;
+  private fingerDetectionConfirmed: boolean = false;
+  private fingerDetectionStartTime: number | null = null;
   
   // Signal quality variables - more strict thresholds
   private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
@@ -59,16 +62,21 @@ export class SignalProcessor extends BaseProcessor {
   /**
    * Check if finger is detected based on rhythmic patterns
    * Uses physiological characteristics (heartbeat rhythm)
-   * Now delegated to the centralized FingerDetectionService
    */
   public isFingerDetected(): boolean {
-    return FingerDetectionService.isFingerDetected();
+    // If already confirmed through consistent patterns, maintain detection
+    if (this.fingerDetectionConfirmed) {
+      return true;
+    }
+    
+    // Otherwise, use the validator's pattern detection
+    return this.signalValidator.isFingerDetected();
   }
   
   /**
    * Apply combined filtering for real signal processing
    * No simulation is used
-   * Delegates finger detection to FingerDetectionService
+   * Incorporates rhythmic pattern-based finger detection
    */
   public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
     // Track the signal for pattern detection
@@ -95,21 +103,65 @@ export class SignalProcessor extends BaseProcessor {
       this.ppgValues.shift();
     }
     
-    // Use centralized finger detection service with our signal data
-    const fingerDetectionResult = FingerDetectionService.detectFinger(
-      smaFiltered,
-      qualityValue,
-      this.ppgValues,
-      {
-        minQualityRequired: this.MIN_QUALITY_FOR_FINGER,
-        patternBasedDetection: true
+    // Check finger detection using pattern recognition with a higher quality threshold
+    const fingerDetected = this.signalValidator.isFingerDetected() && 
+                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    
+    // Calculate signal amplitude
+    let amplitude = 0;
+    if (this.ppgValues.length > 10) {
+      const recentValues = this.ppgValues.slice(-10);
+      amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+    }
+    
+    // Require minimum amplitude for detection (physiological requirement)
+    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    
+    // If finger is detected by pattern and has valid amplitude, confirm it
+    if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
+      const now = Date.now();
+      
+      if (!this.fingerDetectionStartTime) {
+        this.fingerDetectionStartTime = now;
+        console.log("Signal processor: Potential finger detection started", {
+          time: new Date(now).toISOString(),
+          quality: qualityValue,
+          amplitude
+        });
       }
-    );
+      
+      // If finger detection has been consistent for required time period, confirm it
+      if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
+        this.fingerDetectionConfirmed = true;
+        this.rhythmBasedFingerDetection = true;
+        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
+          time: new Date(now).toISOString(),
+          detectionMethod: "Rhythmic pattern detection",
+          detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
+          quality: qualityValue,
+          amplitude
+        });
+      }
+    } else if (!fingerDetected || !hasValidAmplitude) {
+      // Reset finger detection if lost or amplitude too low
+      if (this.fingerDetectionConfirmed) {
+        console.log("Signal processor: Finger detection lost", {
+          hasValidPattern: fingerDetected,
+          hasValidAmplitude,
+          amplitude,
+          quality: qualityValue
+        });
+      }
+      
+      this.fingerDetectionConfirmed = false;
+      this.fingerDetectionStartTime = null;
+      this.rhythmBasedFingerDetection = false;
+    }
     
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: fingerDetectionResult.isFingerDetected
+      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
     };
   }
   
@@ -128,6 +180,8 @@ export class SignalProcessor extends BaseProcessor {
     super.reset();
     this.quality.reset();
     this.signalValidator.resetFingerDetection();
-    FingerDetectionService.reset(); // Reset the finger detection service
+    this.fingerDetectionConfirmed = false;
+    this.fingerDetectionStartTime = null;
+    this.rhythmBasedFingerDetection = false;
   }
 }

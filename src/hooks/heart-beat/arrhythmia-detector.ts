@@ -4,7 +4,7 @@ import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 /**
  * Hook for arrhythmia detection in heart beat signals
- * Delegates to centralized ArrhythmiaDetectionService
+ * Solo procesa datos reales
  */
 export function useArrhythmiaDetector() {
   // Last RR intervals storage
@@ -12,7 +12,7 @@ export function useArrhythmiaDetector() {
   
   /**
    * Detect arrhythmia based on RR interval variations
-   * Delegates to ArrhythmiaDetectionService
+   * Solo usa datos reales
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
     // Update intervals in the service
@@ -34,9 +34,7 @@ export function useArrhythmiaDetector() {
   return {
     detectArrhythmia,
     lastRRIntervalsRef,
-    lastIsArrhythmiaRef: { 
-      get current() { return ArrhythmiaDetectionService.isArrhythmia(); }
-    },
+    lastIsArrhythmiaRef: { current: false }, // Service now handles this state
     currentBeatIsArrhythmiaRef: { 
       get current() { return ArrhythmiaDetectionService.isArrhythmia(); }
     },

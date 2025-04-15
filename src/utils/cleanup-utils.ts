@@ -4,7 +4,6 @@
  */
 import AudioFeedbackService from '@/services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import FingerDetectionService from '@/services/FingerDetectionService';
 
 export const cleanupServices = () => {
   // Clean up AudioFeedbackService
@@ -12,9 +11,6 @@ export const cleanupServices = () => {
   
   // Clean up ArrhythmiaDetectionService
   ArrhythmiaDetectionService.reset();
-  
-  // Clean up FingerDetectionService
-  FingerDetectionService.reset();
   
   console.log('All services cleaned up successfully');
 };

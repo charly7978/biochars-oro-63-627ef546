@@ -3,183 +3,123 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { PPGProcessor } from '@/core/signal/PPGProcessor';
-import { SignalProcessor } from '@/modules/vital-signs/signal-processor';
-import { ProcessedSignal } from '@/types/signal';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import FingerDetectionService from '@/services/FingerDetectionService';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { PPGSignalProcessor } from '../modules/SignalProcessor';
+import { ProcessedSignal, ProcessingError } from '../types/signal';
 
-interface UseSignalProcessorProps {
-  // Optional props for configuration
-  usePattern?: boolean;
-  calibration?: boolean;
-}
-
-export function useSignalProcessor(props: UseSignalProcessorProps = {}) {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
-  
-  // Create processors
-  const ppgProcessor = useRef<PPGProcessor | null>(null);
-  const signalProcessor = useRef<SignalProcessor | null>(null);
-  const processingSessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  
-  // Track metrics
-  const processedFramesCount = useRef<number>(0);
-  const lastFpsMeasurement = useRef<number>(0);
-  const fpsCounter = useRef<number>(0);
-  const processingFps = useRef<number>(0);
-  
-  // Initialize processors
-  useEffect(() => {
+/**
+ * Hook para el procesamiento de señales PPG reales
+ * No se permite ninguna simulación o datos sintéticos
+ */
+export const useSignalProcessor = () => {
+  // Create processor instance
+  const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
       timestamp: new Date().toISOString(),
-      sessionId: processingSessionId.current
+      sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    const ppg = new PPGProcessor(
-      handleProcessedSignal,
-      handleProcessingError
-    );
-    
-    ppgProcessor.current = ppg;
-    signalProcessor.current = new SignalProcessor();
-    
-    // Initialize processor
-    ppg.initialize().catch(err => {
-      console.error("Error initializing PPG processor", err);
-      setError("Fallo al inicializar el procesador PPG");
-    });
-    
-    return () => {
-      if (ppgProcessor.current) {
-        ppgProcessor.current.stop();
-      }
+    return new PPGSignalProcessor();
+  });
+  
+  // Basic state
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
+  const [error, setError] = useState<ProcessingError | null>(null);
+  const [framesProcessed, setFramesProcessed] = useState(0);
+  const [signalStats, setSignalStats] = useState({
+    minValue: Infinity,
+    maxValue: -Infinity,
+    avgValue: 0,
+    totalValues: 0
+  });
+
+  // Set up processor callbacks and cleanup
+  useEffect(() => {
+    // Signal callback
+    processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
+      setError(null);
+      setFramesProcessed(prev => prev + 1);
       
-      console.log("useSignalProcessor: Limpieza del procesador", {
-        sessionId: processingSessionId.current,
-        framesProcessed: processedFramesCount.current,
-        fps: processingFps.current
+      // Update signal statistics
+      setSignalStats(prev => {
+        return {
+          minValue: Math.min(prev.minValue, signal.filteredValue),
+          maxValue: Math.max(prev.maxValue, signal.filteredValue),
+          avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
+          totalValues: prev.totalValues + 1
+        };
       });
     };
-  }, []);
-  
-  // Update FPS measurement periodically
-  useEffect(() => {
-    const fpsInterval = setInterval(() => {
-      if (isProcessing) {
-        const now = Date.now();
-        const elapsed = now - lastFpsMeasurement.current;
-        
-        if (elapsed > 0) {
-          processingFps.current = Math.round((fpsCounter.current / elapsed) * 1000);
-          fpsCounter.current = 0;
-          lastFpsMeasurement.current = now;
-        }
-      }
-    }, 1000);
-    
-    return () => clearInterval(fpsInterval);
-  }, [isProcessing]);
-  
-  // Handler for successful signal processing
-  const handleProcessedSignal = useCallback((signal: ProcessedSignal) => {
-    if (!isProcessing || !signalProcessor.current) return;
-    
-    try {
-      // Process the signal with the vital signs processor
-      const { filteredValue, quality, fingerDetected } = signalProcessor.current.applyFilters(signal.filteredValue);
-      
-      // Update the processed signal with enhanced data
-      const enhancedSignal: ProcessedSignal = {
-        ...signal,
-        filteredValue,
-        quality,
-        fingerDetected
-      };
-      
-      // Update state with the processed signal
-      setLastSignal(enhancedSignal);
-      processedFramesCount.current++;
-      fpsCounter.current++;
-      
-    } catch (err) {
-      console.error("Error processing signal", err);
-      setError("Error procesando señal");
-    }
-  }, [isProcessing]);
-  
-  // Handler for processing errors
-  const handleProcessingError = useCallback((error: any) => {
-    console.error("PPG processing error:", error);
-    setError(`Error: ${error.message || "Error de procesamiento desconocido"}`);
-  }, []);
-  
-  // Start signal processing
+
+    // Error callback
+    processor.onError = (error: ProcessingError) => {
+      console.error("useSignalProcessor: Error en procesamiento:", error);
+      setError(error);
+    };
+
+    // Initialize processor
+    processor.initialize().catch(error => {
+      console.error("useSignalProcessor: Error de inicialización:", error);
+    });
+
+    // Cleanup
+    return () => {
+      processor.stop();
+    };
+  }, [processor]);
+
+  /**
+   * Start processing signals
+   */
   const startProcessing = useCallback(() => {
-    if (ppgProcessor.current) {
-      ppgProcessor.current.start();
-      lastFpsMeasurement.current = Date.now();
-      fpsCounter.current = 0;
-      processedFramesCount.current = 0;
-      setIsProcessing(true);
-      setError(null);
-      console.log("useSignalProcessor: Procesamiento iniciado");
-    }
-  }, []);
-  
-  // Stop signal processing
+    console.log("useSignalProcessor: Iniciando procesamiento");
+    
+    setIsProcessing(true);
+    setFramesProcessed(0);
+    setSignalStats({
+      minValue: Infinity,
+      maxValue: -Infinity,
+      avgValue: 0,
+      totalValues: 0
+    });
+    
+    processor.start();
+  }, [processor]);
+
+  /**
+   * Stop processing signals
+   */
   const stopProcessing = useCallback(() => {
-    if (ppgProcessor.current) {
-      ppgProcessor.current.stop();
-      setIsProcessing(false);
-      console.log("useSignalProcessor: Procesamiento detenido", {
-        framesProcessed: processedFramesCount.current,
-        fps: processingFps.current
-      });
-    }
-  }, []);
-  
-  // Process a single frame
-  const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing && ppgProcessor.current) {
-      ppgProcessor.current.processFrame(imageData);
-    }
-  }, [isProcessing]);
-  
-  // Reset processors
-  const reset = useCallback(() => {
-    if (signalProcessor.current) {
-      signalProcessor.current.reset();
-    }
-    
-    if (ppgProcessor.current) {
-      ppgProcessor.current.stop();
-    }
-    
-    // Reset services
-    ArrhythmiaDetectionService.reset();
-    FingerDetectionService.reset();
+    console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
-    setLastSignal(null);
-    setError(null);
-    processedFramesCount.current = 0;
-    
-    console.log("useSignalProcessor: Processor reset complete");
-  }, []);
-  
+    processor.stop();
+  }, [processor]);
+
+  /**
+   * Process a frame from camera
+   */
+  const processFrame = useCallback((imageData: ImageData) => {
+    if (isProcessing) {
+      try {
+        processor.processFrame(imageData);
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando frame:", err);
+      }
+    }
+  }, [isProcessing, processor]);
+
   return {
     isProcessing,
-    startProcessing,
-    stopProcessing,
-    processFrame,
     lastSignal,
     error,
-    fps: processingFps.current,
-    framesProcessed: processedFramesCount.current,
-    reset
+    framesProcessed,
+    signalStats,
+    startProcessing,
+    stopProcessing,
+    processFrame
   };
-}
+};
