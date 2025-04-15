@@ -1,20 +1,36 @@
 
-import { useCallback } from 'react';
+import { useEffect } from 'react';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
 
+/**
+ * Tipos de retroalimentación para latidos
+ */
 export type HeartbeatFeedbackType = 'normal' | 'arrhythmia';
 
-export const useHeartbeatFeedback = () => {
-  const playHeartbeatSound = useCallback((type: HeartbeatFeedbackType = 'normal') => {
-    return AudioFeedbackService.playBeep(type);
-  }, []);
+/**
+ * Hook que proporciona retroalimentación táctil y auditiva para los latidos cardíacos
+ * @param enabled Activa o desactiva la retroalimentación
+ * @returns Función para activar la retroalimentación con tipo específico
+ */
+export function useHeartbeatFeedback(enabled: boolean = true) {
+  useEffect(() => {
+    if (!enabled) return;
+    
+    // Cleanup al desmontar
+    return () => {
+      // No cleanup needed - service handles its own lifecycle
+    };
+  }, [enabled]);
 
-  const playAlertSound = useCallback((type: 'arrhythmia' | 'warning' | 'error' = 'arrhythmia') => {
-    return AudioFeedbackService.playAlertSound(type);
-  }, []);
-
-  return {
-    playHeartbeatSound,
-    playAlertSound
+  /**
+   * Activa la retroalimentación táctil y auditiva - solo utiliza datos reales
+   * @param type Tipo de retroalimentación: normal o arritmia
+   */
+  const trigger = (type: HeartbeatFeedbackType = 'normal') => {
+    if (!enabled) return;
+    
+    AudioFeedbackService.triggerHeartbeatFeedback(type);
   };
-};
+
+  return trigger;
+}

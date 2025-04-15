@@ -14,7 +14,7 @@ export interface HeartBeatResult {
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
   rrData?: RRIntervalData;
-  fingerDetected?: boolean;
+  fingerDetected?: boolean;  // Add this property to fix the type error
 }
 
 export interface UseHeartBeatReturn {

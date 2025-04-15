@@ -1,3 +1,4 @@
+
 /**
  * Centralized service for arrhythmia detection
  * Only uses real data - no simulation
@@ -419,24 +420,6 @@ class ArrhythmiaDetectionService {
     
     // Update last triggered time
     this.lastArrhythmiaTriggeredTime = currentTime;
-  }
-  
-  /**
-   * Clean up resources
-   */
-  public cleanUp(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
-    
-    // Clear listeners
-    this.arrhythmiaListeners = [];
-    
-    // Reset detection state
-    this.reset();
-    
-    console.log("ArrhythmiaDetectionService: All detection data reset");
   }
   
   /**
