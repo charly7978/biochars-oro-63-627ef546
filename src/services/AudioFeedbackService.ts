@@ -11,7 +11,7 @@ class AudioFeedbackService {
   private audioContext: AudioContext | null = null;
   private lastTriggerTime: number = 0;
   private lastVibrateTime: number = 0;
-  private readonly MIN_TRIGGER_INTERVAL_MS: number = 150;
+  private readonly MIN_TRIGGER_INTERVAL_MS: number = 250; // Increased to prevent double-triggering
   private readonly MIN_VIBRATE_INTERVAL_MS: number = 300;
   
   // Audio settings
@@ -19,9 +19,12 @@ class AudioFeedbackService {
   private readonly ARRHYTHMIA_BEEP_FREQUENCY: number = 440;
   private readonly NORMAL_BEEP_DURATION_MS: number = 100;
   private readonly ARRHYTHMIA_BEEP_DURATION_MS: number = 200;
+  private heartbeatSound: HTMLAudioElement | null = null;
+  private arrhythmiaSound: HTMLAudioElement | null = null;
 
   private constructor() {
     this.initAudioContext();
+    this.initSounds();
   }
 
   public static getInstance(): AudioFeedbackService {
@@ -37,6 +40,21 @@ class AudioFeedbackService {
       console.log("AudioFeedbackService: Audio context initialized successfully");
     } catch (error) {
       console.error("AudioFeedbackService: Error initializing audio context:", error);
+    }
+  }
+  
+  private initSounds(): void {
+    try {
+      // Initialize heartbeat sounds
+      this.heartbeatSound = new Audio('/sounds/heartbeat.mp3');
+      this.heartbeatSound.preload = 'auto';
+      
+      // Initialize arrhythmia sound
+      this.arrhythmiaSound = new Audio('/sounds/heartbeat.mp3');
+      this.arrhythmiaSound.preload = 'auto';
+      this.arrhythmiaSound.playbackRate = 1.3; // Slightly faster for arrhythmia
+    } catch (error) {
+      console.error("AudioFeedbackService: Error initializing sounds:", error);
     }
   }
 
@@ -78,7 +96,38 @@ class AudioFeedbackService {
           console.error('Error resuming audio context:', err);
         });
       }
-
+      
+      // Play sample-based sound if available (more realistic heartbeat)
+      if (type === 'normal' && this.heartbeatSound) {
+        this.heartbeatSound.volume = volume;
+        this.heartbeatSound.currentTime = 0;
+        this.heartbeatSound.play().catch(err => {
+          console.error('Error playing heartbeat sound:', err);
+          this.playOscillatorBeep(type, volume); // Fallback to oscillator
+        });
+        return true;
+      } else if (type === 'arrhythmia' && this.arrhythmiaSound) {
+        this.arrhythmiaSound.volume = volume;
+        this.arrhythmiaSound.currentTime = 0;
+        this.arrhythmiaSound.play().catch(err => {
+          console.error('Error playing arrhythmia sound:', err);
+          this.playOscillatorBeep(type, volume); // Fallback to oscillator
+        });
+        return true;
+      } else {
+        // If sample sounds are not available, use oscillator
+        return this.playOscillatorBeep(type, volume);
+      }
+    } catch (error) {
+      console.error("AudioFeedbackService: Error playing beep:", error);
+      return false;
+    }
+  }
+  
+  private playOscillatorBeep(type: HeartbeatFeedbackType = 'normal', volume: number = 0.7): boolean {
+    try {
+      if (!this.audioContext) return false;
+      
       const ctx = this.audioContext;
       const gainNode = ctx.createGain();
       const oscillator = ctx.createOscillator();
@@ -112,7 +161,7 @@ class AudioFeedbackService {
       
       return true;
     } catch (error) {
-      console.error("AudioFeedbackService: Error playing beep:", error);
+      console.error("AudioFeedbackService: Error playing oscillator beep:", error);
       return false;
     }
   }

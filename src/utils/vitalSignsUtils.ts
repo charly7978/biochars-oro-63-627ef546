@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -31,6 +32,40 @@ export function calculateStandardDeviation(values: number[]): number {
   const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
   return Math.sqrt(avgSqDiff);
+}
+
+/**
+ * Encuentra picos y valles en una señal real
+ */
+export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
+
+  // Algoritmo para detección de picos y valles en datos reales
+  for (let i = 1; i < values.length - 1; i++) {
+    const v = values[i];
+    // Detección de picos (orientados hacia arriba)
+    if (
+      v >= values[i - 1] * 1.05 &&
+      v >= values[i + 1] * 1.05
+    ) {
+      const localMin = Math.min(values[i - 1], values[i + 1]);
+      if (v - localMin > 0.02) {
+        peakIndices.push(i);
+      }
+    }
+    // Detección de valles (orientados hacia abajo)
+    if (
+      v <= values[i - 1] * 0.95 &&
+      v <= values[i + 1] * 0.95
+    ) {
+      const localMax = Math.max(values[i - 1], values[i + 1]);
+      if (localMax - v > 0.02) {
+        valleyIndices.push(i);
+      }
+    }
+  }
+  return { peakIndices, valleyIndices };
 }
 
 /**
@@ -73,6 +108,21 @@ export function calculateAmplitude(
 }
 
 /**
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
+ */
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
+  }
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
+}
+
+/**
  * Amplifica la señal real de forma adaptativa basada en su amplitud
  * Sin uso de datos simulados
  */
@@ -100,13 +150,4 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   
   return amplifiedValue;
-}
-
-/**
- * Calculate perfusion index based on real AC and DC components
- * No simulation is used
- */
-export function calculatePerfusionIndex(ac: number, dc: number): number {
-  if (dc === 0) return 0;
-  return ac / dc;
 }

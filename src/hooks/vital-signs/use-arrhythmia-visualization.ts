@@ -20,7 +20,7 @@ export const useArrhythmiaVisualization = () => {
   const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 8000; // 8 seconds between notifications
   
   // Detection configuration
-  const DETECTION_THRESHOLD = 0.24; // Increased from 0.22 to 0.24 para reducir falsos positivos
+  const DETECTION_THRESHOLD = 0.34; // Increased from 0.22 to 0.24 para reducir falsos positivos
   
   // Window tracking to ensure consistent visualization
   const activeWindowsRef = useRef<{[key: string]: boolean}>({});
@@ -115,7 +115,7 @@ export const useArrhythmiaVisualization = () => {
     // Adjust threshold based on stability
     let thresholdFactor = DETECTION_THRESHOLD;
     if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20; // Increased from 0.18 to 0.20
+      thresholdFactor = 0.22; // Increased from 0.18 to 0.20
     } else if (stabilityCounterRef.current < 5) {
       thresholdFactor = 0.30; // Increased from 0.28 to 0.30
     }

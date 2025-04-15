@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,7 +9,7 @@ import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visuali
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
-import { checkSignalQuality } from '../modules/heart-beat/signal-quality.ts';
+import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
 
 /**
