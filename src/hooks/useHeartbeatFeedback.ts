@@ -40,7 +40,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     if (!enabled) return;
     
     const now = Date.now();
-    const MIN_TRIGGER_INTERVAL = 250; // 250ms entre vibraciones para evitar saturación
+    const MIN_TRIGGER_INTERVAL = 200; // 200ms entre vibraciones para evitar saturación
     
     if (now - lastTriggerTimeRef.current < MIN_TRIGGER_INTERVAL) {
       return; // Evitar vibraciones demasiado frecuentes
@@ -57,7 +57,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
           console.log('Vibración normal activada');
         } else if (type === 'arrhythmia') {
           // Patrón de vibración distintivo para arritmia (pulso doble más fuerte)
-          navigator.vibrate([80, 70, 120]);
+          navigator.vibrate([60, 70, 120]);
           console.log('Vibración de arritmia activada');
         }
       } catch (error) {
@@ -74,14 +74,14 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
 
         if (type === 'normal') {
           // Tono normal para latido regular
-          osc.type = 'sine';
+          osc.type = 'square';
           osc.frequency.setValueAtTime(880, ctx.currentTime);
           gain.gain.setValueAtTime(0.05, ctx.currentTime);
         } else if (type === 'arrhythmia') {
           // Tono más grave y duradero para arritmia
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(440, ctx.currentTime);
-          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
         }
 
         osc.connect(gain);
@@ -89,7 +89,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
 
         osc.start();
         // Mayor duración para arritmias
-        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.25 : 0.1));
+        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
       } catch (error) {
         console.error('Error generando audio:', error);
       }
