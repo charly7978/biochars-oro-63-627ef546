@@ -182,33 +182,10 @@ export class BloodPressureProcessor {
       differential: Math.round(instantSystolic - instantDiastolic)
     });
 
-    // Update pressure buffers with new values
-    this.systolicBuffer.push(instantSystolic);
-    this.diastolicBuffer.push(instantDiastolic);
-    
-    // Maintain limited buffer size
-    if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
-      this.systolicBuffer.shift();
-      this.diastolicBuffer.shift();
-    }
-
-    // Calculate final blood pressure values using median and mean
-    const { finalSystolic, finalDiastolic } = this.calculateFinalValues();
-
-    // Make sure we don't return zeros or invalid values
-    const resultSystolic = Math.round(finalSystolic) || 110;
-    const resultDiastolic = Math.round(finalDiastolic) || 70;
-
-    console.log("BloodPressureProcessor: Final BP values", {
-      systolic: resultSystolic,
-      diastolic: resultDiastolic,
-      differential: resultSystolic - resultDiastolic,
-      bufferSize: this.systolicBuffer.length
-    });
-
+    // Return instant values directly for debugging
     return {
-      systolic: resultSystolic,
-      diastolic: resultDiastolic
+      systolic: Math.round(instantSystolic) || 110,
+      diastolic: Math.round(instantDiastolic) || 70
     };
   }
   
@@ -275,7 +252,7 @@ export class BloodPressureProcessor {
   }
   
   /**
-   * Calculate final blood pressure values using median and weighted average
+   * Calculate final blood pressure values using median and mean
    * for greater stability and noise rejection
    */
   private calculateFinalValues(): { finalSystolic: number, finalDiastolic: number } {
