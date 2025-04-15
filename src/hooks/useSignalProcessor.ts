@@ -1,9 +1,10 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { PPGProcessor } from '@/core/signal/PPGProcessor';
+import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
@@ -18,7 +19,7 @@ export const useSignalProcessor = () => {
       sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    return new PPGProcessor();
+    return new PPGSignalProcessor();
   });
   
   // Basic state
