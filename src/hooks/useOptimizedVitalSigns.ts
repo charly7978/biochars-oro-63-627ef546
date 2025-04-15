@@ -1,3 +1,4 @@
+
 /**
  * Hook for optimized vital signs processing with bidirectional feedback
  * Only processes real data - no simulation
@@ -6,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useVitalSignsProcessor } from './useVitalSignsProcessor';
 import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
-import bidirectionalFeedbackService, { FeedbackData, VitalSignMetric } from '@/services/BidirectionalFeedbackService';
+import BidirectionalFeedbackService, { FeedbackData, VitalSignMetric } from '@/services/BidirectionalFeedbackService';
 import { toast } from "sonner";
 
 export const useOptimizedVitalSigns = () => {
@@ -36,16 +37,17 @@ export const useOptimizedVitalSigns = () => {
    */
   const processSignal = useCallback((
     value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null }
+    rrData?: { intervals: number[], lastPeakTime: number | null },
+    isWeakSignal: boolean = false
   ): VitalSignsResult => {
     // Call the base processor
-    const result = baseProcessSignal(value, rrData);
+    const result = baseProcessSignal(value, rrData, isWeakSignal);
     
     // Store last results for optimization
     lastResultsRef.current = result;
     
     // Update signal quality based on value characteristics
-    let signalQuality = value <= 0 ? 0 : Math.min(100, Math.max(0, 
+    let signalQuality = isWeakSignal ? 0 : Math.min(100, Math.max(0, 
       value > 0.9 ? 95 : // Strong signal
       value > 0.5 ? 80 : // Good signal
       value > 0.2 ? 60 : // Moderate signal
@@ -57,15 +59,15 @@ export const useOptimizedVitalSigns = () => {
     signalQualityRef.current = signalQuality;
     
     // Process results through the bidirectional feedback system
-    if (value > 0 && result) {
-      bidirectionalFeedbackService.processVitalSignsResults(result, signalQuality);
+    if (!isWeakSignal && result) {
+      BidirectionalFeedbackService.processVitalSignsResults(result, signalQuality);
       
       // Generate audio feedback if needed
-      bidirectionalFeedbackService.generateAudioFeedback();
+      BidirectionalFeedbackService.generateAudioFeedback();
       
       // Apply UI feedback every 30 calls to avoid notification overload
       if (Math.random() < 0.03) { // ~3% chance per call
-        bidirectionalFeedbackService.applyUIFeedback();
+        BidirectionalFeedbackService.applyUIFeedback();
       }
     }
     
@@ -124,11 +126,11 @@ export const useOptimizedVitalSigns = () => {
     };
     
     // Setup feedback listeners
-    bidirectionalFeedbackService.subscribe('heartRate', handleHeartRateOptimization);
+    BidirectionalFeedbackService.subscribe('heartRate', handleHeartRateOptimization);
     
     return () => {
       // Remove listeners on unmount
-      bidirectionalFeedbackService.unsubscribe('heartRate', handleHeartRateOptimization);
+      BidirectionalFeedbackService.unsubscribe('heartRate', handleHeartRateOptimization);
     };
   }, []);
   
@@ -136,7 +138,7 @@ export const useOptimizedVitalSigns = () => {
    * Get optimization advice for improved measurements
    */
   const getOptimizationAdvice = useCallback((metric: VitalSignMetric) => {
-    return bidirectionalFeedbackService.getOptimizationAdvice(metric);
+    return BidirectionalFeedbackService.getOptimizationAdvice(metric);
   }, []);
   
   /**
@@ -157,7 +159,7 @@ export const useOptimizedVitalSigns = () => {
    * Get feedback data for a specific metric
    */
   const getFeedbackData = useCallback((metric: VitalSignMetric) => {
-    return bidirectionalFeedbackService.getLatestFeedback(metric);
+    return BidirectionalFeedbackService.getLatestFeedback(metric);
   }, []);
   
   return {
