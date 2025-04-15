@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -13,11 +14,6 @@ export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
   private readonly MIN_STRONG_SIGNALS_REQUIRED = 3;
-  
-  // Add state for weak signal detection
-  private weakSignalCount: number = 0;
-  private readonly LOW_SIGNAL_THRESHOLD = 0.03; // Example threshold (sync with HeartBeatConfig?)
-  private readonly MAX_WEAK_SIGNAL_FRAMES = 10; // Example frame count (sync with HeartBeatConfig?)
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -36,21 +32,6 @@ export class SignalQuality {
    */
   public getNoiseLevel(): number {
     return this.noiseLevel;
-  }
-  
-  /**
-   * Check if the current signal value is considered weak.
-   * @param value The raw or filtered signal value to check.
-   * @returns True if the signal is currently considered weak based on threshold and history.
-   */
-  public isSignalWeak(value: number): boolean {
-    if (Math.abs(value) < this.LOW_SIGNAL_THRESHOLD) {
-      this.weakSignalCount++;
-    } else {
-      this.weakSignalCount = 0; // Reset if signal is strong enough
-    }
-    // Return true if weak count exceeds the limit
-    return this.weakSignalCount >= this.MAX_WEAK_SIGNAL_FRAMES;
   }
   
   /**
@@ -151,6 +132,5 @@ export class SignalQuality {
   public reset(): void {
     this.noiseLevel = 0;
     this.consecutiveStrongSignals = 0;
-    this.weakSignalCount = 0; // Reset weak signal count
   }
 }
