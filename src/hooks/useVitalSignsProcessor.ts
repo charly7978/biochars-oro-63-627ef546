@@ -9,6 +9,7 @@ import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
+import { FeedbackService } from '../services/FeedbackService';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -25,6 +26,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const weakSignalsCountRef = useRef<number>(0);
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
+  
+  // Arrhythmia tracking
+  const lastArrhythmiaTriggeredRef = useRef<number>(0);
+  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 3000; // Reducido a 3 segundos para mayor sensibilidad
   
   const { 
     arrhythmiaWindows, 
@@ -68,8 +73,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
   /**
-   * Process PPG signal directly
-   * No simulation or reference values
+   * Process PPG signal directly - mejorado para detección precisa de arritmias
+   * No simulation or reference values are used
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
@@ -86,39 +91,71 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
+      const result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Add safe null check for arrhythmiaStatus
+      // Identificar cada latido arrítmico individualmente de forma más precisa
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
+        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Window based on real heart rate
-        let windowWidth = 400;
+        // Ventana más amplia pero precisa para cada latido arrítmico individual
+        let windowWidth = 400; // Ancho predeterminado
         
-        // Adjust based on real RR intervals
+        // Ajustar ventana basada en intervalos RR reales si están disponibles
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
           const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.5)); // Ventana más amplia
         }
         
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
+        // Ventana para marcar este latido específico como arrítmico
+        const startWindow = arrhythmiaTime - windowWidth/4; // Más amplio para no perder latidos
+        const endWindow = arrhythmiaTime + windowWidth/4;
+        
+        addArrhythmiaWindow(startWindow, endWindow);
+        
+        console.log("useVitalSignsProcessor: Marcando latido arrítmico individual", {
+          time: new Date(arrhythmiaTime).toISOString(),
+          windowStart: new Date(startWindow).toISOString(),
+          windowEnd: new Date(endWindow).toISOString(),
+          status: result.arrhythmiaStatus,
+          arrithmiaCount: getArrhythmiaCounter()
+        });
+        
+        // Activar feedback solo para latidos arrítmicos específicos con intervalo mínimo
+        if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+          lastArrhythmiaTriggeredRef.current = currentTime;
+          const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
+          
+          // Usar la función centralizada para notificar arritmias
+          FeedbackService.signalArrhythmia(count);
+          
+          console.log("useVitalSignsProcessor: Notificación de arritmia activada", {
+            count,
+            timeSinceLastNotification: currentTime - lastArrhythmiaTriggeredRef.current
+          });
+        }
       }
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Always return real result
+      // Save valid results
+      if (result && result.heartRate > 0) {
+        setLastValidResults(result);
+      }
+      
+      // Return processed result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error that include hydration
+      // Return safe fallback values on error that include heartRate
       return {
         spo2: 0,
         heartRate: 0,
@@ -144,6 +181,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
+    lastArrhythmiaTriggeredRef.current = 0;
     
     return null;
   };
@@ -157,6 +195,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
+    lastArrhythmiaTriggeredRef.current = 0;
     clearLog();
   };
 
@@ -165,7 +204,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults: lastValidResults, // Return last valid results
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

@@ -90,16 +90,32 @@ const Index = () => {
               setVitalSigns(vitals);
               
               if (vitals.arrhythmiaStatus && 
-                  typeof vitals.arrhythmiaStatus === 'string' && 
-                  vitals.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
-                setIsArrhythmia(true);
-                
-                if (arrhythmiaTimer.current) {
-                  clearTimeout(arrhythmiaTimer.current);
+                  typeof vitals.arrhythmiaStatus === 'string') {
+                  
+                if (vitals.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+                  console.log("Index: Arrhythmia detected", vitals.arrhythmiaStatus, vitals.lastArrhythmiaData);
+                  setIsArrhythmia(true);
+                  
+                  if (arrhythmiaTimer.current) {
+                    clearTimeout(arrhythmiaTimer.current);
+                  }
+                  
+                  arrhythmiaTimer.current = setTimeout(() => {
+                    setIsArrhythmia(false);
+                  }, 8000);
+                } 
+                else if (heartBeatIsArrhythmia) {
+                  console.log("Index: Arrhythmia detected from heart beat processor");
+                  setIsArrhythmia(true);
+                  
+                  if (arrhythmiaTimer.current) {
+                    clearTimeout(arrhythmiaTimer.current);
+                  }
+                  
+                  arrhythmiaTimer.current = setTimeout(() => {
+                    setIsArrhythmia(false);
+                  }, 8000);
                 }
-                arrhythmiaTimer.current = setTimeout(() => {
-                  setIsArrhythmia(false);
-                }, 5000);
               }
             }
           } catch (error) {
@@ -118,7 +134,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
