@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -331,9 +332,9 @@ const Index = () => {
 
           <AppTitle />
 
-          <div className="absolute inset-x-0 bottom-[40px] h-[40%] px-2 py-2">
-            <div className="grid grid-cols-2 h-full gap-2">
-              <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
+          <div className="absolute inset-x-0 bottom-[60px] h-[30%] px-2 py-2">
+            <div className="grid grid-cols-2 h-full gap-1">
+              <div className="col-span-2 grid grid-cols-2 gap-1 mb-1">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
                   value={heartRate || "--"}
@@ -349,7 +350,7 @@ const Index = () => {
                   compact={false}
                 />
               </div>
-              <div className="col-span-2 grid grid-cols-2 gap-2">
+              <div className="col-span-2 grid grid-cols-2 gap-1">
                 <VitalSign 
                   label="PRESIÓN"
                   value={vitalSigns.pressure || "--/--"}
@@ -420,3 +421,4 @@ const Index = () => {
 };
 
 export default Index;
+
