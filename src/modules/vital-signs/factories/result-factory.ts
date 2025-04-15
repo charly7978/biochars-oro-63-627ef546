@@ -1,3 +1,4 @@
+
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
@@ -18,9 +19,7 @@ export class ResultFactory {
     glucoseConfidence?: number,
     lipidsConfidence?: number,
     overallConfidence?: number,
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null,
-    fingerDetected?: boolean,
-    quality?: number
+    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
     return {
       spo2,
@@ -33,9 +32,7 @@ export class ResultFactory {
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,
-      lastArrhythmiaData,
-      fingerDetected: fingerDetected ?? false,
-      quality: quality ?? 0
+      lastArrhythmiaData
     };
   }
 
@@ -53,9 +50,7 @@ export class ResultFactory {
         triglycerides: 0
       },
       hemoglobin: 0,
-      hydration: 0,
-      fingerDetected: false,
-      quality: 0
+      hydration: 0
     };
   }
 }

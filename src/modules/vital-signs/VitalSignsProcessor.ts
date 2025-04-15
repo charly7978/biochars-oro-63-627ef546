@@ -173,9 +173,7 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,
-      arrhythmiaResult.lastArrhythmiaData,
-      fingerDetected,
-      quality
+      arrhythmiaResult.lastArrhythmiaData
     );
   }
 

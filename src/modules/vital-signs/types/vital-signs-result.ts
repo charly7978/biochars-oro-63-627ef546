@@ -1,3 +1,4 @@
+
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -37,8 +38,4 @@ export interface VitalSignsResult {
     rmssd: number;
     rrVariation: number;
   } | null;
-
-  // Fields added for UI feedback during refactoring
-  fingerDetected?: boolean;
-  quality?: number;
 }
