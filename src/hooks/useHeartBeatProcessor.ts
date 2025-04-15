@@ -19,6 +19,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
+  const bpmHistory = useRef<number[]>([]);
   
   // Hooks for processing and detection
   const {
@@ -98,7 +99,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Simplified requestBeep that uses our centralized service
+  // Stabilized requestBeep that uses centralized service
   const requestBeep = useCallback((value: number): boolean => {
     if (!isMonitoringRef.current) {
       return false;
@@ -115,6 +116,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     return false;
   }, [MAX_CONSECUTIVE_WEAK_SIGNALS]);
 
+  // Process heart rate signal with BPM stabilization
   const processSignal = useCallback((value: number): HeartBeatResult => {
     if (!processorRef.current) {
       return {
@@ -142,14 +144,33 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       currentBeatIsArrhythmiaRef
     );
 
-    if (result.bpm > 0 && result.confidence > 0.4) {
-      setCurrentBPM(result.bpm);
+    // Only update BPM if confidence is good and value is in physiological range
+    if (result.bpm > 0 && result.bpm < 200 && result.confidence > 0.4) {
+      // Add to BPM history for stabilization
+      bpmHistory.current.push(result.bpm);
+      if (bpmHistory.current.length > 5) {
+        bpmHistory.current.shift();
+      }
+      
+      // Calculate stable BPM as median of recent values
+      if (bpmHistory.current.length >= 3) {
+        const sortedHistory = [...bpmHistory.current].sort((a, b) => a - b);
+        const medianBPM = sortedHistory[Math.floor(sortedHistory.length / 2)];
+        
+        // Only update if significantly different to avoid display jitter
+        if (Math.abs(medianBPM - currentBPM) > 2 || currentBPM === 0) {
+          setCurrentBPM(medianBPM);
+        }
+      } else {
+        setCurrentBPM(result.bpm);
+      }
+      
+      // Update confidence
       setConfidence(result.confidence);
     }
 
-    // Ensure we always have the latest arrhythmia status
+    // Get arrhythmia status from the service for reliability
     if (result.rrData && result.rrData.intervals && result.rrData.intervals.length >= 3) {
-      // Use ArrhythmiaDetectionService for reliable detection
       result.isArrhythmia = ArrhythmiaDetectionService.isArrhythmia();
       result.arrhythmiaCount = ArrhythmiaDetectionService.getArrhythmiaCount();
     }
@@ -164,6 +185,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBeatIsArrhythmiaRef
   ]);
 
+  // Reset all processors
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
       sessionId: sessionId.current,
@@ -185,6 +207,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
+    bpmHistory.current = [];
     
     // Reset services
     ArrhythmiaDetectionService.reset();
@@ -193,6 +216,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     console.log('useHeartBeatProcessor: Reset complete');
   }, [resetArrhythmiaDetector, resetSignalProcessor]);
 
+  // Start monitoring
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
     if (processorRef.current) {
@@ -203,9 +227,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       lastPeakTimeRef.current = null;
       lastProcessedPeakTimeRef.current = 0;
       consecutiveWeakSignalsRef.current = 0;
+      bpmHistory.current = [];
     }
   }, []);
 
+  // Stop monitoring
   const stopMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
     if (processorRef.current) {
@@ -226,6 +252,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     isArrhythmia: ArrhythmiaDetectionService.isArrhythmia(),
     requestBeep,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
   };
 };

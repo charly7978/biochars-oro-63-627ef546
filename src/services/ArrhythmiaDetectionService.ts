@@ -43,18 +43,21 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.20; // Reduced from 0.22 to 0.20 for higher sensitivity
+  private readonly DETECTION_THRESHOLD: number = 0.17; // Lowered threshold for better sensitivity
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 5000; // Reduced from 10000 to 5000
+  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 5000;
   
   // False positive prevention
   private falsePositiveCounter: number = 0;
   private readonly MAX_FALSE_POSITIVES: number = 3;
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 1; // Lowered from 2 to 1 for faster detection
-  private readonly CONFIRMATION_WINDOW_MS: number = 10000; // Reduced from 15000 to 10000
+  private readonly REQUIRED_CONFIRMATIONS: number = 1;
+  private readonly CONFIRMATION_WINDOW_MS: number = 10000;
+  
+  // Debug mode for forced detection
+  private forcedArrhythmiaDetection: boolean = false;
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -80,6 +83,48 @@ class ArrhythmiaDetectionService {
   }
 
   /**
+   * Force arrhythmia detection for testing
+   */
+  public forceArrhythmiaDetection(): void {
+    this.forcedArrhythmiaDetection = true;
+    
+    // Create a new arrhythmia window
+    const currentTime = Date.now();
+    const window: ArrhythmiaWindow = {
+      id: `forced-${currentTime}`,
+      start: currentTime,
+      end: currentTime + 5000,
+      type: 'forced',
+      intensity: 0.8
+    };
+    
+    // Add to windows
+    this.arrhythmiaWindows.push(window);
+    
+    // Notify listeners
+    this.notifyListeners(window);
+    
+    // Trigger audio alert
+    AudioFeedbackService.playAlertSound('arrhythmia');
+    
+    // Update count
+    this.arrhythmiaCount++;
+    this.currentBeatIsArrhythmia = true;
+    
+    // Show toast
+    toast.warning("¡Arritmia detectada!", {
+      description: "Se ha detectado un posible patrón de arritmia.",
+      duration: 5000
+    });
+    
+    console.log("Forced arrhythmia detection triggered");
+    setTimeout(() => {
+      this.forcedArrhythmiaDetection = false;
+      this.currentBeatIsArrhythmia = false;
+    }, 5000);
+  }
+
+  /**
    * Register for arrhythmia window notifications
    */
   public addArrhythmiaListener(listener: ArrhythmiaListener): void {
@@ -97,6 +142,19 @@ class ArrhythmiaDetectionService {
     const prevCount = this.arrhythmiaListeners.length;
     this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
     console.log(`ArrhythmiaDetectionService: Removed listener, count: ${prevCount} -> ${this.arrhythmiaListeners.length}`);
+  }
+
+  /**
+   * Clean up old arrhythmia windows
+   */
+  private cleanupOldWindows(): void {
+    const now = Date.now();
+    const oldWindows = this.arrhythmiaWindows.filter(w => w.end < now);
+    
+    if (oldWindows.length > 0) {
+      this.arrhythmiaWindows = this.arrhythmiaWindows.filter(w => w.end >= now);
+      console.log(`ArrhythmiaDetectionService: Cleaned up ${oldWindows.length} expired arrhythmia windows`);
+    }
   }
 
   /**
@@ -123,6 +181,13 @@ class ArrhythmiaDetectionService {
   }
 
   /**
+   * Get arrhythmia windows for visualization
+   */
+  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
+    return [...this.arrhythmiaWindows];
+  }
+
+  /**
    * Update RR intervals for analysis
    */
   public updateRRIntervals(rrIntervals: number[]): void {
@@ -132,11 +197,35 @@ class ArrhythmiaDetectionService {
   }
 
   /**
+   * Check if there's currently an arrhythmia
+   */
+  public isArrhythmia(): boolean {
+    return this.currentBeatIsArrhythmia || this.forcedArrhythmiaDetection;
+  }
+
+  /**
+   * Get current arrhythmia count
+   */
+  public getArrhythmiaCount(): number {
+    return this.arrhythmiaCount;
+  }
+
+  /**
    * Detect arrhythmia based on RR interval variations
    * Only uses real data - no simulation
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
     const currentTime = Date.now();
+    
+    // Forced detection mode (for testing)
+    if (this.forcedArrhythmiaDetection) {
+      return {
+        isArrhythmia: true,
+        rmssd: 50,
+        rrVariation: 0.3,
+        timestamp: currentTime
+      };
+    }
     
     // Protection against frequent calls - prevents false detections from noise
     if (currentTime - this.lastDetectionTime < 250) {
@@ -163,7 +252,7 @@ class ArrhythmiaDetectionService {
       };
     }
     
-    // Get the 5 most recent intervals for analysis
+    // Get the most recent intervals for analysis
     const lastIntervals = intervalsToUse.slice(-5);
     
     // Verify intervals are physiologically valid
@@ -194,9 +283,9 @@ class ArrhythmiaDetectionService {
     // Adjust threshold based on stability
     let thresholdFactor = this.DETECTION_THRESHOLD;
     if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.18; // Reduced from 0.20 to 0.18
+      thresholdFactor = this.DETECTION_THRESHOLD * 0.9;
     } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.28; // Reduced from 0.30 to 0.28
+      thresholdFactor = this.DETECTION_THRESHOLD * 1.4;
     }
     
     // Determine if rhythm is irregular
@@ -214,7 +303,12 @@ class ArrhythmiaDetectionService {
     const potentialArrhythmia = isIrregular && this.stabilityCounter < 18;
     
     if (potentialArrhythmia) {
-      console.log("Potential arrhythmia detected:", { rmssd, variationRatio, threshold: thresholdFactor });
+      console.log("Potential arrhythmia detected:", { 
+        rmssd, 
+        variationRatio, 
+        threshold: thresholdFactor,
+        rrIntervals: validIntervals
+      });
     }
     
     // Update HRV data
@@ -259,15 +353,6 @@ class ArrhythmiaDetectionService {
       this.currentBeatIsArrhythmia = false;
     }
     
-    // Debug force arrhythmia detection every 30 seconds if needed
-    /* 
-    if (currentTime - this.lastArrhythmiaTriggeredTime > 30000) {
-      this.currentBeatIsArrhythmia = true;
-      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatio, thresholdFactor);
-      console.log("FORCED ARRHYTHMIA DETECTION FOR TESTING");
-    }
-    */
-    
     return {
       rmssd,
       rrVariation: variationRatio,
@@ -297,185 +382,48 @@ class ArrhythmiaDetectionService {
       return; // Too soon, ignore
     }
     
-    // Log detection for debugging
-    console.log('CONFIRMED Arrhythmia detected:', {
+    // Log detection
+    console.log("ARRHYTHMIA DETECTED", {
       rmssd,
       variationRatio,
       threshold,
-      stabilityCounter: this.stabilityCounter,
+      intervals,
       timestamp: new Date(currentTime).toISOString()
     });
     
-    // Create an arrhythmia window
-    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    // Play alert sound
+    AudioFeedbackService.playAlertSound('arrhythmia');
     
-    // Larger window to ensure visibility
-    const windowWidth = Math.max(1200, Math.min(2000, avgInterval * 4));
-    
-    const arrhythmiaWindow = {
-      start: currentTime - windowWidth/2,
-      end: currentTime + windowWidth/2
-    };
-    
-    // Add window to collection and broadcast to listeners
-    this.addArrhythmiaWindow(arrhythmiaWindow);
-    
-    // Update counters
-    this.arrhythmiaCount++;
-    this.lastArrhythmiaTriggeredTime = currentTime;
-    
-    // Trigger special feedback for arrhythmia
-    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
-    
-    // Show toast notification 
-    toast.error('¡Atención! Se ha detectado una posible arritmia', {
-      duration: 6000
+    // Show toast notification
+    toast.warning("¡Arritmia detectada!", {
+      description: "Se ha detectado un posible patrón de arritmia.",
+      duration: 5000
     });
     
-    // Auto-cleanup to avoid continuous detections
-    setTimeout(() => {
-      this.currentBeatIsArrhythmia = false;
-    }, 2000); // Shortened from windowWidth to fixed 2000ms
-  }
-  
-  /**
-   * Add a new arrhythmia window for visualization
-   */
-  public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
-    // Check if there's a similar recent window (within 500ms)
-    const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
-      Math.abs(existingWindow.start - window.start) < 500 && 
-      Math.abs(existingWindow.end - window.end) < 500
-    );
+    // Increment arrhythmia count
+    this.arrhythmiaCount++;
     
-    if (hasRecentWindow) {
-      console.log("ArrhythmiaDetectionService: Duplicate window avoided");
-      return; // Don't add duplicate windows
-    }
+    // Create arrhythmia window for visualization
+    const window: ArrhythmiaWindow = {
+      id: `arrhythmia-${currentTime}`,
+      start: currentTime,
+      end: currentTime + 5000, // 5 second window
+      type: 'irregular',
+      intensity: variationRatio
+    };
     
-    // Add new arrhythmia window
+    // Add to arrhythmia windows
     this.arrhythmiaWindows.push(window);
     
-    // Sort by time for consistent visualization
-    this.arrhythmiaWindows.sort((a, b) => b.start - a.start);
-    
-    // Limit to the 5 most recent windows
-    if (this.arrhythmiaWindows.length > 5) {
-      this.arrhythmiaWindows = this.arrhythmiaWindows.slice(0, 5);
-    }
-    
-    // Debug log
-    console.log("ArrhythmiaDetectionService: Arrhythmia window added for visualization", {
-      startTime: new Date(window.start).toISOString(),
-      endTime: new Date(window.end).toISOString(),
-      duration: window.end - window.start,
-      windowsCount: this.arrhythmiaWindows.length
-    });
-    
-    // Notify listeners about the new window
+    // Notify listeners
     this.notifyListeners(window);
-  }
-  
-  /**
-   * Force an arrhythmia detection (for testing)
-   */
-  public forceArrhythmiaDetection(): void {
-    const currentTime = Date.now();
     
-    // Create a test window
-    const windowWidth = 1500;
-    const arrhythmiaWindow = {
-      start: currentTime - windowWidth/2,
-      end: currentTime + windowWidth/2
-    };
-    
-    // Set arrhythmia state
-    this.currentBeatIsArrhythmia = true;
-    this.arrhythmiaCount++;
+    // Update last triggered time
     this.lastArrhythmiaTriggeredTime = currentTime;
-    
-    // Add window and notify
-    this.addArrhythmiaWindow(arrhythmiaWindow);
-    
-    console.log("FORCED ARRHYTHMIA DETECTION");
-    
-    // Auto-reset after window duration
-    setTimeout(() => {
-      this.currentBeatIsArrhythmia = false;
-    }, 2000); // Fixed at 2000ms instead of full window width
-    
-    // Trigger audio feedback
-    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
-    
-    // Show toast
-    toast.error('¡PRUEBA! Arritmia detectada (forzada)', {
-      duration: 6000
-    });
   }
   
   /**
-   * Get current arrhythmia status and data
-   */
-  public getArrhythmiaStatus(): ArrhythmiaStatus {
-    const statusMessage = this.arrhythmiaCount > 0 
-      ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-      : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
-    
-    const lastArrhythmiaData = this.currentBeatIsArrhythmia ? {
-      timestamp: Date.now(),
-      rmssd: calculateRMSSD(this.lastRRIntervals.slice(-5)),
-      rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5))
-    } : null;
-    
-    return {
-      arrhythmiaCount: this.arrhythmiaCount,
-      statusMessage,
-      lastArrhythmiaData
-    };
-  }
-  
-  /**
-   * Check if arrhythmia is currently detected
-   */
-  public isArrhythmia(): boolean {
-    return this.currentBeatIsArrhythmia;
-  }
-  
-  /**
-   * Get arrhythmia count
-   */
-  public getArrhythmiaCount(): number {
-    return this.arrhythmiaCount;
-  }
-  
-  /**
-   * Get all current arrhythmia windows
-   */
-  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
-    return [...this.arrhythmiaWindows];
-  }
-  
-  /**
-   * Clear outdated arrhythmia windows
-   */
-  public cleanupOldWindows(): void {
-    const currentTime = Date.now();
-    const oldCount = this.arrhythmiaWindows.length;
-    
-    // Filter only recent windows (less than 20 seconds)
-    const recentWindows = this.arrhythmiaWindows.filter(window => 
-      currentTime - window.end < 20000
-    );
-    
-    // Only update if there are changes
-    if (recentWindows.length !== oldCount) {
-      console.log(`ArrhythmiaDetectionService: Cleaned up old arrhythmia windows: removed ${oldCount - recentWindows.length} windows`);
-      this.arrhythmiaWindows = recentWindows;
-    }
-  }
-  
-  /**
-   * Reset the service completely
+   * Reset the arrhythmia detection
    */
   public reset(): void {
     this.heartRateVariability = [];
@@ -489,21 +437,11 @@ class ArrhythmiaDetectionService {
     this.falsePositiveCounter = 0;
     this.lastDetectionTime = 0;
     this.arrhythmiaConfirmationCounter = 0;
+    this.forcedArrhythmiaDetection = false;
     
-    console.log("ArrhythmiaDetectionService: All detection data reset");
-  }
-  
-  /**
-   * Clean up resources
-   */
-  public cleanUp(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
+    console.log("ArrhythmiaDetectionService: Reset complete");
   }
 }
 
-// Create and export singleton instance
-const instance = ArrhythmiaDetectionService.getInstance();
-export default instance;
+// Export singleton instance
+export default ArrhythmiaDetectionService.getInstance();

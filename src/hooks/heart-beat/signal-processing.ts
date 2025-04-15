@@ -1,4 +1,3 @@
-
 /**
  * Utility functions for heart beat signal processing
  * Solo procesa datos reales
@@ -152,4 +151,26 @@ export function handlePeakDetection(
       lastPeakTime: currentTime
     };
   }
+}
+
+/**
+ * Calculate stable BPM from RR intervals
+ * Takes median of recent intervals for stability
+ */
+export function calculateStableBpm(rrIntervals: number[]): number {
+  if (!rrIntervals || rrIntervals.length < 2) {
+    return 0;
+  }
+  
+  // Use the most recent intervals (last 5)
+  const recentIntervals = rrIntervals.slice(-5);
+  
+  // Sort intervals to find median (most stable approach)
+  const sortedIntervals = [...recentIntervals].sort((a, b) => a - b);
+  
+  // Get the median interval
+  const medianInterval = sortedIntervals[Math.floor(sortedIntervals.length / 2)];
+  
+  // Convert to BPM
+  return Math.round(60000 / medianInterval);
 }
