@@ -17,18 +17,20 @@ export class SignalValidator {
   private peakTimes: number[] = [];
   private detectedPatternCount: number = 0;
   private fingerDetectionConfirmed: boolean = false;
+  private confirmationCounter: number = 0; // Counter for consecutive valid checks
+  private readonly REQUIRED_CONFIRMATIONS = 3; // Need 3 consecutive valid checks
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
   private readonly MIN_PEAKS_FOR_PATTERN = 4; // Stays at 4 for pattern logic
   private readonly REQUIRED_PATTERNS = 3; // Reduced from 4
-  private readonly MIN_SIGNAL_VARIANCE = 0.02; // Reduced from 0.04
+  private readonly MIN_SIGNAL_VARIANCE = 0.03; // Increased from 0.02
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.01, // Keep original default here
+    minSignalAmplitude: number = 0.015, // Increased from 0.01
     minPpgValues: number = 15
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude; // Use passed value or default
@@ -82,37 +84,40 @@ export class SignalValidator {
   
   /**
    * Checks if a finger is likely detected based on signal characteristics.
-   * TEMPORARILY simplified to ignore pattern count for return value.
+   * Requires consecutive checks meeting thresholds.
    */
   public isFingerDetected(): boolean {
-    // Initial, quick check based on simple metrics
     if (this.signalHistory.length < this.MIN_PPG_VALUES) {
-      this.fingerDetectionConfirmed = false; // Ensure it's false if not enough data
+      this.fingerDetectionConfirmed = false;
+      this.confirmationCounter = 0;
       return false;
     }
-    const recentValues = this.signalHistory.slice(-10).map(p => p.value);
-    const variance = this.calculateVariance(recentValues);
-    const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+    
+    // Check is performed every few frames to avoid excessive computation 
+    // Only check confirmation logic roughly every 5 frames (~165ms at 30fps)
+    if (this.signalHistory.length % 5 === 0) {
+        const recentValues = this.signalHistory.slice(-10).map(p => p.value);
+        const variance = this.calculateVariance(recentValues);
+        const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
 
-    // If basic metrics are okay, tentatively confirm
-    if (variance > this.MIN_SIGNAL_VARIANCE && amplitude > this.MIN_SIGNAL_AMPLITUDE) { // Use full amplitude threshold here
-         this.fingerDetectionConfirmed = true;
-    } else {
-         // If basic metrics fail *after* confirmation, reset confirmation only after a grace period
-         // Check every ~0.5s (assuming ~30fps)
-         if (this.fingerDetectionConfirmed && this.signalHistory.length > this.MIN_PPG_VALUES && this.signalHistory.length % 15 === 0) { 
-             this.fingerDetectionConfirmed = false;
-         }
+        // Check if basic signal characteristics are met
+        if (variance > this.MIN_SIGNAL_VARIANCE && amplitude > this.MIN_SIGNAL_AMPLITUDE) {
+            this.confirmationCounter++;
+            if (this.confirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
+                this.fingerDetectionConfirmed = true;
+            }
+        } else {
+            // If conditions fail, reset immediately
+            this.confirmationCounter = 0;
+            this.fingerDetectionConfirmed = false;
+        }
     }
 
-    // Call pattern detection logic internally to update the count, but don't use it for the return value yet.
+    // Call pattern detection logic internally (does not affect return value directly yet)
     this.detectRhythmicPatterns(); 
 
-    // *** TEMPORARY CHANGE: Return based only on the confirmed flag ***
+    // Return the confirmed state
     return this.fingerDetectionConfirmed;
-    
-    // Original logic (kept for reference):
-    // return this.fingerDetectionConfirmed && (this.detectedPatternCount >= this.REQUIRED_PATTERNS);
   }
   
   /**
@@ -123,6 +128,7 @@ export class SignalValidator {
     this.peakTimes = [];
     this.detectedPatternCount = 0;
     this.fingerDetectionConfirmed = false;
+    this.confirmationCounter = 0; // Reset confirmation counter
   }
   
   /**
