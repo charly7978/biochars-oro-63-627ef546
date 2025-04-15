@@ -56,22 +56,9 @@ const Index = () => {
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
 
-    if (typeof window !== 'undefined') {
-      (window as any).forceArrhythmiaDetection = () => {
-        ArrhythmiaDetectionService.forceArrhythmiaDetection();
-        setIsArrhythmia(true);
-        console.log("Arrhythmia detection forced via debug tool");
-        return "Arrhythmia forced for testing";
-      };
-    }
-
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
-      
-      if (typeof window !== 'undefined') {
-        (window as any).forceArrhythmiaDetection = undefined;
-      }
     };
   }, []);
 
@@ -97,11 +84,7 @@ const Index = () => {
             if (vitals) {
               setVitalSigns(vitals);
               
-              const currentIsArrhythmia = ArrhythmiaDetectionService.isArrhythmia();
-              if (currentIsArrhythmia !== isArrhythmia) {
-                console.log("Arrhythmia status changed:", currentIsArrhythmia);
-                setIsArrhythmia(currentIsArrhythmia);
-              }
+              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
@@ -142,7 +125,6 @@ const Index = () => {
     setIsCameraOn(true);
     setIsMonitoring(true);
     startSignalProcessing();
-    startHeartBeatMonitoring();
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
       console.log("30 second measurement timer elapsed.");

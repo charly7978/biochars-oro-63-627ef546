@@ -52,12 +52,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         
         if (typeof window !== 'undefined') {
           (window as any).heartBeatProcessor = processorRef.current;
-          
-          // For debugging - force arrhythmia detection
-          (window as any).forceArrhythmiaDetection = () => {
-            ArrhythmiaDetectionService.forceArrhythmiaDetection();
-            return "Arrhythmia detection forced";
-          };
         }
       }
       
@@ -84,7 +78,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
-        (window as any).forceArrhythmiaDetection = undefined;
       }
     };
   }, []);
@@ -136,12 +129,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       setConfidence(result.confidence);
     }
 
-    if (result.rrData && result.rrData.intervals && result.rrData.intervals.length >= 3) {
-      // Use ArrhythmiaDetectionService directly for improved detection
-      ArrhythmiaDetectionService.updateRRIntervals(result.rrData.intervals);
-      const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(result.rrData.intervals);
+    if (lastRRIntervalsRef.current.length >= 3) {
+      const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       
-      // Update result with arrhythmia status
+      // Result from ArrhythmiaDetectionService is now used
       result.isArrhythmia = arrhythmiaResult.isArrhythmia;
     }
 
@@ -151,8 +142,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     confidence, 
     processSignalInternal, 
     requestBeep, 
-    lastRRIntervalsRef,
-    currentBeatIsArrhythmiaRef
+    detectArrhythmia
   ]);
 
   const reset = useCallback(() => {

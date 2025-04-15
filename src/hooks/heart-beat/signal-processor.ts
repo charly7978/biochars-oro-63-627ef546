@@ -84,20 +84,6 @@ export const useSignalProcessor = () => {
     // Add finger detection status
     processedResult.fingerDetected = FingerDetectionService.isFingerDetected();
     
-    // Update ArrhythmiaDetectionService with RR intervals if available
-    if (result.rrData && result.rrData.intervals && result.rrData.intervals.length > 0) {
-      ArrhythmiaDetectionService.updateRRIntervals(result.rrData.intervals);
-      
-      // Pass intervals to lastRRIntervalsRef for consistent access
-      if (lastRRIntervalsRef) {
-        lastRRIntervalsRef.current = result.rrData.intervals;
-      }
-      
-      // Detect arrhythmia and update the result
-      const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(result.rrData.intervals);
-      processedResult.isArrhythmia = arrhythmiaResult.isArrhythmia;
-    }
-    
     return processedResult;
   }, []);
   
