@@ -1,15 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle } from 'lucide-react';
+import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
-import AppTitle from './AppTitle';
-import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { FeedbackService } from '../services/FeedbackService';
-
-interface ArrhythmiaSegment {
-  startTime: number;
-  endTime: number | null;
-  isActive: boolean;
-}
+import AudioFeedbackService from '../services/AudioFeedbackService';
+import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
+import { ArrhythmiaWindow } from '../hooks/vital-signs/types';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -58,10 +52,8 @@ const PPGSignalMeter = memo(({
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const currentArrhythmiaSegmentRef = useRef<ArrhythmiaSegment | null>(null);
+  const currentArrhythmiaSegmentRef = useRef<ArrhythmiaWindow | null>(null);
   const lastArrhythmiaStateRef = useRef<boolean>(false);
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
@@ -84,107 +76,31 @@ const PPGSignalMeter = memo(({
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  const ARRHYTHMIA_HIGHLIGHT_DURATION = 2000;
-
-  const BEEP_PRIMARY_FREQUENCY = 880;
-  const BEEP_SECONDARY_FREQUENCY = 440;
-  const BEEP_DURATION = 100;
-  const BEEP_VOLUME = 0.7;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const triggerHeartbeatFeedback = useHeartbeatFeedback(true);
-
-  const playBeep = useCallback(async (volume: number = BEEP_VOLUME, isArrhythmic: boolean = false) => {
-    try {
-      if (!audioContextRef.current) {
-        console.log("PPGSignalMeter: Creating new AudioContext for beep");
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-
-      if (audioContextRef.current.state !== 'running') {
-        await audioContextRef.current.resume();
-      }
-
-      const now = Date.now();
-      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-        return false;
-      }
-
-      const ctx = audioContextRef.current;
-      const gainNode = ctx.createGain();
-      const oscillator = ctx.createOscillator();
-
-      oscillator.type = isArrhythmic ? 'triangle' : 'sine';
-      oscillator.frequency.setValueAtTime(
-        isArrhythmic ? BEEP_SECONDARY_FREQUENCY : BEEP_PRIMARY_FREQUENCY,
-        ctx.currentTime
-      );
-
-      gainNode.gain.setValueAtTime(0, ctx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(
-        volume, 
-        ctx.currentTime + 0.01
-      );
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.01, 
-        ctx.currentTime + (BEEP_DURATION / 1000)
-      );
-
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + (BEEP_DURATION / 1000) + 0.02);
-
-      triggerHeartbeatFeedback(isArrhythmic ? 'arrhythmia' : 'normal');
-      
-      if (isArrhythmic) {
-        FeedbackService.vibrateArrhythmia();
-      } else {
-        FeedbackService.vibrate(50);
-      }
-
-      lastBeepTimeRef.current = now;
-      return true;
-    } catch (error) {
-      console.error("Error playing beep:", error);
-      triggerHeartbeatFeedback(isArrhythmic ? 'arrhythmia' : 'normal');
-      if (isArrhythmic) {
-        FeedbackService.vibrateArrhythmia();
-      } else {
-        FeedbackService.vibrate(50);
-      }
+  const playBeep = useCallback(async (volume: number = 0.7, isArrhythmic: boolean = false) => {
+    const now = Date.now();
+    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
       return false;
     }
-  }, [triggerHeartbeatFeedback, BEEP_DURATION, BEEP_PRIMARY_FREQUENCY, BEEP_SECONDARY_FREQUENCY, BEEP_VOLUME, MIN_BEEP_INTERVAL_MS]);
+    
+    AudioFeedbackService.playBeep(isArrhythmic ? 'arrhythmia' : 'normal', volume);
+    lastBeepTimeRef.current = now;
+    return true;
+  }, [MIN_BEEP_INTERVAL_MS]);
 
   useEffect(() => {
-    const initAudio = async () => {
-      try {
-        if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
-          console.log("PPGSignalMeter: Inicializando Audio Context");
-          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
-          
-          if (audioContextRef.current.state !== 'running') {
-            await audioContextRef.current.resume();
-          }
-          
-          await playBeep(0.05);
-        }
-      } catch (err) {
-        console.error("PPGSignalMeter: Error inicializando audio context:", err);
+    const handleArrhythmiaWindow = (window: ArrhythmiaWindow) => {
+      const now = Date.now();
+      if (Math.abs(now - window.start) < 1000 || Math.abs(now - window.end) < 1000) {
+        playBeep(0.8, true);
       }
     };
     
-    initAudio();
+    ArrhythmiaDetectionService.addArrhythmiaListener(handleArrhythmiaWindow);
     
     return () => {
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(err => {
-          console.error("PPGSignalMeter: Error cerrando audio context:", err);
-        });
-        audioContextRef.current = null;
-      }
+      ArrhythmiaDetectionService.removeArrhythmiaListener(handleArrhythmiaWindow);
     };
   }, [playBeep]);
 

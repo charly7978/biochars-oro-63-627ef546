@@ -3,6 +3,7 @@
  * Utility functions for heart beat signal processing
  * Solo procesa datos reales
  */
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 interface SignalQualityConfig {
   lowSignalThreshold: number;
@@ -53,22 +54,21 @@ export function updateLastValidBpm(
  */
 export function processLowConfidenceResult(
   result: any,
-  currentBPM: number,
-  arrhythmiaCounter: number
+  currentBPM: number
 ): any {
   // Si la confianza es baja, mantener el BPM anterior para estabilidad
   if (result.confidence < 0.2 && currentBPM > 0) {
     return {
       ...result,
       bpm: currentBPM,
-      arrhythmiaCount: arrhythmiaCounter
+      arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
     };
   }
   
   // Añadir contador de arritmias para consistencia
   return {
     ...result,
-    arrhythmiaCount: arrhythmiaCounter
+    arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
   };
 }
 
