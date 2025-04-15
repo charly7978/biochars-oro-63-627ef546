@@ -125,33 +125,40 @@ const CameraView = ({
       console.log("Camera stream already exists. Skipping startCamera.");
       return;
     }
-    console.log("Attempting to start camera...");
+    console.log("Attempting to start camera (Ultra-Simplified Constraints)...");
 
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
       }
 
+      // *** START SUPER SIMPLE CONSTRAINTS ***
+      const constraints: MediaStreamConstraints = {
+        video: { facingMode: 'environment' }, // Let browser choose resolution/fps
+        audio: false
+      };
+      // *** END SUPER SIMPLE CONSTRAINTS ***
+
+      /* // Original complex constraints commented out
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
-
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1280 },
+        width: { ideal: 1280 }, // Use 720p as a common ground
         height: { ideal: 720 },
-        frameRate: { ideal: 30 }
+        frameRate: { ideal: 30 } // Request 30 fps
       };
-
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
         audio: false
       };
+      */
 
-      console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
+      console.log("Intentando acceder a la cámara con configuración MUY SIMPLIFICADA:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log("Cámara inicializada correctamente");
-      streamRef.current = newStream;
+      console.log("Cámara inicializada correctamente (Simplificado)");
+      streamRef.current = newStream; // Store in ref
 
       const videoTrack = newStream.getVideoTracks()[0];
 
