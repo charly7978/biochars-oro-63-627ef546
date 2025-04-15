@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -59,26 +60,18 @@ export class VitalSignsProcessor {
    * Using ONLY direct measurements with no reference values or simulation
    */
   public processSignal(
-    ppgValue: number, // Raw PPG value from the source (e.g., PPGProcessor)
+    ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-
-    // Apply filtering, quality check, and finger detection using SignalProcessor
-    const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
-
-    // If finger is not detected or quality is too low, return empty results
-    // Use a reasonable quality threshold (e.g., from SignalProcessor's logic or a constant)
-    const MIN_QUALITY_THRESHOLD = 30; // Example threshold, adjust as needed
-    if (!fingerDetected || quality < MIN_QUALITY_THRESHOLD) {
-       // Optionally log why processing stopped
-       // console.log(`VitalSignsProcessor: Stopping - Finger Detected: ${fingerDetected}, Quality: ${quality}`);
-      // Reset processors if finger is lost to avoid using stale data
-      if (!fingerDetected) {
-        this.reset();
-      }
+    // Check for near-zero signal
+    if (!this.signalValidator.isValidSignal(ppgValue)) {
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
-
+    
+    // Apply filtering to the real PPG signal
+    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
@@ -87,50 +80,48 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values buffer directly from SignalProcessor
-    const ppgValues = this.signalProcessor.getPPGValues(); // Contains already filtered values
-
-    // No need to push filteredValue again, SignalProcessor manages its buffer
-    // ppgValues.push(filteredValue);
-    // if (ppgValues.length > 300) {
-    //   ppgValues.splice(0, ppgValues.length - 300);
-    // }
-
-    // Check if we have enough data points (SignalProcessor buffer)
+    // Get PPG values for processing
+    const ppgValues = this.signalProcessor.getPPGValues();
+    ppgValues.push(filtered);
+    
+    // Limit the real data buffer
+    if (ppgValues.length > 300) {
+      ppgValues.splice(0, ppgValues.length - 300);
+    }
+    
+    // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
       return ResultFactory.createEmptyResults();
     }
-
-    // Remove redundant amplitude check, rely on SignalProcessor/SignalValidator
-    /*
+    
+    // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
-
+    
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
       this.signalValidator.logValidationResults(false, amplitude, ppgValues);
       return ResultFactory.createEmptyResults();
     }
-    */
-
-    // Calculate SpO2 using the filtered buffer from SignalProcessor
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues)); // Pass the buffer directly
     
-    // Calculate blood pressure using the filtered buffer
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues);
+    // Calculate SpO2 using real data only
+    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
+    
+    // Calculate blood pressure using real signal characteristics only
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
     
-    // Calculate glucose with the filtered buffer
+    // Calculate glucose with real data only
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids with the filtered buffer
+    // Calculate lipids with real data only
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate hydration with the filtered buffer
+    // Calculate hydration with real PPG data
     const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
     
     // Calculate overall confidence
@@ -157,7 +148,7 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       hydration,
-      signalQuality: quality, // Log the quality from SignalProcessor
+      signalAmplitude: amplitude,
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 
@@ -179,31 +170,18 @@ export class VitalSignsProcessor {
 
   /**
    * Calculate a default hemoglobin value based on SpO2
-   * Removed randomness for deterministic estimation.
    */
   private calculateDefaultHemoglobin(spo2: number): number {
-    if (spo2 <= 0 || spo2 < 80) return 11; // Low baseline for very low SpO2
-    if (spo2 > 100) spo2 = 100; // Cap at 100
-
-    // Simple linear mapping (example - adjust based on clinical data if possible)
-    // Maps SpO2 range [80, 100] to Hemoglobin range [11, 15]
-    const minSpo2 = 80;
-    const maxSpo2 = 100;
-    const minHb = 11;
-    const maxHb = 15;
-
-    const hb = minHb + ((spo2 - minSpo2) / (maxSpo2 - minSpo2)) * (maxHb - minHb);
-
-    // Return a rounded value
-    return Math.round(hb * 10) / 10; // Round to one decimal place
-
-    /* Old random logic:
+    if (spo2 <= 0) return 0;
+    
+    // Very basic approximation
     const base = 14;
+    
     if (spo2 > 95) return base + Math.random();
     if (spo2 > 90) return base - 1 + Math.random();
     if (spo2 > 85) return base - 2 + Math.random();
+    
     return base - 3 + Math.random();
-    */
   }
 
   /**

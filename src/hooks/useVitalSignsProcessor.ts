@@ -8,6 +8,7 @@ import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visuali
 import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
+import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -19,6 +20,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Session tracking
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  
+  // Signal quality tracking
+  const weakSignalsCountRef = useRef<number>(0);
+  const LOW_SIGNAL_THRESHOLD = 0.05;
+  const MAX_WEAK_SIGNALS = 10;
   
   const { 
     arrhythmiaWindows, 
@@ -66,9 +72,21 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    // Process signal directly - VitalSignsProcessor handles quality checks internally
+    // Check for weak signal to detect finger removal using centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      value,
+      weakSignalsCountRef.current,
+      {
+        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: MAX_WEAK_SIGNALS
+      }
+    );
+    
+    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    
+    // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
       // Add safe null check for arrhythmiaStatus
@@ -124,6 +142,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     resetProcessor();
     clearArrhythmiaWindows();
     setLastValidResults(null);
+    weakSignalsCountRef.current = 0;
     
     return null;
   };
@@ -136,6 +155,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullResetProcessor();
     setLastValidResults(null);
     clearArrhythmiaWindows();
+    weakSignalsCountRef.current = 0;
     clearLog();
   };
 

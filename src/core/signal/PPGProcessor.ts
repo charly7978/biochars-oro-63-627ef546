@@ -1,12 +1,11 @@
-// Remove KalmanFilter and WaveletDenoiser imports as they won't be used here anymore
-// import { KalmanFilter } from '@/utils/vitalSignsUtils';
-// import { WaveletDenoiser } from './filters/WaveletDenoiser';
-// Keep ProcessedSignal and ProcessingError for callback types, but ProcessedSignal won't be fully constructed here
+// Import KalmanFilter from the central utility file
+// import { KalmanFilter } from './filters/KalmanFilter';
+import { KalmanFilter } from '@/utils/vitalSignsUtils';
+import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
 export class PPGProcessor {
-  // Remove internal config and state related to filtering/quality/detection
-  /*
+  // Configuración unificada con valores optimizados
   private readonly CONFIG = {
     BUFFER_SIZE: 15,
     MIN_RED_THRESHOLD: 60,
@@ -20,30 +19,25 @@ export class PPGProcessor {
     MIN_PERIODICITY_SCORE: 0.3,
     SIGNAL_QUALITY_THRESHOLD: 65
   };
-  */
-
+  
   private isProcessing: boolean = false;
-  // Remove filter instances and state
-  // private kalmanFilter: KalmanFilter;
-  // private waveletDenoiser: WaveletDenoiser;
-  // private lastValues: number[] = [];
-  // private stableFrameCount: number = 0;
-  // private lastStableValue: number = 0;
-  // private baselineValue: number = 0;
-  // private periodicityBuffer: number[] = [];
-
+  private kalmanFilter: KalmanFilter;
+  private waveletDenoiser: WaveletDenoiser;
+  private lastValues: number[] = [];
+  private stableFrameCount: number = 0;
+  private lastStableValue: number = 0;
+  private baselineValue: number = 0;
+  private periodicityBuffer: number[] = [];
+  
   constructor(
-    // Modify the callback to expect just the raw value
-    public onRawValueReady?: (rawValue: number) => void,
+    public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
   ) {
-    // Remove filter initialization
-    // this.kalmanFilter = new KalmanFilter();
-    // this.waveletDenoiser = new WaveletDenoiser();
-    console.log("PPGProcessor: Instancia simplificada creada (solo extracción)");
+    this.kalmanFilter = new KalmanFilter();
+    this.waveletDenoiser = new WaveletDenoiser();
+    console.log("PPGProcessor: Instancia unificada creada");
   }
 
-  // initialize, start, stop, calibrate remain the same
   public initialize(): Promise<void> {
     return new Promise<void>((resolve) => {
       console.log("PPGProcessor: Inicializado");
@@ -63,11 +57,10 @@ export class PPGProcessor {
 
   public calibrate(): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
-      console.log("PPGProcessor: Calibración completada (no-op en modo extracción)");
+      console.log("PPGProcessor: Calibración completada");
       resolve(true);
     });
   }
-
 
   public processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
@@ -75,14 +68,7 @@ export class PPGProcessor {
     }
 
     try {
-      // Step 1: Extract raw red channel value
       const redValue = this.extractRedChannel(imageData);
-
-      // Step 2: Emit the raw value via callback
-      this.onRawValueReady?.(redValue);
-
-      // Remove filtering, analysis, and complex signal construction
-      /*
       const kalmanFiltered = this.kalmanFilter.filter(redValue);
       const filtered = this.waveletDenoiser.denoise(kalmanFiltered);
       
@@ -110,15 +96,12 @@ export class PPGProcessor {
       };
 
       this.onSignalReady?.(processedSignal);
-      */
-
     } catch (error) {
-      console.error("PPGProcessor: Error extrayendo valor", error);
-      this.handleError("EXTRACTION_ERROR", "Error al extraer valor de imagen");
+      console.error("PPGProcessor: Error procesando frame", error);
+      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
     }
   }
 
-  // extractRedChannel remains the same
   private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
@@ -141,15 +124,94 @@ export class PPGProcessor {
     return redSum / count;
   }
 
-  // Remove analyzeSignal, calculatePerfusionIndex, analyzePeriodicityQuality, detectROI
-  /*
-  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } { ... }
-  private calculatePerfusionIndex(): number { ... }
-  private analyzePeriodicityQuality(): number { ... }
-  private detectROI(redValue: number): ProcessedSignal['roi'] { ... }
-  */
+  private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    const isInRange = rawValue >= this.CONFIG.MIN_RED_THRESHOLD && 
+                      rawValue <= this.CONFIG.MAX_RED_THRESHOLD;
+    
+    if (!isInRange) {
+      this.stableFrameCount = 0;
+      this.lastStableValue = 0;
+      return { isFingerDetected: false, quality: 0 };
+    }
 
-  // handleError remains the same
+    if (this.lastValues.length < this.CONFIG.STABILITY_WINDOW) {
+      return { isFingerDetected: false, quality: 0 };
+    }
+
+    const recentValues = this.lastValues.slice(-this.CONFIG.STABILITY_WINDOW);
+    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    const variations = recentValues.map((val, i, arr) => {
+      if (i === 0) return 0;
+      return val - arr[i-1];
+    });
+
+    const maxVariation = Math.max(...variations.map(Math.abs));
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
+    const isStable = maxVariation < adaptiveThreshold * 2;
+
+    if (isStable) {
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.CONFIG.MIN_STABILITY_COUNT * 2);
+      this.lastStableValue = filtered;
+    } else {
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+    }
+
+    const isFingerDetected = this.stableFrameCount >= this.CONFIG.MIN_STABILITY_COUNT;
+    
+    let quality = 0;
+    if (isFingerDetected) {
+      // Calcular calidad basada en estabilidad y periodicidad
+      const stabilityQuality = (this.stableFrameCount / (this.CONFIG.MIN_STABILITY_COUNT * 2)) * 50;
+      const periodicityQuality = this.analyzePeriodicityQuality() * 50;
+      quality = Math.round(stabilityQuality + periodicityQuality);
+    }
+
+    return { isFingerDetected, quality };
+  }
+
+  private calculatePerfusionIndex(): number {
+    if (this.lastValues.length < 10) return 0;
+    
+    const values = this.lastValues.slice(-10);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const dc = (max + min) / 2;
+    
+    if (dc === 0) return 0;
+    
+    const ac = max - min;
+    const pi = (ac / dc) * 100;
+    
+    return Math.min(pi, 10); // Limitar a un máximo razonable de 10%
+  }
+
+  private analyzePeriodicityQuality(): number {
+    if (this.periodicityBuffer.length < 30) return 0.5;
+    
+    // Implementar análisis simple de periodicidad
+    let correlationSum = 0;
+    const halfSize = Math.floor(this.periodicityBuffer.length / 2);
+    
+    for (let i = 0; i < halfSize; i++) {
+      correlationSum += Math.abs(this.periodicityBuffer[i] - this.periodicityBuffer[i + halfSize]);
+    }
+    
+    const avgCorrelation = correlationSum / halfSize;
+    const normalizedCorrelation = Math.min(1, Math.max(0, 1 - (avgCorrelation / 10)));
+    
+    return normalizedCorrelation;
+  }
+
+  private detectROI(redValue: number): ProcessedSignal['roi'] {
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
+  }
+
   private handleError(code: string, message: string): void {
     const error: ProcessingError = {
       code,
