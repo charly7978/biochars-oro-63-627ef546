@@ -6,9 +6,6 @@ export interface VitalSignsResult {
   // Blood oxygen saturation percentage
   spo2: number;
   
-  // Heart rate in BPM
-  heartRate: number;
-  
   // Blood pressure in format "systolic/diastolic"
   pressure: string;
   
