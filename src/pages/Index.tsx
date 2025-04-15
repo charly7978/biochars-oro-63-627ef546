@@ -207,34 +207,141 @@ const Index = () => {
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
 
-    console.log("Index: handleStreamReady llamado. Stream recibido."); // Added log
+    console.log("Index: handleStreamReady llamado. Stream recibido.");
 
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) {
       console.error("Index: No se encontró videoTrack en handleStreamReady.");
-      stopMonitoring(); // Stop if track is missing
+      stopMonitoring();
       return;
     }
 
-    // *** TEMPORARILY DISABLE IMAGE PROCESSING LOOP FOR DEBUGGING ***
-    console.log("Index: Bucle processImage DESACTIVADO TEMPORALMENTE para debug.");
-    /*
+    // *** RE-ENABLE IMAGE PROCESSING LOOP ***
+    console.log("Index: Reactivando bucle processImage.");
     const imageCapture = new ImageCapture(videoTrack);
 
-    // ... (rest of the setup: tempCanvas, tempCtx, variables)
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+     if (!tempCtx) {
+       console.error("No se pudo obtener el contexto 2D para processImage.");
+       stopMonitoring(); // Stop if context fails
+       return;
+     }
+
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30; // Aim for 30fps processing
+    let frameCount = 0;
+    let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
 
     const processImage = async () => {
-      // ... (entire processImage function content)
+      // Log Start
+      // console.log("processImage: Loop start. isMonitoring:", isMonitoring);
+
+      if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
+        if (isMonitoring) {
+          console.error(`processImage: Stopping. isMonitoring=${isMonitoring}, stream=${!!stream}, track=${!!videoTrack}, trackState=${videoTrack?.readyState}`);
+          stopMonitoring(); // Use stopMonitoring which clears state
+        }
+        return; // Exit the loop
+      }
+
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          // Log before grabFrame
+          // console.log(`processImage: Ready to grabFrame. Track state: ${videoTrack.readyState}`);
+          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
+
+          console.time("FrameProcessingTotal"); // Start total timer
+          console.time("grabFrame");
+          const frame = await imageCapture.grabFrame();
+          console.timeEnd("grabFrame");
+          // Log after grabFrame
+          // console.log(`processImage: Frame grabbed. Size: ${frame.width}x${frame.height}`);
+
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
+
+          tempCanvas.width = targetWidth;
+          tempCanvas.height = targetHeight;
+
+          if (!tempCtx) throw new Error("Canvas context lost during loop");
+
+          // Log before drawImage
+          // console.log("processImage: Drawing frame to canvas...");
+          console.time("drawImage");
+          tempCtx.drawImage(
+            frame,
+            0, 0, frame.width, frame.height,
+            0, 0, targetWidth, targetHeight
+          );
+          console.timeEnd("drawImage");
+          // Log after drawImage
+          // console.log("processImage: Frame drawn.");
+
+          // Close the frame to free up memory, especially important!
+          frame.close();
+
+          // Log before getImageData
+          // console.log("processImage: Getting image data...");
+          console.time("getImageData");
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          console.timeEnd("getImageData");
+          // Log after getImageData
+          // console.log("processImage: Image data obtained.");
+
+          // Log before processFrame call
+          // console.log("processImage: Calling processFrame(imageData)...");
+          console.time("processFrameHook");
+          processFrame(imageData);
+          console.timeEnd("processFrameHook");
+          // Log after processFrame call
+          // console.log("processImage: processFrame call completed.");
+
+          frameCount++;
+          lastProcessTime = now;
+
+          // --- FPS Calculation (Keep as is) ---
+          if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
+            // console.log(`Processing FPS: ${processingFps}`); // Optional FPS log
+            frameCount = 0;
+            lastFpsUpdateTime = now;
+          }
+          console.timeEnd("FrameProcessingTotal"); // End total timer
+
+        } catch (error) {
+          console.timeEnd("FrameProcessingTotal"); // Ensure timer ends even on error
+          // Log error details
+          console.error("processImage: Error caught inside loop:", error);
+          if (error instanceof DOMException) {
+            console.error(`processImage: DOMException Name: ${error.name}, Message: ${error.message}`);
+          }
+          console.error(`processImage: Stopping monitoring due to error. trackState: ${videoTrack?.readyState}`);
+          stopMonitoring(); // Stop monitoring on any error within the loop
+          return; // Exit loop on error
+        }
+      }
+
+      // Request next frame ONLY if still monitoring
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
+      } else {
+         console.log("processImage: Monitoring stopped, not requesting next frame.");
+      }
     };
 
     if (videoTrack && videoTrack.readyState === 'live') {
+       console.log("Index: Iniciando bucle processImage porque videoTrack está 'live'.") // Added log
       processImage();
     } else {
-      console.error("Cannot start processing loop, video track is not live.");
-      finalizeMeasurement();
+      console.error("Index: No se puede iniciar processImage, videoTrack no está 'live'. State:", videoTrack?.readyState);
+      stopMonitoring(); // Stop if track is not live initially
     }
-    */
-    // *** END TEMPORARY DISABLE ***
+    // *** END RE-ENABLE ***
   };
 
   const handleToggleMonitoring = () => {
