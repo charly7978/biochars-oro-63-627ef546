@@ -9,6 +9,7 @@ export interface HeartBeatResult {
     lastPeakTime: number | null;
   };
   isArrhythmia?: boolean;
+  fingerDetected?: boolean;  // Add this property to fix the type error
 }
 
 export interface ProcessedSignal {
