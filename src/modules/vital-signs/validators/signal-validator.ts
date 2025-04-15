@@ -99,6 +99,8 @@ export class SignalValidator {
         const recentValues = this.signalHistory.slice(-10).map(p => p.value);
         const variance = this.calculateVariance(recentValues);
         const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+        
+        console.log(`SignalValidator Check - Variance: ${variance.toFixed(4)}, Amplitude: ${amplitude.toFixed(4)} (Thresholds V:${this.MIN_SIGNAL_VARIANCE}, A:${this.MIN_SIGNAL_AMPLITUDE})`);
 
         // Check if basic signal characteristics are met
         if (variance > this.MIN_SIGNAL_VARIANCE && amplitude > this.MIN_SIGNAL_AMPLITUDE) {

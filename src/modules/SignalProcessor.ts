@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 
 /**
@@ -44,7 +43,8 @@ export class PPGSignalProcessor implements SignalProcessor {
     MIN_RED_THRESHOLD: 30, // Reducido para permitir mayor sensibilidad
     MAX_RED_THRESHOLD: 250, // Aumentado para mayor rango de detección
     STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 2 // Reducido para permitir detección más rápida
+    MIN_STABILITY_COUNT: 2, // Reducido para permitir detección más rápida
+    filterStrength: 0.5, // Ejemplo, ajustar según sea necesario
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -146,7 +146,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         MIN_RED_THRESHOLD: Math.max(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
         MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
         STABILITY_WINDOW: 3, // Menor ventana para permitir más variación
-        MIN_STABILITY_COUNT: 2 // Requiere menos frames consecutivos
+        MIN_STABILITY_COUNT: 2, // Requiere menos frames consecutivos
       };
 
       console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
@@ -188,6 +188,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       
       // Aplicar filtrado inicial para reducir ruido
       const filtered = this.kalmanFilter.filter(redValue);
+      
+      // --- LOGGING ADDED --- START ---
+      console.log(`PPGSignalProcessor Frame - Raw: ${redValue.toFixed(2)}, Filtered: ${filtered.toFixed(2)}`);
+      // --- LOGGING ADDED --- END ---
       
       // Almacenar para análisis
       this.lastValues.push(filtered);
