@@ -1,53 +1,50 @@
 
-import { useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 
-export const useBeepProcessor = () => {
-  const pendingBeepsQueue = useRef<{ timestamp: number; isArrhythmia: boolean }[]>([]);
-  const lastBeepTimeRef = useRef<number>(0);
+export function useBeepProcessor() {
+  const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
   const beepProcessorTimeoutRef = useRef<number | null>(null);
-  const MIN_BEEP_INTERVAL_MS = 250;
-
-  const requestImmediateBeep = useCallback((isArrhythmia: boolean = false): boolean => {
-    const now = Date.now();
-    
-    // Prevent too frequent beeps
-    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-      return false;
-    }
-    
-    lastBeepTimeRef.current = now;
-    console.log(`Beep processor: Beep requested (arrhythmia: ${isArrhythmia})`);
-    
-    // In reality, we don't need to play a beep as it's handled by PPGSignalMeter
-    return true;
+  const lastBeepTimeRef = useRef<number>(0);
+  
+  const MIN_BEEP_INTERVAL_MS = 500;
+  
+  const processBeepQueue = useCallback((
+    isMonitoringRef: React.MutableRefObject<boolean>,
+    lastSignalQualityRef: React.MutableRefObject<number>,
+    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
+    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
+    missedBeepsCounter: React.MutableRefObject<number>,
+    playBeep: (volume: number) => boolean | Promise<boolean>
+  ) => {
+    // Todo el procesamiento de beeps ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
+    pendingBeepsQueue.current = []; // Vaciar cola
+    return;
   }, []);
 
-  const processBeepQueue = useCallback(() => {
-    if (pendingBeepsQueue.current.length === 0) {
-      if (beepProcessorTimeoutRef.current) {
-        clearTimeout(beepProcessorTimeoutRef.current);
-        beepProcessorTimeoutRef.current = null;
-      }
-      return;
-    }
-    
-    const nextBeep = pendingBeepsQueue.current[0];
-    const now = Date.now();
-    
-    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL_MS) {
-      requestImmediateBeep(nextBeep.isArrhythmia);
-      pendingBeepsQueue.current.shift();
-    }
-    
-    beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, 100);
-  }, [requestImmediateBeep]);
+  const requestImmediateBeep = useCallback((
+    value: number,
+    isMonitoringRef: React.MutableRefObject<boolean>,
+    lastSignalQualityRef: React.MutableRefObject<number>,
+    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
+    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
+    missedBeepsCounter: React.MutableRefObject<number>,
+    playBeep: (volume: number) => boolean | Promise<boolean>
+  ): boolean => {
+    // Todo el código de beep ha sido eliminado
+    // El sonido es manejado exclusivamente por PPGSignalMeter
+    console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
+    return false;
+  }, []);
 
   const cleanup = useCallback(() => {
+    pendingBeepsQueue.current = [];
+    
     if (beepProcessorTimeoutRef.current) {
       clearTimeout(beepProcessorTimeoutRef.current);
       beepProcessorTimeoutRef.current = null;
     }
-    pendingBeepsQueue.current = [];
   }, []);
 
   return {
@@ -58,4 +55,4 @@ export const useBeepProcessor = () => {
     beepProcessorTimeoutRef,
     cleanup
   };
-};
+}
