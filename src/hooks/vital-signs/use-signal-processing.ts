@@ -52,31 +52,41 @@ export const useSignalProcessing = () => {
     
     try {
       // Process signal directly - no simulation
-      // Since processSignal returns a Promise, we'll handle it by returning a fallback
-      // and updating the log when the promise resolves
-      const resultPromise = processorRef.current.processSignal(value, rrData);
+      // Important: We've changed this to handle sync processing only, avoiding Promise issues
+      let result = processorRef.current.processSignal(value, rrData);
       
-      // Create a fallback result while waiting for the promise to resolve
-      const fallbackResult = ResultFactory.createEmptyResults();
-      
-      // Process the promise in the background
-      resultPromise.then(realResult => {
-        // Add the real result to the log when it's available
-        signalLog.current.push({
-          timestamp: Date.now(),
-          value,
-          result: realResult
-        });
+      // Add null checks for arrhythmia status
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        if (signalLog.current.length > 100) {
-          signalLog.current = signalLog.current.slice(-100);
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
-      }).catch(error => {
-        console.error("Error processing vital signs:", error);
+      }
+      
+      // Log processed signals
+      signalLog.current.push({
+        timestamp: Date.now(),
+        value,
+        result
       });
       
-      // Return fallback result immediately
-      return fallbackResult;
+      if (signalLog.current.length > 100) {
+        signalLog.current = signalLog.current.slice(-100);
+      }
+      
+      // Always return real result
+      return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
       

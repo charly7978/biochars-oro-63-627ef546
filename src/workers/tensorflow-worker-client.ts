@@ -1,6 +1,7 @@
+
 /**
  * Cliente para comunicación con el worker de TensorFlow
- * Gestiona la comunicación, carga de modelos y predicciones en tiempo real
+ * Gestiona la comunicación, carga de modelos y predicciones
  */
 import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from '../core/neural/tensorflow/TensorFlowConfig';
 
@@ -16,12 +17,6 @@ export class TensorFlowWorkerClient {
   private initializing: boolean = false;
   private modelStatus: Map<string, 'loading' | 'ready' | 'error'> = new Map();
   private config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG;
-  private predictionCache: Map<string, {
-    timestamp: number;
-    input: string;
-    result: number[];
-  }> = new Map();
-  private readonly CACHE_LIFETIME_MS = 500; // 500ms cache lifetime
   
   constructor(config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG) {
     this.config = config;
@@ -60,36 +55,6 @@ export class TensorFlowWorkerClient {
       
       console.log('TensorFlow Worker inicializado:', initResult);
       this.initialized = true;
-      
-      // Detect and configure for WebGPU if available
-      if ('gpu' in navigator) {
-        try {
-          const adapter = await navigator.gpu?.requestAdapter();
-          if (adapter) {
-            const features = Array.from(adapter.features.values());
-            const device = await adapter.requestDevice();
-            if (device) {
-              console.log('WebGPU detected, optimizing TensorFlow configuration', {
-                features,
-                limits: adapter.limits
-              });
-              
-              // Apply WebGPU optimization
-              await this.setConfig({
-                ...this.config,
-                backend: 'webgpu',
-                memoryOptions: {
-                  ...this.config.memoryOptions,
-                  useFloat16: true,
-                  enableTensorPacking: true
-                }
-              });
-            }
-          }
-        } catch (error) {
-          console.warn('WebGPU detection failed, using default backend', error);
-        }
-      }
     } catch (error) {
       console.error('Error inicializando TensorFlow Worker:', error);
       this.terminateWorker();
@@ -192,7 +157,6 @@ export class TensorFlowWorkerClient {
   public async setConfig(config: TensorFlowConfig): Promise<void> {
     this.config = config;
     await this.sendMessage('setConfig', { config });
-    console.log('TensorFlow worker configuration updated', config);
   }
   
   /**
@@ -231,18 +195,15 @@ export class TensorFlowWorkerClient {
     try {
       // Enviar mensaje para cargar modelo
       await this.sendMessage('loadModel', { modelType }, 60000);
-      console.log(`Modelo TensorFlow '${modelType}' cargado exitosamente`);
       return true;
     } catch (error) {
       this.modelStatus.set(modelType, 'error');
-      console.error(`Error cargando modelo TensorFlow '${modelType}':`, error);
       throw error;
     }
   }
   
   /**
    * Realiza una predicción con un modelo específico
-   * Con optimizaciones para tiempo real (caché y batch)
    */
   public async predict(modelType: string, input: number[]): Promise<number[]> {
     // Asegurar que el modelo está cargado
@@ -250,59 +211,8 @@ export class TensorFlowWorkerClient {
       await this.loadModel(modelType);
     }
     
-    // Calcular hash de la entrada para caché
-    const inputHash = this.hashInput(modelType, input);
-    const now = Date.now();
-    
-    // Verificar caché
-    const cachedResult = this.predictionCache.get(inputHash);
-    if (cachedResult && (now - cachedResult.timestamp) < this.CACHE_LIFETIME_MS) {
-      // Usar resultado en caché si es reciente
-      return cachedResult.result;
-    }
-    
-    try {
-      // Enviar mensaje para predecir
-      const result = await this.sendMessage('predict', { modelType, input });
-      
-      // Almacenar en caché
-      this.predictionCache.set(inputHash, {
-        timestamp: now,
-        input: inputHash,
-        result
-      });
-      
-      // Limpiar caché antigua
-      this.cleanupCache();
-      
-      return result;
-    } catch (error) {
-      console.error(`Error predicting with model ${modelType}:`, error);
-      return []; // Return empty array on error
-    }
-  }
-  
-  /**
-   * Genera un hash simple para la entrada
-   */
-  private hashInput(modelType: string, input: number[]): string {
-    // Simplificado: usar los primeros y últimos valores, longitud y suma
-    const first = input.length > 0 ? input[0] : 0;
-    const last = input.length > 0 ? input[input.length - 1] : 0;
-    const sum = input.reduce((a, b) => a + b, 0);
-    return `${modelType}-${input.length}-${first.toFixed(3)}-${last.toFixed(3)}-${sum.toFixed(3)}`;
-  }
-  
-  /**
-   * Limpia caché antigua
-   */
-  private cleanupCache(): void {
-    const now = Date.now();
-    for (const [key, value] of this.predictionCache.entries()) {
-      if (now - value.timestamp > this.CACHE_LIFETIME_MS) {
-        this.predictionCache.delete(key);
-      }
-    }
+    // Enviar mensaje para predecir
+    return this.sendMessage('predict', { modelType, input });
   }
   
   /**
@@ -319,7 +229,6 @@ export class TensorFlowWorkerClient {
    */
   public async cleanupMemory(): Promise<void> {
     await this.sendMessage('cleanupMemory');
-    this.predictionCache.clear();
   }
   
   /**
@@ -356,7 +265,6 @@ export class TensorFlowWorkerClient {
     
     this.callbacks.clear();
     this.modelStatus.clear();
-    this.predictionCache.clear();
     this.initialized = false;
     this.initializing = false;
   }
