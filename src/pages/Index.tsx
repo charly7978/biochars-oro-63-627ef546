@@ -72,8 +72,10 @@ const Index = () => {
 
       if (vitals) {
          setVitalSigns(vitals);
-         if (vitals.lastArrhythmiaData) {
-         }
+         // Update derived UI states
+         // TODO: Extract HR properly if needed. Placeholder using SpO2 for now.
+         setHeartRate(Math.round(vitals.spo2 > 0 ? (60 + vitals.spo2 * 0.4) : 0)); // Placeholder logic
+         setSignalQuality(vitals.quality ?? 0);
       }
     } catch (error) {
       console.error("Error processing vital signs:", error);
@@ -305,6 +307,7 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
+            isFingerDetected={vitalSigns.fingerDetected}
             signalQuality={signalQuality}
           />
         </div>
@@ -315,7 +318,7 @@ const Index = () => {
               Calidad: {signalQuality}
             </div>
             <div className="text-white text-sm">
-              Huella Status
+              {vitalSigns.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
 
@@ -323,7 +326,7 @@ const Index = () => {
             <PPGSignalMeter 
               value={0}
               quality={signalQuality}
-              isFingerDetected={false}
+              isFingerDetected={vitalSigns.fingerDetected}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
