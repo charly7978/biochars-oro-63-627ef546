@@ -37,14 +37,12 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with natural synchronization
- * No simulation is used - direct measurement only
+ * Solo usa datos reales - sin simulación
  */
 export function handlePeakDetection(
   result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  requestBeepCallback: (value: number) => boolean,
-  isMonitoringRef: React.MutableRefObject<boolean>,
-  value: number
+  isMonitoringRef: React.MutableRefObject<boolean>
 ): void {
   const now = Date.now();
   
@@ -52,14 +50,8 @@ export function handlePeakDetection(
   if (result.isPeak && result.confidence > 0.05) {
     lastPeakTimeRef.current = now;
     
-    // Solicitar beep si estamos monitoreando y la confianza es buena
-    if (isMonitoringRef.current && result.confidence > 0.4) {
-      requestBeepCallback(value);
-    }
-    
     console.log("Peak-detection: Pico detectado", {
       confianza: result.confidence,
-      valor: value,
       tiempo: new Date(now).toISOString(),
       transicion: result.transition ? {
         activa: result.transition.active,
