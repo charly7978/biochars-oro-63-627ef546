@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -58,7 +57,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const isMonitoringRef = useRef<boolean>(false);
 
   const WINDOW_WIDTH_MS = 7000;
   const CANVAS_WIDTH = 1100;
@@ -749,27 +747,4 @@ const PPGSignalMeter = memo(({
   ]);
 
   useEffect(() => {
-    // Start the animation loop
-    animationFrameRef.current = requestAnimationFrame(renderSignal);
-    
-    // Cleanup on unmount
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [renderSignal]);
-
-  return (
-    <div className="w-full h-full flex flex-col items-center justify-center">
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full"
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-      />
-    </div>
-  );
-});
-
-export default PPGSignalMeter;
+    animation
