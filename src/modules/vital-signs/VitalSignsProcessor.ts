@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -113,6 +112,11 @@ export class VitalSignsProcessor {
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
     
+    // Estimate heart rate from signal if RR data available
+    const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
+      ? Math.round(60000 / (rrData.intervals.slice(-5).reduce((sum, val) => sum + val, 0) / 5))
+      : 0;
+    
     // Calculate glucose with real data only
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
@@ -142,6 +146,7 @@ export class VitalSignsProcessor {
 
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
+      heartRate,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
@@ -155,6 +160,7 @@ export class VitalSignsProcessor {
     // Prepare result with all metrics including hydration
     return ResultFactory.createResult(
       spo2,
+      heartRate,
       pressure,
       arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,

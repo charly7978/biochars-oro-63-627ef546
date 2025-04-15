@@ -3,16 +3,7 @@
  * Handles core signal processing functionality with separate channels for different vital signs
  */
 import { SignalChannel } from './SignalChannel';
-// Remove SignalFilter import
-// import { SignalFilter } from './filters/SignalFilter';
-// Import utility functions instead
-import {
-  applyMedianFilter,
-  applyEMAFilter,
-  applySMAFilter,
-  evaluateSignalQuality,
-  SIGNAL_CONSTANTS
-} from '@/utils/vitalSignsUtils';
+import { SignalFilter } from './filters/SignalFilter';
 
 export interface SignalProcessingConfig {
   bufferSize: number;
@@ -25,16 +16,12 @@ export class SignalCoreProcessor {
   private rawBuffer: number[] = [];
   private filteredBuffer: number[] = [];
   private readonly bufferSize: number;
-  // Remove filter instance
-  // private readonly filter: SignalFilter;
-  // Add state for EMA filter
-  private lastEMA: number | null = null;
+  private readonly filter: SignalFilter;
   private lastProcessTime: number = 0;
   
   constructor(config: SignalProcessingConfig) {
-    this.bufferSize = config.bufferSize || SIGNAL_CONSTANTS.DEFAULT_BUFFER_SIZE; // Use constant
-    // Remove filter initialization
-    // this.filter = new SignalFilter();
+    this.bufferSize = config.bufferSize || 300;
+    this.filter = new SignalFilter();
     
     // Initialize channels
     if (config.channels) {
@@ -83,7 +70,7 @@ export class SignalCoreProcessor {
       this.rawBuffer.shift();
     }
     
-    // Apply common filtering using utility functions
+    // Apply common filtering
     const filtered = this.applyFilters(value);
     
     // Add to filtered buffer
@@ -92,8 +79,8 @@ export class SignalCoreProcessor {
       this.filteredBuffer.shift();
     }
     
-    // Calculate signal quality using utility function
-    const quality = evaluateSignalQuality(this.filteredBuffer, SIGNAL_CONSTANTS.MIN_AMPLITUDE);
+    // Calculate signal quality
+    const quality = this.calculateSignalQuality(filtered);
     
     // Update all channels
     this.channels.forEach(channel => {
@@ -181,20 +168,36 @@ export class SignalCoreProcessor {
   }
   
   /**
-   * Apply multiple filtering techniques to the signal using utility functions
+   * Apply multiple filtering techniques to the signal
    */
   private applyFilters(value: number): number {
-    // Apply median filter first
-    const medianFiltered = applyMedianFilter(value, this.rawBuffer, 5); // windowSize = 5
-
-    // Apply EMA filter
-    const { nextEMA, filteredValue: emaFiltered } = applyEMAFilter(medianFiltered, this.lastEMA, 0.3); // alpha = 0.3
-    this.lastEMA = nextEMA; // Update EMA state
-
-    // Apply SMA filter
-    const { filteredValue: smaFiltered } = applySMAFilter(emaFiltered, this.filteredBuffer, SIGNAL_CONSTANTS.SMA_WINDOW); // Use constant
-
-    return smaFiltered;
+    return this.filter.applyFilters(value, this.rawBuffer);
+  }
+  
+  /**
+   * Calculate signal quality from 0-100
+   */
+  private calculateSignalQuality(value: number): number {
+    if (this.filteredBuffer.length < 10) return 0;
+    
+    // Basic quality calculation
+    const recentValues = this.filteredBuffer.slice(-10);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const range = max - min;
+    
+    // Calculate noise level
+    let noiseLevel = 0;
+    for (let i = 1; i < recentValues.length; i++) {
+      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
+    }
+    noiseLevel /= (recentValues.length - 1);
+    
+    // Signal-to-noise ratio based quality
+    const signalToNoise = range / (noiseLevel || 0.001);
+    
+    // Convert to 0-100 scale
+    return Math.min(100, Math.max(0, signalToNoise * 20));
   }
   
   /**
@@ -225,8 +228,6 @@ export class SignalCoreProcessor {
     this.rawBuffer = [];
     this.filteredBuffer = [];
     this.lastProcessTime = 0;
-    // Reset EMA state
-    this.lastEMA = null;
     
     this.channels.forEach(channel => {
       channel.reset();
