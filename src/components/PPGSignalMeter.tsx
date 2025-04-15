@@ -4,7 +4,6 @@ import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AudioFeedbackService from '../services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
 import { ArrhythmiaWindow } from '../hooks/vital-signs/types';
-import { useHeartbeatFeedback } from '@/hooks/useHeartbeatFeedback';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -21,13 +20,10 @@ interface PPGSignalMeterProps {
   preserveResults?: boolean;
   isArrhythmia?: boolean;
   arrhythmiaWindows?: { start: number, end: number }[];
-  signalData?: PPGDataPointExtended[];
-  currentBPM?: number;
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
-  isPeak?: boolean;
 }
 
 const PPGSignalMeter = memo(({ 
@@ -40,9 +36,7 @@ const PPGSignalMeter = memo(({
   rawArrhythmiaData,
   preserveResults = false,
   isArrhythmia = false,
-  arrhythmiaWindows = [],
-  signalData = [],
-  currentBPM = 0
+  arrhythmiaWindows = []
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -63,10 +57,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const [displayData, setDisplayData] = useState<PPGDataPointExtended[]>([]);
-  const [lastPeakTimestamp, setLastPeakTimestamp] = useState<number>(0);
-
-  const triggerBeep = useHeartbeatFeedback(true);
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -679,30 +669,6 @@ const PPGSignalMeter = memo(({
       cancelAnimationFrame(animationFrameRef.current);
     };
   }, [renderSignal]);
-
-  useEffect(() => {
-    if (signalData && signalData.length > 0) {
-      const latestPoint = signalData[signalData.length - 1];
-      if (latestPoint) {
-        const pointWithPeakInfo: PPGDataPointExtended = {
-            ...latestPoint,
-            isPeak: latestPoint.isPeak || false,
-            isArrhythmia: latestPoint.isArrhythmia || false
-        };
-        dataBufferRef.current.push(pointWithPeakInfo);
-        setDisplayData(dataBufferRef.current.getPoints());
-
-        if (currentBPM > 0 && pointWithPeakInfo.isPeak && pointWithPeakInfo.time > lastPeakTimestamp) {
-            triggerBeep(pointWithPeakInfo.isArrhythmia ? 'arrhythmia' : 'normal');
-            setLastPeakTimestamp(pointWithPeakInfo.time);
-        }
-      }
-    } else if (!preserveResults) {
-       // Si no hay datos y no se deben preservar, limpiar
-       // dataBufferRef.current.clear();
-       // setDisplayData([]);
-    }
-  }, [signalData, preserveResults, triggerBeep, lastPeakTimestamp, currentBPM]);
 
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);

@@ -1,6 +1,6 @@
-import { getCalibrationSystem, MeasurementData, ProcessedMeasurement, CalibrationState, IntelligentCalibrationSystem, MeasurementType, CalibrationConfig } from './IntelligentCalibrationSystem';
-import { TensorFlowWorkerClient } from "@/workers/tensorflow-worker-client";
-import { getModel } from "@/core/neural/ModelRegistry";
+
+import { getCalibrationSystem, MeasurementData } from './IntelligentCalibrationSystem';
+import { getModel } from '../neural/ModelRegistry';
 import { HeartRateNeuralModel } from '../neural/HeartRateModel';
 import { SpO2NeuralModel } from '../neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
@@ -12,62 +12,30 @@ import { GlucoseNeuralModel } from '../neural/GlucoseModel';
  * Esta clase ofrece un punto de entrada simplificado para integrar
  * el sistema de calibración inteligente con el resto de la aplicación.
  */
-
-// *** Mover la definición de la interfaz aquí ***
-interface NeuralModelResults {
-  heartRate: number;
-  spo2: number;
-  systolic: number;
-  diastolic: number;
-  glucose: number;
-}
-
 export class CalibrationIntegrator {
-  private static _instance: CalibrationIntegrator | null = null;
+  private static instance: CalibrationIntegrator;
   
-  private calibrationSystem: IntelligentCalibrationSystem;
+  private calibrationSystem = getCalibrationSystem();
   private lastProcessedData: MeasurementData | null = null;
-  private tfWorkerClient: TensorFlowWorkerClient | null = null;
-  private isTfWorkerInitialized: boolean = false;
-  
-  private readonly MIN_QUALITY_FOR_NEURAL = 60;
   
   private constructor() {
-    this.calibrationSystem = getCalibrationSystem();
-    this.initializeTensorFlowWorker();
+    // Privado para implementar patrón singleton
   }
   
-  private async initializeTensorFlowWorker(): Promise<void> {
-    if (this.tfWorkerClient && this.isTfWorkerInitialized) {
-      console.log("TF Worker Client already initialized.");
-      return;
-    }
-    if (!this.tfWorkerClient) {
-      console.log("Initializing TensorFlow Worker Client in CalibrationIntegrator...");
-      this.tfWorkerClient = new TensorFlowWorkerClient();
-      try {
-        await this.tfWorkerClient.initialize();
-        this.isTfWorkerInitialized = true;
-        console.log("TensorFlow Worker Client initialized successfully.");
-      } catch (error) {
-        console.error("FATAL: Error initializing TensorFlow Worker Client:", error);
-        this.tfWorkerClient = null;
-        this.isTfWorkerInitialized = false;
-      }
-    }
-  }
-  
+  /**
+   * Obtiene la instancia del integrador
+   */
   public static getInstance(): CalibrationIntegrator {
-    if (!CalibrationIntegrator._instance) {
-      CalibrationIntegrator._instance = new CalibrationIntegrator();
+    if (!CalibrationIntegrator.instance) {
+      CalibrationIntegrator.instance = new CalibrationIntegrator();
     }
-    return CalibrationIntegrator._instance;
+    return CalibrationIntegrator.instance;
   }
   
   /**
    * Procesa una medición mediante el sistema de calibración y los modelos neuronales
    */
-  public async processMeasurement(rawData: {
+  public processMeasurement(rawData: {
     ppgValues: number[];
     heartRate: number;
     spo2: number;
@@ -75,7 +43,7 @@ export class CalibrationIntegrator {
     diastolic: number;
     glucose: number;
     quality: number;
-  }): Promise<{
+  }): {
     heartRate: number;
     spo2: number;
     systolic: number;
@@ -83,169 +51,116 @@ export class CalibrationIntegrator {
     glucose: number;
     quality: number;
     isCalibrated: boolean;
-  }> {
-    const { ppgValues, quality } = rawData;
-    const calibrationState = this.calibrationSystem.getCalibrationState();
-    const correctionFactors = calibrationState.correctionFactors;
-
-    console.log(`[Calibration Phase: ${calibrationState.phase}] Factors: HR=${correctionFactors.heartRate?.toFixed(3)}, SpO2=${correctionFactors.spo2?.toFixed(3)}, Sys=${correctionFactors.systolic?.toFixed(3)}, Dia=${correctionFactors.diastolic?.toFixed(3)}, Gluc=${correctionFactors.glucose?.toFixed(3)}`);
-
-    let neuralResults: NeuralModelResults | null = null;
-
-    if (quality >= this.MIN_QUALITY_FOR_NEURAL) {
-      console.time("NeuralModelProcessing");
-      neuralResults = await this.applyNeuralModels(ppgValues);
-      console.timeEnd("NeuralModelProcessing");
-    } else {
-      console.log(`[DIAG] Skipping NN processing (Quality: ${quality} < ${this.MIN_QUALITY_FOR_NEURAL})`);
-    }
-
-    let baseHeartRate = rawData.heartRate;
-    let baseSpo2 = rawData.spo2;
-    let baseSystolic = rawData.systolic;
-    let baseDiastolic = rawData.diastolic;
-    let baseGlucose = rawData.glucose;
-
-    let combinedHeartRate = baseHeartRate;
-    let combinedSpo2 = baseSpo2;
-    let combinedSystolic = baseSystolic;
-    let combinedDiastolic = baseDiastolic;
-    let combinedGlucose = baseGlucose;
-
-    if (neuralResults) {
-      const weightNeural = Math.max(0, Math.min(1, (quality - this.MIN_QUALITY_FOR_NEURAL) / (100 - this.MIN_QUALITY_FOR_NEURAL)));
-      const weightTraditional = 1 - weightNeural;
-
-      console.log(`[DIAG] Combining: Quality=${quality}, WeightNeural=${weightNeural.toFixed(2)}`);
-      console.log(`[DIAG] HR: Trad=${baseHeartRate}, NN=${neuralResults.heartRate}`);
-      console.log(`[DIAG] SpO2: Trad=${baseSpo2}, NN=${neuralResults.spo2}`);
-      console.log(`[DIAG] BP: Trad=${baseSystolic}/${baseDiastolic}, NN=${neuralResults.systolic}/${neuralResults.diastolic}`);
-      console.log(`[DIAG] Gluc: Trad=${baseGlucose}, NN=${neuralResults.glucose}`);
-
-      combinedHeartRate = (neuralResults.heartRate * weightNeural) + (baseHeartRate * weightTraditional);
-      combinedSpo2 = (neuralResults.spo2 * weightNeural) + (baseSpo2 * weightTraditional);
-      combinedSystolic = (neuralResults.systolic * weightNeural) + (baseSystolic * weightTraditional);
-      combinedDiastolic = (neuralResults.diastolic * weightNeural) + (baseDiastolic * weightTraditional);
-      combinedGlucose = (neuralResults.glucose * weightNeural) + (baseGlucose * weightTraditional);
-
-      console.log(`[DIAG] Combined values -> HR:${combinedHeartRate.toFixed(1)}, SpO2:${combinedSpo2.toFixed(1)}, BP:${combinedSystolic.toFixed(1)}/${combinedDiastolic.toFixed(1)}, Gluc:${combinedGlucose.toFixed(1)}`);
-    } else {
-       console.log("[DIAG] Using only traditional values (NN skipped or failed).");
-    }
-
-    console.log(` -> Before Corr: HR=${combinedHeartRate?.toFixed(1)}, SpO2=${combinedSpo2?.toFixed(1)}, BP=${combinedSystolic?.toFixed(1)}/${combinedDiastolic?.toFixed(1)}, Gluc=${combinedGlucose?.toFixed(1)}`);
-
-    const finalHeartRate = (combinedHeartRate || 0) * (correctionFactors.heartRate || 1);
-    const finalSpo2 = (combinedSpo2 || 0) * (correctionFactors.spo2 || 1);
-    const finalSystolic = (combinedSystolic || 0) * (correctionFactors.systolic || 1);
-    const finalDiastolic = (combinedDiastolic || 0) * (correctionFactors.diastolic || 1);
-    const finalGlucose = (combinedGlucose || 0) * (correctionFactors.glucose || 1);
-
-    console.log(` -> After Corr:  HR=${finalHeartRate?.toFixed(1)}, SpO2=${finalSpo2?.toFixed(1)}, BP=${finalSystolic?.toFixed(1)}/${finalDiastolic?.toFixed(1)}, Gluc=${finalGlucose?.toFixed(1)}`);
-
-    const clampedSpo2 = Math.min(100, Math.max(85, finalSpo2 || 0));
-    const clampedSystolic = Math.min(200, Math.max(80, finalSystolic || 0));
-    let clampedDiastolic = Math.min(130, Math.max(50, finalDiastolic || 0));
-    if (clampedDiastolic >= clampedSystolic) {
-       clampedDiastolic = Math.max(50, clampedSystolic - 10);
-    }
-    const clampedHeartRate = Math.min(220, Math.max(30, finalHeartRate || 0));
-    const clampedGlucose = Math.min(400, Math.max(50, finalGlucose || 0));
-
-    const isCalibrated = calibrationState.phase === 'active';
-
-    const measurementForSystem: MeasurementData = {
-       timestamp: Date.now(),
-       heartRate: clampedHeartRate,
-       spo2: clampedSpo2,
-       systolic: clampedSystolic,
-       diastolic: clampedDiastolic,
-       glucose: clampedGlucose,
-       quality: quality,
+  } {
+    // Preparar datos de medición
+    const measurementData: MeasurementData = {
+      timestamp: Date.now(),
+      heartRate: rawData.heartRate,
+      spo2: rawData.spo2,
+      systolic: rawData.systolic,
+      diastolic: rawData.diastolic,
+      glucose: rawData.glucose,
+      quality: rawData.quality,
+      rawSignal: rawData.ppgValues
     };
-    this.calibrationSystem.processMeasurement(measurementForSystem);
-
-    this.lastProcessedData = measurementForSystem;
-
-    const finalResult = {
-      heartRate: Math.round(clampedHeartRate),
-      spo2: Math.round(clampedSpo2),
-      systolic: Math.round(clampedSystolic),
-      diastolic: Math.round(clampedDiastolic),
-      glucose: Math.round(clampedGlucose),
-      quality: quality,
-      isCalibrated: isCalibrated,
+    
+    // Procesar con sistema de calibración
+    const calibratedData = this.calibrationSystem.processMeasurement(measurementData);
+    this.lastProcessedData = measurementData;
+    
+    // Aplicar modelos neuronales si hay suficiente señal de buena calidad
+    if (rawData.quality > 75 && rawData.ppgValues && rawData.ppgValues.length > 200) {
+      // Usar modelos neuronales para obtener estimaciones independientes
+      const neuralEstimates = this.applyNeuralModels(rawData.ppgValues);
+      
+      // Combinar estimaciones calibradas con las neurales (70/30)
+      return {
+        heartRate: Math.round(calibratedData.heartRate * 0.7 + neuralEstimates.heartRate * 0.3),
+        spo2: this.weightedSpo2(calibratedData.spo2, neuralEstimates.spo2),
+        systolic: Math.round(calibratedData.systolic * 0.7 + neuralEstimates.systolic * 0.3),
+        diastolic: Math.round(calibratedData.diastolic * 0.7 + neuralEstimates.diastolic * 0.3),
+        glucose: Math.round(calibratedData.glucose * 0.7 + neuralEstimates.glucose * 0.3),
+        quality: calibratedData.quality,
+        isCalibrated: this.calibrationSystem.getCalibrationState().phase === 'active'
+      };
+    }
+    
+    // Si no hay señal de buena calidad, usar solo los datos calibrados
+    return {
+      heartRate: Math.round(calibratedData.heartRate),
+      spo2: Math.round(calibratedData.spo2 * 10) / 10, // 1 decimal para SpO2
+      systolic: Math.round(calibratedData.systolic),
+      diastolic: Math.round(calibratedData.diastolic),
+      glucose: Math.round(calibratedData.glucose),
+      quality: calibratedData.quality,
+      isCalibrated: this.calibrationSystem.getCalibrationState().phase === 'active'
     };
-
-    console.log(`[DIAG] Final Processed Result -> HR:${finalResult.heartRate}, SpO2:${finalResult.spo2}, BP:${finalResult.systolic}/${finalResult.diastolic}, Gluc:${finalResult.glucose}, Quality:${finalResult.quality}, Calibrated:${finalResult.isCalibrated}`);
-
-    return finalResult;
   }
   
   /**
    * Aplica modelos neuronales para obtener estimaciones independientes
    */
-  private async applyNeuralModels(ppgValues: number[]): Promise<NeuralModelResults> {
-    if (!this.isTfWorkerInitialized || !this.tfWorkerClient) {
-        console.warn("TF Worker not initialized. Returning default NN results.");
-        const defaultResults: NeuralModelResults = { heartRate: 75, spo2: 98, systolic: 120, diastolic: 80, glucose: 95 };
-        return defaultResults;
-    }
-
-    let results: NeuralModelResults = {
-      heartRate: 75, spo2: 98, systolic: 120, diastolic: 80, glucose: 95,
+  private applyNeuralModels(ppgValues: number[]): {
+    heartRate: number;
+    spo2: number;
+    systolic: number;
+    diastolic: number;
+    glucose: number;
+  } {
+    // Valores por defecto
+    const defaultEstimates = {
+      heartRate: 75,
+      spo2: 97,
+      systolic: 120,
+      diastolic: 80,
+      glucose: 95
     };
-    const client = this.tfWorkerClient!;
-
-    const predictWithFallback = async (modelType: 'heartRate' | 'spo2' | 'bloodPressure' | 'glucose') => {
-      try {
-        const modelStatus = client.getModelStatus(modelType);
-        if (modelStatus === 'ready') {
-          console.time(`NN Predict ${modelType}`);
-          const predictionResult = await client.predict(modelType, ppgValues);
-          console.timeEnd(`NN Predict ${modelType}`);
-
-          console.log(`NN Prediction raw result for ${modelType}:`, predictionResult);
-
-          if (modelType === 'bloodPressure') {
-            if (predictionResult && predictionResult.length >= 2 && !isNaN(predictionResult[0]) && !isNaN(predictionResult[1])) {
-              results.systolic = Math.round(predictionResult[0]);
-              results.diastolic = Math.round(predictionResult[1]);
-              console.log(`[DIAG] Successful NN BP Prediction: ${results.systolic}/${results.diastolic}`);
-            } else {
-              console.warn(`[DIAG] Invalid NN BP prediction result. Raw:`, predictionResult, `Using fallback values (120/80).`);
-              results.systolic = 120;
-              results.diastolic = 80;
-            }
-          } else if (predictionResult && predictionResult.length > 0 && !isNaN(predictionResult[0])) {
-             results[modelType] = Math.round(predictionResult[0]);
-             console.log(`[DIAG] Successful NN ${modelType} Prediction:`, results[modelType]);
-          } else {
-             console.warn(`[DIAG] Invalid NN ${modelType} prediction result. Raw:`, predictionResult, `Using fallback value.`);
-          }
-        } else {
-          console.warn(`[DIAG] TF Worker model ${modelType} not ready (Status: ${modelStatus}). Using fallback values.`);
-        }
-      } catch (error) {
-        console.error(`[DIAG] Error during NN prediction for ${modelType}:`, error);
+    
+    try {
+      // Obtener estimaciones de cada modelo
+      const heartRateModel = getModel<HeartRateNeuralModel>('heartRate');
+      const spo2Model = getModel<SpO2NeuralModel>('spo2');
+      const bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+      const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
+      
+      // Aplicar modelos que estén disponibles
+      const heartRate = heartRateModel ? heartRateModel.predict(ppgValues)[0] : defaultEstimates.heartRate;
+      const spo2 = spo2Model ? spo2Model.predict(ppgValues)[0] : defaultEstimates.spo2;
+      
+      let systolic = defaultEstimates.systolic;
+      let diastolic = defaultEstimates.diastolic;
+      if (bpModel) {
+        const bpResult = bpModel.predict(ppgValues);
+        systolic = bpResult[0];
+        diastolic = bpResult[1];
       }
-    };
-
-    await Promise.all([
-        predictWithFallback('heartRate'),
-        predictWithFallback('spo2'),
-        predictWithFallback('bloodPressure'),
-        predictWithFallback('glucose')
-    ]);
-
-    return results;
+      
+      const glucose = glucoseModel ? glucoseModel.predict(ppgValues)[0] : defaultEstimates.glucose;
+      
+      return { heartRate, spo2, systolic, diastolic, glucose };
+    } catch (error) {
+      console.error('Error al aplicar modelos neuronales:', error);
+      return defaultEstimates;
+    }
+  }
+  
+  /**
+   * Ponderación especial para SpO2 (más conservadora)
+   */
+  private weightedSpo2(calibrated: number, neural: number): number {
+    // SpO2 es más crítico, usar un enfoque más conservador
+    // Preferir el valor más alto, ya que valores bajos son más peligrosos si son incorrectos
+    const weighted = Math.max(
+      calibrated,
+      neural * 0.8 + calibrated * 0.2
+    );
+    return Math.round(weighted * 10) / 10; // 1 decimal
   }
   
   /**
    * Inicia el proceso de calibración
    */
   public startCalibration(): void {
-    console.log("Starting calibration via Integrator -> System");
     this.calibrationSystem.startCalibration();
   }
   
@@ -253,31 +168,42 @@ export class CalibrationIntegrator {
    * Cancela o reinicia la calibración
    */
   public resetCalibration(fullReset: boolean = false): void {
-    console.log(`Resetting calibration (Full: ${fullReset}) via Integrator -> System`);
     this.calibrationSystem.resetCalibration(fullReset);
-    this.lastProcessedData = null;
   }
   
   /**
    * Obtiene el estado actual de calibración
    */
-  public getCalibrationState(): CalibrationState {
-    return { ...this.calibrationSystem.getCalibrationState() };
+  public getCalibrationState() {
+    return this.calibrationSystem.getCalibrationState();
   }
   
   /**
    * Proporciona retroalimentación externa (ej. de un dispositivo médico de referencia)
    */
-  public provideExternalReference(type: MeasurementType, value: number | { systolic: number, diastolic: number }): void {
-    console.log(`Providing external reference for ${type} via Integrator -> System`);
-    this.calibrationSystem.setReferenceValue(type, value);
+  public provideExternalReference(type: 'heartRate' | 'spo2' | 'bloodPressure' | 'glucose', value: number | { systolic: number, diastolic: number }): void {
+    this.calibrationSystem.provideFeedback({
+      measurementType: type,
+      referenceValue: value
+    });
   }
   
   /**
    * Actualiza la configuración del sistema de calibración
    */
-  public updateCalibrationConfig(config: Partial<CalibrationConfig>): void {
-    console.log("Updating calibration config via Integrator -> System");
-    this.calibrationSystem.updateConfig(config);
+  public updateCalibrationConfig(config: {
+    autoCalibration?: boolean;
+    continuousLearning?: boolean;
+    adaptToEnvironment?: boolean;
+    adaptToUserActivity?: boolean;
+    aggressiveness?: number;
+  }): void {
+    this.calibrationSystem.updateConfig({
+      autoCalibrationEnabled: config.autoCalibration,
+      continuousLearningEnabled: config.continuousLearning,
+      adaptToEnvironment: config.adaptToEnvironment,
+      adaptToUserActivity: config.adaptToUserActivity,
+      aggressiveness: config.aggressiveness
+    });
   }
 }
