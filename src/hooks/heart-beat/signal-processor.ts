@@ -9,8 +9,7 @@ import {
   createWeakSignalResult,
   handlePeakDetection,
   updateLastValidBpm,
-  processLowConfidenceResult,
-  calculateStableBpm
+  processLowConfidenceResult
 } from './signal-processing';
 
 export const useSignalProcessor = () => {
@@ -87,18 +86,11 @@ export const useSignalProcessor = () => {
     
     // Update ArrhythmiaDetectionService with RR intervals if available
     if (result.rrData && result.rrData.intervals && result.rrData.intervals.length > 0) {
-      // Transfer RR intervals to reference for consistency
-      lastRRIntervalsRef.current = result.rrData.intervals;
-      
-      // Update service with valid intervals
       ArrhythmiaDetectionService.updateRRIntervals(result.rrData.intervals);
       
-      // Calculate stable BPM from RR intervals when we have enough data
-      if (result.rrData.intervals.length >= 3) {
-        const stableBpm = calculateStableBpm(result.rrData.intervals);
-        if (stableBpm > 0) {
-          processedResult.bpm = stableBpm;
-        }
+      // Pass intervals to lastRRIntervalsRef for consistent access
+      if (lastRRIntervalsRef) {
+        lastRRIntervalsRef.current = result.rrData.intervals;
       }
       
       // Detect arrhythmia and update the result
