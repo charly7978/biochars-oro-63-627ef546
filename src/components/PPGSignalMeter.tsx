@@ -313,50 +313,74 @@ const PPGSignalMeter = memo(({
     }
     
     arrhythmiaWindows.forEach((window, index) => {
-      if (now - window.start < WINDOW_WIDTH_MS) {
-        const startX = ctx.canvas.width - ((now - window.start) * ctx.canvas.width / WINDOW_WIDTH_MS);
-        const endX = ctx.canvas.width - ((now - window.end) * ctx.canvas.width / WINDOW_WIDTH_MS);
-        const width = endX - startX;
+      const windowStartTime = window.start;
+      const windowEndTime = window.end;
+      
+      const windowVisible = (now - windowStartTime < WINDOW_WIDTH_MS || now - windowEndTime < WINDOW_WIDTH_MS);
+      
+      if (windowVisible) {
+        const startX = ctx.canvas.width - ((now - windowStartTime) * ctx.canvas.width / WINDOW_WIDTH_MS);
+        const endX = ctx.canvas.width - ((now - windowEndTime) * ctx.canvas.width / WINDOW_WIDTH_MS);
+        const width = Math.max(10, endX - startX);
+        
+        const adjustedStartX = Math.max(0, startX);
+        const adjustedWidth = Math.min(width, ctx.canvas.width - adjustedStartX);
         
         ctx.fillStyle = 'rgba(220, 38, 38, 0.20)';
-        ctx.fillRect(startX, 0, width, ctx.canvas.height);
+        ctx.fillRect(adjustedStartX, 0, adjustedWidth, ctx.canvas.height);
         
         ctx.beginPath();
         ctx.strokeStyle = 'rgba(220, 38, 38, 0.6)';
         ctx.lineWidth = 3;
         ctx.setLineDash([8, 4]);
         
-        ctx.moveTo(startX, 0);
-        ctx.lineTo(startX, ctx.canvas.height);
-        ctx.moveTo(endX, 0);
-        ctx.lineTo(endX, ctx.canvas.height);
+        if (adjustedStartX >= 0 && adjustedStartX <= ctx.canvas.width) {
+          ctx.moveTo(adjustedStartX, 0);
+          ctx.lineTo(adjustedStartX, ctx.canvas.height);
+        }
+        
+        if (adjustedStartX + adjustedWidth >= 0 && adjustedStartX + adjustedWidth <= ctx.canvas.width) {
+          ctx.moveTo(adjustedStartX + adjustedWidth, 0);
+          ctx.lineTo(adjustedStartX + adjustedWidth, ctx.canvas.height);
+        }
         
         ctx.stroke();
         ctx.setLineDash([]);
         
-        ctx.fillStyle = '#DC2626';
-        ctx.font = 'bold 24px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('ARRITMIA', startX + width/2, 40);
+        if (adjustedWidth > 50) {
+          const textX = adjustedStartX + adjustedWidth/2;
+          
+          ctx.fillStyle = '#DC2626';
+          ctx.font = 'bold 24px Inter';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+          ctx.shadowBlur = 4;
+          ctx.fillText('ARRITMIA', textX, 40);
+          ctx.shadowBlur = 0;
+          
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
+          const symbolSize = 22;
+          const symbolX = textX;
+          const symbolY = 70;
+          ctx.moveTo(symbolX, symbolY - symbolSize);
+          ctx.lineTo(symbolX + symbolSize, symbolY + symbolSize);
+          ctx.lineTo(symbolX - symbolSize, symbolY + symbolSize);
+          ctx.closePath();
+          ctx.fill();
+          
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 20px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('!', symbolX, symbolY + symbolSize - 2);
+        }
         
-        ctx.beginPath();
-        ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
-        const symbolSize = 22;
-        const symbolX = startX + width/2;
-        const symbolY = 70;
-        ctx.moveTo(symbolX, symbolY - symbolSize);
-        ctx.lineTo(symbolX + symbolSize, symbolY + symbolSize);
-        ctx.lineTo(symbolX - symbolSize, symbolY + symbolSize);
-        ctx.closePath();
-        ctx.fill();
-        
-        ctx.fillStyle = '#FFFFFF';
-        ctx.font = 'bold 20px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('!', symbolX, symbolY + symbolSize - 2);
-        
-        if (Math.abs(now - window.start) < 500 || Math.abs(now - window.end) < 500) {
+        if (Math.abs(now - windowStartTime) < 500 || Math.abs(now - windowEndTime) < 500) {
           playBeep(0.8, true);
+        }
+        
+        if (Math.abs(now - windowStartTime) < 300) {
+          currentArrhythmiaSegmentRef.current = window;
         }
       }
     });
