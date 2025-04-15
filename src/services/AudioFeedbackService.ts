@@ -111,6 +111,28 @@ class AudioFeedbackService {
     }
   }
 
+  // Add playAlertSound method for arrhythmia alerts
+  public playAlertSound(type: 'arrhythmia' | 'warning' | 'error' = 'arrhythmia'): boolean {
+    try {
+      if (!this.audioContext) {
+        this.initAudioContext();
+        if (!this.audioContext) return false;
+      }
+
+      // Play appropriate sound based on type
+      if (type === 'arrhythmia') {
+        // Use a more distinctive sound for arrhythmia alerts
+        return this.playBeep('arrhythmia', 0.9);
+      } else {
+        // For other alerts, use a simple beep
+        return this.playBeep('normal', 0.85);
+      }
+    } catch (error) {
+      console.error(`AudioFeedbackService: Error playing ${type} alert:`, error);
+      return false;
+    }
+  }
+
   private vibrate(type: HeartbeatFeedbackType = 'normal'): void {
     if (!('vibrate' in navigator)) {
       console.log('Vibración no soportada en este dispositivo');
