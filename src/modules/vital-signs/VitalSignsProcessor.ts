@@ -105,16 +105,13 @@ export class VitalSignsProcessor {
     }
     
     // Calculate SpO2 using real data only
-    const rawSpo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
-    const spo2 = Math.round(rawSpo2);
-    console.log("DBG: Raw SpO2:", rawSpo2);
+    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
     
     // Calculate blood pressure using BloodPressureAnalyzer
-    const rawBp = this.bpAnalyzer.analyze(ppgValues.slice(-90));
-    const pressure = rawBp.systolic > 0 && rawBp.diastolic > 0
-      ? `${Math.round(rawBp.systolic)}/${Math.round(rawBp.diastolic)}`
+    const bp = this.bpAnalyzer.analyze(ppgValues.slice(-90));
+    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
-    console.log("DBG: Raw BP:", rawBp);
     
     // Estimate heart rate from signal if RR data available
     const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
@@ -122,24 +119,19 @@ export class VitalSignsProcessor {
       : 0;
     
     // Calculate glucose with real data only using GlucoseEstimator
-    const rawGlucose = this.glucoseEstimator.analyze(ppgValues);
-    const glucose = Math.round(rawGlucose);
+    const glucose = Math.round(this.glucoseEstimator.analyze(ppgValues));
+    // GlucoseEstimator doesn't have getConfidence. Let's use a default or derive it.
+    // For now, let's set a placeholder confidence or remove its direct use.
+    // Let's assume moderate confidence if a value is returned.
     const glucoseConfidence = glucose > 0 ? 0.6 : 0; // Placeholder confidence
-    console.log("DBG: Raw Glucose:", rawGlucose);
     
     // Calculate lipids with real data only using LipidEstimator
-    const rawLipids = this.lipidEstimator.analyze(ppgValues);
-    const lipidsConfidence = (rawLipids.totalCholesterol > 0 && rawLipids.triglycerides > 0) ? 0.6 : 0; // Placeholder
-    console.log("DBG: Raw Lipids:", rawLipids);
+    const lipids = this.lipidEstimator.analyze(ppgValues);
+    // LipidEstimator doesn't have getConfidence. Use placeholder.
+    const lipidsConfidence = (lipids.totalCholesterol > 0 && lipids.triglycerides > 0) ? 0.6 : 0; // Placeholder
     
     // Calculate hydration with real PPG data
-    const rawHydration = this.hydrationEstimator.analyze(ppgValues);
-    const hydration = Math.round(rawHydration);
-    console.log("DBG: Raw Hydration:", rawHydration);
-    
-    // Log received RR data
-    console.log("DBG: Received rrData:", rrData);
-    console.log("DBG: Arrhythmia Result:", arrhythmiaResult);
+    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -150,8 +142,8 @@ export class VitalSignsProcessor {
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
-      totalCholesterol: Math.round(rawLipids.totalCholesterol),
-      triglycerides: Math.round(rawLipids.triglycerides)
+      totalCholesterol: Math.round(lipids.totalCholesterol),
+      triglycerides: Math.round(lipids.triglycerides)
     } : {
       totalCholesterol: 0,
       triglycerides: 0
