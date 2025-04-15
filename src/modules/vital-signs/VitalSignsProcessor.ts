@@ -63,24 +63,31 @@ export class VitalSignsProcessor {
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
     // Check for near-zero signal
+    console.log("VP DBG: Entering processSignal"); // Log 1
     if (!this.signalValidator.isValidSignal(ppgValue)) {
       console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
     
     // Apply filtering using the refactored SignalProcessor's method
+    console.log("VP DBG: Before applyFilters"); // Log 2
     const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
+    console.log("VP DBG: After applyFilters", { filteredValue, quality, fingerDetected }); // Log 3
     
     // Process arrhythmia data if available and valid
+    console.log("VP DBG: Before arrhythmia processing"); // Log 4
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
                            rrData.intervals.length >= 3 && 
                            rrData.intervals.every(i => i > 300 && i < 2000) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+    console.log("VP DBG: After arrhythmia processing", { arrhythmiaResult }); // Log 5
     
     // Get PPG values for processing - use the filtered value now
+    console.log("VP DBG: Before getPPGValues"); // Log 6
     const ppgValues = this.signalProcessor.getPPGValues(); // getPPGValues likely returns the buffer of filtered values
+    console.log("VP DBG: After getPPGValues", { ppgValuesLength: ppgValues?.length }); // Log 7
     // No need to push again if signalProcessor already handles its buffer
     // ppgValues.push(filteredValue);
     
@@ -90,19 +97,28 @@ export class VitalSignsProcessor {
     }
     
     // Check if we have enough data points
+    console.log("VP DBG: Before hasEnoughData check"); // Log 8
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
+      console.log("VP DBG: Not enough data");
       return ResultFactory.createEmptyResults();
     }
+    console.log("VP DBG: After hasEnoughData check"); // Log 9
     
     // Verify real signal amplitude is sufficient
+    console.log("VP DBG: Before hasValidAmplitude check"); // Log 10
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
+      console.log("VP DBG: Invalid amplitude");
       this.signalValidator.logValidationResults(false, amplitude, ppgValues);
       return ResultFactory.createEmptyResults();
     }
+    console.log("VP DBG: After hasValidAmplitude check"); // Log 11
+    
+    // If we reach here, calculations should start, and previous DBG logs should appear
+    console.log("VP DBG: Starting vital sign calculations..."); // Log 12
     
     // Calculate SpO2 using real data only
     const rawSpo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
