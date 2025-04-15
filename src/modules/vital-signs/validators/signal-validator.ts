@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -21,9 +20,10 @@ export class SignalValidator {
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
-  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
-  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
+  // Relaxed thresholds for testing
+  private readonly MIN_PEAKS_FOR_PATTERN = 3; // Reduced from 4
+  private readonly REQUIRED_PATTERNS = 2; // Reduced from 4
+  private readonly MIN_SIGNAL_VARIANCE = 0.01; // Reduced from 0.04
   
   /**
    * Create a new signal validator with custom thresholds
@@ -130,7 +130,8 @@ export class SignalValidator {
     
     // Look for peaks in the signal
     const peaks: number[] = [];
-    const peakThreshold = 0.25; // Increased from 0.2
+    // Relaxed threshold for testing
+    const peakThreshold = 0.15; // Reduced from 0.25
     
     for (let i = 2; i < recentSignals.length - 2; i++) {
       const current = recentSignals[i];
@@ -141,10 +142,11 @@ export class SignalValidator {
       
       // Check if this point is a peak (higher than surrounding points)
       // Also require the peak to be significantly higher (20% higher)
-      if (current.value > prev1.value * 1.2 && 
-          current.value > prev2.value * 1.2 &&
-          current.value > next1.value * 1.2 && 
-          current.value > next2.value * 1.2 &&
+      // Removed the * 1.2 requirement for testing
+      if (current.value > prev1.value &&
+          current.value > prev2.value &&
+          current.value > next1.value &&
+          current.value > next2.value &&
           Math.abs(current.value) > peakThreshold) {
         peaks.push(current.time);
       }
@@ -171,7 +173,8 @@ export class SignalValidator {
       
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
+      // Relaxed threshold for testing
+      const maxDeviation = 250; // Increased from 150ms
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {

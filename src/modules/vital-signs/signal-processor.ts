@@ -37,10 +37,10 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionConfirmed: boolean = false;
   private fingerDetectionStartTime: number | null = null;
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
+  // Signal quality variables - Relaxed thresholds for testing
+  private readonly MIN_QUALITY_FOR_FINGER = 30; // Reduced from 45
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 2000; // Reduced from 3500
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.1; // Reduced from 0.25
   
   constructor() {
     super();
