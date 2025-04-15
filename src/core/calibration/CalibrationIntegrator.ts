@@ -88,7 +88,7 @@ export class CalibrationIntegrator {
     const calibrationState = this.calibrationSystem.getCalibrationState();
     const correctionFactors = calibrationState.correctionFactors;
 
-    console.log(`[DIAG] processMeasurement Input - Quality: ${quality}, Raw HR: ${rawData.heartRate}, Raw SpO2: ${rawData.spo2}, Raw BP: ${rawData.systolic}/${rawData.diastolic}, Raw Gluc: ${rawData.glucose}`);
+    console.log(`[Calibration Phase: ${calibrationState.phase}] Factors: HR=${correctionFactors.heartRate?.toFixed(3)}, SpO2=${correctionFactors.spo2?.toFixed(3)}, Sys=${correctionFactors.systolic?.toFixed(3)}, Dia=${correctionFactors.diastolic?.toFixed(3)}, Gluc=${correctionFactors.glucose?.toFixed(3)}`);
 
     let neuralResults: NeuralModelResults | null = null;
 
@@ -133,15 +133,15 @@ export class CalibrationIntegrator {
        console.log("[DIAG] Using only traditional values (NN skipped or failed).");
     }
 
-    console.log(`[DIAG] Calibration Factors: HR=${correctionFactors.heartRate.toFixed(3)}, SpO2=${correctionFactors.spo2.toFixed(3)}, Sys=${correctionFactors.systolic.toFixed(3)}, Dia=${correctionFactors.diastolic.toFixed(3)}, Gluc=${correctionFactors.glucose.toFixed(3)}`);
+    console.log(` -> Before Corr: HR=${combinedHeartRate?.toFixed(1)}, SpO2=${combinedSpo2?.toFixed(1)}, BP=${combinedSystolic?.toFixed(1)}/${combinedDiastolic?.toFixed(1)}, Gluc=${combinedGlucose?.toFixed(1)}`);
 
-    const finalHeartRate = combinedHeartRate * correctionFactors.heartRate;
-    const finalSpo2 = combinedSpo2 * correctionFactors.spo2;
-    const finalSystolic = combinedSystolic * correctionFactors.systolic;
-    const finalDiastolic = combinedDiastolic * correctionFactors.diastolic;
-    const finalGlucose = combinedGlucose * correctionFactors.glucose;
+    const finalHeartRate = (combinedHeartRate || 0) * (correctionFactors.heartRate || 1);
+    const finalSpo2 = (combinedSpo2 || 0) * (correctionFactors.spo2 || 1);
+    const finalSystolic = (combinedSystolic || 0) * (correctionFactors.systolic || 1);
+    const finalDiastolic = (combinedDiastolic || 0) * (correctionFactors.diastolic || 1);
+    const finalGlucose = (combinedGlucose || 0) * (correctionFactors.glucose || 1);
 
-    console.log(`[DIAG] After Calibration -> HR:${finalHeartRate.toFixed(1)}, SpO2:${finalSpo2.toFixed(1)}, BP:${finalSystolic.toFixed(1)}/${finalDiastolic.toFixed(1)}, Gluc:${finalGlucose.toFixed(1)}`);
+    console.log(` -> After Corr:  HR=${finalHeartRate?.toFixed(1)}, SpO2=${finalSpo2?.toFixed(1)}, BP=${finalSystolic?.toFixed(1)}/${finalDiastolic?.toFixed(1)}, Gluc=${finalGlucose?.toFixed(1)}`);
 
     const clampedSpo2 = Math.min(100, Math.max(85, finalSpo2 || 0));
     const clampedSystolic = Math.min(200, Math.max(80, finalSystolic || 0));
@@ -188,7 +188,8 @@ export class CalibrationIntegrator {
   private async applyNeuralModels(ppgValues: number[]): Promise<NeuralModelResults> {
     if (!this.isTfWorkerInitialized || !this.tfWorkerClient) {
         console.warn("TF Worker not initialized. Returning default NN results.");
-        return { heartRate: 75, spo2: 98, systolic: 120, diastolic: 80, glucose: 95 };
+        const defaultResults: NeuralModelResults = { heartRate: 75, spo2: 98, systolic: 120, diastolic: 80, glucose: 95 };
+        return defaultResults;
     }
 
     let results: NeuralModelResults = {
