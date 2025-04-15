@@ -160,11 +160,8 @@ const CameraView = ({
           await new Promise(resolve => setTimeout(resolve, 300));
 
           const capabilities = videoTrack.getCapabilities();
-          console.log("Capacidades de la cámara (Intento Simplificado):", capabilities);
+          console.log("Capacidades de la cámara:", capabilities);
 
-          console.log("--- OMITIENDO CONFIGURACIÓN AVANZADA Y LINTERNA PARA DEBUG ---");
-          /*
-          // --- START Capability Logging ---
           console.log("--- Verificación de Capacidades Específicas ---");
           if (capabilities.torch) {
             console.log("Torch (Linterna): Soportado");
@@ -212,14 +209,11 @@ const CameraView = ({
             console.log("White Balance Mode: NO Soportado");
           }
           console.log("--------------------------------------------");
-          // --- END Capability Logging ---
-
 
           await new Promise(resolve => setTimeout(resolve, 200));
 
           const advancedConstraints: MediaTrackConstraintSet[] = [];
 
-          // --- Apply Focus/Exposure constraints (Non-Android) ---
           if (!isAndroid) {
               if (capabilities.exposureMode?.includes('continuous')) {
                  advancedConstraints.push({ exposureMode: 'continuous' });
@@ -238,27 +232,21 @@ const CameraView = ({
                });
              }
           }
-          // --- End Focus/Exposure constraints ---
 
-
-          // --- Apply Torch if supported ---
-           if (capabilities.torch) {
-             console.log("Intentando activar linterna (puede fallar si no está soportado realmente)...");
-             try {
-               await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
-               console.log("Constraint 'torch: true' aplicada sin error inmediato.");
-               setTorchEnabled(true);
-             } catch (torchErr) {
-               console.warn("Error esperado al intentar activar linterna (probablemente no soportado):", torchErr);
-               setTorchEnabled(false);
-             }
-           } else {
-             console.log("Linterna no listada en capacidades, no se intenta activar.");
+          if (capabilities.torch) {
+            console.log("Intentando activar linterna (puede fallar si no está soportado realmente)...");
+            try {
+              await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+              console.log("Constraint 'torch: true' aplicada sin error inmediato.");
+              setTorchEnabled(true);
+            } catch (torchErr) {
+              console.warn("Error esperado al intentar activar linterna (probablemente no soportado):", torchErr);
+              setTorchEnabled(false);
+            }
+          } else {
+            console.log("Linterna no listada en capacidades, no se intenta activar.");
               setTorchEnabled(false);
            }
-          // --- End Apply Torch ---
-          */
-          // *** END TEMPORARY SIMPLIFICATION ***
 
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
@@ -266,7 +254,7 @@ const CameraView = ({
           }
 
         } catch (err) {
-          console.error("Error durante la configuración avanzada de la cámara (ahora simplificada):", err);
+          console.error("Error durante la configuración avanzada de la cámara:", err);
         }
       } else {
          console.error("No se encontró video track en el stream.");
