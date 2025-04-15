@@ -19,7 +19,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  // Hooks para procesamiento y detección
+  // Hooks for processing and detection
   const {
     detectArrhythmia,
     lastRRIntervalsRef,
