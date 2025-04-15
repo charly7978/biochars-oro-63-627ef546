@@ -1,9 +1,11 @@
-
 /**
  * Configuración y opciones para TensorFlow.js
  * Proporciona ajustes de rendimiento y optimización
  */
 export interface TensorFlowConfig {
+  // Habilitar o deshabilitar completamente TensorFlow
+  enabled: boolean;
+  
   // Backend a utilizar (webgl, wasm, cpu)
   backend: 'webgl' | 'wasm' | 'cpu' | 'webgpu';
   
@@ -76,6 +78,7 @@ export interface TensorFlowConfig {
  * Configuración por defecto optimizada para rendimiento
  */
 export const DEFAULT_TENSORFLOW_CONFIG: TensorFlowConfig = {
+  enabled: true,
   backend: 'webgl',
   memoryOptions: {
     useFloat16: true,
@@ -115,6 +118,7 @@ export const DEFAULT_TENSORFLOW_CONFIG: TensorFlowConfig = {
  * Configuración para dispositivos de baja potencia
  */
 export const LOW_POWER_CONFIG: TensorFlowConfig = {
+  enabled: true,
   backend: 'wasm',
   memoryOptions: {
     useFloat16: true,
@@ -154,6 +158,7 @@ export const LOW_POWER_CONFIG: TensorFlowConfig = {
  * Configuración para máxima precisión
  */
 export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
+  enabled: true,
   backend: 'webgl',
   memoryOptions: {
     useFloat16: false,
@@ -187,6 +192,14 @@ export const HIGH_ACCURACY_CONFIG: TensorFlowConfig = {
     enableDebugMode: false,
     preferWebGPU: true
   }
+};
+
+/**
+ * Configuración con TensorFlow desactivado
+ */
+export const DISABLED_TENSORFLOW_CONFIG: TensorFlowConfig = {
+  ...DEFAULT_TENSORFLOW_CONFIG,
+  enabled: false
 };
 
 /**

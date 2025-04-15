@@ -10,13 +10,13 @@ export class ResultFactory {
    */
   public static createResult(
     spo2: number,
-    heartRate: number,
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
     lipids: { totalCholesterol: number; triglycerides: number },
     hemoglobin: number,
     hydration: number,
+    heartRate: number = 0,
     glucoseConfidence?: number,
     lipidsConfidence?: number,
     overallConfidence?: number,
@@ -24,13 +24,13 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
-      heartRate,
       pressure,
       arrhythmiaStatus,
       glucose,
       lipids,
       hemoglobin,
       hydration,
+      heartRate,
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,
@@ -44,7 +44,6 @@ export class ResultFactory {
   public static createEmptyResults(): VitalSignsResult {
     return {
       spo2: 0,
-      heartRate: 0,
       pressure: "--/--",
       arrhythmiaStatus: "--",
       glucose: 0,
@@ -53,7 +52,8 @@ export class ResultFactory {
         triglycerides: 0
       },
       hemoglobin: 0,
-      hydration: 0
+      hydration: 0,
+      heartRate: 0
     };
   }
 }

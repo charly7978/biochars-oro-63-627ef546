@@ -1,4 +1,3 @@
-
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -6,11 +5,11 @@ export interface VitalSignsResult {
   // Blood oxygen saturation percentage
   spo2: number;
   
-  // Heart rate in BPM
-  heartRate: number;
-  
   // Blood pressure in format "systolic/diastolic"
   pressure: string;
+  
+  // Heart rate in beats per minute
+  heartRate: number;
   
   // Arrhythmia detection status
   arrhythmiaStatus: string;
