@@ -205,7 +205,9 @@ export class CalibrationIntegrator {
           const predictionResult = await client.predict(modelType, ppgValues);
           console.timeEnd(`NN Predict ${modelType}`);
 
-          console.log(`NN Prediction raw result for ${modelType}:`, predictionResult);
+          if (modelType === 'heartRate') {
+              console.log(`[CalibrationIntegrator] Raw NN HR Prediction:`, predictionResult);
+          }
 
           if (modelType === 'bloodPressure') {
             if (predictionResult && predictionResult.length >= 2 && !isNaN(predictionResult[0]) && !isNaN(predictionResult[1])) {

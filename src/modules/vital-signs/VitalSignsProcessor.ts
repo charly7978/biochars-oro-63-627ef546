@@ -13,6 +13,7 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
+import { CalibrationIntegrator } from '../../core/calibration/CalibrationIntegrator';
 
 /**
  * Main vital signs processor
@@ -32,6 +33,7 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  private lastValidResult: VitalSignsResult | null = null;
 
   /**
    * Constructor that initializes all specialized processors
@@ -69,7 +71,7 @@ export class VitalSignsProcessor {
     }
     
     // Apply filtering to the real PPG signal
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
@@ -81,7 +83,7 @@ export class VitalSignsProcessor {
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
+    ppgValues.push(filteredValue);
     
     // Limit the real data buffer
     if (ppgValues.length > 300) {
@@ -158,7 +160,7 @@ export class VitalSignsProcessor {
     });
 
     // Prepare result with all metrics including hydration
-    return ResultFactory.createResult(
+    const tempResult: VitalSignsResult = ResultFactory.createResult(
       spo2,
       heartRate,
       pressure,
@@ -172,6 +174,11 @@ export class VitalSignsProcessor {
       overallConfidence,
       arrhythmiaResult.lastArrhythmiaData
     );
+
+    // Update last valid result
+    this.lastValidResult = tempResult;
+
+    return tempResult;
   }
 
   /**
@@ -202,7 +209,9 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
+    this.signalValidator.resetFingerDetection();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
+    this.lastValidResult = null;
     return null; // Always return null to ensure measurements start from zero
   }
   
@@ -218,7 +227,7 @@ export class VitalSignsProcessor {
    * Forces fresh measurements without reference values
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return null; // Always return null to ensure measurements start from zero
+    return this.lastValidResult;
   }
   
   /**
