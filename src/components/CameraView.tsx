@@ -126,7 +126,30 @@ const CameraView = ({
         try {
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
-          
+
+          console.log("--- Verificación de Capacidades Específicas ---");
+          if (capabilities.torch) {
+            console.log("Torch (Linterna): Soportado");
+          } else {
+            console.log("Torch (Linterna): NO Soportado");
+          }
+          if (capabilities.exposureMode) {
+            console.log("Exposure Mode: Soportado. Modos:", capabilities.exposureMode);
+          } else {
+            console.log("Exposure Mode: NO Soportado");
+          }
+          if (capabilities.exposureCompensation) {
+            console.log("Exposure Compensation: Soportado.", capabilities.exposureCompensation);
+          } else {
+            console.log("Exposure Compensation: NO Soportado");
+          }
+          if (capabilities.brightness) {
+            console.log("Brightness: Soportado.", capabilities.brightness);
+          } else {
+            console.log("Brightness: NO Soportado");
+          }
+          console.log("--------------------------------------------");
+
           await new Promise(resolve => setTimeout(resolve, 500));
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
