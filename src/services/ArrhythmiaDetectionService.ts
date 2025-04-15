@@ -294,13 +294,17 @@ class ArrhythmiaDetectionService {
     // Show toast notification (limited to avoid saturation)
     if (shouldShowToast) {
       if (this.arrhythmiaCount === 1) {
-        toast("¡Atención!", {
-          description: "Se ha detectado una posible arritmia",
+        toast({
+          title: '¡Atención!',
+          description: 'Se ha detectado una posible arritmia',
+          variant: 'destructive',
           duration: 6000
         });
       } else {
-        toast("Arritmia detectada", {
+        toast({
+          title: 'Arritmia detectada',
           description: `Se han detectado ${this.arrhythmiaCount} posibles arritmias`,
+          variant: 'destructive',
           duration: 6000
         });
       }
@@ -441,4 +445,3 @@ class ArrhythmiaDetectionService {
 // Create and export singleton instance
 const instance = ArrhythmiaDetectionService.getInstance();
 export default instance;
-

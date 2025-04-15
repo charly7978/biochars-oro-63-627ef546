@@ -4,17 +4,13 @@
  */
 import AudioFeedbackService from '@/services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import BidirectionalFeedbackService from '@/services/BidirectionalFeedbackService';
 
 export const cleanupServices = () => {
   // Clean up AudioFeedbackService
   AudioFeedbackService.cleanUp();
   
   // Clean up ArrhythmiaDetectionService
-  ArrhythmiaDetectionService.cleanUp();
-  
-  // Clean up BidirectionalFeedbackService
-  BidirectionalFeedbackService.cleanUp();
+  ArrhythmiaDetectionService.reset();
   
   console.log('All services cleaned up successfully');
 };

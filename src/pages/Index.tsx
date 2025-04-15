@@ -3,14 +3,13 @@ import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
-import { useOptimizedVitalSigns } from "@/hooks/useOptimizedVitalSigns";
+import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import BidirectionalFeedbackService from '@/services/BidirectionalFeedbackService';
 import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
 
@@ -47,10 +46,8 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
-    optimizationStats,
-    getCurrentSignalQuality
-  } = useOptimizedVitalSigns();
+    lastValidResults
+  } = useVitalSignsProcessor();
 
   useEffect(() => {
     registerGlobalCleanup();
@@ -128,9 +125,6 @@ const Index = () => {
     setIsCameraOn(true);
     setIsMonitoring(true);
     startSignalProcessing();
-    
-    BidirectionalFeedbackService.setDebugMode(true);
-    
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
       console.log("30 second measurement timer elapsed.");
@@ -143,8 +137,6 @@ const Index = () => {
     console.log("Finalizing measurement...");
     setShowResults(true);
     stopMonitoring();
-    
-    console.log("Measurement complete with optimizations:", optimizationStats);
   };
 
   const stopMonitoring = () => {
