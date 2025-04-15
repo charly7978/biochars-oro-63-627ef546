@@ -51,19 +51,12 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         initializedRef.current = true;
         
         if (typeof window !== 'undefined') {
-          // Add debug tools
           (window as any).heartBeatProcessor = processorRef.current;
-          (window as any).arrhythmiaService = ArrhythmiaDetectionService;
           
-          // For testing - force arrhythmia detection
+          // For debugging - force arrhythmia detection
           (window as any).forceArrhythmiaDetection = () => {
             ArrhythmiaDetectionService.forceArrhythmiaDetection();
-            return "Arrhythmia detection forced - check visualization";
-          };
-
-          // For testing - get current arrhythmia windows
-          (window as any).getArrhythmiaWindows = () => {
-            return ArrhythmiaDetectionService.getArrhythmiaWindows();
+            return "Arrhythmia detection forced";
           };
         }
       }
@@ -91,9 +84,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
-        (window as any).arrhythmiaService = undefined;
         (window as any).forceArrhythmiaDetection = undefined;
-        (window as any).getArrhythmiaWindows = undefined;
       }
     };
   }, []);
@@ -122,12 +113,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
-        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
-        },
-        fingerDetected: false
+        }
       };
     }
 
@@ -147,11 +136,13 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       setConfidence(result.confidence);
     }
 
-    // Ensure we always have the latest arrhythmia status
     if (result.rrData && result.rrData.intervals && result.rrData.intervals.length >= 3) {
-      // Use ArrhythmiaDetectionService for reliable detection
-      result.isArrhythmia = ArrhythmiaDetectionService.isArrhythmia();
-      result.arrhythmiaCount = ArrhythmiaDetectionService.getArrhythmiaCount();
+      // Use ArrhythmiaDetectionService directly for improved detection
+      ArrhythmiaDetectionService.updateRRIntervals(result.rrData.intervals);
+      const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(result.rrData.intervals);
+      
+      // Update result with arrhythmia status
+      result.isArrhythmia = arrhythmiaResult.isArrhythmia;
     }
 
     return result;
@@ -189,8 +180,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     // Reset services
     ArrhythmiaDetectionService.reset();
     FingerDetectionService.reset();
-    
-    console.log('useHeartBeatProcessor: Reset complete');
   }, [resetArrhythmiaDetector, resetSignalProcessor]);
 
   const startMonitoring = useCallback(() => {

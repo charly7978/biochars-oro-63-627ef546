@@ -44,25 +44,21 @@ const PPGSignalMeter = memo(({
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
   const lastRenderTimeRef = useRef<number>(0);
-  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  
   const lastArrhythmiaTime = useRef<number>(0);
   const arrhythmiaCountRef = useRef<number>(0);
-  const currentArrhythmiaSegmentRef = useRef<ArrhythmiaWindow | null>(null);
-  const lastArrhythmiaStateRef = useRef<boolean>(false);
+  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
-  
+  const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
-  
-  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const currentArrhythmiaSegmentRef = useRef<ArrhythmiaWindow | null>(null);
+  const lastArrhythmiaStateRef = useRef<boolean>(false);
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
-  
   const [resultsVisible, setResultsVisible] = useState(true);
-  
-  const WINDOW_WIDTH_MS = 5000;
+
+  const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
   const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
@@ -94,18 +90,9 @@ const PPGSignalMeter = memo(({
   }, [MIN_BEEP_INTERVAL_MS]);
 
   useEffect(() => {
-    console.log("PPGSignalMeter: Setting up arrhythmia listener");
-    
     const handleArrhythmiaWindow = (window: ArrhythmiaWindow) => {
       const now = Date.now();
-      console.log("PPGSignalMeter: Received arrhythmia window notification", {
-        windowStart: new Date(window.start).toISOString(), 
-        windowEnd: new Date(window.end).toISOString(),
-        currentTime: new Date(now).toISOString()
-      });
-      
-      if (Math.abs(now - window.start) < 2000 || Math.abs(now - window.end) < 2000) {
-        console.log("PPGSignalMeter: Playing arrhythmia beep from listener notification");
+      if (Math.abs(now - window.start) < 1000 || Math.abs(now - window.end) < 1000) {
         playBeep(0.8, true);
       }
     };
@@ -130,11 +117,10 @@ const PPGSignalMeter = memo(({
     if (arrhythmiaWindows.length > 0) {
       const now = Date.now();
       const recentWindows = arrhythmiaWindows.filter(w => 
-        Math.abs(now - w.start) < 2000 || Math.abs(now - w.end) < 2000
+        Math.abs(now - w.start) < 1000 || Math.abs(now - w.end) < 1000
       );
       
       if (recentWindows.length > 0) {
-        console.log("PPGSignalMeter: Playing arrhythmia beep due to recent window");
         playBeep(0.8, true);
       }
     }
@@ -293,33 +279,30 @@ const PPGSignalMeter = memo(({
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
-      if (status.includes("ARRITMIA") || status.includes("ARRHYTHMIA")) {
-        const arrhythmiaCount = Number(count || "0");
+      if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(30, 70, 350, 40);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 70, 350, 40);
         
-        if (arrhythmiaCount === 1 && !showArrhythmiaAlert) {
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-          ctx.fillRect(30, 70, 350, 40);
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(30, 70, 350, 40);
-          
-          ctx.fillStyle = '#ef4444';
-          ctx.font = 'bold 24px Inter';
-          ctx.textAlign = 'left';
-          ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
-          setShowArrhythmiaAlert(true);
-        } else if (arrhythmiaCount > 1) {
-          ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-          ctx.fillRect(30, 70, 250, 40);
-          ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-          ctx.lineWidth = 2;
-          ctx.strokeRect(30, 70, 250, 40);
-          
-          ctx.fillStyle = '#ef4444';
-          ctx.font = 'bold 24px Inter';
-          ctx.textAlign = 'left';
-          ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
-        }
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 24px Inter';
+        ctx.textAlign = 'left';
+        ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
+        setShowArrhythmiaAlert(true);
+      } else if (status.includes("ARRITMIA") && Number(count) > 1) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(30, 70, 250, 40);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 70, 250, 40);
+        
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 24px Inter';
+        ctx.textAlign = 'left';
+        const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
+        ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
       }
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
@@ -659,11 +642,12 @@ const PPGSignalMeter = memo(({
       
       const finalIsArrhythmia = isPeakArrhythmia || isInArrhythmiaZone || isArrhythmia;
       
-      console.log("PPGSignalMeter: Peak detected, playing beep", {
+      console.log("PPGSignalMeter: Circle drawn, playing beep", {
         isPeakArrhythmia,
         isArrhythmia,
         isInArrhythmiaZone,
-        finalIsArrhythmia
+        finalIsArrhythmia,
+        arrhythmiaStatus: arrhythmiaStatus || "N/A"
       });
       
       playBeep(1.0, finalIsArrhythmia);
@@ -682,9 +666,7 @@ const PPGSignalMeter = memo(({
     renderSignal();
     
     return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      cancelAnimationFrame(animationFrameRef.current);
     };
   }, [renderSignal]);
 
