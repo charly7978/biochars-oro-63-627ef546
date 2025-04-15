@@ -43,7 +43,7 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.28;
+  private readonly DETECTION_THRESHOLD: number = 0.22; // Reduced from 0.28 to 0.22 for higher sensitivity
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
   private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000;
@@ -53,8 +53,8 @@ class ArrhythmiaDetectionService {
   private readonly MAX_FALSE_POSITIVES: number = 3;
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 3;
-  private readonly CONFIRMATION_WINDOW_MS: number = 12000;
+  private readonly REQUIRED_CONFIRMATIONS: number = 2; // Lowered from 3 to 2 for faster detection
+  private readonly CONFIRMATION_WINDOW_MS: number = 15000; // Increased from 12000 to 15000
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -62,6 +62,7 @@ class ArrhythmiaDetectionService {
   private constructor() {
     // Setup automatic cleanup
     this.setupAutomaticCleanup();
+    console.log("ArrhythmiaDetectionService initialized");
   }
 
   private setupAutomaticCleanup(): void {
@@ -109,7 +110,10 @@ class ArrhythmiaDetectionService {
    * Update RR intervals for analysis
    */
   public updateRRIntervals(rrIntervals: number[]): void {
-    this.lastRRIntervals = rrIntervals;
+    if (rrIntervals && rrIntervals.length > 0) {
+      console.log("Updating RR intervals:", rrIntervals.length);
+      this.lastRRIntervals = rrIntervals;
+    }
   }
 
   /**
@@ -131,8 +135,12 @@ class ArrhythmiaDetectionService {
     
     this.lastDetectionTime = currentTime;
     
+    // Use provided intervals if available, otherwise use stored intervals
+    const intervalsToUse = rrIntervals && rrIntervals.length > 0 ? rrIntervals : this.lastRRIntervals;
+    
     // Requires at least 5 intervals for reliable analysis
-    if (rrIntervals.length < 5) {
+    if (!intervalsToUse || intervalsToUse.length < 5) {
+      console.log("Not enough RR intervals for detection:", intervalsToUse?.length || 0);
       return {
         isArrhythmia: false,
         rmssd: 0,
@@ -142,15 +150,18 @@ class ArrhythmiaDetectionService {
     }
     
     // Get the 5 most recent intervals for analysis
-    const lastIntervals = rrIntervals.slice(-5);
+    const lastIntervals = intervalsToUse.slice(-5);
     
     // Verify intervals are physiologically valid
     const validIntervals = lastIntervals.filter(
       interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
     );
     
+    // Log the valid intervals for debugging
+    console.log("Valid intervals for arrhythmia detection:", validIntervals.length, "threshold:", this.DETECTION_THRESHOLD);
+    
     // If less than 80% of intervals are valid, not reliable
-    if (validIntervals.length < lastIntervals.length * 0.8) {
+    if (validIntervals.length < lastIntervals.length * 0.6) { // Reduced from 0.8 to 0.6 for more permissive detection
       // Reset detection to avoid false positives from noise
       this.stabilityCounter = Math.min(this.stabilityCounter + 1, 30);
       this.currentBeatIsArrhythmia = false;
@@ -169,12 +180,14 @@ class ArrhythmiaDetectionService {
     // Calculate variation ratio (normalized variability)
     const variationRatio = calculateRRVariation(validIntervals);
     
+    console.log("Arrhythmia metrics:", { rmssd, variationRatio, stabilityCounter: this.stabilityCounter });
+    
     // Adjust threshold based on stability
     let thresholdFactor = this.DETECTION_THRESHOLD;
     if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.23;
+      thresholdFactor = 0.20; // Reduced from 0.23 to 0.20
     } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.33;
+      thresholdFactor = 0.30; // Reduced from 0.33 to 0.30
     }
     
     // Determine if rhythm is irregular
@@ -190,6 +203,10 @@ class ArrhythmiaDetectionService {
     
     // Detection of arrhythmia (real data only)
     const potentialArrhythmia = isIrregular && this.stabilityCounter < 18;
+    
+    if (potentialArrhythmia) {
+      console.log("Potential arrhythmia detected:", { rmssd, variationRatio, threshold: thresholdFactor });
+    }
     
     // Update HRV data
     this.heartRateVariability.push(variationRatio);
@@ -232,6 +249,15 @@ class ArrhythmiaDetectionService {
       // Reset only if there's no potential arrhythmia
       this.currentBeatIsArrhythmia = false;
     }
+    
+    // Manual force for debugging - force arrhythmia detection every 30 seconds if needed
+    /* 
+    if (currentTime - this.lastArrhythmiaTriggeredTime > 30000) {
+      this.currentBeatIsArrhythmia = true;
+      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatio, thresholdFactor);
+      console.log("FORCED ARRHYTHMIA DETECTION FOR TESTING");
+    }
+    */
     
     return {
       rmssd,
@@ -288,21 +314,10 @@ class ArrhythmiaDetectionService {
     // Trigger special feedback for arrhythmia
     AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
     
-    // Limit number of notifications
-    const shouldShowToast = this.arrhythmiaCount <= 3 || this.arrhythmiaCount % 3 === 0;
-    
-    // Show toast notification (limited to avoid saturation)
-    if (shouldShowToast) {
-      if (this.arrhythmiaCount === 1) {
-        toast.error('¡Atención! Se ha detectado una posible arritmia', {
-          duration: 6000
-        });
-      } else {
-        toast.error(`Arritmia detectada. Se han detectado ${this.arrhythmiaCount} posibles arritmias`, {
-          duration: 6000
-        });
-      }
-    }
+    // Show toast notification 
+    toast.error('¡Atención! Se ha detectado una posible arritmia', {
+      duration: 6000
+    });
     
     // Auto-cleanup to avoid continuous detections
     setTimeout(() => {
@@ -345,6 +360,35 @@ class ArrhythmiaDetectionService {
     
     // Notify listeners about the new window
     this.notifyListeners(window);
+  }
+  
+  /**
+   * Force an arrhythmia detection (for testing)
+   */
+  public forceArrhythmiaDetection(): void {
+    const currentTime = Date.now();
+    
+    // Create a test window
+    const windowWidth = 1500;
+    const arrhythmiaWindow = {
+      start: currentTime - windowWidth/2,
+      end: currentTime + windowWidth/2
+    };
+    
+    // Set arrhythmia state
+    this.currentBeatIsArrhythmia = true;
+    this.arrhythmiaCount++;
+    this.lastArrhythmiaTriggeredTime = currentTime;
+    
+    // Add window and notify
+    this.addArrhythmiaWindow(arrhythmiaWindow);
+    
+    console.log("FORCED ARRHYTHMIA DETECTION");
+    
+    // Auto-reset after window duration
+    setTimeout(() => {
+      this.currentBeatIsArrhythmia = false;
+    }, windowWidth);
   }
   
   /**
@@ -422,7 +466,7 @@ class ArrhythmiaDetectionService {
     this.lastDetectionTime = 0;
     this.arrhythmiaConfirmationCounter = 0;
     
-    console.log("ArrhythmiaDetectionService: Reset complete");
+    console.log("ArrhythmiaDetectionService: All detection data reset");
   }
   
   /**

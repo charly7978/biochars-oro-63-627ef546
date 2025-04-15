@@ -61,20 +61,95 @@ export function processLowConfidenceResult(
     return {
       ...result,
       bpm: currentBPM,
-      arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
+      arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount(),
+      isArrhythmia: ArrhythmiaDetectionService.isArrhythmia()
     };
   }
   
-  // Añadir contador de arritmias para consistencia
+  // Añadir contador de arritmias y estado para consistencia
   return {
     ...result,
-    arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
+    arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount(),
+    isArrhythmia: ArrhythmiaDetectionService.isArrhythmia()
   };
 }
 
-// Re-export functions from peak-detection para consistencia
-export { 
-  shouldProcessMeasurement, 
-  createWeakSignalResult, 
-  handlePeakDetection 
-} from './peak-detection';
+/**
+ * Create a result for weak signal scenarios
+ */
+export function createWeakSignalResult(arrhythmiaCount: number = 0): any {
+  return {
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: arrhythmiaCount,
+    isArrhythmia: false,
+    rrData: {
+      intervals: [],
+      lastPeakTime: null
+    },
+    fingerDetected: false
+  };
+}
+
+/**
+ * Determine if a measurement should be processed
+ */
+export function shouldProcessMeasurement(value: number): boolean {
+  // Ignore small values
+  return Math.abs(value) >= 0.01;
+}
+
+/**
+ * Handle peak detection logic
+ */
+export function handlePeakDetection(
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  isMonitoringRef: React.MutableRefObject<boolean>
+): void {
+  if (!isMonitoringRef.current) return;
+  
+  const currentTime = Date.now();
+  
+  if (lastPeakTimeRef.current !== null) {
+    const interval = currentTime - lastPeakTimeRef.current;
+    
+    // Ensure interval is physiologically valid (30-200 BPM)
+    if (interval >= 300 && interval <= 2000) {
+      if (result.rrData && result.rrData.intervals) {
+        // Update intervals for arrhythmia detection
+        if (Array.isArray(result.rrData.intervals)) {
+          // Limit array size
+          const intervals = [...result.rrData.intervals, interval].slice(-20);
+          result.rrData.intervals = intervals;
+          
+          // Update ArrhythmiaDetectionService
+          ArrhythmiaDetectionService.updateRRIntervals(intervals);
+        } else {
+          result.rrData.intervals = [interval];
+          ArrhythmiaDetectionService.updateRRIntervals([interval]);
+        }
+      } else {
+        result.rrData = {
+          intervals: [interval],
+          lastPeakTime: currentTime
+        };
+        ArrhythmiaDetectionService.updateRRIntervals([interval]);
+      }
+    }
+  }
+  
+  // Update last peak time
+  lastPeakTimeRef.current = currentTime;
+  
+  // Update RR data with current peak time
+  if (result.rrData) {
+    result.rrData.lastPeakTime = currentTime;
+  } else {
+    result.rrData = {
+      intervals: [],
+      lastPeakTime: currentTime
+    };
+  }
+}
