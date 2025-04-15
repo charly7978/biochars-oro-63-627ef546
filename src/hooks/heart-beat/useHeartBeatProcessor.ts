@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -5,15 +6,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '../../core/types';
-import { useArrhythmiaDetector } from './arrhythmia-detector';
-import {
-  checkWeakSignal,
-  updateLastValidBpm,
-  processLowConfidenceResult,
-  handlePeakDetection as handlePeakLogic,
-  resetSignalQualityState
-} from './signal-processing';
-import AudioFeedbackService from '@/services/AudioFeedbackService';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
@@ -45,10 +37,6 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
-
-  const { detectArrhythmia, reset: resetArrhythmiaDetector, currentBeatIsArrhythmiaRef } = useArrhythmiaDetector();
-  const lastValidBpmRef = useRef<number>(0);
-  const consecutiveWeakSignalsRef = useRef<number>(0);
 
   // Inicialización del procesador de latidos cardíacos
   useEffect(() => {
@@ -205,10 +193,7 @@ export const useHeartBeatProcessor = () => {
     setHrvData({});
     setPpgData([]);
     setStressLevel(0);
-    resetArrhythmiaDetector();
-    lastValidBpmRef.current = 0;
-    consecutiveWeakSignalsRef.current = resetSignalQualityState();
-  }, [resetArrhythmiaDetector]);
+  }, []);
 
   // Funciones de calibración simuladas
   const startCalibration = useCallback(() => {
@@ -258,26 +243,6 @@ export const useHeartBeatProcessor = () => {
     return true;
   }, []);
 
-  // Esta función ya no debería controlar el audio directamente.
-  // Podría usarse para forzar una vibración o feedback háptico si se desea.
-  const requestBeep = useCallback((value: number): boolean => {
-    console.warn("requestBeep called in useHeartBeatProcessor, but audio is handled by PPGSignalMeter. Consider removing or repurposing this for haptic feedback.");
-    // Ejemplo: disparar vibración desde el servicio central
-    // AudioFeedbackService.getInstance().vibrateOnly(currentBeatIsArrhythmiaRef.current ? 'arrhythmia' : 'normal');
-    return false; // Indicar que no se manejó el beep aquí
-  }, [currentBeatIsArrhythmiaRef]);
-
-  const startMonitoring = useCallback(() => {
-    processorRef.current?.setMonitoring(true);
-    // No es necesario resetear aquí si el procesador maneja su estado inicial
-  }, []);
-
-  const stopMonitoring = useCallback(() => {
-    processorRef.current?.setMonitoring(false);
-    // Considerar si resetear al detener
-    // reset();
-  }, []);
-
   return {
     heartBeatResult,
     isProcessing,
@@ -295,9 +260,6 @@ export const useHeartBeatProcessor = () => {
     reset,
     arrhythmiaStatus,
     hrvData,
-    ppgData,
-    requestBeep,
-    startMonitoring,
-    stopMonitoring
+    ppgData
   };
 };
