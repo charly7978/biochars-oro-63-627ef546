@@ -76,7 +76,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly
    * No simulation or reference values
    */
-  const processSignal = async (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): Promise<VitalSignsResult> => {
+  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
@@ -91,7 +91,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     try {
-      let result = await processVitalSignal(value, rrData, isWeakSignal);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       
       // Process and handle arrhythmia events with our centralized system
       if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
