@@ -17,7 +17,7 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 25;
   private readonly MAX_PULSE_PRESSURE = 70;
   // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Increased from 0.001 - Trying to filter more noise
   private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
   private readonly MIN_FPS = 20;
   
@@ -182,10 +182,33 @@ export class BloodPressureProcessor {
       differential: Math.round(instantSystolic - instantDiastolic)
     });
 
-    // Return instant values directly for debugging
+    // Update pressure buffers with new values
+    this.systolicBuffer.push(instantSystolic);
+    this.diastolicBuffer.push(instantDiastolic);
+    
+    // Maintain limited buffer size
+    if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
+      this.systolicBuffer.shift();
+      this.diastolicBuffer.shift();
+    }
+
+    // Calculate final blood pressure values using median and mean
+    const { finalSystolic, finalDiastolic } = this.calculateFinalValues();
+
+    // Make sure we don't return zeros or invalid values
+    const resultSystolic = Math.round(finalSystolic) || 110;
+    const resultDiastolic = Math.round(finalDiastolic) || 70;
+
+    console.log("BloodPressureProcessor: Final BP values", {
+      systolic: resultSystolic,
+      diastolic: resultDiastolic,
+      differential: resultSystolic - resultDiastolic,
+      bufferSize: this.systolicBuffer.length
+    });
+
     return {
-      systolic: Math.round(instantSystolic) || 110,
-      diastolic: Math.round(instantDiastolic) || 70
+      systolic: resultSystolic,
+      diastolic: resultDiastolic
     };
   }
   
