@@ -137,17 +137,18 @@ export class ArrhythmiaPatternDetector {
       let consistentIntervals = 0;
       for (let i = 0; i < this.heartRateIntervals.length; i++) {
         const deviation = Math.abs(this.heartRateIntervals[i] - avgInterval) / avgInterval;
-        if (deviation < 0.25) { // Allow 25% deviation for natural variation
+        if (deviation > 0.25) { // Looking for deviations larger than 25% for arrhythmias
           consistentIntervals++;
         }
       }
       
-      const consistencyRatio = consistentIntervals / this.heartRateIntervals.length;
+      const inconsistencyRatio = consistentIntervals / this.heartRateIntervals.length;
       
-      // If we have highly consistent intervals that match physiological heart rate
-      if (consistencyRatio > 0.6 && avgInterval >= 400 && avgInterval <= 1500) {
+      // For arrhythmia, we want inconsistent intervals
+      if (inconsistencyRatio > 0.4 && avgInterval >= 400 && avgInterval <= 1500) {
         const estimatedBPM = Math.round(60000 / avgInterval);
-        console.log(`Natural heart rhythm detected: ${estimatedBPM} BPM with ${Math.round(consistencyRatio*100)}% consistency`);
+        console.log(`Possible arrhythmic pattern detected: ${estimatedBPM} BPM with ${Math.round(inconsistencyRatio*100)}% inconsistency`);
+        return true;
       }
     }
     
@@ -163,7 +164,7 @@ export class ArrhythmiaPatternDetector {
     const anomalyRatio = this.anomalyScores.length > 0 ? 
                         highAnomalyScores / this.anomalyScores.length : 0;
     
-    // Feature 3: Check for oscillation pattern (up-down-up) which is characteristic of heartbeats
+    // Feature 3: Check for irregular oscillation pattern
     let oscillationCount = 0;
     for (let i = 1; i < recentPattern.length - 1; i++) {
       if ((recentPattern[i] > recentPattern[i-1] && recentPattern[i] > recentPattern[i+1]) ||
@@ -173,8 +174,8 @@ export class ArrhythmiaPatternDetector {
     }
     const oscillationRatio = oscillationCount / (recentPattern.length - 2);
     
-    // Feature 4: Peak timing consistency (natural heart beats have consistent timing)
-    let timingScore = 0;
+    // Feature 4: Peak timing irregularity (arrhythmic beats have inconsistent timing)
+    let timingIrregularityScore = 0;
     if (this.peakTimestamps.length >= 3) {
       const intervals = [];
       for (let i = 1; i < this.peakTimestamps.length; i++) {
@@ -185,13 +186,13 @@ export class ArrhythmiaPatternDetector {
       const intervalVariations = intervals.map(i => Math.abs(i - avgInterval) / avgInterval);
       const avgVariation = intervalVariations.reduce((sum, val) => sum + val, 0) / intervalVariations.length;
       
-      // Convert to a 0-1 score (lower variation = higher score)
-      timingScore = Math.max(0, 1 - (avgVariation * 2));
+      // Higher variation is better for arrhythmia detection
+      timingIrregularityScore = Math.min(1, avgVariation * 2);
     }
     
     // Combine features with weighted scoring
     const patternScore = (variationRatio * 0.3) + (anomalyRatio * 0.15) + 
-                        (oscillationRatio * 0.25) + (timingScore * 0.3);
+                        (oscillationRatio * 0.25) + (timingIrregularityScore * 0.3);
     
     return patternScore > this.PATTERN_MATCH_THRESHOLD;
   }
