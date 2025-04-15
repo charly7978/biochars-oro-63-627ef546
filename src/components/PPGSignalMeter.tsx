@@ -3,6 +3,7 @@ import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AudioFeedbackService from '../services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
+import FingerDetectionService from '../services/FingerDetectionService';
 import { ArrhythmiaWindow } from '../hooks/vital-signs/types';
 
 interface PPGSignalMeterProps {
@@ -681,20 +682,12 @@ const PPGSignalMeter = memo(({
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
   return (
-    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+    <div className="relative h-full w-full">
       <canvas
         ref={canvasRef}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
-        style={{
-          transform: 'translate3d(0,0,0)',
-          backfaceVisibility: 'hidden',
-          contain: 'paint layout size',
-          imageRendering: 'crisp-edges'
-        }}
+        className="w-full h-full"
+        style={{ maxHeight: '100%' }}
       />
-
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
