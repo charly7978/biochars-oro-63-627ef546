@@ -1,6 +1,6 @@
 /**
  * Cliente para comunicación con el worker de TensorFlow
- * Gestiona la comunicación, carga de modelos y predicciones
+ * Gestiona la comunicación, carga de modelos y predicciones en tiempo real
  */
 import { TensorFlowConfig, DEFAULT_TENSORFLOW_CONFIG } from '../core/neural/tensorflow/TensorFlowConfig';
 
@@ -16,27 +16,22 @@ export class TensorFlowWorkerClient {
   private initializing: boolean = false;
   private modelStatus: Map<string, 'loading' | 'ready' | 'error'> = new Map();
   private config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG;
+  private predictionCache: Map<string, {
+    timestamp: number;
+    input: string;
+    result: number[];
+  }> = new Map();
+  private readonly CACHE_LIFETIME_MS = 500; // 500ms cache lifetime
   
   constructor(config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG) {
     this.config = config;
-    // Solo inicializar si está habilitado
-    if (config.enabled) {
-      this.initialize();
-    } else {
-      console.log('TensorFlow está deshabilitado, no se inicializará el worker');
-    }
+    this.initialize();
   }
   
   /**
    * Inicializa el worker
    */
   public async initialize(): Promise<void> {
-    // Si TensorFlow está deshabilitado, no inicializar
-    if (!this.config.enabled) {
-      console.log('TensorFlow está deshabilitado, no se inicializará el worker');
-      return;
-    }
-
     if (this.initialized || this.initializing) {
       if (this.initializing) {
         return new Promise<void>((resolve) => {
@@ -65,6 +60,36 @@ export class TensorFlowWorkerClient {
       
       console.log('TensorFlow Worker inicializado:', initResult);
       this.initialized = true;
+      
+      // Detect and configure for WebGPU if available
+      if ('gpu' in navigator) {
+        try {
+          const adapter = await navigator.gpu?.requestAdapter();
+          if (adapter) {
+            const features = Array.from(adapter.features.values());
+            const device = await adapter.requestDevice();
+            if (device) {
+              console.log('WebGPU detected, optimizing TensorFlow configuration', {
+                features,
+                limits: adapter.limits
+              });
+              
+              // Apply WebGPU optimization
+              await this.setConfig({
+                ...this.config,
+                backend: 'webgpu',
+                memoryOptions: {
+                  ...this.config.memoryOptions,
+                  useFloat16: true,
+                  enableTensorPacking: true
+                }
+              });
+            }
+          }
+        } catch (error) {
+          console.warn('WebGPU detection failed, using default backend', error);
+        }
+      }
     } catch (error) {
       console.error('Error inicializando TensorFlow Worker:', error);
       this.terminateWorker();
@@ -167,6 +192,7 @@ export class TensorFlowWorkerClient {
   public async setConfig(config: TensorFlowConfig): Promise<void> {
     this.config = config;
     await this.sendMessage('setConfig', { config });
+    console.log('TensorFlow worker configuration updated', config);
   }
   
   /**
@@ -205,70 +231,78 @@ export class TensorFlowWorkerClient {
     try {
       // Enviar mensaje para cargar modelo
       await this.sendMessage('loadModel', { modelType }, 60000);
+      console.log(`Modelo TensorFlow '${modelType}' cargado exitosamente`);
       return true;
     } catch (error) {
       this.modelStatus.set(modelType, 'error');
+      console.error(`Error cargando modelo TensorFlow '${modelType}':`, error);
       throw error;
     }
   }
   
   /**
    * Realiza una predicción con un modelo específico
+   * Con optimizaciones para tiempo real (caché y batch)
    */
   public async predict(modelType: string, input: number[]): Promise<number[]> {
-    // Si TensorFlow está deshabilitado, devolver valores por defecto
-    if (!this.config.enabled) {
-      console.log('TensorFlow está deshabilitado, devolviendo valores por defecto');
-      return this.getDefaultPrediction(modelType);
-    }
-    
-    // Asegurar que está inicializado
-    if (!this.initialized) {
-      await this.initialize();
-    }
-
     // Asegurar que el modelo está cargado
     if (this.modelStatus.get(modelType) !== 'ready') {
       await this.loadModel(modelType);
     }
     
-    // Enviar mensaje para predecir
-    return this.sendMessage('predict', { modelType, input });
+    // Calcular hash de la entrada para caché
+    const inputHash = this.hashInput(modelType, input);
+    const now = Date.now();
+    
+    // Verificar caché
+    const cachedResult = this.predictionCache.get(inputHash);
+    if (cachedResult && (now - cachedResult.timestamp) < this.CACHE_LIFETIME_MS) {
+      // Usar resultado en caché si es reciente
+      return cachedResult.result;
+    }
+    
+    try {
+      // Enviar mensaje para predecir
+      const result = await this.sendMessage('predict', { modelType, input });
+      
+      // Almacenar en caché
+      this.predictionCache.set(inputHash, {
+        timestamp: now,
+        input: inputHash,
+        result
+      });
+      
+      // Limpiar caché antigua
+      this.cleanupCache();
+      
+      return result;
+    } catch (error) {
+      console.error(`Error predicting with model ${modelType}:`, error);
+      return []; // Return empty array on error
+    }
   }
   
   /**
-   * Genera valores de predicción por defecto para cuando TensorFlow está deshabilitado
+   * Genera un hash simple para la entrada
    */
-  private getDefaultPrediction(modelType: string): number[] {
-    // Valores de predicción por defecto según el tipo de modelo
-    switch (modelType) {
-      case 'heartRate':
-        return [75]; // BPM normal
-      case 'spo2':
-        return [98]; // SpO2 normal
-      case 'bloodPressure':
-        return [120, 80]; // Presión arterial normal (sistólica/diastólica)
-      case 'glucose':
-        return [85]; // Glucosa normal
-      case 'arrhythmia':
-        return [0]; // No arritmia
-      default:
-        return [0]; // Valor por defecto genérico
+  private hashInput(modelType: string, input: number[]): string {
+    // Simplificado: usar los primeros y últimos valores, longitud y suma
+    const first = input.length > 0 ? input[0] : 0;
+    const last = input.length > 0 ? input[input.length - 1] : 0;
+    const sum = input.reduce((a, b) => a + b, 0);
+    return `${modelType}-${input.length}-${first.toFixed(3)}-${last.toFixed(3)}-${sum.toFixed(3)}`;
+  }
+  
+  /**
+   * Limpia caché antigua
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    for (const [key, value] of this.predictionCache.entries()) {
+      if (now - value.timestamp > this.CACHE_LIFETIME_MS) {
+        this.predictionCache.delete(key);
+      }
     }
-  }
-
-  /**
-   * Comprueba si TensorFlow está habilitado
-   */
-  public isEnabled(): boolean {
-    return this.config.enabled;
-  }
-
-  /**
-   * Comprueba si TensorFlow está inicializado
-   */
-  public isInitialized(): boolean {
-    return this.initialized;
   }
   
   /**
@@ -285,6 +319,7 @@ export class TensorFlowWorkerClient {
    */
   public async cleanupMemory(): Promise<void> {
     await this.sendMessage('cleanupMemory');
+    this.predictionCache.clear();
   }
   
   /**
@@ -321,6 +356,7 @@ export class TensorFlowWorkerClient {
     
     this.callbacks.clear();
     this.modelStatus.clear();
+    this.predictionCache.clear();
     this.initialized = false;
     this.initializing = false;
   }
@@ -330,37 +366,5 @@ export class TensorFlowWorkerClient {
    */
   public dispose(): void {
     this.terminateWorker();
-  }
-
-  /**
-   * Actualiza la configuración del worker
-   */
-  public updateConfig(newConfig: Partial<TensorFlowConfig>): Promise<void> {
-    this.config = {
-      ...this.config,
-      ...newConfig
-    };
-    
-    // Si se cambió el estado de habilitación
-    if (newConfig.enabled !== undefined) {
-      if (newConfig.enabled === false && this.worker !== null) {
-        // Si se está deshabilitando, terminar el worker
-        console.log('TensorFlow está siendo deshabilitado, terminando worker');
-        this.terminateWorker();
-        this.initialized = false;
-        return Promise.resolve();
-      } else if (newConfig.enabled === true && !this.initialized && !this.initializing) {
-        // Si se está habilitando y no está inicializado, inicializar
-        console.log('TensorFlow está siendo habilitado, inicializando worker');
-        return this.initialize();
-      }
-    }
-    
-    // Si el worker está activo, enviar nueva config
-    if (this.worker !== null && this.initialized) {
-      return this.sendMessage('setConfig', { config: this.config });
-    }
-    
-    return Promise.resolve();
   }
 }

@@ -5,13 +5,18 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
-import { HeartBeatResult, RRIntervalData, UseHeartBeatReturn } from './types';
+import { HeartBeatResult } from '../../core/types';
+import { getModel } from '../../core/neural/ModelRegistry';
+import { TensorFlowWorkerClient } from '../../workers/tensorflow-worker-client';
+
+// Cliente singleton para TensorFlow
+let tfWorkerClient: TensorFlowWorkerClient | null = null;
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
- * Versión simplificada que usa el HeartBeatProcessor existente
+ * Versión con integración real de TensorFlow
  */
-export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
+export const useHeartBeatProcessor = () => {
   // Estado para los resultados del latido cardíaco
   const [heartBeatResult, setHeartBeatResult] = useState<HeartBeatResult | null>(null);
   // Estado para indicar si el procesamiento está en curso
@@ -26,6 +31,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const sessionIdRef = useRef<string>(Math.random().toString(36).substring(2, 9));
   // Referencia para el estado de procesamiento
   const isProcessingRef = useRef(false);
+  // Estado para TensorFlow
+  const [isModelReady, setIsModelReady] = useState(false);
+  // Estado para aritmia
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
 
   // Estado para calibración y calidad de señal
   const [isCalibrating, setIsCalibrating] = useState(false);
@@ -37,19 +46,39 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
-  
-  // Estados específicos para la interfaz de UseHeartBeatReturn
-  const [currentBPM, setCurrentBPM] = useState(0);
-  const [confidence, setConfidence] = useState(0);
-  const [isArrhythmia, setIsArrhythmia] = useState(false);
-  const [arrhythmiaCount, setArrhythmiaCount] = useState(0);
 
-  // Inicialización del procesador de latidos cardíacos
+  // Inicialización del TensorFlow Worker
+  useEffect(() => {
+    const initializeTensorFlow = async () => {
+      try {
+        if (!tfWorkerClient) {
+          console.log("Inicializando TensorFlow Worker para procesamiento en tiempo real");
+          tfWorkerClient = new TensorFlowWorkerClient();
+          await tfWorkerClient.initialize();
+          
+          // Precargar modelo de ritmo cardíaco
+          await tfWorkerClient.loadModel('heartRate');
+          // Precargar modelo de arritmias
+          await tfWorkerClient.loadModel('arrhythmia');
+          
+          setIsModelReady(true);
+          console.log("Modelos TensorFlow cargados exitosamente para procesamiento en tiempo real");
+        }
+      } catch (error) {
+        console.error("Error inicializando TensorFlow:", error);
+      }
+    };
+    
+    initializeTensorFlow();
+  }, []);
+
+  // Inicialización del procesador de latidos cardíacos con TensorFlow
   useEffect(() => {
     processorRef.current = new HeartBeatProcessor();
-    console.log("useHeartBeatProcessor: Inicializando procesador", {
+    console.log("useHeartBeatProcessor: Inicializando procesador con integración TensorFlow", {
       sessionId: sessionIdRef.current,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      tensorflowReady: isModelReady
     });
 
     return () => {
@@ -59,81 +88,79 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       });
       processorRef.current = null;
     };
-  }, []);
+  }, [isModelReady]);
 
-  // Función para procesar la señal
+  // Función para procesar la señal con TensorFlow
   const processSignal = useCallback(
-    (value: number): HeartBeatResult => {
+    async (value: number) => {
       if (!processorRef.current) {
         console.warn("HeartBeatProcessor no está inicializado.");
-        return {
-          bpm: 0,
-          confidence: 0,
-          isPeak: false,
-          filteredValue: 0,
-          arrhythmiaCount: 0,
-          isArrhythmia: false,
-          rrData: {
-            intervals: [],
-            lastPeakTime: null
-          }
-        };
+        return null;
       }
 
       // Verificar si el valor de la señal es un número
       if (typeof value !== 'number') {
         console.error("Valor de señal inválido:", value);
-        return {
-          bpm: 0,
-          confidence: 0,
-          isPeak: false,
-          filteredValue: 0,
-          arrhythmiaCount: 0,
-          isArrhythmia: false,
-          rrData: {
-            intervals: [],
-            lastPeakTime: null
-          }
-        };
+        return null;
       }
 
       // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
-      // Simular el procesamiento de la señal y obtener los resultados
-      const processorResult = processorRef.current.processSignal(value);
-      
-      // Crear un objeto HeartBeatResult con los datos necesarios
-      const result: HeartBeatResult = {
-        bpm: processorResult.bpm,
-        confidence: processorResult.confidence,
-        isPeak: processorResult.isPeak,
-        filteredValue: processorResult.filteredValue,
-        arrhythmiaCount: processorResult.arrhythmiaCount || 0,
-        isArrhythmia: processorResult.isArrhythmia || false,
-        rrData: processorRef.current.getRRIntervals()
-      };
+      try {
+        // Procesar con el procesador tradicional primero
+        const result = processorRef.current.processSignal(value);
+        let finalResult = { ...result };
+        
+        // Si TensorFlow está listo, mejorar el resultado con redes neuronales
+        if (isModelReady && tfWorkerClient) {
+          // Obtener buffer PPG para análisis
+          const ppgBuffer = processorRef.current.getPPGBuffer();
+          
+          if (ppgBuffer && ppgBuffer.length >= 100) {
+            // Predecir arritmias con TensorFlow en tiempo real
+            const arrhythmiaInputs = ppgBuffer.slice(-300);
+            if (result.bpm > 40 && result.confidence > 0.4) {
+              try {
+                const arrhythmiaPrediction = await tfWorkerClient.predict('arrhythmia', arrhythmiaInputs);
+                // El modelo devuelve una probabilidad de arritmia
+                const arrhythmiaProb = arrhythmiaPrediction[0];
+                
+                const newIsArrhythmia = arrhythmiaProb > 0.7;
+                setIsArrhythmia(newIsArrhythmia);
+                
+                if (newIsArrhythmia) {
+                  processorRef.current.incrementArrhythmiaCounter();
+                  console.log("Arritmia detectada por modelo TensorFlow:", arrhythmiaProb);
+                }
+                
+                // Agregar el resultado de la predicción neural
+                finalResult.isArrhythmia = newIsArrhythmia;
+              } catch (err) {
+                console.error("Error en predicción de arritmia:", err);
+              }
+            }
+          }
+        }
 
-      // Actualizar el estado con los resultados del procesamiento
-      setHeartBeatResult(result);
-      
-      // Actualizar los estados específicos para la interfaz UseHeartBeatReturn
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
-      setIsArrhythmia(result.isArrhythmia || false);
-      setArrhythmiaCount(result.arrhythmiaCount);
+        // Actualizar el estado con los resultados del procesamiento
+        setHeartBeatResult(finalResult);
 
-      // Actualizar datos adicionales de análisis
-      updateAnalysisData(value, result);
+        // Actualizar datos adicionales de análisis
+        updateAnalysisData(value, finalResult);
 
-      // Devolver los resultados
-      return result;
+        // Devolver los resultados
+        return finalResult;
+      } catch (error) {
+        console.error("Error en procesamiento de señal:", error);
+        return null;
+      }
     },
-    []
+    [isModelReady]
   );
 
   // Función para actualizar datos de análisis
-  const updateAnalysisData = useCallback((value: number, result: HeartBeatResult) => {
+  const updateAnalysisData = useCallback((value: number, result: any) => {
     // Actualizar calidad de señal (simplificado)
     setSignalQuality(result.confidence * 100);
     
@@ -164,9 +191,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       return newData;
     });
     
-    // Estimar nivel de estrés (simplificado)
+    // Estimar nivel de estrés (con RR intervals)
     if (rrIntervals.length > 10) {
-      // Cálculo básico basado en variabilidad
+      // Cálculo basado en variabilidad
       const sum = rrIntervals.reduce((a, b) => a + b, 0);
       const mean = sum / rrIntervals.length;
       let varianceSum = 0;
@@ -181,20 +208,13 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       setStressLevel(stressEstimate);
       setHrvData({
         sdnn: stdDev,
-        rmssd: stdDev * 0.9, // Simplificado
-        pnn50: 50 - stressEstimate / 2 // Simplificado
+        rmssd: stdDev * 0.9,
+        pnn50: 50 - stressEstimate / 2
       });
     }
   }, [rrIntervals]);
 
-  // Función simulada para el beep
-  const requestBeep = useCallback((value: number): boolean => {
-    // Simulación simple de beep
-    console.log("Beep simulado con valor:", value);
-    return true;
-  }, []);
-
-  // Función para iniciar el procesamiento
+  // Función para iniciar monitoreo
   const startMonitoring = useCallback(() => {
     setIsProcessing(true);
     isProcessingRef.current = true;
@@ -203,11 +223,12 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current.setMonitoring(true);
     }
     
-    console.log("Iniciando procesamiento de señal...", {
+    console.log("Iniciando procesamiento de señal con TensorFlow...", {
       sessionId: sessionIdRef.current,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      tensorflowReady: isModelReady
     });
-  }, []);
+  }, [isModelReady]);
 
   // Función para detener el procesamiento
   const stopMonitoring = useCallback(() => {
@@ -236,10 +257,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
     
     setHeartBeatResult(null);
-    setCurrentBPM(0);
-    setConfidence(0);
-    setIsArrhythmia(false);
-    setArrhythmiaCount(0);
     artifactCounterRef.current = 0;
     setIsCalibrating(false);
     setCalibrationProgress(0);
@@ -249,18 +266,83 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     setHrvData({});
     setPpgData([]);
     setStressLevel(0);
+    setIsArrhythmia(false);
   }, []);
 
-  // Retornar la interfaz definida en UseHeartBeatReturn
+  // Funciones de calibración
+  const startCalibration = useCallback(() => {
+    setIsCalibrating(true);
+    setCalibrationProgress(0);
+    
+    // Limpiar buffer para calibración
+    if (processorRef.current) {
+      processorRef.current.clearBuffer();
+    }
+    
+    const calibrationInterval = setInterval(() => {
+      setCalibrationProgress(prev => {
+        const newProgress = prev + 10;
+        if (newProgress >= 100) {
+          clearInterval(calibrationInterval);
+          setIsCalibrating(false);
+          return 100;
+        }
+        return newProgress;
+      });
+    }, 500);
+    
+    return () => {
+      clearInterval(calibrationInterval);
+    };
+  }, []);
+
+  const endCalibration = useCallback(() => {
+    setIsCalibrating(false);
+    setCalibrationProgress(100);
+  }, []);
+
+  const calibrateProcessors = useCallback(() => {
+    if (processorRef.current) {
+      processorRef.current.calibrate();
+    }
+    console.log("Calibración de procesadores con TensorFlow completada");
+    return true;
+  }, []);
+
+  const resetCalibration = useCallback(() => {
+    setIsCalibrating(false);
+    setCalibrationProgress(0);
+  }, []);
+
+  // Limpiar recursos de TensorFlow cuando el componente se desmonta
+  useEffect(() => {
+    return () => {
+      if (tfWorkerClient) {
+        tfWorkerClient.cleanupMemory();
+      }
+    };
+  }, []);
+
   return {
-    currentBPM,
-    confidence,
-    processSignal,
-    reset,
-    isArrhythmia,
-    requestBeep,
+    heartBeatResult,
+    isProcessing,
+    startProcessing: startMonitoring,
+    stopProcessing: stopMonitoring,
     startMonitoring,
     stopMonitoring,
-    arrhythmiaCount
+    processSignal,
+    signalQuality,
+    artifactDetected,
+    stressLevel,
+    isCalibrating,
+    startCalibration,
+    endCalibration,
+    calibrationProgress,
+    calibrateProcessors,
+    reset,
+    arrhythmiaStatus,
+    isArrhythmia,
+    hrvData,
+    ppgData
   };
 };

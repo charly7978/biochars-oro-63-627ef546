@@ -13,6 +13,9 @@ export interface SignalChannelConfig {
 export interface SignalFeedback {
   quality: number;
   needsOptimization: boolean;
+  gainAdjustment?: number;
+  baselineCorrection?: number;
+  neuralConfidence?: number;
   optimizationSuggestions?: {
     filters?: {
       lowPass?: number;
@@ -21,6 +24,8 @@ export interface SignalFeedback {
     };
     gainAdjustment?: number;
     baselineCorrection?: number;
+    neuralGainSuggestion?: number;
+    correlations?: Record<string, number>;
   };
 }
 

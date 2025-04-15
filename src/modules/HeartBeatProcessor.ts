@@ -51,6 +51,8 @@ export class HeartBeatProcessor {
   peakCandidateIndex = null;
   peakCandidateValue = 0;
   rrIntervals: number[] = [];
+  private ppgBuffer: number[] = []; // Buffer para señales PPG
+  private arrhythmiaCounter: number = 0;
 
   constructor() {
     this.initAudio();
@@ -221,6 +223,7 @@ export class HeartBeatProcessor {
     isPeak: boolean;
     filteredValue: number;
     arrhythmiaCount: number;
+    isArrhythmia?: boolean;
   } {
     // Si no está en modo de monitoreo, retornar valores por defecto
     if (!this.isMonitoring) {
@@ -237,6 +240,12 @@ export class HeartBeatProcessor {
     if (this.startTime === 0) {
       this.startTime = Date.now();
       this.initAudio(); // Inicializar audio
+    }
+    
+    // Guardar valor en buffer PPG
+    this.ppgBuffer.push(value);
+    if (this.ppgBuffer.length > 300) {
+      this.ppgBuffer.shift();
     }
     
     // Aplicar filtros para reducir ruido
@@ -321,7 +330,7 @@ export class HeartBeatProcessor {
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
       filteredValue: smoothed,
-      arrhythmiaCount: 0
+      arrhythmiaCount: this.arrhythmiaCounter
     };
   }
 
@@ -510,6 +519,8 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.rrIntervals = [];
+    this.ppgBuffer = [];
+    this.arrhythmiaCounter = 0;
     
     // Intentar asegurar que el contexto de audio esté activo
     if (this.audioContext && this.audioContext.state !== 'running') {
@@ -519,10 +530,49 @@ export class HeartBeatProcessor {
     }
   }
 
-  getRRIntervals() {
+  getRRIntervals(): { intervals: number[], lastPeakTime: number | null } {
     return {
-      intervals: [...this.bpmHistory],
+      intervals: [...this.rrIntervals],
       lastPeakTime: this.lastPeakTime
     };
+  }
+
+  /**
+   * Obtiene el buffer de señales PPG para análisis
+   */
+  getPPGBuffer(): number[] {
+    return [...this.ppgBuffer];
+  }
+
+  /**
+   * Incrementa el contador de arritmias
+   */
+  incrementArrhythmiaCounter(): void {
+    this.arrhythmiaCounter++;
+  }
+
+  /**
+   * Limpia el buffer para calibración
+   */
+  clearBuffer(): void {
+    this.signalBuffer = [];
+    this.medianBuffer = [];
+    this.movingAverageBuffer = [];
+    this.ppgBuffer = [];
+    this.values = [];
+    this.peakConfirmationBuffer = [];
+  }
+
+  /**
+   * Calibra el procesador
+   */
+  calibrate(): boolean {
+    this.reset();
+    this.clearBuffer();
+    this.baseline = 0;
+    this.smoothedValue = 0;
+    this.lastValue = 0;
+    console.log("HeartBeatProcessor: calibrated successfully");
+    return true;
   }
 }

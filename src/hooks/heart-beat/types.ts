@@ -13,7 +13,7 @@ export interface HeartBeatResult {
   filteredValue?: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  rrData: RRIntervalData;
+  rrData?: RRIntervalData;
 }
 
 export interface UseHeartBeatReturn {
