@@ -42,7 +42,7 @@ const PPGSignalMeter = memo(({
   isArrhythmia = false,
   arrhythmiaWindows = [],
   signalData = [],
-  currentBPM = 0
+  currentBPM = 0,
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -683,7 +683,7 @@ const PPGSignalMeter = memo(({
   useEffect(() => {
     if (signalData && signalData.length > 0) {
       const latestPoint = signalData[signalData.length - 1];
-      if (latestPoint) {
+      if (latestPoint && dataBufferRef.current) {
         const pointWithPeakInfo: PPGDataPointExtended = {
             ...latestPoint,
             isPeak: latestPoint.isPeak || false,
@@ -698,9 +698,9 @@ const PPGSignalMeter = memo(({
         }
       }
     } else if (!preserveResults) {
-       // Si no hay datos y no se deben preservar, limpiar
-       // dataBufferRef.current.clear();
-       // setDisplayData([]);
+       if (dataBufferRef.current) {
+         // dataBufferRef.current.clear();
+       }
     }
   }, [signalData, preserveResults, triggerBeep, lastPeakTimestamp, currentBPM]);
 

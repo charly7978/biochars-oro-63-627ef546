@@ -10,10 +10,10 @@ import {
   checkWeakSignal,
   updateLastValidBpm,
   processLowConfidenceResult,
-  handlePeakDetection as handlePeakLogic,
-  resetSignalQualityState
+  handlePeakDetection as handlePeakLogic
 } from './signal-processing';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
+import { resetSignalQualityState } from '@/modules/heart-beat/signal-quality';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
@@ -278,6 +278,10 @@ export const useHeartBeatProcessor = () => {
     // reset();
   }, []);
 
+  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
+    // Implementation of addArrhythmiaWindow
+  }, []);
+
   return {
     heartBeatResult,
     isProcessing,
@@ -298,6 +302,7 @@ export const useHeartBeatProcessor = () => {
     ppgData,
     requestBeep,
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    addArrhythmiaWindow
   };
 };

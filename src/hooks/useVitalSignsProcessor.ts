@@ -1,175 +1,116 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
+import { useState, useCallback, useRef } from 'react';
+import { VitalSignsProcessor, DetailedSignalQuality } from '@/modules/vital-signs/VitalSignsProcessor';
+import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
+import { ArrhythmiaWindow } from '@/hooks/vital-signs/types';
 import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
-import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
-import { UseVitalSignsProcessorReturn } from './vital-signs/types';
-import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
-import { FeedbackService } from '../services/FeedbackService';
 
-/**
- * Hook for processing vital signs with direct algorithms only
- * No simulation or reference values are used
- */
+// Re-export DetailedSignalQuality so other hooks can import it from here
+export type { DetailedSignalQuality };
+
+// Define the return type for the hook, including the new getter
+export interface UseVitalSignsProcessorReturn {
+  processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult | null;
+  reset: () => null; // Reset now consistently returns null
+  fullReset: () => void;
+  arrhythmiaCounter: number;
+  lastValidResults: VitalSignsResult | null; // Value from the processor instance
+  arrhythmiaWindows: ArrhythmiaWindow[];
+  debugInfo: { processedSignals: number; signalLog: { timestamp: number, value: number, result: any }[]; };
+  getDetailedQuality: () => DetailedSignalQuality;
+}
+
 export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management - only direct measurement, no simulation
-  const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
-  
-  // Session tracking
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  
-  // Signal quality tracking
-  const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
-  
-  // Centralized arrhythmia tracking
-  const { 
-    arrhythmiaWindows, 
-    addArrhythmiaWindow, 
-    clearArrhythmiaWindows,
-    processArrhythmiaStatus,
-    registerArrhythmiaNotification
-  } = useArrhythmiaVisualization();
-  
-  const { 
-    processSignal: processVitalSignal, 
-    initializeProcessor,
-    reset: resetProcessor, 
-    fullReset: fullResetProcessor,
-    getArrhythmiaCounter,
-    getDebugInfo,
-    processedSignals
-  } = useSignalProcessing();
-  
-  const { 
-    logSignalData, 
-    clearLog 
-  } = useVitalSignsLogging();
-  
-  // Initialize processor components - direct measurement only
-  useEffect(() => {
-    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Create new instances for direct measurement
-    initializeProcessor();
-    
-    return () => {
-      console.log("useVitalSignsProcessor: Processor cleanup", {
-        sessionId: sessionId.current,
-        totalArrhythmias: getArrhythmiaCounter(),
-        processedSignals: processedSignals.current,
-        timestamp: new Date().toISOString()
-      });
-    };
-  }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
-  
-  /**
-   * Process PPG signal directly
-   * No simulation or reference values
-   */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
-      }
-    );
-    
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Process signal directly - no simulation
-    try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
-      
-      // Process and handle arrhythmia events with our centralized system
-      if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
-        const shouldNotify = processArrhythmiaStatus(
-          result.arrhythmiaStatus, 
-          result.lastArrhythmiaData
-        );
-        
-        // Trigger feedback for arrhythmia if needed
-        if (shouldNotify) {
-          registerArrhythmiaNotification();
-          const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
-          FeedbackService.signalArrhythmia(count);
-        }
-      }
-      
-      // Log processed signals
-      logSignalData(value, result, processedSignals.current);
-      
-      // Save valid results
-      if (result && result.heartRate > 0) {
-        setLastValidResults(result);
-      }
-      
-      // Return processed result
-      return result;
-    } catch (error) {
-      console.error("Error processing vital signs:", error);
-      
-      // Return safe fallback values on error that include heartRate
-      return {
-        spo2: 0,
-        heartRate: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        hydration: 0
-      };
-    }
-  };
+  // Keep a single instance of the processor using useRef
+  const processorRef = useRef<VitalSignsProcessor>(new VitalSignsProcessor());
 
-  /**
-   * Perform complete reset - start from zero
-   * No simulations or reference values
-   */
-  const reset = () => {
-    resetProcessor();
-    clearArrhythmiaWindows();
-    setLastValidResults(null);
-    weakSignalsCountRef.current = 0;
-    
-    return null;
-  };
-  
-  /**
-   * Perform full reset - clear all data
-   * No simulations or reference values
-   */
-  const fullReset = () => {
-    fullResetProcessor();
-    setLastValidResults(null);
-    clearArrhythmiaWindows();
-    weakSignalsCountRef.current = 0;
+  // Hooks for specific functionalities
+  const { arrhythmiaWindows, addArrhythmiaWindow, clearArrhythmiaWindows } = useArrhythmiaVisualization();
+  const { logSignalData, clearLog, getSignalLog } = useVitalSignsLogging();
+
+  // State for values that need to trigger re-renders in consuming components
+  const [arrhythmiaCounter, setArrhythmiaCounter] = useState(0);
+  // Note: lastValidResults is now directly from processorRef.current if needed outside, or handled by useOptimizedVitalSigns
+
+  // Ref to track processed signals count without causing re-renders
+  const processedSignalsRef = useRef(0);
+
+  const processSignal = useCallback((value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult | null => {
+    processedSignalsRef.current += 1;
+
+    // Process the signal using the processor instance
+    const result = processorRef.current.processSignal(value, rrData);
+
+    // Update state and perform side effects only if we get a valid result
+    if (result) {
+      const currentArrhythmiaCount = processorRef.current.getArrhythmiaCounter();
+      if (currentArrhythmiaCount !== arrhythmiaCounter) {
+         setArrhythmiaCounter(currentArrhythmiaCount);
+      }
+
+      logSignalData(value, result, processedSignalsRef.current);
+
+      // Corrected call to addArrhythmiaWindow with start and end arguments
+      if (result.lastArrhythmiaData && result.arrhythmiaStatus !== '--' && result.arrhythmiaStatus !== 'normal') {
+          const now = Date.now();
+          // Pass start and end times as separate arguments
+          addArrhythmiaWindow(now - 1000, now);
+       }
+    } else {
+       // Handle null result (e.g., log quality issue if needed)
+       // console.log("useVitalSignsProcessor: processSignal returned null due to low quality.");
+    }
+
+    return result;
+  }, [addArrhythmiaWindow, logSignalData, arrhythmiaCounter]); // Added arrhythmiaCounter dependency
+
+  const reset = useCallback((): null => {
+    processorRef.current.reset(); // Reset the processor instance
+    clearArrhythmiaWindows(); // Use clearArrhythmiaWindows
+    setArrhythmiaCounter(0);
     clearLog();
-  };
+    processedSignalsRef.current = 0;
+    return null;
+  }, [clearArrhythmiaWindows, clearLog]);
+
+  const fullReset = useCallback((): void => {
+    processorRef.current.fullReset();
+    clearArrhythmiaWindows(); // Use clearArrhythmiaWindows
+    setArrhythmiaCounter(0);
+    clearLog();
+    processedSignalsRef.current = 0;
+  }, [clearArrhythmiaWindows, clearLog]);
+
+  // Getter function for detailed quality
+  const getDetailedQuality = useCallback((): DetailedSignalQuality => {
+      // Ensure processor exists, though it should with useRef initialization
+      return processorRef.current?.getDetailedQuality() ?? { cardiacClarity: 0, ppgStability: 0, overallQuality: 0 };
+  }, []);
 
   return {
     processSignal,
     reset,
     fullReset,
-    arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults, // Return last valid results
+    // Provide state/ref values via getters if they don't need to be memoized individually
+    get arrhythmiaCounter() {
+      return arrhythmiaCounter;
+    },
+    get lastValidResults() {
+      // Directly return the processor's last valid results if needed, 
+      // but useOptimizedVitalSigns likely manages its own display state
+      return processorRef.current?.getLastValidResults() ?? null;
+    },
     arrhythmiaWindows,
-    debugInfo: getDebugInfo()
+    get debugInfo() {
+       return {
+           processedSignals: processedSignalsRef.current,
+           signalLog: getSignalLog()
+       };
+    },
+    getDetailedQuality // Return the getter function
   };
 };
