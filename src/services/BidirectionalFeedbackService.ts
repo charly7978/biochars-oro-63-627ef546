@@ -1,4 +1,3 @@
-
 /**
  * Central service for bidirectional feedback between optimization and calculation algorithms
  * Only processes real data - no simulation
@@ -803,4 +802,3 @@ class BidirectionalFeedbackService {
 // Create and export singleton instance
 const bidirectionalFeedbackService = BidirectionalFeedbackService.getInstance();
 export default bidirectionalFeedbackService;
-
