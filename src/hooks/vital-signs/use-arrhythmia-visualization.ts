@@ -5,165 +5,62 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrhythmiaWindow } from './types';
-import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
 
 /**
- * Centralized hook for arrhythmia detection and visualization
+ * Hook to manage arrhythmia visualization windows
  * Based on real data only
  */
 export const useArrhythmiaVisualization = () => {
-  // Visualization windows state
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
-  
-  // Detection state
-  const heartRateVariabilityRef = useRef<number[]>([]);
-  const stabilityCounterRef = useRef<number>(0);
-  const lastRRIntervalsRef = useRef<number[]>([]);
-  const lastIsArrhythmiaRef = useRef<boolean>(false);
-  const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
-  
-  // Detection configuration
-  const DETECTION_THRESHOLD = 0.25; // Threshold for variation ratio to detect arrhythmia
+  const lastAddedWindowRef = useRef<number>(0);
   
   /**
    * Register a new arrhythmia window for visualization
    * Based on real data only
    */
   const addArrhythmiaWindow = useCallback((start: number, end: number) => {
-    // Check if there's a similar recent window (within 500ms)
+    const currentTime = Date.now();
+    
+    // Prevenir demasiadas ventanas en corto tiempo para evitar sobrecarga visual
+    if (currentTime - lastAddedWindowRef.current < 1000) {
+      console.log("Skipping arrhythmia window - too close to previous window");
+      return;
+    }
+    
+    lastAddedWindowRef.current = currentTime;
+    
+    // Verificar si ya existe una ventana reciente similar (dentro de 500ms)
     setArrhythmiaWindows(prev => {
-      const currentTime = Date.now();
       const hasRecentWindow = prev.some(window => 
         Math.abs(window.start - start) < 500 && Math.abs(window.end - end) < 500
       );
       
       if (hasRecentWindow) {
-        return prev; // Don't add duplicate windows
+        return prev; // No agregar ventanas duplicadas
       }
       
-      // Add new arrhythmia window
-      const newWindows = [...prev, { start, end }];
+      // Crear nueva ventana con un margen más amplio para mejor visualización
+      const expandedStart = start - 100; // Ampliar ventana 100ms antes
+      const expandedEnd = end + 150;   // Ampliar ventana 150ms después
       
-      // Sort by time for consistent visualization
+      // Agregar nueva ventana de arritmia
+      const newWindows = [...prev, { start: expandedStart, end: expandedEnd }];
+      
+      // Ordenar por tiempo para mantener consistencia visual
       const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
       
-      // Limit to the 3 most recent windows
-      return sortedWindows.slice(0, 3);
+      // Limitar a las 5 ventanas más recientes para mejor rendimiento
+      return sortedWindows.slice(0, 5);
     });
     
-    // Debug log
+    // Log más detallado para depuración
     console.log("Arrhythmia window added for visualization", {
       startTime: new Date(start).toISOString(),
       endTime: new Date(end).toISOString(),
       duration: end - start,
-      windowsCount: arrhythmiaWindows.length + 1
+      totalWindows: arrhythmiaWindows.length + 1
     });
   }, [arrhythmiaWindows.length]);
-  
-  /**
-   * Analyze RR intervals to detect arrhythmias
-   * Using direct measurement algorithms only
-   */
-  const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (rrIntervals.length < 5) {
-      return {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: Date.now(),
-        isArrhythmia: false
-      };
-    }
-    
-    const lastIntervals = rrIntervals.slice(-5);
-    
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    const rmssd = calculateRMSSD(lastIntervals);
-    
-    // Calculate RR variation
-    const variationRatio = calculateRRVariation(lastIntervals);
-    
-    // Adjust threshold based on stability
-    let thresholdFactor = DETECTION_THRESHOLD;
-    if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20;
-    } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30;
-    }
-    
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    if (!isIrregular) {
-      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
-    } else {
-      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
-    }
-    
-    // Require more stability before reporting arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
-    
-    if (isArrhythmia) {
-      // Generate an arrhythmia window when detected
-      const currentTime = Date.now();
-      const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-      const windowWidth = Math.max(600, Math.min(1000, avgInterval * 2));
-      
-      addArrhythmiaWindow(currentTime - windowWidth/2, currentTime + windowWidth/2);
-      
-      console.log("Arrhythmia detected", {
-        rmssd,
-        variationRatio,
-        threshold: thresholdFactor,
-        timestamp: new Date(currentTime).toISOString()
-      });
-    }
-    
-    heartRateVariabilityRef.current.push(variationRatio);
-    if (heartRateVariabilityRef.current.length > 20) {
-      heartRateVariabilityRef.current.shift();
-    }
-    
-    lastIsArrhythmiaRef.current = isArrhythmia;
-    
-    return {
-      rmssd,
-      rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
-    };
-  }, [addArrhythmiaWindow]);
-  
-  /**
-   * Process arrhythmia detection from signal processor results
-   */
-  const processArrhythmiaStatus = useCallback((arrhythmiaStatus: string, lastArrhythmiaData: any) => {
-    const currentTime = Date.now();
-    
-    // Check for arrhythmia detected message
-    if (arrhythmiaStatus && 
-        typeof arrhythmiaStatus === 'string' && 
-        arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-        lastArrhythmiaData) {
-      
-      const arrhythmiaTime = lastArrhythmiaData.timestamp;
-      
-      // Create visualization window
-      let windowWidth = 800; // Wider window for clear visualization
-      addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
-      
-      // Return true if this is a new arrhythmia notification
-      return currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL;
-    }
-    
-    return false;
-  }, [addArrhythmiaWindow]);
-  
-  /**
-   * Register an arrhythmia notification
-   */
-  const registerArrhythmiaNotification = useCallback(() => {
-    lastArrhythmiaTriggeredRef.current = Date.now();
-  }, []);
   
   /**
    * Auto-clean old arrhythmia windows
@@ -172,18 +69,19 @@ export const useArrhythmiaVisualization = () => {
     const cleanupInterval = setInterval(() => {
       setArrhythmiaWindows(prev => {
         const currentTime = Date.now();
-        // Mantener solo ventanas que estén dentro de los últimos 10 segundos
+        // Mantener solo ventanas que estén dentro de los últimos 15 segundos para mayor persistencia visual
         const validWindows = prev.filter(window => 
-          currentTime - window.end < 10000
+          currentTime - window.end < 15000
         );
         
-        // Only update if there were changes
+        // Solo actualizar si hubo cambios
         if (validWindows.length !== prev.length) {
+          console.log(`Cleaned up old arrhythmia windows. Had: ${prev.length}, Now: ${validWindows.length}`);
           return validWindows;
         }
         return prev;
       });
-    }, 5000); // Clean every 5 seconds
+    }, 5000); // Limpiar cada 5 segundos
     
     return () => clearInterval(cleanupInterval);
   }, []);
@@ -193,34 +91,13 @@ export const useArrhythmiaVisualization = () => {
    */
   const clearArrhythmiaWindows = useCallback(() => {
     setArrhythmiaWindows([]);
-    stabilityCounterRef.current = 0;
-    heartRateVariabilityRef.current = [];
-    lastRRIntervalsRef.current = [];
-    lastIsArrhythmiaRef.current = false;
-    lastArrhythmiaTriggeredRef.current = 0;
+    lastAddedWindowRef.current = 0;
     console.log("All arrhythmia windows cleared");
   }, []);
-  
-  /**
-   * Reset all tracking data
-   */
-  const reset = useCallback(() => {
-    clearArrhythmiaWindows();
-    heartRateVariabilityRef.current = [];
-    stabilityCounterRef.current = 0;
-    lastRRIntervalsRef.current = [];
-    lastIsArrhythmiaRef.current = false;
-    lastArrhythmiaTriggeredRef.current = 0;
-  }, [clearArrhythmiaWindows]);
   
   return {
     arrhythmiaWindows,
     addArrhythmiaWindow,
-    clearArrhythmiaWindows,
-    detectArrhythmia,
-    processArrhythmiaStatus,
-    registerArrhythmiaNotification,
-    reset,
-    lastIsArrhythmiaRef
+    clearArrhythmiaWindows
   };
 };
