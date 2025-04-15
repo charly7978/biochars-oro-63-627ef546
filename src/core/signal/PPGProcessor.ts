@@ -1,5 +1,6 @@
-
-import { KalmanFilter } from './filters/KalmanFilter';
+// Import KalmanFilter from the central utility file
+// import { KalmanFilter } from './filters/KalmanFilter';
+import { KalmanFilter } from '@/utils/vitalSignsUtils';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
