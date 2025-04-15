@@ -37,7 +37,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with natural synchronization
- * No simulation is used - direct measurement only
+ * Solo usa datos reales - sin simulación
  */
 export function handlePeakDetection(
   result: any, 
