@@ -96,6 +96,9 @@ export const useSignalProcessor = () => {
       // Detect arrhythmia and update the result
       const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(result.rrData.intervals);
       processedResult.isArrhythmia = arrhythmiaResult.isArrhythmia;
+      
+      // Add arrhythmia count to the result
+      processedResult.arrhythmiaCount = ArrhythmiaDetectionService.getArrhythmiaCount();
     }
     
     return processedResult;

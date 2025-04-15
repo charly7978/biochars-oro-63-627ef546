@@ -43,18 +43,18 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.22; // Reduced from 0.28 to 0.22 for higher sensitivity
+  private readonly DETECTION_THRESHOLD: number = 0.20; // Reduced from 0.22 to 0.20 for higher sensitivity
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000;
+  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 5000; // Reduced from 10000 to 5000
   
   // False positive prevention
   private falsePositiveCounter: number = 0;
   private readonly MAX_FALSE_POSITIVES: number = 3;
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 2; // Lowered from 3 to 2 for faster detection
-  private readonly CONFIRMATION_WINDOW_MS: number = 15000; // Increased from 12000 to 15000
+  private readonly REQUIRED_CONFIRMATIONS: number = 1; // Lowered from 2 to 1 for faster detection
+  private readonly CONFIRMATION_WINDOW_MS: number = 10000; // Reduced from 15000 to 10000
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -83,20 +83,36 @@ class ArrhythmiaDetectionService {
    * Register for arrhythmia window notifications
    */
   public addArrhythmiaListener(listener: ArrhythmiaListener): void {
-    this.arrhythmiaListeners.push(listener);
+    // Make sure we don't add duplicate listeners
+    if (!this.arrhythmiaListeners.includes(listener)) {
+      this.arrhythmiaListeners.push(listener);
+      console.log(`ArrhythmiaDetectionService: Added listener, count: ${this.arrhythmiaListeners.length}`);
+    }
   }
 
   /**
    * Remove arrhythmia listener
    */
   public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
+    const prevCount = this.arrhythmiaListeners.length;
     this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
+    console.log(`ArrhythmiaDetectionService: Removed listener, count: ${prevCount} -> ${this.arrhythmiaListeners.length}`);
   }
 
   /**
    * Notify all listeners about a new arrhythmia window
    */
   private notifyListeners(window: ArrhythmiaWindow): void {
+    if (this.arrhythmiaListeners.length === 0) {
+      console.warn("ArrhythmiaDetectionService: No listeners to notify about arrhythmia window");
+      return;
+    }
+    
+    console.log(`ArrhythmiaDetectionService: Notifying ${this.arrhythmiaListeners.length} listeners about arrhythmia window`, {
+      windowStart: new Date(window.start).toISOString(),
+      windowEnd: new Date(window.end).toISOString()
+    });
+    
     this.arrhythmiaListeners.forEach(listener => {
       try {
         listener(window);
@@ -111,7 +127,6 @@ class ArrhythmiaDetectionService {
    */
   public updateRRIntervals(rrIntervals: number[]): void {
     if (rrIntervals && rrIntervals.length > 0) {
-      console.log("Updating RR intervals:", rrIntervals.length);
       this.lastRRIntervals = rrIntervals;
     }
   }
@@ -140,7 +155,6 @@ class ArrhythmiaDetectionService {
     
     // Requires at least 5 intervals for reliable analysis
     if (!intervalsToUse || intervalsToUse.length < 5) {
-      console.log("Not enough RR intervals for detection:", intervalsToUse?.length || 0);
       return {
         isArrhythmia: false,
         rmssd: 0,
@@ -157,11 +171,8 @@ class ArrhythmiaDetectionService {
       interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
     );
     
-    // Log the valid intervals for debugging
-    console.log("Valid intervals for arrhythmia detection:", validIntervals.length, "threshold:", this.DETECTION_THRESHOLD);
-    
-    // If less than 80% of intervals are valid, not reliable
-    if (validIntervals.length < lastIntervals.length * 0.6) { // Reduced from 0.8 to 0.6 for more permissive detection
+    // If less than 60% of intervals are valid, not reliable
+    if (validIntervals.length < lastIntervals.length * 0.6) {
       // Reset detection to avoid false positives from noise
       this.stabilityCounter = Math.min(this.stabilityCounter + 1, 30);
       this.currentBeatIsArrhythmia = false;
@@ -180,14 +191,12 @@ class ArrhythmiaDetectionService {
     // Calculate variation ratio (normalized variability)
     const variationRatio = calculateRRVariation(validIntervals);
     
-    console.log("Arrhythmia metrics:", { rmssd, variationRatio, stabilityCounter: this.stabilityCounter });
-    
     // Adjust threshold based on stability
     let thresholdFactor = this.DETECTION_THRESHOLD;
     if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.20; // Reduced from 0.23 to 0.20
+      thresholdFactor = 0.18; // Reduced from 0.20 to 0.18
     } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.30; // Reduced from 0.33 to 0.30
+      thresholdFactor = 0.28; // Reduced from 0.30 to 0.28
     }
     
     // Determine if rhythm is irregular
@@ -250,7 +259,7 @@ class ArrhythmiaDetectionService {
       this.currentBeatIsArrhythmia = false;
     }
     
-    // Manual force for debugging - force arrhythmia detection every 30 seconds if needed
+    // Debug force arrhythmia detection every 30 seconds if needed
     /* 
     if (currentTime - this.lastArrhythmiaTriggeredTime > 30000) {
       this.currentBeatIsArrhythmia = true;
@@ -281,6 +290,10 @@ class ArrhythmiaDetectionService {
     // Check time since last arrhythmia to avoid multiple alerts
     const timeSinceLastTriggered = currentTime - this.lastArrhythmiaTriggeredTime;
     if (timeSinceLastTriggered <= this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+      console.log("Arrhythmia detection ignored - too soon after previous detection", {
+        timeSinceLastTriggered,
+        minInterval: this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL
+      });
       return; // Too soon, ignore
     }
     
@@ -296,8 +309,8 @@ class ArrhythmiaDetectionService {
     // Create an arrhythmia window
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
-    // Larger window to ensure visualization
-    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 3));
+    // Larger window to ensure visibility
+    const windowWidth = Math.max(1200, Math.min(2000, avgInterval * 4));
     
     const arrhythmiaWindow = {
       start: currentTime - windowWidth/2,
@@ -322,7 +335,7 @@ class ArrhythmiaDetectionService {
     // Auto-cleanup to avoid continuous detections
     setTimeout(() => {
       this.currentBeatIsArrhythmia = false;
-    }, windowWidth);
+    }, 2000); // Shortened from windowWidth to fixed 2000ms
   }
   
   /**
@@ -336,6 +349,7 @@ class ArrhythmiaDetectionService {
     );
     
     if (hasRecentWindow) {
+      console.log("ArrhythmiaDetectionService: Duplicate window avoided");
       return; // Don't add duplicate windows
     }
     
@@ -351,7 +365,7 @@ class ArrhythmiaDetectionService {
     }
     
     // Debug log
-    console.log("Arrhythmia window added for visualization", {
+    console.log("ArrhythmiaDetectionService: Arrhythmia window added for visualization", {
       startTime: new Date(window.start).toISOString(),
       endTime: new Date(window.end).toISOString(),
       duration: window.end - window.start,
@@ -388,7 +402,15 @@ class ArrhythmiaDetectionService {
     // Auto-reset after window duration
     setTimeout(() => {
       this.currentBeatIsArrhythmia = false;
-    }, windowWidth);
+    }, 2000); // Fixed at 2000ms instead of full window width
+    
+    // Trigger audio feedback
+    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
+    
+    // Show toast
+    toast.error('¡PRUEBA! Arritmia detectada (forzada)', {
+      duration: 6000
+    });
   }
   
   /**
@@ -438,15 +460,17 @@ class ArrhythmiaDetectionService {
    */
   public cleanupOldWindows(): void {
     const currentTime = Date.now();
+    const oldCount = this.arrhythmiaWindows.length;
+    
     // Filter only recent windows (less than 20 seconds)
-    const oldWindows = this.arrhythmiaWindows.filter(window => 
+    const recentWindows = this.arrhythmiaWindows.filter(window => 
       currentTime - window.end < 20000
     );
     
     // Only update if there are changes
-    if (oldWindows.length !== this.arrhythmiaWindows.length) {
-      console.log(`Cleaned up old arrhythmia windows: removed ${this.arrhythmiaWindows.length - oldWindows.length} windows`);
-      this.arrhythmiaWindows = oldWindows;
+    if (recentWindows.length !== oldCount) {
+      console.log(`ArrhythmiaDetectionService: Cleaned up old arrhythmia windows: removed ${oldCount - recentWindows.length} windows`);
+      this.arrhythmiaWindows = recentWindows;
     }
   }
   
