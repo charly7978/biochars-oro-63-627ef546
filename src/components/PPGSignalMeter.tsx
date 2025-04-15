@@ -667,7 +667,9 @@ const PPGSignalMeter = memo(({
     renderSignal();
     
     return () => {
-      cancelAnimationFrame(animationFrameRef.current);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
   }, [renderSignal]);
 
