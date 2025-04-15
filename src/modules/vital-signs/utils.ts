@@ -11,7 +11,6 @@ export {
   calculateAC,
   calculateDC,
   calculateStandardDeviation,
-  findPeaksAndValleys,
   calculateAmplitude,
   amplifySignal,
   calculatePerfusionIndex

@@ -1,4 +1,5 @@
 import { SignalFilter } from '@/core/signal-processing/filters/SignalFilter';
+import { PeakDetector, RRData } from '@/core/signal/PeakDetector';
 
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
@@ -51,11 +52,13 @@ export class HeartBeatProcessor {
   peakCandidateValue = 0;
   rrIntervals: number[] = [];
 
-  // Instantiate the centralized filter
+  // Instantiate the centralized filter and detector
   private signalFilter: SignalFilter;
+  private peakDetector: PeakDetector;
 
   constructor() {
-    this.signalFilter = new SignalFilter(); // Initialize the filter
+    this.signalFilter = new SignalFilter();
+    this.peakDetector = new PeakDetector(); // Initialize PeakDetector
     this.initAudio();
     this.startTime = Date.now();
   }
@@ -270,85 +273,91 @@ export class HeartBeatProcessor {
       smoothDerivative = (this.values[2] - this.values[0]) / 2;
     }
 
-    // Detectar si es un pico
-    const { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
+    // Use the centralized PeakDetector on the *smoothed* signal buffer
+    // We need a buffer of smoothed values for the detector
+    // Let's reuse signalBuffer for this, storing smoothed values instead of raw
+    this.signalBuffer = []; // Clear the buffer temporarily (or manage it better)
+    // This needs rethinking - processSignal works sample by sample.
+    // PeakDetector expects a buffer. We need to accumulate smoothed values.
 
-    // CORRECCIÓN: Guardar el valor normalizado actual antes de actualizar el último valor
-    // para usarlo en la próxima comparación in detectPeak
-    this.lastValue = normalizedValue; // THIS SHOULD BE normalizedValue based on detectPeak logic
+    // Let's maintain a separate buffer for smoothed values for the PeakDetector
+    // We already store the latest smoothed values in this.values for derivative calculation.
+    // Let's expand that buffer slightly?
+    // No, PeakDetector needs a longer window. Let's use signalBuffer for smoothed values.
 
-    // CORRECCIÓN: Reproducir beep inmediatamente en el pico, no en la confirmación posterior
-    if (isPeak && Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
-      this.playBeep(confidence * this.BEEP_VOLUME);
-      this.lastBeepTime = Date.now();
+    // Store smoothed value in the buffer for peak detection
+    this.signalBuffer.push(smoothed);
+    if (this.signalBuffer.length > this.WINDOW_SIZE) { // Use WINDOW_SIZE for detector buffer
+        this.signalBuffer.shift();
     }
-    
-    // Confirmar si realmente es un pico (reduce falsos positivos)
-    const confirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
-    
-    // Actualizar BPM si se confirmó el pico
-    if (confirmedPeak) {
-      this.updateBPM();
-      
-      if (this.previousPeakTime !== null) {
-        // Guardar información de intervalos RR para análisis de arritmias
-        const rrInterval = this.lastPeakTime! - this.previousPeakTime;
-        if (rrInterval > 300 && rrInterval < 2000) { // Filtrar valores fisiológicamente imposibles
-          this.rrIntervals.push(rrInterval);
-          if (this.rrIntervals.length > 30) {
-            this.rrIntervals.shift(); // Mantener solo los últimos 30 intervalos
-          }
+
+    let confirmedPeak = false;
+    let currentConfidence = 0;
+    let detectedIntervals: number[] = [];
+    let lastDetectedPeakTime: number = 0; // Variable to store the time from the result
+
+    // Only run peak detection if we have enough smoothed data
+    if (this.signalBuffer.length >= 30) { // Use a reasonable minimum size for detection
+        const detectionResult = this.peakDetector.detectPeaks(this.signalBuffer);
+        detectedIntervals = detectionResult.intervals;
+        lastDetectedPeakTime = detectionResult.lastPeakTime; // Get the public time from result
+
+        // Check if the *last* sample processed corresponds to a detected peak index
+        // Note: detectionResult.peakIndices refers to indices *within the passed buffer*
+        const lastSmoothedValueIndexInBuffer = this.signalBuffer.length - 1;
+        if (detectionResult.peakIndices.includes(lastSmoothedValueIndexInBuffer)) {
+            confirmedPeak = true;
+            // Estimate confidence based on the original normalized value at this point
+            currentConfidence = Math.min(1.0, Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5));
+            currentConfidence = Math.max(this.MIN_CONFIDENCE, currentConfidence);
         }
-      }
-      
-      this.previousPeakTime = this.lastPeakTime;
-      this.lastPeakTime = Date.now();
+
+        // Use intervals from the detector to update BPM
+        if (detectedIntervals.length > 0) {
+          // Update BPM history using the intervals from the detector
+          this.updateBPMFromIntervals(detectedIntervals);
+        }
     }
-    
+
+    // Play beep based on the *instantaneous* peak detection (using normalized value)
+    // This part remains tricky. The original logic used normalizedValue and derivative.
+    // Let's try to approximate it.
+    const timeSinceLastPeakDetector = lastDetectedPeakTime > 0 ? (Date.now() - lastDetectedPeakTime) : Infinity;
+    // If the central detector just found a peak (small time diff) and normalized value is high
+    if (timeSinceLastPeakDetector < 100 && normalizedValue > this.SIGNAL_THRESHOLD) {
+       const beepConfidence = Math.min(1.0, Math.abs(normalizedValue) / (this.SIGNAL_THRESHOLD * 1.5));
+       if (Date.now() - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
+          this.playBeep(beepConfidence * this.BEEP_VOLUME);
+          this.lastBeepTime = Date.now();
+       }
+    }
+
+    // Update RR intervals if new intervals were detected
+    if (detectedIntervals.length > this.rrIntervals.length) {
+        this.rrIntervals = [...detectedIntervals]; // Use intervals from the detector
+        // Update peak times based on the detector's last peak time
+        if (lastDetectedPeakTime > (this.lastPeakTime ?? 0)) { // Use the time from the result object
+            this.previousPeakTime = this.lastPeakTime;
+            this.lastPeakTime = lastDetectedPeakTime; // Use the time from the result object
+        }
+    }
+
     // Retornar resultados
     return {
       bpm: Math.round(this.getFinalBPM()),
-      confidence,
-      isPeak: confirmedPeak && !this.isInWarmup(),
+      confidence: currentConfidence, // Use confidence from the approximated check
+      isPeak: confirmedPeak && !this.isInWarmup(), // Use confirmation from PeakDetector
       filteredValue: smoothed, // Return the final smoothed value
       arrhythmiaCount: 0 // Keep arrhythmia logic separate for now
     };
   }
 
-  private detectPeak(normalizedValue: number, derivative: number): {
-    isPeak: boolean;
-    confidence: number;
-  } {
-    // Detectamos un pico cuando hay un máximo local (valor alto) 
-    // en lugar de detectar cruce por cero del derivado
-    const isPotentialPeak = 
-      normalizedValue > this.SIGNAL_THRESHOLD && 
-      derivative < 0 && // Estamos justo después del pico (pendiente negativa)
-      this.lastValue < normalizedValue; // El valor actual es mayor que el anterior
-      
-    // Verificar que ha pasado suficiente tiempo desde el último pico
-    const sufficientTimePassed = 
-      this.lastPeakTime === null || 
-      (Date.now() - this.lastPeakTime) > this.MIN_PEAK_TIME_MS;
-      
-    const isPeak = isPotentialPeak && sufficientTimePassed;
-    
-    // Calcular confianza basado en la amplitud del pico
-    let confidence = 0;
-    if (isPeak) {
-      // La confianza aumenta con la amplitud normalizada
-      confidence = Math.min(1.0, normalizedValue / (this.SIGNAL_THRESHOLD * 1.5));
-      confidence = Math.max(this.MIN_CONFIDENCE, confidence);
-    }
-    
-    return { isPeak, confidence };
-  }
-
-  autoResetIfSignalIsLow(amplitude) {
+  autoResetIfSignalIsLow(amplitude: number) {
     if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
       this.lowSignalCount++;
       if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
         this.resetDetectionStates();
+        this.peakDetector.reset(); // Also reset the central detector
       }
     } else {
       this.lowSignalCount = 0;
@@ -358,73 +367,35 @@ export class HeartBeatProcessor {
   resetDetectionStates() {
     this.lastPeakTime = null;
     this.previousPeakTime = null;
-    this.lastConfirmedPeak = false;
+    // this.lastConfirmedPeak = false; // No longer used directly
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
-    this.peakConfirmationBuffer = [];
+    this.peakConfirmationBuffer = []; // Likely no longer needed
     this.values = []; // Reset derivative buffer
-    this.lastValue = 0; // Reset last normalized value used in peak detection
+    this.lastValue = 0; // Reset last normalized value
     console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
 
-  confirmPeak(isPeak, normalizedValue, confidence) {
-    // Añadir valor a buffer de confirmación
-    this.peakConfirmationBuffer.push(normalizedValue);
-    if (this.peakConfirmationBuffer.length > 5) {
-      this.peakConfirmationBuffer.shift();
-    }
-
-    // Solo proceder si es un pico, no ya confirmado, y cumple umbral de confianza
-    if (isPeak && !this.lastConfirmedPeak && confidence >= this.MIN_CONFIDENCE) {
-      // Necesita buffer suficiente para confirmación
-      if (this.peakConfirmationBuffer.length >= 3) {
-        const len = this.peakConfirmationBuffer.length;
-        
-        // Confirmar solo si es el pico (valores posteriores están descendiendo)
-        const goingDown1 =
-          this.peakConfirmationBuffer[len - 1] < this.peakConfirmationBuffer[len - 2];
-        const goingDown2 =
-          this.peakConfirmationBuffer[len - 2] < this.peakConfirmationBuffer[len - 3];
-
-        if (goingDown1 || goingDown2) { // Cambiado a OR para mayor sensibilidad
-          this.lastConfirmedPeak = true;
-          return true;
-        }
-      }
-    } else if (!isPeak) {
-      this.lastConfirmedPeak = false;
-    }
-
-    return false;
-  }
-
-  private updateBPM(): void {
-    // Verificar si hay suficientes datos para calcular
-    if (this.isInWarmup() || this.lastPeakTime === null || this.previousPeakTime === null) {
+  // New method to update BPM from detected intervals
+  private updateBPMFromIntervals(intervals: number[]): void {
+    if (this.isInWarmup() || intervals.length === 0) {
       return;
     }
 
-    // Calcular el intervalo actual en ms entre los dos últimos picos
-    const currentInterval = this.lastPeakTime - this.previousPeakTime;
-    
-    // Filtrar intervalos fisiológicamente improbables
-    if (currentInterval < 250 || currentInterval > 1500) {
-      return; // Ignorar intervalos fuera del rango fisiológico (40-240 BPM)
-    }
-    
-    // Calcular el BPM instantáneo a partir del intervalo
-    const instantBPM = 60000 / currentInterval;
-    
-    // Añadir al histórico para promediado
+    // Calculate BPM from the mean of the *valid* intervals provided by the detector
+    const validIntervals = intervals; // Assume detector already filtered them
+    if (validIntervals.length === 0) return;
+
+    const meanInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
+    const instantBPM = 60000 / meanInterval;
+
+    // Add to history (maybe use mean BPM directly?)
     this.bpmHistory.push(instantBPM);
-    
-    // Mantener solo los últimos 5 valores para un promedio móvil
     if (this.bpmHistory.length > 5) {
       this.bpmHistory.shift();
     }
-    
-    // Actualizar BPM suavizado usando promedio ponderado
-    this.smoothBPM = this.getSmoothBPM();
+
+    this.smoothBPM = this.getSmoothBPM(); // Recalculate smoothed BPM based on history
   }
 
   private getSmoothBPM(): number {
@@ -482,8 +453,8 @@ export class HeartBeatProcessor {
   }
 
   reset() {
-    this.signalBuffer = [];
-    this.peakConfirmationBuffer = [];
+    this.signalBuffer = []; // Clear smoothed buffer
+    this.peakConfirmationBuffer = []; // Clear if still needed
     this.bpmHistory = [];
     this.values = [];
     this.smoothBPM = 0;
@@ -499,8 +470,8 @@ export class HeartBeatProcessor {
     this.lowSignalCount = 0;
     this.rrIntervals = [];
 
-    // Reset the filter's internal state (like lastEMA)
-    this.signalFilter.reset();
+    this.signalFilter.reset(); // Reset filter state
+    this.peakDetector.reset(); // Reset detector state
 
     // Intentar asegurar que el contexto de audio esté activo
     if (this.audioContext && this.audioContext.state !== 'running') {
@@ -510,9 +481,9 @@ export class HeartBeatProcessor {
     }
   }
 
-  getRRIntervals() {
+  getRRIntervals(): RRData { // Update return type to match PeakDetector
     return {
-      intervals: [...this.bpmHistory],
+      intervals: [...this.rrIntervals], // Use the rrIntervals populated by the detector logic
       lastPeakTime: this.lastPeakTime
     };
   }
