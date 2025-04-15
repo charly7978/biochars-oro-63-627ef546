@@ -1,3 +1,4 @@
+
 export const keyframes = {
   "heart-beat": {
     "0%, 100%": { transform: "scale(1)" },
@@ -61,8 +62,12 @@ export const keyframes = {
   },
   "number-highlight": {
     "0%": { textShadow: "0 0 0px rgba(255,255,255,0)" },
-    "30%": { textShadow: "0 0 8px rgba(59,130,246,0.7)" },
-    "70%": { textShadow: "0 0 4px rgba(59,130,246,0.4)" },
+    "30%": { textShadow: "0 0 12px rgba(146,197,255,0.8), 0 0 20px rgba(100,150,255,0.4)" },
+    "70%": { textShadow: "0 0 8px rgba(146,197,255,0.5), 0 0 12px rgba(100,150,255,0.3)" },
     "100%": { textShadow: "0 0 0px rgba(255,255,255,0)" }
+  },
+  "results-complete": {
+    "0%": { opacity: "0.8", transform: "translateY(5px)" },
+    "100%": { opacity: "1", transform: "translateY(0)" }
   }
 };
