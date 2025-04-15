@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,7 +9,6 @@ import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
-import { FeedbackService } from '../services/FeedbackService';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -27,10 +25,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const weakSignalsCountRef = useRef<number>(0);
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
-  
-  // Arrhythmia tracking
-  const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 10000; // 10 seconds between notifications
   
   const { 
     arrhythmiaWindows, 
@@ -95,13 +89,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
-      // Verificar y manejar eventos de arritmia más precisamente
+      // Add safe null check for arrhythmiaStatus
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
-        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
@@ -114,40 +107,20 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
         
-        // Add visualization window - solo para el latido exacto
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/4, arrhythmiaTime + windowWidth/4);
-        
-        console.log("useVitalSignsProcessor: Arrhythmia event precise marking", {
-          time: new Date(arrhythmiaTime).toISOString(),
-          windowWidth,
-          status: result.arrhythmiaStatus
-        });
-        
-        // Trigger feedback for arrhythmia
-        if (currentTime - lastArrhythmiaTriggeredRef.current > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
-          lastArrhythmiaTriggeredRef.current = currentTime;
-          const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
-          FeedbackService.signalArrhythmia(count);
-        }
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results
-      if (result && result.heartRate > 0) {
-        setLastValidResults(result);
-      }
-      
-      // Return processed result
+      // Always return real result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error that include heartRate
+      // Return safe fallback values on error that include hydration
       return {
         spo2: 0,
-        heartRate: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
         glucose: 0,
@@ -170,7 +143,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
-    lastArrhythmiaTriggeredRef.current = 0;
     
     return null;
   };
@@ -184,7 +156,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
-    lastArrhythmiaTriggeredRef.current = 0;
     clearLog();
   };
 
@@ -193,7 +164,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults, // Return last valid results
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

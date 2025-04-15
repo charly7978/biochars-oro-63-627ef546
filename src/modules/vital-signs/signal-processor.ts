@@ -3,8 +3,17 @@
  */
 
 import { BaseProcessor } from './processors/base-processor';
-import { SignalFilter } from './processors/signal-filter';
-import { SignalQuality } from './processors/signal-quality';
+// Remove local filter/quality imports
+// import { SignalFilter } from './processors/signal-filter';
+// import { SignalQuality } from './processors/signal-quality';
+// Import utilities
+import {
+  applySMAFilter,
+  applyEMAFilter,
+  applyMedianFilter,
+  evaluateSignalQuality,
+  SIGNAL_CONSTANTS // Import constants if needed
+} from '@/utils/vitalSignsUtils';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
 
@@ -15,10 +24,13 @@ import { SignalValidator } from './validators/signal-validator';
  * No simulation or reference values are used
  */
 export class SignalProcessor extends BaseProcessor {
-  private filter: SignalFilter;
-  private quality: SignalQuality;
+  // Remove local filter/quality instances
+  // private filter: SignalFilter;
+  // private quality: SignalQuality;
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
+  // Add state for EMA filter if needed by applyFilters
+  private lastEMA: number | null = null;
   
   // Finger detection state
   private rhythmBasedFingerDetection: boolean = false;
@@ -32,31 +44,11 @@ export class SignalProcessor extends BaseProcessor {
   
   constructor() {
     super();
-    this.filter = new SignalFilter();
-    this.quality = new SignalQuality();
+    // Remove local filter/quality initialization
+    // this.filter = new SignalFilter();
+    // this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
-  }
-  
-  /**
-   * Apply Moving Average filter to real values
-   */
-  public applySMAFilter(value: number): number {
-    return this.filter.applySMAFilter(value, this.ppgValues);
-  }
-  
-  /**
-   * Apply Exponential Moving Average filter to real data
-   */
-  public applyEMAFilter(value: number, alpha?: number): number {
-    return this.filter.applyEMAFilter(value, this.ppgValues, alpha);
-  }
-  
-  /**
-   * Apply median filter to real data
-   */
-  public applyMedianFilter(value: number): number {
-    return this.filter.applyMedianFilter(value, this.ppgValues);
   }
   
   /**
@@ -75,31 +67,33 @@ export class SignalProcessor extends BaseProcessor {
   
   /**
    * Apply combined filtering for real signal processing
+   * Uses centralized utility functions
    * No simulation is used
    * Incorporates rhythmic pattern-based finger detection
    */
   public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
     // Track the signal for pattern detection
     this.signalValidator.trackSignalForPatternDetection(value);
-    
-    // Step 1: Median filter to remove outliers
-    const medianFiltered = this.applyMedianFilter(value);
-    
-    // Step 2: Low pass filter to smooth the signal
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
-    
-    // Step 3: Moving average for final smoothing
-    const smaFiltered = this.applySMAFilter(lowPassFiltered);
-    
-    // Calculate noise level of real signal
-    this.quality.updateNoiseLevel(value, smaFiltered);
-    
-    // Calculate signal quality (0-100)
-    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
-    
-    // Store the filtered value in the buffer
+
+    // Step 1: Median filter to remove outliers (using utility)
+    const medianFiltered = applyMedianFilter(value, this.ppgValues, 5); // windowSize = 5
+
+    // Step 2: Low pass filter (EMA) to smooth the signal (using utility)
+    const { nextEMA, filteredValue: emaFiltered } = applyEMAFilter(medianFiltered, this.lastEMA, 0.3); // alpha = 0.3
+    this.lastEMA = nextEMA; // Update EMA state
+
+    // Step 3: Moving average (SMA) for final smoothing (using utility)
+    const { filteredValue: smaFiltered } = applySMAFilter(emaFiltered, this.ppgValues, SIGNAL_CONSTANTS.SMA_WINDOW);
+
+    // Calculate signal quality (using utility)
+    // The utility needs the filtered buffer, so we add smaFiltered first
+    const tempFilteredBuffer = [...this.ppgValues, smaFiltered];
+    if (tempFilteredBuffer.length > 30) tempFilteredBuffer.shift(); // Maintain buffer size for quality calculation
+    const qualityValue = evaluateSignalQuality(tempFilteredBuffer, SIGNAL_CONSTANTS.MIN_AMPLITUDE);
+
+    // Store the final filtered value in the main buffer
     this.ppgValues.push(smaFiltered);
-    if (this.ppgValues.length > 30) {
+    if (this.ppgValues.length > 30) { // Ensure ppgValues buffer size is managed
       this.ppgValues.shift();
     }
     
@@ -158,7 +152,7 @@ export class SignalProcessor extends BaseProcessor {
       this.rhythmBasedFingerDetection = false;
     }
     
-    return { 
+    return {
       filteredValue: smaFiltered,
       quality: qualityValue,
       fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
@@ -178,7 +172,10 @@ export class SignalProcessor extends BaseProcessor {
    */
   public reset(): void {
     super.reset();
-    this.quality.reset();
+    // Remove quality reset as it's no longer a local instance
+    // this.quality.reset();
+    // Reset EMA state
+    this.lastEMA = null;
     this.signalValidator.resetFingerDetection();
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
