@@ -14,7 +14,7 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
 import { CalibrationIntegrator } from '../../core/calibration/CalibrationIntegrator';
-import { BidirectionalFeedbackService } from '@/services/BidirectionalFeedbackService';
+import bidirectionalFeedbackService from '@/services/BidirectionalFeedbackService';
 
 /**
  * Main vital signs processor
@@ -160,7 +160,7 @@ export class VitalSignsProcessor {
 
      // 8. Enviar feedback al servicio bidireccional
      try {
-        BidirectionalFeedbackService.getInstance().processVitalSignsResults(finalVitalSignsResult, quality);
+        bidirectionalFeedbackService.processVitalSignsResults(finalVitalSignsResult, quality);
      } catch (error) {
         console.error("Error sending feedback to BidirectionalFeedbackService:", error);
      }
