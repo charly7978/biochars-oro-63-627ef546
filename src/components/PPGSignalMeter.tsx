@@ -55,8 +55,6 @@ const PPGSignalMeter = memo(({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const qualityHistoryRef = useRef<number[]>([]);
-  const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const currentArrhythmiaSegmentRef = useRef<ArrhythmiaWindow | null>(null);
   const lastArrhythmiaStateRef = useRef<boolean>(false);
@@ -83,8 +81,6 @@ const PPGSignalMeter = memo(({
   const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
-  const QUALITY_HISTORY_SIZE = 9;
-  const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
   const MIN_BEEP_INTERVAL_MS = 350;
 
@@ -141,35 +137,18 @@ const PPGSignalMeter = memo(({
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
     
-    if (preserveResults && !isFingerDetected) {
-      setResultsVisible(true);
-    } else if (!preserveResults && !isFingerDetected) {
-      if (dataBufferRef.current) {
-        dataBufferRef.current.clear();
-      }
-      peaksRef.current = [];
-      baselineRef.current = null;
-      lastValueRef.current = null;
-      setResultsVisible(false);
+    if (isFingerDetected || preserveResults) {
+        setResultsVisible(true);
+    } else {
+        if (dataBufferRef.current) {
+          dataBufferRef.current.clear();
+        }
+        peaksRef.current = [];
+        baselineRef.current = null;
+        lastValueRef.current = null;
+        setResultsVisible(false);
     }
   }, [preserveResults, isFingerDetected]);
-
-  useEffect(() => {
-    qualityHistoryRef.current.push(quality);
-    if (qualityHistoryRef.current.length > QUALITY_HISTORY_SIZE) {
-      qualityHistoryRef.current.shift();
-    }
-    
-    if (isFingerDetected) {
-      consecutiveFingerFramesRef.current++;
-      setResultsVisible(true);
-    } else {
-      consecutiveFingerFramesRef.current = 0;
-      if (!preserveResults) {
-        setResultsVisible(false);
-      }
-    }
-  }, [quality, isFingerDetected, preserveResults]);
 
   useEffect(() => {
     const offscreen = document.createElement('canvas');
@@ -188,38 +167,19 @@ const PPGSignalMeter = memo(({
     }
   }, []);
 
-  const getAverageQuality = useCallback(() => {
-    if (qualityHistoryRef.current.length === 0) return 0;
-    
-    let weightedSum = 0;
-    let weightSum = 0;
-    
-    qualityHistoryRef.current.forEach((q, index) => {
-      const weight = index + 1;
-      weightedSum += q * weight;
-      weightSum += weight;
-    });
-    
-    return weightSum > 0 ? weightedSum / weightSum : 0;
-  }, []);
-
   const getQualityColor = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'from-gray-400 to-gray-500';
-    if (avgQuality > 65) return 'from-green-500 to-emerald-500';
-    if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
+    if (!isFingerDetected && !preserveResults) return 'from-gray-400 to-gray-500';
+    if (q > 65) return 'from-green-500 to-emerald-500';
+    if (q > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, preserveResults]);
+  }, [isFingerDetected, preserveResults]);
 
   const getQualityText = useCallback((q: number) => {
-    const avgQuality = getAverageQuality();
-    
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
-    if (avgQuality > 65) return 'Señal óptima';
-    if (avgQuality > 40) return 'Señal aceptable';
+    if (!isFingerDetected && !preserveResults) return 'Sin detección';
+    if (q > 65) return 'Señal óptima';
+    if (q > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, preserveResults]);
+  }, [isFingerDetected, preserveResults]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -502,14 +462,13 @@ const PPGSignalMeter = memo(({
     
     drawArrhythmiaZones(renderCtx, now);
     
-    if (preserveResults && !isFingerDetected) {
+    if (!isFingerDetected && !preserveResults) {
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-        const visibleCtx = canvas.getContext('2d', { alpha: false });
-        if (visibleCtx) {
-          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-        }
+          const visibleCtx = canvas.getContext('2d', { alpha: false });
+          if (visibleCtx) {
+              visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+          }
       }
-      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -641,8 +600,7 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    if (shouldBeep && isFingerDetected && 
-        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+    if (shouldBeep && isFingerDetected) { 
       const latestPeak = peaksRef.current.length > 0 ? peaksRef.current[peaksRef.current.length - 1] : null;
       const isPeakArrhythmia = latestPeak ? latestPeak.isArrhythmia : false;
       
@@ -668,7 +626,7 @@ const PPGSignalMeter = memo(({
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, IMMEDIATE_RENDERING, 
-    FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES,
+    FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale,
     drawArrhythmiaZones, arrhythmiaWindows
   ]);
 
@@ -711,9 +669,6 @@ const PPGSignalMeter = memo(({
     onReset();
   }, [onReset]);
 
-  const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
-
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
       <canvas
@@ -736,11 +691,11 @@ const PPGSignalMeter = memo(({
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
+                style={{ width: `${(isFingerDetected || preserveResults) ? quality : 0}%` }}
               />
             </div>
             <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+                  style={{ color: quality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
           </div>
@@ -749,15 +704,15 @@ const PPGSignalMeter = memo(({
         <div className="flex flex-col items-center">
           <Fingerprint
             className={`h-8 w-8 transition-colors duration-300 ${
-              !displayFingerDetected ? 'text-gray-400' :
-              displayQuality > 65 ? 'text-green-500' :
-              displayQuality > 40 ? 'text-yellow-500' :
+              !isFingerDetected ? 'text-gray-400' :
+              quality > 65 ? 'text-green-500' :
+              quality > 40 ? 'text-yellow-500' :
               'text-red-500'
             }`}
             strokeWidth={1.5}
           />
           <span className="text-[8px] text-center font-medium text-black/80">
-            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+            {isFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
       </div>
