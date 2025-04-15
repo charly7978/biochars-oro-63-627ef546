@@ -83,14 +83,18 @@ const Index = () => {
           setHeartRate(heartBeatResult.bpm);
           
           try {
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setVitalSigns(vitals);
-              
-              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
-            }
+            processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData)
+              .then(vitals => {
+                if (vitals) {
+                  setVitalSigns(vitals);
+                  setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
+                }
+              })
+              .catch(error => {
+                console.error("Error processing vital signs:", error);
+              });
           } catch (error) {
-            console.error("Error processing vital signs:", error);
+            console.error("Error initiating vital signs processing:", error);
           }
         }
         
