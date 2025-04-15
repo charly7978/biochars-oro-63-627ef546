@@ -5,13 +5,11 @@ import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
+import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
-import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
-import { registerGlobalCleanup } from '@/utils/cleanup-utils';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
+import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -49,9 +47,15 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
+  const enterFullScreen = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (err) {
+      console.log('Error al entrar en pantalla completa:', err);
+    }
+  };
+
   useEffect(() => {
-    registerGlobalCleanup();
-    
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
@@ -84,7 +88,17 @@ const Index = () => {
             if (vitals) {
               setVitalSigns(vitals);
               
-              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
+              if (vitals.arrhythmiaStatus && 
+                  typeof vitals.arrhythmiaStatus === 'string') {
+                  
+                if (vitals.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+                  // Update instantly based on the current result
+                  setIsArrhythmia(true);
+                } else {
+                  // If the current status is not arrhythmia, set it to false
+                  setIsArrhythmia(false);
+                }
+              }
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
@@ -313,7 +327,6 @@ const Index = () => {
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
-              arrhythmiaWindows={ArrhythmiaDetectionService.getArrhythmiaWindows()}
             />
           </div>
           <AppTitle />

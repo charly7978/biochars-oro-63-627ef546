@@ -30,11 +30,11 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic - adjusted for upward peaks
+  // Peak detection logic
   const isPeak =
-    derivative > -config.derivativeThreshold &&
+    derivative < config.derivativeThreshold &&
     normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 1.02;
+    lastValue > baseline * 0.98;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
@@ -83,7 +83,7 @@ export function confirmPeak(
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values (adjusted for upward peaks)
+      // Confirm peak if followed by decreasing values
       const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
       const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
 
