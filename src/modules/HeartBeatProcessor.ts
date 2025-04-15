@@ -1,5 +1,6 @@
 import { SignalFilter } from '@/core/signal-processing/filters/SignalFilter';
 import { PeakDetector, RRData } from '@/core/signal/PeakDetector';
+import { SignalQuality } from '@/modules/vital-signs/processors/signal-quality';
 
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
@@ -55,10 +56,12 @@ export class HeartBeatProcessor {
   // Instantiate the centralized filter and detector
   private signalFilter: SignalFilter;
   private peakDetector: PeakDetector;
+  private signalQuality: SignalQuality;
 
   constructor() {
     this.signalFilter = new SignalFilter();
-    this.peakDetector = new PeakDetector(); // Initialize PeakDetector
+    this.peakDetector = new PeakDetector();
+    this.signalQuality = new SignalQuality();
     this.initAudio();
     this.startTime = Date.now();
   }
@@ -260,7 +263,14 @@ export class HeartBeatProcessor {
 
     // Normalizar señal (using the final smoothed value)
     const normalizedValue = smoothed - this.baseline;
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
+
+    // Check for weak signal using the SignalQuality instance
+    if (this.signalQuality.isSignalWeak(Math.abs(normalizedValue))) {
+      this.resetDetectionStates(); // Reset peak/BPM state if signal is weak
+      this.peakDetector.reset();   // Also reset the peak detector
+      // Consider returning a zero/default result immediately if signal is weak
+      // return { bpm: 0, confidence: 0, isPeak: false, filteredValue: smoothed, arrhythmiaCount: 0 };
+    }
 
     // Calcular derivada para detección de picos (using the final smoothed value)
     this.values.push(smoothed);
@@ -352,18 +362,6 @@ export class HeartBeatProcessor {
     };
   }
 
-  autoResetIfSignalIsLow(amplitude: number) {
-    if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
-      this.lowSignalCount++;
-      if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
-        this.resetDetectionStates();
-        this.peakDetector.reset(); // Also reset the central detector
-      }
-    } else {
-      this.lowSignalCount = 0;
-    }
-  }
-
   resetDetectionStates() {
     this.lastPeakTime = null;
     this.previousPeakTime = null;
@@ -374,6 +372,8 @@ export class HeartBeatProcessor {
     this.values = []; // Reset derivative buffer
     this.lastValue = 0; // Reset last normalized value
     console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
+    this.lowSignalCount = 0;
+    this.rrIntervals = [];
   }
 
   // New method to update BPM from detected intervals
@@ -472,6 +472,7 @@ export class HeartBeatProcessor {
 
     this.signalFilter.reset(); // Reset filter state
     this.peakDetector.reset(); // Reset detector state
+    this.signalQuality.reset(); // Reset quality state
 
     // Intentar asegurar que el contexto de audio esté activo
     if (this.audioContext && this.audioContext.state !== 'running') {
