@@ -206,25 +206,91 @@ const Index = () => {
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
-
-    console.log("Index: handleStreamReady llamado. Stream recibido."); // Added log
-
+    
     const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack) {
-      console.error("Index: No se encontró videoTrack en handleStreamReady.");
-      stopMonitoring(); // Stop if track is missing
+    const imageCapture = new ImageCapture(videoTrack);
+    
+    if (videoTrack.getCapabilities()?.torch) {
+      console.log("Activando linterna para mejorar la señal PPG");
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
+    } else {
+      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+    }
+    
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+    if (!tempCtx) {
+      console.error("No se pudo obtener el contexto 2D");
       return;
     }
-
-    // *** TEMPORARILY DISABLE IMAGE PROCESSING LOOP FOR DEBUGGING ***
-    console.log("Index: Bucle processImage DESACTIVADO TEMPORALMENTE para debug.");
-    /*
-    const imageCapture = new ImageCapture(videoTrack);
-
-    // ... (rest of the setup: tempCanvas, tempCtx, variables)
-
+    
+    let lastProcessTime = 0;
+    const targetFrameInterval = 1000/30;
+    let frameCount = 0;
+    let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
+    
     const processImage = async () => {
-      // ... (entire processImage function content)
+      if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
+        if (isMonitoring) {
+          console.error("Camera track is not live or stream lost. Stopping monitoring.");
+          finalizeMeasurement();
+        }
+        return;
+      }
+      
+      const now = Date.now();
+      const timeSinceLastProcess = now - lastProcessTime;
+      
+      if (timeSinceLastProcess >= targetFrameInterval) {
+        try {
+          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
+          
+          const frame = await imageCapture.grabFrame();
+          
+          const targetWidth = Math.min(320, frame.width);
+          const targetHeight = Math.min(240, frame.height);
+          
+          tempCanvas.width = targetWidth;
+          tempCanvas.height = targetHeight;
+          
+          if (!tempCtx) throw new Error("Canvas context lost");
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
+          
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
+          
+          frameCount++;
+          lastProcessTime = now;
+          
+          if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
+            frameCount = 0;
+            lastFpsUpdateTime = now;
+          }
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            console.error("Error capturando frame: Track state is invalid. Stopping monitoring.", error);
+            finalizeMeasurement();
+            return;
+          } else {
+            console.error("Error capturando frame (other):", error);
+            finalizeMeasurement();
+            return;
+          }
+        }
+      }
+      
+      if (isMonitoring) {
+        requestAnimationFrame(processImage);
+      }
     };
 
     if (videoTrack && videoTrack.readyState === 'live') {
@@ -233,8 +299,6 @@ const Index = () => {
       console.error("Cannot start processing loop, video track is not live.");
       finalizeMeasurement();
     }
-    */
-    // *** END TEMPORARY DISABLE ***
   };
 
   const handleToggleMonitoring = () => {
