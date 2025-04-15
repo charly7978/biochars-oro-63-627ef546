@@ -1,4 +1,3 @@
-
 /**
  * Functions for signal processing logic, working with real data only
  */
@@ -22,11 +21,11 @@ export const useSignalProcessing = () => {
    * Process PPG signal directly
    * No simulation or reference values
    */
-  const processSignal = useCallback((
+  const processSignal = useCallback(async (
     value: number, 
     rrData?: { intervals: number[], lastPeakTime: number | null },
     isWeakSignal: boolean = false
-  ): VitalSignsResult => {
+  ): Promise<VitalSignsResult> => {
     if (!processorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
       return ResultFactory.createEmptyResults();
@@ -51,9 +50,8 @@ export const useSignalProcessing = () => {
     }
     
     try {
-      // Process signal directly - no simulation
-      // Important: We've changed this to handle sync processing only, avoiding Promise issues
-      let result = processorRef.current.processSignal(value, rrData);
+      // Process signal directly and await the Promise result
+      let result = await processorRef.current.processSignal(value, rrData);
       
       // Add null checks for arrhythmia status
       if (result && 

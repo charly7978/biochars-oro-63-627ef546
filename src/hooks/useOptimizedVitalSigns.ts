@@ -1,3 +1,4 @@
+
 /**
  * Hook for optimized vital signs processing with bidirectional feedback
  * Only processes real data - no simulation
@@ -34,12 +35,12 @@ export const useOptimizedVitalSigns = () => {
   /**
    * Process each vital sign with bidirectional feedback and optimization
    */
-  const processSignal = useCallback((
+  const processSignal = useCallback(async (
     value: number, 
     rrData?: { intervals: number[], lastPeakTime: number | null }
-  ): VitalSignsResult => {
+  ): Promise<VitalSignsResult> => {
     // Call the base processor
-    const result = baseProcessSignal(value, rrData);
+    const result = await baseProcessSignal(value, rrData);
     
     // Store last results for optimization
     lastResultsRef.current = result;
