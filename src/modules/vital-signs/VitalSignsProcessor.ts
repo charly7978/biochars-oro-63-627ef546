@@ -71,6 +71,8 @@ export class VitalSignsProcessor {
     
     // Apply filtering using the refactored SignalProcessor's method
     console.log("VP DBG: Before applyFilters"); // Log 2
+    // Add check for the method existence
+    console.log("VP DBG: Checking this.signalProcessor.applyFilters:", typeof this.signalProcessor?.applyFilters);
     const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
     console.log("VP DBG: After applyFilters", { filteredValue, quality, fingerDetected }); // Log 3
     
