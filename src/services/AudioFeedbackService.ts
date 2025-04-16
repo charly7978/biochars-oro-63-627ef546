@@ -32,13 +32,13 @@ class AudioFeedbackService {
     }
   }
 
-  public static playBeep(type: string = 'heartbeat', volume: number = 0.7): void {
+  public static playBeep(type: string = 'heartbeat', volume: number = 0.7): boolean {
     const service = AudioFeedbackService.getInstance();
-    service.playSound(type, volume);
+    return service.playSound(type, volume);
   }
 
-  private playSound(type: string, volume: number): void {
-    if (this.isMuted) return;
+  private playSound(type: string, volume: number): boolean {
+    if (this.isMuted) return false;
     
     const audio = this.audioCache.get(type);
     if (audio) {
@@ -48,8 +48,10 @@ class AudioFeedbackService {
       soundClone.play().catch(err => {
         console.error(`Error playing sound '${type}':`, err);
       });
+      return true;
     } else {
       console.warn(`Sound type '${type}' not found`);
+      return false;
     }
   }
 
@@ -61,6 +63,19 @@ class AudioFeedbackService {
   public static isMuted(): boolean {
     const service = AudioFeedbackService.getInstance();
     return service.isMuted;
+  }
+
+  // Play heartbeat feedback
+  public static triggerHeartbeatFeedback(type: 'normal' | 'arrhythmia'): boolean {
+    const volume = type === 'arrhythmia' ? 0.8 : 0.7;
+    return AudioFeedbackService.playBeep(type === 'arrhythmia' ? 'arrhythmia' : 'heartbeat', volume);
+  }
+
+  // Clean up resources
+  public static cleanUp(): void {
+    const service = AudioFeedbackService.getInstance();
+    service.audioCache.clear();
+    console.log("AudioFeedbackService: Cleaned up");
   }
 }
 

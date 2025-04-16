@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -19,7 +18,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
   
-  // Hooks for processing and detection
   const {
     detectArrhythmia,
     lastRRIntervalsRef,
@@ -81,7 +79,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Simplified requestBeep that uses our centralized service
   const requestBeep = useCallback((value: number): boolean => {
     if (!isMonitoringRef.current) {
       return false;
@@ -90,7 +87,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     const signalQuality = lastSignalQualityRef.current;
     const weakSignals = consecutiveWeakSignalsRef.current;
     
-    // Only play beep if signal quality is good enough
     if (signalQuality > 0.3 || weakSignals < MAX_CONSECUTIVE_WEAK_SIGNALS) {
       return AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2));
     }
@@ -131,7 +127,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     if (lastRRIntervalsRef.current.length >= 3) {
       const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       
-      // Result from ArrhythmiaDetectionService is now used
       result.isArrhythmia = arrhythmiaResult.isArrhythmia;
     }
 
@@ -166,7 +161,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
     
-    // Reset ArrhythmiaDetectionService
     ArrhythmiaDetectionService.reset();
   }, [resetArrhythmiaDetector, resetSignalProcessor]);
 
