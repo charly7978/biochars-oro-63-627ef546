@@ -1,16 +1,16 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useFingerDetection } from '@/hooks/useFingerDetection';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
   isMonitoring: boolean;
-  isFingerDetected?: boolean;
   signalQuality?: number;
 }
 
 const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
-  isFingerDetected = false, 
   signalQuality = 0,
 }: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -21,6 +21,8 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+  
+  const { isFingerDetected } = useFingerDetection();
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -71,9 +73,9 @@ const CameraView = ({
         throw new Error("getUserMedia no está soportado");
       }
 
-      const isAndroid = /android/i.test(navigator.userAgent);
+      const androidDetected = isAndroid;
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const isWindows = /windows nt/i.test(navigator.userAgent);
+      const windowsDetected = isWindows;
 
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
@@ -81,7 +83,7 @@ const CameraView = ({
         height: { ideal: 1080 }
       };
 
-      if (isAndroid) {
+      if (androidDetected) {
         console.log("Configurando para Android");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
@@ -95,7 +97,7 @@ const CameraView = ({
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         });
-      } else if (isWindows) {
+      } else if (windowsDetected) {
         console.log("Configurando para Windows con resolución reducida (720p)");
         Object.assign(baseVideoConstraints, {
           frameRate: { ideal: 30, max: 60 },
@@ -154,7 +156,7 @@ const CameraView = ({
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
-          if (isAndroid) {
+          if (androidDetected) {
             try {
               if (capabilities.torch) {
                 console.log("Activando linterna en Android");
