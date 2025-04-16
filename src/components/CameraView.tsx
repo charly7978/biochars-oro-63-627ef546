@@ -5,6 +5,7 @@ interface CameraViewProps {
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
+  setAdjustBrightnessCallback?: (callback: (targetBrightness: number) => Promise<void>) => void;
 }
 
 const CameraView = ({ 
@@ -12,15 +13,20 @@ const CameraView = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
+  setAdjustBrightnessCallback
 }: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
+
+  const [currentBrightness, setCurrentBrightness] = useState<number | null>(null);
+  const [brightnessCapabilities, setBrightnessCapabilities] = useState<MediaTrackCapabilities['brightness'] | null>(null);
+  const brightnessCapabilitiesRef = useRef<MediaTrackCapabilities['brightness'] | null>(null);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -38,34 +44,89 @@ const CameraView = ({
     setIsWindows(windowsDetected);
   }, []);
 
-  const stopCamera = async () => {
-    if (stream) {
+  const stopCamera = useCallback(async () => {
+    if (streamRef.current) {
       console.log("Stopping camera stream and turning off torch");
-      stream.getTracks().forEach(track => {
+      const tracks = streamRef.current.getTracks();
+      for (const track of tracks) {
         try {
-          if (track.kind === 'video' && track.getCapabilities()?.torch) {
-            track.applyConstraints({
-              advanced: [{ torch: false }]
-            }).catch(err => console.error("Error desactivando linterna:", err));
+          if (track.kind === 'video') {
+            const capabilities = track.getCapabilities();
+            if (capabilities?.torch) {
+              await track.applyConstraints({ advanced: [{ torch: false }] }).catch(() => {});
+            }
           }
-          
           track.stop();
         } catch (err) {
           console.error("Error al detener track:", err);
         }
-      });
+      }
       
       if (videoRef.current) {
         videoRef.current.srcObject = null;
       }
       
-      setStream(null);
+      streamRef.current = null;
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
+      setCurrentBrightness(null);
+      setBrightnessCapabilities(null);
+      brightnessCapabilitiesRef.current = null;
+      console.log("Camera stopped and stream cleared.");
     }
-  };
+  }, []);
 
-  const startCamera = async () => {
+  const adjustBrightness = useCallback(async (targetBrightness: number) => {
+    const stream = streamRef.current;
+    const capabilities = brightnessCapabilitiesRef.current;
+
+    if (!stream || !capabilities) {
+      console.warn("Stream o capacidades de brillo no disponibles para ajustar.");
+      return;
+    }
+
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) {
+       console.warn("No video track available.");
+       return;
+    }
+
+    const clampedBrightness = Math.max(
+      capabilities.min ?? 0,
+      Math.min(capabilities.max ?? 255, Math.round(targetBrightness))
+    );
+
+    const currentSettings = videoTrack.getSettings();
+    if(currentSettings['brightness'] !== undefined && currentSettings['brightness'] === clampedBrightness){
+        return;
+    }
+
+    console.log(`Intentando ajustar brillo a: ${clampedBrightness} (Target: ${targetBrightness})`);
+
+    try {
+      await videoTrack.applyConstraints({
+        advanced: [{ brightness: clampedBrightness }]
+      });
+      console.log(`Brillo ajustado con éxito a: ${clampedBrightness}`);
+      setCurrentBrightness(clampedBrightness);
+    } catch (err) {
+      console.error("Error al ajustar el brillo:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (setAdjustBrightnessCallback) {
+      setAdjustBrightnessCallback(adjustBrightness);
+    }
+  }, [setAdjustBrightnessCallback, adjustBrightness]);
+
+  const startCamera = useCallback(async () => {
+    if (streamRef.current) {
+      console.log("Camera stream already exists. Skipping startCamera.");
+      return;
+    }
+    console.log("Attempting to start camera...");
+
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error("getUserMedia no está soportado");
@@ -77,39 +138,10 @@ const CameraView = ({
 
       const baseVideoConstraints: MediaTrackConstraints = {
         facingMode: 'environment',
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 }
       };
-
-      if (isAndroid) {
-        console.log("Configurando para Android");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else if (isIOS) {
-        console.log("Configurando para iOS");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      } else if (isWindows) {
-        console.log("Configurando para Windows con resolución reducida (720p)");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30, max: 60 },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        });
-      } else {
-        console.log("Configurando para escritorio con máxima resolución");
-        Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 60, max: 60 },
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        });
-      }
 
       const constraints: MediaStreamConstraints = {
         video: baseVideoConstraints,
@@ -119,11 +151,14 @@ const CameraView = ({
       console.log("Intentando acceder a la cámara con configuración:", JSON.stringify(constraints));
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       console.log("Cámara inicializada correctamente");
-      
+      streamRef.current = newStream;
+
       const videoTrack = newStream.getVideoTracks()[0];
 
       if (videoTrack) {
         try {
+          await new Promise(resolve => setTimeout(resolve, 300));
+
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
 
@@ -145,176 +180,164 @@ const CameraView = ({
           }
           if (capabilities.brightness) {
             console.log("Brightness: Soportado.", capabilities.brightness);
+            setBrightnessCapabilities(capabilities.brightness);
+            brightnessCapabilitiesRef.current = capabilities.brightness;
+            
+            const currentSettings = videoTrack.getSettings();
+             if (currentSettings['brightness'] !== undefined) {
+               console.log(`Brillo actual inicial LEIDO: ${currentSettings['brightness']}`);
+               setCurrentBrightness(currentSettings['brightness']);
+             } else {
+               const initialGuess = capabilities.brightness.max !== undefined ? Math.round((capabilities.brightness.min ?? 0 + capabilities.brightness.max) / 2) : 128;
+               console.warn(`No se pudo leer el brillo inicial. Asumiendo: ${initialGuess}`);
+               setCurrentBrightness(initialGuess);
+             }
           } else {
             console.log("Brightness: NO Soportado");
+             setBrightnessCapabilities(null);
+             brightnessCapabilitiesRef.current = null;
+             setCurrentBrightness(null);
+          }
+           if (capabilities.focusMode) {
+             console.log("Focus Mode: Soportado. Modos:", capabilities.focusMode);
+           } else {
+             console.log("Focus Mode: NO Soportado");
+           }
+           if (capabilities.whiteBalanceMode) {
+            console.log("White Balance Mode: Soportado. Modos:", capabilities.whiteBalanceMode);
+          } else {
+            console.log("White Balance Mode: NO Soportado");
           }
           console.log("--------------------------------------------");
 
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
+          await new Promise(resolve => setTimeout(resolve, 200));
+
           const advancedConstraints: MediaTrackConstraintSet[] = [];
-          
-          if (isAndroid) {
-            try {
-              if (capabilities.torch) {
-                console.log("Activando linterna en Android");
-                await videoTrack.applyConstraints({
-                  advanced: [{ torch: true }]
-                });
-                setTorchEnabled(true);
+
+          if (!isAndroid) {
+              if (capabilities.exposureMode?.includes('continuous')) {
+                 advancedConstraints.push({ exposureMode: 'continuous' });
               }
-            } catch (err) {
-              console.error("Error al activar linterna en Android:", err);
+              if (capabilities.focusMode?.includes('continuous')) {
+                 advancedConstraints.push({ focusMode: 'continuous' });
+               }
+               if (capabilities.whiteBalanceMode?.includes('continuous')) {
+                 advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+               }
+
+             if (advancedConstraints.length > 0) {
+               console.log("Aplicando configuraciones iniciales (Exposición/Foco/Balance):", advancedConstraints);
+               await videoTrack.applyConstraints({
+                 advanced: advancedConstraints
+               });
+             }
+          }
+
+          if (capabilities.torch) {
+            console.log("Intentando activar linterna (puede fallar si no está soportado realmente)...");
+            try {
+              await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+              console.log("Constraint 'torch: true' aplicada sin error inmediato.");
+              setTorchEnabled(true);
+            } catch (torchErr) {
+              console.warn("Error esperado al intentar activar linterna (probablemente no soportado):", torchErr);
+              setTorchEnabled(false);
             }
           } else {
-            if (capabilities.exposureMode) {
-              const exposureConstraint: MediaTrackConstraintSet = { 
-                exposureMode: 'continuous' 
-              };
-              
-              if (capabilities.exposureCompensation?.max) {
-                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
-              }
-              
-              advancedConstraints.push(exposureConstraint);
-            }
-            
-            if (capabilities.focusMode) {
-              advancedConstraints.push({ focusMode: 'continuous' });
-            }
-            
-            if (capabilities.whiteBalanceMode) {
-              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-            }
-            
-            if (capabilities.brightness && capabilities.brightness.max) {
-              const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
-            }
-            
-            if (capabilities.contrast && capabilities.contrast.max) {
-              const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
-            }
+            console.log("Linterna no listada en capacidades, no se intenta activar.");
+              setTorchEnabled(false);
+           }
 
-            if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
-              await videoTrack.applyConstraints({
-                advanced: advancedConstraints
-              });
-            }
-
-            if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
-              await videoTrack.applyConstraints({
-                advanced: [{ torch: true }]
-              });
-              setTorchEnabled(true);
-            } else {
-              console.log("La linterna no está disponible en este dispositivo");
-            }
-          }
-          
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
-          
+
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.error("Error durante la configuración avanzada de la cámara:", err);
         }
+      } else {
+         console.error("No se encontró video track en el stream.");
+         throw new Error("No video track found");
       }
 
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
-        
         videoRef.current.style.willChange = 'transform';
-        videoRef.current.style.transform = 'translateZ(0)';
         videoRef.current.style.imageRendering = 'crisp-edges';
-        
-        videoRef.current.style.backfaceVisibility = 'hidden';
-        videoRef.current.style.perspective = '1000px';
       }
 
-      setStream(newStream);
-      
       if (onStreamReady) {
         onStreamReady(newStream);
       }
-      
+
       retryAttemptsRef.current = 0;
-      
+
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
-      
+      streamRef.current = null;
+
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
         console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
-        setTimeout(startCamera, 1000);
+        setTimeout(startCamera, 1500);
       } else {
-        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
+        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos. Falló el inicio de la cámara.`);
       }
     }
-  };
+  }, [onStreamReady]);
 
   const refreshAutoFocus = useCallback(async () => {
+    const stream = streamRef.current;
     if (stream && !isFocusing && !isAndroid) {
       const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.focusMode) {
+       const capabilities = videoTrack?.getCapabilities();
+      if (videoTrack && capabilities?.focusMode?.includes('continuous') && capabilities?.focusMode?.includes('manual')) {
         try {
           setIsFocusing(true);
-          await videoTrack.applyConstraints({
-            advanced: [{ focusMode: 'manual' }]
-          });
-          await new Promise(resolve => setTimeout(resolve, 100));
-          await videoTrack.applyConstraints({
-            advanced: [{ focusMode: 'continuous' }]
-          });
-          console.log("Auto-enfoque refrescado con éxito");
+           console.log("Refrescando auto-enfoque...");
+          await videoTrack.applyConstraints({ advanced: [{ focusMode: 'manual' }] });
+          await new Promise(resolve => setTimeout(resolve, 80));
+          await videoTrack.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+          console.log("Auto-enfoque refrescado.");
         } catch (err) {
           console.error("Error al refrescar auto-enfoque:", err);
         } finally {
           setIsFocusing(false);
         }
+      } else {
+         // console.log("Auto-enfoque no soportado o no necesario.");
       }
     }
-  }, [stream, isFocusing, isAndroid]);
+  }, [isFocusing, isAndroid]);
 
   useEffect(() => {
-    if (isMonitoring && !stream) {
-      console.log("Starting camera because isMonitoring=true");
+    if (isMonitoring) {
+      console.log("Effect: isMonitoring=true. Llamando a startCamera.");
       startCamera();
-    } else if (!isMonitoring && stream) {
-      console.log("Stopping camera because isMonitoring=false");
-      stopCamera();
+    } else {
+       console.log("Effect: isMonitoring=false. Llamando a stopCamera.");
+       stopCamera();
     }
-    
     return () => {
-      console.log("CameraView component unmounting, stopping camera");
+      console.log("Effect cleanup: isMonitoring cambió a false o el componente se desmonta. Llamando a stopCamera.");
       stopCamera();
     };
-  }, [isMonitoring]);
+  }, [isMonitoring, startCamera, stopCamera]);
 
   useEffect(() => {
-    if (stream && isFingerDetected && !torchEnabled) {
-      const videoTrack = stream.getVideoTracks()[0];
-      if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
-        videoTrack.applyConstraints({
-          advanced: [{ torch: true }]
-        }).then(() => {
-          setTorchEnabled(true);
-        }).catch(err => {
-          console.error("Error activando linterna:", err);
-        });
+    let focusInterval: NodeJS.Timeout | null = null;
+    if (isMonitoring && streamRef.current && isFingerDetected && !isAndroid) {
+       console.log("Iniciando intervalo de refresco de auto-enfoque.");
+      focusInterval = setInterval(refreshAutoFocus, 7000);
+    }
+    return () => {
+      if (focusInterval) {
+         console.log("Limpiando intervalo de refresco de auto-enfoque.");
+        clearInterval(focusInterval);
       }
-    }
-    
-    if (isFingerDetected && !isAndroid) {
-      const focusInterval = setInterval(refreshAutoFocus, 5000);
-      return () => clearInterval(focusInterval);
-    }
-  }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
+    };
+  }, [isMonitoring, isFingerDetected, isAndroid, refreshAutoFocus]);
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
                              signalQuality > 70 ? 1000/30 : 1000/15;

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -52,6 +52,15 @@ const Index = () => {
     getCurrentSignalQuality
   } = useOptimizedVitalSigns();
 
+  // Ref to store the brightness adjustment function
+  const adjustBrightnessRef = useRef<((targetBrightness: number) => Promise<void>) | null>(null);
+
+  // Callback for CameraView to provide the function
+  const handleSetAdjustBrightnessCallback = useCallback((callback: (targetBrightness: number) => Promise<void>) => {
+    console.log("Index: Recibido adjustBrightness callback desde CameraView.");
+    adjustBrightnessRef.current = callback;
+  }, []);
+
   useEffect(() => {
     registerGlobalCleanup();
     
@@ -74,30 +83,50 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
-      
+      const minQualityThreshold = 40; // Threshold for processing vitals
+
+      // --- START Brightness Adjustment Logic ---
+      const lowQualityForBrightness = 30; // Threshold to trigger brightness adjustment
+      // Use rawValue as proxy for DC level - adjust threshold as needed
+      const highBrightnessThreshold = 200; // Example: Trigger if average brightness is above this
+      const targetLowBrightness = 110; // Example: Target brightness when reducing
+
+      // Check if the adjust function exists AND if quality is low AND raw value indicates high brightness
+      if (
+        adjustBrightnessRef.current &&
+        lastSignal.quality < lowQualityForBrightness &&
+        lastSignal.rawValue > highBrightnessThreshold
+      ) {
+        console.log(`Index: Calidad baja (${lastSignal.quality}) y/o señal alta (${lastSignal.rawValue}). Intentando reducir brillo.`);
+        // Call the adjust function - no need for .then/.catch here unless specific handling needed
+        adjustBrightnessRef.current(targetLowBrightness);
+      }
+      // TODO: Add logic to potentially increase brightness if signal is too dim (low rawValue)
+      // --- END Brightness Adjustment Logic ---
+
+
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
+
         if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
-          
+
           try {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
-              
+
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
           }
         }
-        
+
         setSignalQuality(lastSignal.quality);
       } else {
         setSignalQuality(lastSignal.quality);
-        
+
         if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
           setHeartRate(0);
         }
@@ -105,6 +134,8 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
+    // adjustBrightnessRef itself is stable, no need to list as dependency.
+    // Dependencies should be values that trigger re-run when changed.
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
   useEffect(() => {
@@ -303,6 +334,7 @@ const Index = () => {
             isMonitoring={isCameraOn} 
             isFingerDetected={lastSignal?.fingerDetected} 
             signalQuality={signalQuality} 
+            setAdjustBrightnessCallback={handleSetAdjustBrightnessCallback}
           />
         </div>
         <div className="relative z-10 h-full flex flex-col">
