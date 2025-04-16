@@ -44,13 +44,12 @@ const Index = () => {
   } = useHeartBeatProcessor();
   
   const { 
-    processSignal: processOptimizedSignal,
+    processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
     lastValidResults,
     optimizationStats,
-    getCurrentSignalQuality,
-    getCurrentDetailedQuality
+    getCurrentSignalQuality
   } = useOptimizedVitalSigns();
 
   useEffect(() => {
@@ -77,13 +76,6 @@ const Index = () => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      const currentDetailedQuality = getCurrentDetailedQuality();
-      console.log("[Detailed Quality]", {
-          cardiac: currentDetailedQuality.cardiacClarity,
-          stability: currentDetailedQuality.ppgStability,
-          overall: currentDetailedQuality.overallQuality
-      });
-      
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
@@ -91,7 +83,7 @@ const Index = () => {
           setHeartRate(heartBeatResult.bpm);
           
           try {
-            const vitals = processOptimizedSignal(lastSignal.filteredValue, heartBeatResult.rrData);
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
               
@@ -113,19 +105,19 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processOptimizedSignal, getCurrentDetailedQuality]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
   useEffect(() => {
-    if (vitalSigns.heartRate && vitalSigns.heartRate > 0 && isMonitoring) {
+    if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
     } else if (!isMonitoring) {
       if (!showResults) {
         setHeartRate("--");
       }
-    } else if (isMonitoring && lastSignal && !lastSignal.fingerDetected) {
-        setHeartRate("--");
+    } else {
+      setHeartRate("--");
     }
-  }, [vitalSigns.heartRate, isMonitoring, showResults, lastSignal?.fingerDetected]);
+  }, [vitalSigns.heartRate, isMonitoring, showResults]);
 
   const startMonitoring = () => {
     console.log("Starting monitoring...");
@@ -321,7 +313,7 @@ const Index = () => {
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0} 
-              quality={getCurrentSignalQuality()} 
+              quality={lastSignal?.quality || 0} 
               isFingerDetected={lastSignal?.fingerDetected || false} 
               onStartMeasurement={startMonitoring} 
               onReset={handleReset} 

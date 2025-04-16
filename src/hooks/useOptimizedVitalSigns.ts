@@ -1,13 +1,14 @@
+
 /**
  * Hook for optimized vital signs processing with bidirectional feedback
  * Only processes real data - no simulation
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useVitalSignsProcessor, DetailedSignalQuality } from './useVitalSignsProcessor';
+import { useVitalSignsProcessor } from './useVitalSignsProcessor';
 import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
 import BidirectionalFeedbackService, { FeedbackData, VitalSignMetric } from '@/services/BidirectionalFeedbackService';
-import { toast } from "@/components/ui/use-toast";
+import { toast } from "sonner";
 
 export const useOptimizedVitalSigns = () => {
   // Use the base vital signs processor
@@ -15,10 +16,9 @@ export const useOptimizedVitalSigns = () => {
     processSignal: baseProcessSignal,
     reset: baseReset,
     fullReset: baseFullReset,
-    lastValidResults: baseLastValidResults,
+    lastValidResults,
     arrhythmiaWindows,
-    debugInfo,
-    getDetailedQuality
+    debugInfo
   } = useVitalSignsProcessor();
   
   // Tracking for optimization
@@ -27,10 +27,6 @@ export const useOptimizedVitalSigns = () => {
     signalQualityImprovements: 0,
     confidenceImprovements: 0
   });
-  
-  // --- Keep track of detailed quality --- START ---
-  const [detailedQuality, setDetailedQuality] = useState<DetailedSignalQuality>({ cardiacClarity: 0, ppgStability: 0, overallQuality: 0 });
-  // --- Keep track of detailed quality --- END ---
   
   // Signal quality tracking
   const signalQualityRef = useRef<number>(0);
@@ -42,25 +38,29 @@ export const useOptimizedVitalSigns = () => {
   const processSignal = useCallback((
     value: number, 
     rrData?: { intervals: number[], lastPeakTime: number | null },
-  ): VitalSignsResult | null => {
+    isWeakSignal: boolean = false
+  ): VitalSignsResult => {
     // Call the base processor
-    const result = baseProcessSignal(value, rrData);
-    
-    // --- Update detailed quality state --- START ---
-    const newDetailedQuality = getDetailedQuality(); // Get latest detailed quality
-    setDetailedQuality(newDetailedQuality);
-    signalQualityRef.current = newDetailedQuality.overallQuality; // Use overall from detailed
-    // --- Update detailed quality state --- END ---
+    const result = baseProcessSignal(value, rrData, isWeakSignal);
     
     // Store last results for optimization
     lastResultsRef.current = result;
     
-    // Only process feedback if we got a valid result
-    if (result) {
-      // Get the quality to send to feedback service (using overall detailed quality)
-      const currentOverallQuality = newDetailedQuality.overallQuality;
-      
-      BidirectionalFeedbackService.processVitalSignsResults(result, currentOverallQuality);
+    // Update signal quality based on value characteristics
+    let signalQuality = isWeakSignal ? 0 : Math.min(100, Math.max(0, 
+      value > 0.9 ? 95 : // Strong signal
+      value > 0.5 ? 80 : // Good signal
+      value > 0.2 ? 60 : // Moderate signal
+      value > 0.1 ? 40 : // Weak signal
+      20 // Very weak signal
+    ));
+    
+    // Store current signal quality
+    signalQualityRef.current = signalQuality;
+    
+    // Process results through the bidirectional feedback system
+    if (!isWeakSignal && result) {
+      BidirectionalFeedbackService.processVitalSignsResults(result, signalQuality);
       
       // Generate audio feedback if needed
       BidirectionalFeedbackService.generateAudioFeedback();
@@ -69,13 +69,10 @@ export const useOptimizedVitalSigns = () => {
       if (Math.random() < 0.03) { // ~3% chance per call
         BidirectionalFeedbackService.applyUIFeedback();
       }
-    } else {
-      // Handle the null case if necessary (e.g., clear some UI elements?)
-      // console.log("useOptimizedVitalSigns: Received null result from base processor.");
     }
     
     return result;
-  }, [baseProcessSignal, getDetailedQuality]);
+  }, [baseProcessSignal]);
   
   /**
    * Hard reset all systems
@@ -90,12 +87,6 @@ export const useOptimizedVitalSigns = () => {
       signalQualityImprovements: 0,
       confidenceImprovements: 0
     });
-    
-    // Reset detailed quality state
-    setDetailedQuality({ cardiacClarity: 0, ppgStability: 0, overallQuality: 0 });
-    
-    signalQualityRef.current = 0;
-    lastResultsRef.current = null;
     
     return result;
   }, [baseReset]);
@@ -113,14 +104,8 @@ export const useOptimizedVitalSigns = () => {
       confidenceImprovements: 0
     });
     
-    // Reset detailed quality state
-    setDetailedQuality({ cardiacClarity: 0, ppgStability: 0, overallQuality: 0 });
-    
-    signalQualityRef.current = 0;
-    lastResultsRef.current = null;
-    
     // Notify about reset
-    toast({
+    toast("Sistema reiniciado", {
       description: "Todos los valores y optimizaciones han sido reiniciados",
       duration: 3000
     });
@@ -177,24 +162,18 @@ export const useOptimizedVitalSigns = () => {
     return BidirectionalFeedbackService.getLatestFeedback(metric);
   }, []);
   
-  // Expose the detailed quality state
-  const getCurrentDetailedQuality = useCallback(() => {
-    return detailedQuality;
-  }, [detailedQuality]);
-  
   return {
     processSignal,
     reset,
     fullReset,
-    lastValidResults: baseLastValidResults,
+    lastValidResults,
     arrhythmiaWindows,
     debugInfo,
     optimizationStats,
     getOptimizationAdvice,
     getCurrentSignalQuality,
     getOptimizationStats,
-    getFeedbackData,
-    getCurrentDetailedQuality
+    getFeedbackData
   };
 };
 
