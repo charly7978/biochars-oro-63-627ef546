@@ -15,7 +15,7 @@ export const useOptimizedVitalSigns = () => {
     processSignal: baseProcessSignal,
     reset: baseReset,
     fullReset: baseFullReset,
-    lastValidResults,
+    lastValidResults: baseLastValidResults,
     arrhythmiaWindows,
     debugInfo,
     getDetailedQuality
@@ -186,7 +186,7 @@ export const useOptimizedVitalSigns = () => {
     processSignal,
     reset,
     fullReset,
-    lastValidResults,
+    lastValidResults: baseLastValidResults,
     arrhythmiaWindows,
     debugInfo,
     optimizationStats,

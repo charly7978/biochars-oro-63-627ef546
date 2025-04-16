@@ -87,6 +87,8 @@ export class SignalValidator {
    * Requires consecutive checks meeting thresholds.
    */
   public isFingerDetected(): boolean {
+    console.log("SignalValidator: isFingerDetected called");
+    
     if (this.signalHistory.length < this.MIN_PPG_VALUES) {
       this.fingerDetectionConfirmed = false;
       this.confirmationCounter = 0;
