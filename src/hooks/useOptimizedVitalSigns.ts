@@ -1,9 +1,3 @@
-
-/**
- * Hook for optimized vital signs processing with bidirectional feedback
- * Only processes real data - no simulation
- */
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useVitalSignsProcessor } from './useVitalSignsProcessor';
 import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
@@ -37,17 +31,16 @@ export const useOptimizedVitalSigns = () => {
    */
   const processSignal = useCallback((
     value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null },
-    isWeakSignal: boolean = false
+    rrData?: { intervals: number[], lastPeakTime: number | null }
   ): VitalSignsResult => {
-    // Call the base processor
-    const result = baseProcessSignal(value, rrData, isWeakSignal);
+    // Remove the isWeakSignal parameter, as it's not needed here
+    const result = baseProcessSignal(value, rrData);
     
     // Store last results for optimization
     lastResultsRef.current = result;
     
     // Update signal quality based on value characteristics
-    let signalQuality = isWeakSignal ? 0 : Math.min(100, Math.max(0, 
+    let signalQuality = 0 ? 0 : Math.min(100, Math.max(0, 
       value > 0.9 ? 95 : // Strong signal
       value > 0.5 ? 80 : // Good signal
       value > 0.2 ? 60 : // Moderate signal
@@ -59,7 +52,7 @@ export const useOptimizedVitalSigns = () => {
     signalQualityRef.current = signalQuality;
     
     // Process results through the bidirectional feedback system
-    if (!isWeakSignal && result) {
+    if (!0 && result) {
       BidirectionalFeedbackService.processVitalSignsResults(result, signalQuality);
       
       // Generate audio feedback if needed
