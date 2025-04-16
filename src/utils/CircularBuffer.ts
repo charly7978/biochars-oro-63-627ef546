@@ -4,45 +4,58 @@ export interface PPGDataPoint {
   value: number;
 }
 
-export class CircularBuffer<T extends PPGDataPoint> {
+export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   private buffer: T[];
-  private head: number = 0;
-  private tail: number = 0;
-  private size: number = 0;
-  private readonly capacity: number;
+  private capacity: number;
+  private index: number;
+  private isFull: boolean;
 
   constructor(capacity: number) {
-    this.capacity = capacity;
     this.buffer = new Array<T>(capacity);
+    this.capacity = capacity;
+    this.index = 0;
+    this.isFull = false;
   }
 
   public push(item: T): void {
-    this.buffer[this.head] = item;
-    this.head = (this.head + 1) % this.capacity;
-    if (this.size < this.capacity) {
-      this.size++;
-    } else {
-      this.tail = (this.tail + 1) % this.capacity;
+    this.buffer[this.index] = item;
+    this.index = (this.index + 1) % this.capacity;
+    if (this.index === 0) {
+      this.isFull = true;
     }
+  }
+
+  public get(index: number): T | undefined {
+    if (!this.isFull && index >= this.index) {
+      return undefined;
+    }
+    
+    const adjustedIndex = (this.index + index) % this.capacity;
+    return this.buffer[adjustedIndex];
   }
 
   public getPoints(): T[] {
-    const result: T[] = [];
-    let current = this.tail;
-    for (let i = 0; i < this.size; i++) {
-      result.push(this.buffer[current]);
-      current = (current + 1) % this.capacity;
+    if (this.isFull) {
+      return [
+        ...this.buffer.slice(this.index),
+        ...this.buffer.slice(0, this.index)
+      ].filter(p => p !== undefined);
     }
-    return result;
+    
+    return this.buffer.slice(0, this.index).filter(p => p !== undefined);
   }
 
   public clear(): void {
-    this.head = 0;
-    this.tail = 0;
-    this.size = 0;
+    this.buffer = new Array<T>(this.capacity);
+    this.index = 0;
+    this.isFull = false;
   }
 
-  public getSize(): number {
-    return this.size;
+  public size(): number {
+    return this.isFull ? this.capacity : this.index;
+  }
+
+  public isEmpty(): boolean {
+    return this.index === 0 && !this.isFull;
   }
 }

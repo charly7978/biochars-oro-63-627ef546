@@ -72,14 +72,7 @@ export function processLowConfidenceResult(
   };
 }
 
-/**
- * Reset signal quality state
- */
-export function resetSignalQualityState(): number {
-  return 0; // Reset the consecutive weak signals counter
-}
-
-// Re-export functions from peak-detection for consistency
+// Re-export functions from peak-detection para consistencia
 export { 
   shouldProcessMeasurement, 
   createWeakSignalResult, 

@@ -1,4 +1,4 @@
-import ArrhythmiaDetectionService, { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService';
+import { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService';
 
 interface HeartBeatResult {
   bpm: number;

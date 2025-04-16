@@ -1,8 +1,7 @@
 
-import React, { memo, useEffect, useRef } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import { optimizeElement } from '../utils/displayOptimizer';
 import { AlertCircle, Heart } from 'lucide-react';
-import { useFingerDetection } from '@/hooks/useFingerDetection';
 
 interface HeartRateDisplayProps {
   bpm: number;
@@ -11,8 +10,9 @@ interface HeartRateDisplayProps {
 
 const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { isFingerDetected } = useFingerDetection();
-  const isReliable = confidence > 0.5 && isFingerDetected;
+  const isReliable = confidence > 0.5;
+  const [isAnimating, setIsAnimating] = useState(false);
+  const animationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Apply optimizations after component mounts
   useEffect(() => {
@@ -20,6 +20,27 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       optimizeElement(containerRef.current);
     }
   }, []);
+  
+  // Animate heart when BPM updates and is reliable
+  useEffect(() => {
+    if (bpm > 0 && isReliable) {
+      setIsAnimating(true);
+      
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+      
+      animationTimeoutRef.current = setTimeout(() => {
+        setIsAnimating(false);
+      }, 600);
+    }
+    
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, [bpm, isReliable]);
   
   const getValueClass = () => {
     if (!isReliable) return "text-gray-500";
@@ -59,13 +80,13 @@ const HeartRateDisplay = memo(({ bpm, confidence }: HeartRateDisplayProps) => {
       <div className="flex items-baseline justify-center gap-1">
         <Heart 
           className={`h-4 w-4 mr-0.5 ${getHeartColor()} animation-smooth will-change-transform ${
-            isReliable ? 'scale-110 animate-pulse' : 'scale-100 opacity-100'
+            isAnimating ? 'scale-150 opacity-80' : 'scale-100 opacity-100'
           }`}
           fill={isReliable ? "currentColor" : "none"}
           strokeWidth={1.5}
         />
         <span className={`text-2xl font-bold typography-medical-data ${getValueClass()}`}>
-          {bpm > 0 && isFingerDetected ? bpm : '--'}
+          {bpm > 0 ? bpm : '--'}
         </span>
         <span className="text-gray-400/90 text-xs unit-text">BPM</span>
       </div>
