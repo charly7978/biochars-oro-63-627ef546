@@ -17,7 +17,7 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 25;
   private readonly MAX_PULSE_PRESSURE = 70;
   // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Increased from 0.001 - Trying to filter more noise
   private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
   private readonly MIN_FPS = 20;
   
@@ -275,7 +275,7 @@ export class BloodPressureProcessor {
   }
   
   /**
-   * Calculate final blood pressure values using median and weighted average
+   * Calculate final blood pressure values using median and mean
    * for greater stability and noise rejection
    */
   private calculateFinalValues(): { finalSystolic: number, finalDiastolic: number } {
