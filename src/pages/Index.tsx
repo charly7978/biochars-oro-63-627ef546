@@ -113,19 +113,19 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processOptimizedSignal, getCurrentDetailedQuality]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processOptimizedSignal, heartRate, heartBeatIsArrhythmia, getCurrentDetailedQuality]);
 
   useEffect(() => {
-    if (vitalSigns.heartRate && vitalSigns.heartRate > 0 && isMonitoring) {
+    if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
     } else if (!isMonitoring) {
       if (!showResults) {
         setHeartRate("--");
       }
-    } else if (isMonitoring && lastSignal && !lastSignal.fingerDetected) {
-        setHeartRate("--");
+    } else {
+      setHeartRate("--");
     }
-  }, [vitalSigns.heartRate, isMonitoring, showResults, lastSignal?.fingerDetected]);
+  }, [vitalSigns.heartRate, isMonitoring, showResults]);
 
   const startMonitoring = () => {
     console.log("Starting monitoring...");
