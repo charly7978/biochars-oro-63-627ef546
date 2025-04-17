@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -17,23 +18,21 @@ export class SignalValidator {
   private peakTimes: number[] = [];
   private detectedPatternCount: number = 0;
   private fingerDetectionConfirmed: boolean = false;
-  private confirmationCounter: number = 0; // Counter for consecutive valid checks
-  private readonly REQUIRED_CONFIRMATIONS = 3; // Need 3 consecutive valid checks
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Stays at 4 for pattern logic
-  private readonly REQUIRED_PATTERNS = 3; // Reduced from 4
-  private readonly MIN_SIGNAL_VARIANCE = 0.03; // Increased from 0.02
+  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
+  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
+  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.015, // Increased from 0.01
+    minSignalAmplitude: number = 0.02, // Increased from 0.01
     minPpgValues: number = 15
   ) {
-    this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude; // Use passed value or default
+    this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
     this.MIN_PPG_VALUES = minPpgValues;
   }
   
@@ -83,45 +82,16 @@ export class SignalValidator {
   }
   
   /**
-   * Checks if a finger is likely detected based on signal characteristics.
-   * Requires consecutive checks meeting thresholds.
+   * Check if a finger is detected based on rhythmic patterns
    */
   public isFingerDetected(): boolean {
-    console.log("SignalValidator: isFingerDetected called");
-    
-    if (this.signalHistory.length < this.MIN_PPG_VALUES) {
-      this.fingerDetectionConfirmed = false;
-      this.confirmationCounter = 0;
-      return false;
+    // If already confirmed, maintain detection unless reset
+    if (this.fingerDetectionConfirmed) {
+      return true;
     }
     
-    // Check is performed every few frames to avoid excessive computation 
-    // Only check confirmation logic roughly every 5 frames (~165ms at 30fps)
-    if (this.signalHistory.length % 5 === 0) {
-        const recentValues = this.signalHistory.slice(-10).map(p => p.value);
-        const variance = this.calculateVariance(recentValues);
-        const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
-        
-        console.log(`SignalValidator Check - Variance: ${variance.toFixed(4)}, Amplitude: ${amplitude.toFixed(4)} (Thresholds V:${this.MIN_SIGNAL_VARIANCE}, A:${this.MIN_SIGNAL_AMPLITUDE})`);
-
-        // Check if basic signal characteristics are met
-        if (variance > this.MIN_SIGNAL_VARIANCE && amplitude > this.MIN_SIGNAL_AMPLITUDE) {
-            this.confirmationCounter++;
-            if (this.confirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
-                this.fingerDetectionConfirmed = true;
-            }
-        } else {
-            // If conditions fail, reset immediately
-            this.confirmationCounter = 0;
-            this.fingerDetectionConfirmed = false;
-        }
-    }
-
-    // Call pattern detection logic internally (does not affect return value directly yet)
-    this.detectRhythmicPatterns(); 
-
-    // Return the confirmed state
-    return this.fingerDetectionConfirmed;
+    // Otherwise, check if we've detected enough consistent patterns
+    return this.detectedPatternCount >= this.REQUIRED_PATTERNS;
   }
   
   /**
@@ -132,7 +102,7 @@ export class SignalValidator {
     this.peakTimes = [];
     this.detectedPatternCount = 0;
     this.fingerDetectionConfirmed = false;
-    this.confirmationCounter = 0; // Reset confirmation counter
+    console.log("Finger detection reset");
   }
   
   /**
@@ -141,99 +111,118 @@ export class SignalValidator {
    */
   private detectRhythmicPatterns(): void {
     const now = Date.now();
-    const relevantHistory = this.signalHistory.filter(p => now - p.time <= this.PATTERN_DETECTION_WINDOW_MS);
+    const recentSignals = this.signalHistory.filter(
+      point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS
+    );
     
-    if (relevantHistory.length < this.MIN_PPG_VALUES) {
-      this.detectedPatternCount = 0; // Reset count if not enough data in window
+    if (recentSignals.length < 15) return; // Need more data (increased from 10)
+    
+    // Check for minimum signal variance (reject near-constant signals)
+    const values = recentSignals.map(s => s.value);
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    
+    if (variance < this.MIN_SIGNAL_VARIANCE) {
+      // Signal variance too low - likely not a physiological signal
+      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
       return;
     }
-
-    const values = relevantHistory.map(p => p.value);
-    const { peakIndices } = findPeaksAndValleys(values);
-
-    if (peakIndices.length >= this.MIN_PEAKS_FOR_PATTERN) {
-      const intervals = [];
-      for (let i = 1; i < peakIndices.length; i++) {
-        const timeDiff = relevantHistory[peakIndices[i]].time - relevantHistory[peakIndices[i-1]].time;
-        if (timeDiff > 300 && timeDiff < 1500) { // Basic check for reasonable RR interval
-           intervals.push(timeDiff);
+    
+    // Look for peaks in the signal
+    const peaks: number[] = [];
+    const peakThreshold = 0.25; // Increased from 0.2
+    
+    for (let i = 2; i < recentSignals.length - 2; i++) {
+      const current = recentSignals[i];
+      const prev1 = recentSignals[i - 1];
+      const prev2 = recentSignals[i - 2];
+      const next1 = recentSignals[i + 1];
+      const next2 = recentSignals[i + 2];
+      
+      // Check if this point is a peak (higher than surrounding points)
+      // Also require the peak to be significantly higher (20% higher)
+      if (current.value > prev1.value * 1.2 && 
+          current.value > prev2.value * 1.2 &&
+          current.value > next1.value * 1.2 && 
+          current.value > next2.value * 1.2 &&
+          Math.abs(current.value) > peakThreshold) {
+        peaks.push(current.time);
+      }
+    }
+    
+    // Need enough peaks to establish a pattern
+    if (peaks.length >= this.MIN_PEAKS_FOR_PATTERN) {
+      // Calculate intervals between peaks
+      const intervals: number[] = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i - 1]);
+      }
+      
+      // Check for physiologically plausible heart rate (40-180 BPM)
+      const validIntervals = intervals.filter(interval => 
+        interval >= 333 && interval <= 1500 // 40-180 BPM
+      );
+      
+      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+        // If less than 70% of intervals are physiologically plausible, reject the pattern
+        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        return;
+      }
+      
+      // Check for consistency in intervals (rhythm)
+      let consistentIntervals = 0;
+      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
+      
+      for (let i = 1; i < validIntervals.length; i++) {
+        if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
+          consistentIntervals++;
         }
       }
       
-      if (intervals.length >= this.MIN_PEAKS_FOR_PATTERN - 1) {
-         const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
-         const stdDev = this.calculateStandardDeviation(intervals);
-         const coefficientOfVariation = avgInterval > 0 ? stdDev / avgInterval : Infinity;
-         
-         // Check if variation is within a reasonable range (e.g., less than 20%)
-         if (coefficientOfVariation < 0.20) { 
-            this.detectedPatternCount = Math.min(this.REQUIRED_PATTERNS + 1, this.detectedPatternCount + 1); // Increment count, cap it
-         } else {
-            // If pattern breaks, decrease count slightly (decay)
-            this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-         }
+      // If we have consistent intervals, increment pattern counter
+      if (consistentIntervals >= this.MIN_PEAKS_FOR_PATTERN - 1) {
+        this.peakTimes = peaks;
+        this.detectedPatternCount++;
+        
+        // If enough consistent patterns, confirm finger detection
+        if (this.detectedPatternCount >= this.REQUIRED_PATTERNS && !this.fingerDetectionConfirmed) {
+          this.fingerDetectionConfirmed = true;
+          console.log("Finger detection confirmed by consistent heartbeat rhythm!", 
+                     {
+                       time: new Date(now).toISOString(), 
+                       patterns: this.detectedPatternCount,
+                       consistentIntervals,
+                       peakCount: peaks.length,
+                       meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
+                       variance
+                     });
+        }
       } else {
-         // Not enough valid intervals found, decrease count
-         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        // Reduce counter if pattern not consistent
+        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
       }
     } else {
-      // Not enough peaks found, decrease count
+      // Decrement pattern count if we don't have enough peaks
       this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
     }
-    
-    // Update peak times for potential future use (not strictly necessary for current logic)
-    this.peakTimes = peakIndices.map(idx => relevantHistory[idx].time);
   }
-  
-  /**
-   * Calculate variance of a number array
-   */
-   private calculateVariance(values: number[]): number {
-     if (!values || values.length < 2) return 0;
-     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-     const squaredDiffs = values.map(val => Math.pow(val - mean, 2));
-     return squaredDiffs.reduce((sum, val) => sum + val, 0) / (values.length - 1);
-   }
-   
-   /**
-   * Calculate standard deviation of a number array
-   */
-   private calculateStandardDeviation(values: number[]): number {
-     return Math.sqrt(this.calculateVariance(values));
-   }
   
   /**
    * Log validation results
    */
   public logValidationResults(isValidAmplitude: boolean, amplitude: number, ppgValues: number[]): void {
-    console.log("SignalValidator Results:", {
-      hasEnoughData: this.hasEnoughData(ppgValues),
-      hasValidAmplitude: isValidAmplitude,
-      calculatedAmplitude: amplitude.toFixed(4),
-      minAmplitudeThreshold: this.MIN_SIGNAL_AMPLITUDE,
-      bufferLength: ppgValues.length,
-      minBufferLength: this.MIN_PPG_VALUES,
-      fingerConfirmedFlag: this.fingerDetectionConfirmed,
-      patternCount: this.detectedPatternCount,
-      requiredPatterns: this.REQUIRED_PATTERNS
-    });
-  }
-}
-
-// Helper function (can be moved to utils if needed)
-function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
-  const peakIndices: number[] = [];
-  const valleyIndices: number[] = [];
-  if (values.length < 3) {
-    return { peakIndices, valleyIndices };
-  }
-
-  for (let i = 1; i < values.length - 1; i++) {
-    if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
-      peakIndices.push(i);
-    } else if (values[i] < values[i - 1] && values[i] < values[i + 1]) {
-      valleyIndices.push(i);
+    if (!isValidAmplitude) {
+      console.log("VitalSignsProcessor: Signal amplitude too low", {
+        amplitude,
+        threshold: this.MIN_SIGNAL_AMPLITUDE
+      });
+    }
+    
+    if (ppgValues.length < this.MIN_PPG_VALUES) {
+      console.log("VitalSignsProcessor: Insufficient data points", {
+        have: ppgValues.length,
+        need: this.MIN_PPG_VALUES
+      });
     }
   }
-  return { peakIndices, valleyIndices };
 }

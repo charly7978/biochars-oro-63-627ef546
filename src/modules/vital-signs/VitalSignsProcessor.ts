@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -13,15 +14,6 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
-import { calculateStandardDeviation } from "./shared-signal-utils";
-import { findPeaksAndValleys } from './utils';
-
-// Define a type for the new quality metrics
-export interface DetailedSignalQuality {
-  cardiacClarity: number; // 0-100, clarity and regularity of pulse waveform
-  ppgStability: number;   // 0-100, stability and suitability for absorption measurements
-  overallQuality: number; // Original quality metric, potentially derived from these two
-}
 
 /**
  * Main vital signs processor
@@ -41,9 +33,6 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
-
-  // Add state for detailed quality
-  private detailedQuality: DetailedSignalQuality = { cardiacClarity: 0, ppgStability: 0, overallQuality: 0 };
 
   /**
    * Constructor that initializes all specialized processors
@@ -73,16 +62,23 @@ export class VitalSignsProcessor {
   public processSignal(
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): VitalSignsResult | null {
+  ): VitalSignsResult {
     // Check for near-zero signal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning null", { value: ppgValue });
-       this.resetDetailedQuality(); // Reset detailed quality on weak signal
-      return null;
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+      return ResultFactory.createEmptyResults();
     }
     
     // Apply filtering to the real PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    
+    // Process arrhythmia data if available and valid
+    const arrhythmiaResult = rrData && 
+                           rrData.intervals && 
+                           rrData.intervals.length >= 3 && 
+                           rrData.intervals.every(i => i > 300 && i < 2000) ?
+                           this.arrhythmiaProcessor.processRRData(rrData) :
+                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -95,17 +91,9 @@ export class VitalSignsProcessor {
     
     // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
-      this.resetDetailedQuality();
-      return null; // Not enough data yet
+      return ResultFactory.createEmptyResults();
     }
     
-    // --- Calculate Detailed Quality Metrics --- START ---
-    this.calculateDetailedQuality(ppgValues, rrData);
-    // --- Calculate Detailed Quality Metrics --- END ---
-
-    // Use overallQuality from detailedQuality for further checks if needed
-    // For now, we continue using the existing validation logic
-
     // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
@@ -113,17 +101,8 @@ export class VitalSignsProcessor {
     
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
       this.signalValidator.logValidationResults(false, amplitude, ppgValues);
-      this.resetDetailedQuality(false); // Keep last calculated quality if amplitude fails?
-      return null; // Amplitude too low
+      return ResultFactory.createEmptyResults();
     }
-    
-    // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Calculate SpO2 using real data only
     const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
@@ -133,11 +112,6 @@ export class VitalSignsProcessor {
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
-    
-    // Estimate heart rate from signal if RR data available
-    const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
-      ? Math.round(60000 / (rrData.intervals.slice(-5).reduce((sum, val) => sum + val, 0) / 5))
-      : 0;
     
     // Calculate glucose with real data only
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
@@ -168,7 +142,6 @@ export class VitalSignsProcessor {
 
     console.log("VitalSignsProcessor: Results with confidence", {
       spo2,
-      heartRate,
       pressure,
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
@@ -179,10 +152,9 @@ export class VitalSignsProcessor {
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 
-    // Prepare result including detailed quality
-    const finalResult = ResultFactory.createResult(
+    // Prepare result with all metrics including hydration
+    return ResultFactory.createResult(
       spo2,
-      heartRate,
       pressure,
       arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,
@@ -194,11 +166,6 @@ export class VitalSignsProcessor {
       overallConfidence,
       arrhythmiaResult.lastArrhythmiaData
     );
-
-    // Add detailed quality to the result (or handle it separately if ResultFactory isn't modified)
-    // For simplicity, let's assume we return it separately for now via a getter.
-
-    return finalResult;
   }
 
   /**
@@ -219,8 +186,9 @@ export class VitalSignsProcessor {
 
   /**
    * Reset the processor to ensure a clean state
+   * No reference values or simulations
    */
-  public reset(): null {
+  public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
@@ -228,9 +196,8 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
-    this.resetDetailedQuality();
     console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null;
+    return null; // Always return null to ensure measurements start from zero
   }
   
   /**
@@ -250,79 +217,11 @@ export class VitalSignsProcessor {
   
   /**
    * Completely reset the processor
+   * Ensures fresh start with no data carryover
    */
   public fullReset(): void {
     this.reset();
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
-  }
-
-  // --- NEW: Method to calculate detailed quality ---
-  private calculateDetailedQuality(
-      ppgValues: number[],
-      rrData?: { intervals: number[]; lastPeakTime: number | null }
-  ): void {
-      const recentSignal = ppgValues.slice(-60); // Use last ~2 seconds
-      if (recentSignal.length < 30) {
-          this.resetDetailedQuality();
-          return;
-      }
-
-      let cardiacScore = 0;
-      let ppgScore = 0;
-
-      // 1. Calculate AC/DC (Perfusion Index proxy)
-      const dc = recentSignal.reduce((sum, val) => sum + val, 0) / recentSignal.length;
-      const ac = Math.max(...recentSignal) - Math.min(...recentSignal);
-      const perfusionIndex = dc > 0 ? ac / dc : 0;
-
-      // 2. Signal Stability/Noise (Standard Deviation)
-      const stdDev = calculateStandardDeviation(recentSignal);
-
-      // 3. Peak Regularity (if RR data available)
-      let rrStdDev = -1; // Use -1 to indicate not available
-      if (rrData && rrData.intervals && rrData.intervals.length >= 5) {
-          rrStdDev = calculateStandardDeviation(rrData.intervals.slice(-5));
-      }
-
-      // --- Scoring Logic (Example - Needs Tuning) ---
-      // PPG Stability Score (based on PI and noise)
-      const piScore = Math.min(100, Math.max(0, perfusionIndex * 500)); // Scale PI
-      const noiseScore = Math.max(0, 100 - (stdDev * 1000)); // Penalize high std dev
-      ppgScore = Math.round((piScore * 0.6) + (noiseScore * 0.4));
-
-      // Cardiac Clarity Score (based on amplitude, peak regularity)
-      const amplitudeScore = Math.min(100, Math.max(0, ac * 2000)); // Scale AC
-      let regularityScore = 0;
-      if (rrStdDev >= 0) {
-          regularityScore = Math.max(0, 100 - (rrStdDev / 10)); // Penalize high RR variation
-      } else {
-          regularityScore = 50; // Default if no RR data
-      }
-      cardiacScore = Math.round((amplitudeScore * 0.5) + (regularityScore * 0.5));
-
-       // Calculate Overall Quality (example: weighted average)
-       const overallQuality = Math.round((cardiacScore * 0.4) + (ppgScore * 0.6));
-
-      this.detailedQuality = {
-          cardiacClarity: isNaN(cardiacScore) ? 0 : cardiacScore,
-          ppgStability: isNaN(ppgScore) ? 0 : ppgScore,
-          overallQuality: isNaN(overallQuality) ? 0 : overallQuality,
-      };
-
-      // console.log("[Detailed Quality]:", this.detailedQuality);
-  }
-
-  // --- NEW: Method to get detailed quality ---
-  public getDetailedQuality(): DetailedSignalQuality {
-      return this.detailedQuality;
-  }
-
-  // --- NEW: Helper to reset detailed quality ---
-  private resetDetailedQuality(fullReset = true): void {
-      if (fullReset || (this.detailedQuality.cardiacClarity === 0 && this.detailedQuality.ppgStability === 0)){
-         this.detailedQuality = { cardiacClarity: 0, ppgStability: 0, overallQuality: 0 };
-      }
-      // Optionally keep the last known values briefly if !fullReset?
   }
 }
 

@@ -1,4 +1,3 @@
-
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -30,12 +29,9 @@ export const FeedbackService = {
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
-        console.log('Vibración activada:', pattern);
       } catch (error) {
         console.error('Error al activar vibración:', error);
       }
-    } else {
-      console.log('Vibración no soportada en este dispositivo');
     }
   },
 
@@ -43,15 +39,11 @@ export const FeedbackService = {
   vibrateArrhythmia: () => {
     if ('vibrate' in navigator) {
       try {
-        // Patrón distintivo para arritmias (triple pulso con pausa)
-        const pattern = [100, 50, 100, 50, 100, 300, 100];
-        navigator.vibrate(pattern);
-        console.log('Vibración de arritmia activada:', pattern);
+        // Patrón más distintivo para arritmias (triple pulso con pausa)
+        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
       }
-    } else {
-      console.log('Vibración no soportada en este dispositivo');
     }
   },
 
@@ -77,9 +69,6 @@ export const FeedbackService = {
       const audio = loadSound(soundUrl);
       // Reiniciar el audio si ya está reproduciéndose
       audio.currentTime = 0;
-      
-      // Volumen completo para garantizar que se escuche
-      audio.volume = 1.0;
       
       const playPromise = audio.play();
       if (playPromise !== undefined) {
@@ -135,7 +124,7 @@ export const FeedbackService = {
     } else {
       FeedbackService.showToast(
         'Arritmia detectada', 
-        `Se han detectado ${count} posibles arritmias`, 
+        `Se ha detectado ${count} posibles arritmias`, 
         'warning',
         6000
       );

@@ -1,5 +1,5 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-import { SignalValidator } from './vital-signs/validators/signal-validator';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -36,7 +36,6 @@ class KalmanFilter {
 export class PPGSignalProcessor implements SignalProcessor {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
-  private signalValidator: SignalValidator;
   private lastValues: number[] = [];
   
   // Configuración por defecto
@@ -45,8 +44,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     MIN_RED_THRESHOLD: 30, // Reducido para permitir mayor sensibilidad
     MAX_RED_THRESHOLD: 250, // Aumentado para mayor rango de detección
     STABILITY_WINDOW: 4,
-    MIN_STABILITY_COUNT: 2, // Reducido para permitir detección más rápida
-    filterStrength: 0.5, // Ejemplo, ajustar según sea necesario
+    MIN_STABILITY_COUNT: 2 // Reducido para permitir detección más rápida
   };
   
   private currentConfig: typeof this.DEFAULT_CONFIG;
@@ -82,7 +80,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     public onError?: (error: ProcessingError) => void
   ) {
     this.kalmanFilter = new KalmanFilter();
-    this.signalValidator = new SignalValidator();
     this.currentConfig = { ...this.DEFAULT_CONFIG };
     console.log("PPGSignalProcessor: Instancia creada");
   }
@@ -96,7 +93,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.stableFrameCount = 0;
       this.lastStableValue = 0;
       this.kalmanFilter.reset();
-      this.signalValidator.resetFingerDetection();
       this.consistencyHistory = [];
       this.movementScores = [];
       this.periodicityBuffer = [];
@@ -123,12 +119,13 @@ export class PPGSignalProcessor implements SignalProcessor {
    */
   stop(): void {
     this.isProcessing = false;
+    this.lastValues = [];
     this.stableFrameCount = 0;
     this.lastStableValue = 0;
     this.kalmanFilter.reset();
-    this.signalValidator.resetFingerDetection();
     this.consistencyHistory = [];
     this.movementScores = [];
+    this.periodicityBuffer = [];
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -149,7 +146,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         MIN_RED_THRESHOLD: Math.max(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
         MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
         STABILITY_WINDOW: 3, // Menor ventana para permitir más variación
-        MIN_STABILITY_COUNT: 2, // Requiere menos frames consecutivos
+        MIN_STABILITY_COUNT: 2 // Requiere menos frames consecutivos
       };
 
       console.log("PPGSignalProcessor: Calibración completada", this.currentConfig);
@@ -191,10 +188,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       
       // Aplicar filtrado inicial para reducir ruido
       const filtered = this.kalmanFilter.filter(redValue);
-      
-      // --- LOGGING ADDED --- START ---
-      console.log(`PPGSignalProcessor Frame - Raw: ${redValue.toFixed(2)}, Filtered: ${filtered.toFixed(2)}`);
-      // --- LOGGING ADDED --- END ---
       
       // Almacenar para análisis
       this.lastValues.push(filtered);
@@ -397,16 +390,14 @@ export class PPGSignalProcessor implements SignalProcessor {
     rawValue: number, 
     movementScore: number
   ): { isFingerDetected: boolean, quality: number } {
-    console.log("PPGSignalProcessor: analyzeSignal called");
-    
     // Verificación de umbrales básicos (más permisiva)
     const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
     
     // Si está completamente fuera de rango, no hay dedo
     if (!isInRange) {
+      // Reducir contador de estabilidad gradualmente en lugar de reiniciar
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
-      this.signalValidator.resetFingerDetection();
-      return { isFingerDetected: false, quality: Math.max(0, this.stableFrameCount * 10) };
+      return { isFingerDetected: this.stableFrameCount > 0, quality: Math.max(0, this.stableFrameCount * 10) };
     }
 
     // Verificar si tenemos suficientes muestras para analizar
@@ -414,52 +405,63 @@ export class PPGSignalProcessor implements SignalProcessor {
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Update validator with current value (assuming trackSignal needs it)
-    this.signalValidator.trackSignalForPatternDetection?.(filtered);
-
     // Analizar estabilidad de la señal (ahora más permisiva)
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
+    // Evaluar variaciones entre muestras consecutivas
     const variations = recentValues.map((val, i, arr) => {
       if (i === 0) return 0;
       return val - arr[i-1];
     });
 
+    // Detectar estabilidad con umbral adaptativo
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
+    
+    // Umbral adaptativo basado en promedio (más permisivo)
     const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
+    
+    // Detección de estabilidad más permisiva
     const isStable = maxVariation < adaptiveThreshold * 3 && 
                     minVariation > -adaptiveThreshold * 3;
     
+    // Ajustar contador de estabilidad
     if (isStable) {
       this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
+      // Reducción más gradual
       this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
     }
     
+    // Factor de movimiento (permite más movimiento)
     const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
+    
+    // Factor de periodicidad (buscar patrones cardíacos)
     const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
     
+    // Calcular calidad ponderando múltiples factores
     let quality = 0;
+    
+    // Siempre calcular calidad, incluso con estabilidad baja
     const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
     const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
                                   (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
     const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
     
+    // Ponderación ajustada para ser más permisiva
     quality = Math.round((stabilityScore * 0.4 + 
                         intensityScore * 0.3 + 
                         variationScore * 0.1 + 
                         movementFactor * 0.1 + 
                         periodicityFactor * 0.1) * 100);
     
-    console.log("PPGSignalProcessor: Calling signalValidator.isFingerDetected()");
-    const isFingerDetected = this.signalValidator.isFingerDetected(); 
-
-    if (!isFingerDetected) {
-        quality = Math.min(quality, 15);
-    }
+    // Detección de dedo más permisiva
+    // Permitimos detección con calidad mínima más baja
+    const minQualityThreshold = 30; // Umbral de calidad reducido
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.7 && 
+                            quality >= minQualityThreshold;
 
     return { isFingerDetected, quality };
   }

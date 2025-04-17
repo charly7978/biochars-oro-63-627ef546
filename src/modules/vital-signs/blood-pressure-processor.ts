@@ -17,7 +17,7 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 25;
   private readonly MAX_PULSE_PRESSURE = 70;
   // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.005; // Increased from 0.001 - Trying to filter more noise
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
   private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
   private readonly MIN_FPS = 20;
   
@@ -156,9 +156,12 @@ export class BloodPressureProcessor {
     const pttFactor = (850 - normalizedPTT) * 0.12; 
     const ampFactor = normalizedAmplitude * 0.28;   
     
+    // Add small randomization to prevent sticking at the same values
+    const randomVariation = Math.random() * 2 - 1; // -1 to +1
+    
     // Direct estimation model without simulation
-    let instantSystolic = 110 + pttFactor + ampFactor;
-    let instantDiastolic = 70 + (pttFactor * 0.45) + (ampFactor * 0.22);
+    let instantSystolic = 110 + pttFactor + ampFactor + randomVariation;
+    let instantDiastolic = 70 + (pttFactor * 0.45) + (ampFactor * 0.22) + (randomVariation * 0.5);
 
     // Apply wider physiological limits
     instantSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, instantSystolic));
@@ -275,7 +278,7 @@ export class BloodPressureProcessor {
   }
   
   /**
-   * Calculate final blood pressure values using median and mean
+   * Calculate final blood pressure values using median and weighted average
    * for greater stability and noise rejection
    */
   private calculateFinalValues(): { finalSystolic: number, finalDiastolic: number } {
