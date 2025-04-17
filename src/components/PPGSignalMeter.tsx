@@ -142,17 +142,15 @@ const PPGSignalMeter = memo(({
     }
     
     if (preserveResults && !isFingerDetected) {
-        setResultsVisible(true);
+      setResultsVisible(true);
     } else if (!preserveResults && !isFingerDetected) {
-        if (dataBufferRef.current) {
-          dataBufferRef.current.clear();
-        }
-        peaksRef.current = [];
-        baselineRef.current = null;
-        lastValueRef.current = null;
-        setResultsVisible(false);
-    } else {
-        // If isFingerDetected is true, we wait for the other useEffect to confirm consecutive frames
+      if (dataBufferRef.current) {
+        dataBufferRef.current.clear();
+      }
+      peaksRef.current = [];
+      baselineRef.current = null;
+      lastValueRef.current = null;
+      setResultsVisible(false);
     }
   }, [preserveResults, isFingerDetected]);
 
@@ -164,10 +162,7 @@ const PPGSignalMeter = memo(({
     
     if (isFingerDetected) {
       consecutiveFingerFramesRef.current++;
-      // Only set visible after enough consecutive frames
-      if (consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-         setResultsVisible(true);
-      }
+      setResultsVisible(true);
     } else {
       consecutiveFingerFramesRef.current = 0;
       if (!preserveResults) {
@@ -219,7 +214,7 @@ const PPGSignalMeter = memo(({
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-
+    
     if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
@@ -507,13 +502,14 @@ const PPGSignalMeter = memo(({
     
     drawArrhythmiaZones(renderCtx, now);
     
-    if (!resultsVisible) {
+    if (preserveResults && !isFingerDetected) {
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
-          const visibleCtx = canvas.getContext('2d', { alpha: false });
-          if (visibleCtx) {
-              visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
-          }
+        const visibleCtx = canvas.getContext('2d', { alpha: false });
+        if (visibleCtx) {
+          visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+        }
       }
+      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
@@ -673,7 +669,7 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, IMMEDIATE_RENDERING, 
     FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES,
-    drawArrhythmiaZones, arrhythmiaWindows, resultsVisible
+    drawArrhythmiaZones, arrhythmiaWindows
   ]);
 
   useEffect(() => {
@@ -752,7 +748,7 @@ const PPGSignalMeter = memo(({
 
         <div className="flex flex-col items-center">
           <Fingerprint
-            className={`h-8 w-8 transition-colors duration-300 ${ 
+            className={`h-8 w-8 transition-colors duration-300 ${
               !displayFingerDetected ? 'text-gray-400' :
               displayQuality > 65 ? 'text-green-500' :
               displayQuality > 40 ? 'text-yellow-500' :
