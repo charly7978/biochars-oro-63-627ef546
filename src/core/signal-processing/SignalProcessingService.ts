@@ -1,3 +1,4 @@
+
 /**
  * Centralized Signal Processing Service
  * Manages multiple specialized signal channels for different vital signs
@@ -38,6 +39,10 @@ export class SignalProcessingService {
   private lastFpsUpdateTime: number = 0;
   private fingerDetectionBuffer: boolean[] = [];
   
+  // Lower threshold for finger detection to improve sensitivity
+  private readonly MIN_RED_THRESHOLD = 0.05; // Reduced from original value
+  private readonly MAX_RED_THRESHOLD = 0.95; // Increased to cover more cases
+  
   private constructor() {
     console.log("SignalProcessingService: Initializing centralized signal processor");
     this.processor = new SignalCoreProcessor({
@@ -77,6 +82,7 @@ export class SignalProcessingService {
     this.lastFrameTime = performance.now();
     this.frameCount = 0;
     this.lastFpsUpdateTime = performance.now();
+    this.fingerDetectionBuffer = []; // Reset finger detection buffer
     this.metricsSubject.next({
       ...this.metricsSubject.value,
       startTime: Date.now(),
@@ -124,7 +130,8 @@ export class SignalProcessingService {
       });
     }
     
-    // Process the signal through the core processor
+    // Process the signal through the core processor with debug logging
+    console.log("Processing signal value:", value, "Quality:", quality, "Finger detected:", isFingerDetected);
     const channels = this.processor.processSignal(value);
     
     // Create processed signal object
@@ -153,7 +160,7 @@ export class SignalProcessingService {
   }
   
   /**
-   * Process a frame from camera
+   * Process a frame from camera with improved finger detection logic
    */
   public processFrame(imageData: ImageData): ProcessedSignal | null {
     if (!this.isProcessing) return null;
@@ -181,20 +188,27 @@ export class SignalProcessingService {
     // Calculate average red value and normalize to 0-1
     const redAvg = pixelCount > 0 ? redSum / pixelCount / 255 : 0;
     
-    // Detect finger presence (basic threshold-based detection)
-    // In a real app, more sophisticated detection would be used
-    const minThreshold = 0.15; // Minimum brightness for finger detection
-    const maxThreshold = 0.90; // Maximum brightness (too bright suggests no finger)
-    const isFingerDetected = redAvg > minThreshold && redAvg < maxThreshold;
+    // More permissive finger detection logic (lower threshold)
+    // We're detecting finger presence with a more lenient algorithm
+    const isFingerDetected = redAvg > this.MIN_RED_THRESHOLD && redAvg < this.MAX_RED_THRESHOLD;
     
-    // Estimate signal quality based on brightness
-    // In a real app, more sophisticated quality estimation would be used
+    // Debug log key values
+    console.log("Frame processing:", {
+      redAvg, 
+      isFingerDetected,
+      minThreshold: this.MIN_RED_THRESHOLD, 
+      maxThreshold: this.MAX_RED_THRESHOLD
+    });
+    
+    // Improved quality estimation
     let quality = 0;
     if (isFingerDetected) {
-      // Linear quality scaling between min and optimal brightness
+      // Optimize the quality calculation to be more linear and generous
+      // Higher starting quality to give measurements a better chance
       const optimalBrightness = 0.4;
-      const normalizedBrightness = Math.min(redAvg, optimalBrightness) / optimalBrightness;
-      quality = Math.round(normalizedBrightness * 100);
+      const distance = Math.abs(redAvg - optimalBrightness);
+      const maxDistance = 0.3;
+      quality = Math.max(30, Math.round((1 - Math.min(distance, maxDistance) / maxDistance) * 100));
     }
     
     return this.processSignal(redAvg, quality, isFingerDetected);
@@ -202,7 +216,7 @@ export class SignalProcessingService {
   
   /**
    * Get stable finger detection status using a buffer
-   * to avoid flicker
+   * to avoid flicker - modified to be more sensitive
    */
   private getStableFingerDetection(currentStatus: boolean): boolean {
     this.fingerDetectionBuffer.push(currentStatus);
@@ -210,13 +224,14 @@ export class SignalProcessingService {
       this.fingerDetectionBuffer.shift();
     }
     
-    // Count true values in buffer
+    // Count true values in buffer - more sensitive logic
     const trueCount = this.fingerDetectionBuffer.filter(Boolean).length;
     
-    // Require majority for state change
-    if (trueCount >= 3) {
+    // More sensitive thresholds - we only need 2/5 true values to consider a finger detected
+    // This improves detection especially at the beginning of measurements
+    if (trueCount >= 2) {
       return true;
-    } else if (trueCount <= 1) {
+    } else if (trueCount === 0) {
       return false;
     } else {
       // Maintain previous state for borderline cases
