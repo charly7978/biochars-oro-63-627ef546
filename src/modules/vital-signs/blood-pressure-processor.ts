@@ -1,8 +1,5 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
-// Import the consolidated median calculation function
-import { calculateMedian } from '@/core/signal/filters/medianFilter';
-
 export class BloodPressureProcessor {
   // Expanded buffer size for greater stability
   private readonly BP_BUFFER_SIZE = 15;
@@ -125,7 +122,7 @@ export class BloodPressureProcessor {
     
     // Filter outliers using statistical technique
     const sortedPTT = [...pttValues].sort((a, b) => a - b);
-    const medianPTT = calculateMedian(sortedPTT);
+    const medianPTT = this.calculateMedian(sortedPTT);
     
     // Filter values outside 2.5 IQR (even wider interquartile range)
     const filteredPTT = this.filterOutliers(pttValues, sortedPTT, 2.5);
@@ -232,6 +229,18 @@ export class BloodPressureProcessor {
   }
   
   /**
+   * Calculate median of an array
+   */
+  private calculateMedian(sortedArray: number[]): number {
+    if (sortedArray.length === 0) return 0;
+    
+    const medianIndex = Math.floor(sortedArray.length / 2);
+    return sortedArray.length % 2 === 0
+      ? (sortedArray[medianIndex - 1] + sortedArray[medianIndex]) / 2
+      : sortedArray[medianIndex];
+  }
+  
+  /**
    * Filter outliers using IQR method with configurable threshold
    */
   private filterOutliers(values: number[], sortedValues: number[], iqrThreshold: number = 1.5): number[] {
@@ -277,12 +286,12 @@ export class BloodPressureProcessor {
       return { finalSystolic: 110, finalDiastolic: 70 }; // Default values if empty
     }
     
-    // 1. Calculate medians using the imported function
+    // 1. Calculate medians
     const sortedSystolic = [...this.systolicBuffer].sort((a, b) => a - b);
     const sortedDiastolic = [...this.diastolicBuffer].sort((a, b) => a - b);
     
-    const systolicMedian = calculateMedian(sortedSystolic);
-    const diastolicMedian = calculateMedian(sortedDiastolic);
+    const systolicMedian = this.calculateMedian(sortedSystolic);
+    const diastolicMedian = this.calculateMedian(sortedDiastolic);
     
     // 2. Calculate averages
     const systolicMean = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;

@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -13,7 +14,6 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
-import { applySMAFilter } from '@/core/signal/filters/movingAverage';
 
 /**
  * Main vital signs processor
@@ -81,20 +81,8 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
-    // Apply filtering using the SignalProcessor instance which now handles its own buffers
-    const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
-    
-    // Usamos `quality` devuelto por applyFilters
-    this.processingStats.signalQuality = quality;
-    
-    // Si no se detecta el dedo, devolver vacío
-    if (!fingerDetected) {
-        console.log("VitalSignsProcessor: Finger not detected, returning empty results.", { quality });
-        // Podríamos devolver los últimos resultados válidos si la lógica lo permitiera,
-        // pero la especificación actual dice devolver vacío o cero.
-        // return this.getLastValidResults() ?? ResultFactory.createEmptyResults();
-        return ResultFactory.createEmptyResults();
-    }
+    // Apply filtering to the real PPG signal
+    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
@@ -104,43 +92,51 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values *after* filtering from the signalProcessor buffer
-    const ppgValues = this.signalProcessor.getPPGValues(); // Estos son los valores filtrados
+    // Get PPG values for processing
+    const ppgValues = this.signalProcessor.getPPGValues();
+    ppgValues.push(filtered);
     
-    // Check if we have enough data points (de los valores filtrados)
+    // Limit the real data buffer
+    if (ppgValues.length > 300) {
+      ppgValues.splice(0, ppgValues.length - 300);
+    }
+    
+    // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
       return ResultFactory.createEmptyResults();
     }
     
-    // Verify real signal amplitude is sufficient (calculado sobre valores filtrados)
+    // Verify real signal amplitude is sufficient
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    // La validación de amplitud ya se hace dentro de signalProcessor.applyFilters
-    // if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-    //   this.signalValidator.logValidationResults(false, amplitude, ppgValues);
-    //   return ResultFactory.createEmptyResults();
-    // }
+    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
+      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+      return ResultFactory.createEmptyResults();
+    }
     
-    // Calculate SpO2 using real data only (usa los valores filtrados)
+    // Calculate signal quality metric
+    this.processingStats.signalQuality = this.calculateSignalQuality(ppgValues);
+    
+    // Calculate SpO2 using real data only
     const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
     
-    // Calculate blood pressure using real signal characteristics only (usa los valores filtrados)
+    // Calculate blood pressure using real signal characteristics only
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
     
-    // Calculate glucose with real data only (usa los valores filtrados)
+    // Calculate glucose with real data only
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
-    // Calculate lipids with real data only (usa los valores filtrados)
+    // Calculate lipids with real data only
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate hydration with real PPG data (usa los valores filtrados)
+    // Calculate hydration with real PPG data
     const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
     
     // Apply signal optimization effects (boost confidence if optimization level is high)
@@ -179,8 +175,7 @@ export class VitalSignsProcessor {
       glucoseConfidence: adjustedGlucoseConfidence,
       lipidsConfidence: adjustedLipidsConfidence,
       hydration,
-      signalAmplitude: amplitude, // Amplitud de señal filtrada
-      signalQuality: this.processingStats.signalQuality, // Calidad calculada por signalProcessor
+      signalAmplitude: amplitude,
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold(),
       optimizationLevel,
       processingTime: this.processingStats.processingTime
@@ -241,6 +236,49 @@ export class VitalSignsProcessor {
     return hemoglobin;
   }
   
+  /**
+   * Calculate signal quality from PPG values (0-100)
+   */
+  private calculateSignalQuality(ppgValues: number[]): number {
+    if (ppgValues.length < 15) return 0;
+    
+    const recentValues = ppgValues.slice(-15);
+    
+    // Calculate amplitude
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
+    
+    // Calculate noise level
+    let noiseLevel = 0;
+    for (let i = 1; i < recentValues.length; i++) {
+      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
+    }
+    noiseLevel /= recentValues.length - 1;
+    
+    // Calculate signal-to-noise ratio
+    const snr = amplitude / (noiseLevel || 0.001);
+    
+    // Calculate regularity
+    let irregularitySum = 0;
+    for (let i = 1; i < recentValues.length - 1; i++) {
+      const prev = recentValues[i-1];
+      const curr = recentValues[i];
+      const next = recentValues[i+1];
+      
+      // Check how irregular the point is compared to its neighbors
+      const expectedValue = (prev + next) / 2;
+      irregularitySum += Math.abs(curr - expectedValue);
+    }
+    const irregularity = irregularitySum / (recentValues.length - 2);
+    const regularity = 1 - (irregularity / (amplitude || 0.001));
+    
+    // Calculate final quality score (0-100)
+    const rawQuality = (snr * 5) * Math.max(0, regularity) * (amplitude > 0.1 ? 1 : amplitude * 10);
+    
+    return Math.min(100, Math.max(0, rawQuality * 100));
+  }
+
   /**
    * Reset the processor to ensure a clean state
    * No reference values or simulations
