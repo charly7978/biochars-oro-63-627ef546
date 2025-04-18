@@ -1,4 +1,3 @@
-
 /**
  * Centralized Signal Processing Service
  * Manages multiple specialized signal channels for different vital signs
@@ -252,7 +251,8 @@ export class SignalProcessingService {
   public getAllChannels(): Map<string, ChannelData> {
     const channelsData = new Map<string, ChannelData>();
     
-    this.processor.channels.forEach((channel, name) => {
+    const processorChannels = this.processor.getAllChannels();
+    processorChannels.forEach((channel, name) => {
       channelsData.set(name, {
         name,
         values: channel.getValues(),

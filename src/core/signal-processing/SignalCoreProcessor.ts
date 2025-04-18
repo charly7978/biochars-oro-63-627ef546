@@ -208,6 +208,13 @@ export class SignalCoreProcessor {
   }
   
   /**
+   * Get all channels
+   */
+  public getAllChannels(): Map<string, SignalChannel> {
+    return new Map(this.channels);
+  }
+  
+  /**
    * Get all raw buffer values
    */
   public getRawBuffer(): number[] {
