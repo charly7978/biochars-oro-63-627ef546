@@ -60,9 +60,9 @@ export function useOptimizedVitalSigns() {
     const hydrationChannel = getChannel('hydration');
     
     console.log("Channel data:", {
-      heartbeat: heartbeatChannel?.metadata,
-      spo2: spo2Channel?.metadata,
-      bp: bpChannel?.metadata
+      heartbeat: heartbeatChannel?.getAllMetadata(),
+      spo2: spo2Channel?.getAllMetadata(),
+      bp: bpChannel?.getAllMetadata()
     });
     
     // Only use real measured values, zero if not available
