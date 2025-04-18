@@ -4,36 +4,46 @@
  */
 
 /**
- * Filter utilities for vital signs monitoring
- * All functions process only real data without simulation
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
-
-/**
- * Applies a Simple Moving Average (SMA) filter to the input signal
- * No simulation is used
- */
-export function applySMAFilter(values: number[], windowSize: number = 5): number[] {
-  if (values.length === 0) return [];
-  if (windowSize <= 1 || values.length <= windowSize) return [...values];
-  
-  const result: number[] = [];
-  
-  for (let i = 0; i < values.length; i++) {
-    const windowStart = Math.max(0, i - windowSize + 1);
-    const windowEnd = i + 1;
-    const windowValues = values.slice(windowStart, windowEnd);
-    const average = windowValues.reduce((sum, val) => sum + val, 0) / windowValues.length;
-    result.push(average);
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
   }
-  
-  return result;
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
 }
 
 /**
- * Amplifies the signal by multiplying with a factor
- * No simulation is used
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
  */
-export function amplifySignal(values: number[], factor: number = 1.5): number[] {
-  if (values.length === 0) return [];
-  return values.map(value => value * factor);
+export function amplifySignal(value: number, recentValues: number[]): number {
+  if (recentValues.length === 0) return value;
+  
+  // Calcular la amplitud reciente de datos reales
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
+  const recentRange = recentMax - recentMin;
+  
+  // Factor de amplificación para señales reales
+  let amplificationFactor = 1.0;
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5;
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8;
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4;
+  }
+  
+  // Amplificar usando solo datos reales
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+  const centeredValue = value - mean;
+  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
+  
+  return amplifiedValue;
 }
