@@ -1,54 +1,50 @@
 
 /**
- * Signal Channel - Represents a specialized processing channel for a specific vital sign
+ * Represents a specialized channel for processing a specific vital sign
  */
-
-export interface ChannelMetadata {
-  quality: number;
-  timestamp: number;
-  timeDelta?: number;
-  rawValue?: number;
-  [key: string]: any; // Allow additional custom metadata
-}
-
 export class SignalChannel {
-  private readonly name: string;
-  private readonly bufferSize: number;
+  private name: string;
+  private bufferSize: number;
   private values: number[] = [];
-  private metadata: Map<number, ChannelMetadata> = new Map();
-  private customMetadata: Map<string, any> = new Map();
+  private metadata: Map<string, any> = new Map();
+  private lastProcessTime: number = 0;
   
   constructor(name: string, bufferSize: number = 300) {
     this.name = name;
     this.bufferSize = bufferSize;
-    console.log(`SignalChannel: Created new channel "${name}" with buffer size ${bufferSize}`);
   }
   
   /**
-   * Add a new value to the channel with metadata
+   * Add a value to the channel and automatically limit buffer size
    */
-  public addValue(value: number, meta?: Partial<ChannelMetadata>): void {
-    // Add to values buffer
+  public addValue(value: number, options?: {
+    quality?: number;
+    timestamp?: number;
+    timeDelta?: number;
+    rawValue?: number;
+  }): void {
     this.values.push(value);
+    
     if (this.values.length > this.bufferSize) {
       this.values.shift();
     }
     
-    // Store metadata if provided
-    if (meta) {
-      const timestamp = meta.timestamp || Date.now();
-      this.metadata.set(timestamp, {
-        quality: meta.quality || 0,
-        timestamp,
-        ...(meta as ChannelMetadata)
-      });
+    if (options) {
+      if (options.quality !== undefined) {
+        this.setMetadata('quality', options.quality);
+      }
       
-      // Clean up old metadata
-      const oldestAllowedTime = timestamp - (this.bufferSize * 100); // Assume max 100ms per sample
-      for (const [time] of this.metadata) {
-        if (time < oldestAllowedTime) {
-          this.metadata.delete(time);
-        }
+      if (options.timestamp !== undefined) {
+        this.lastProcessTime = options.timestamp;
+        this.setMetadata('lastProcessTime', options.timestamp);
+      }
+      
+      if (options.timeDelta !== undefined) {
+        this.setMetadata('timeDelta', options.timeDelta);
+      }
+      
+      if (options.rawValue !== undefined) {
+        this.setMetadata('rawValue', options.rawValue);
       }
     }
   }
@@ -63,66 +59,111 @@ export class SignalChannel {
   /**
    * Get the latest value
    */
-  public getLastValue(): number | null {
-    if (this.values.length === 0) return null;
-    return this.values[this.values.length - 1];
+  public getLatestValue(): number | undefined {
+    return this.values.length > 0 ? this.values[this.values.length - 1] : undefined;
   }
   
   /**
-   * Get the metadata for a specific timestamp
-   */
-  public getMetadataByTime(timestamp: number): ChannelMetadata | undefined {
-    return this.metadata.get(timestamp);
-  }
-  
-  /**
-   * Get the latest metadata
-   */
-  public getLastMetadata(): ChannelMetadata | undefined {
-    if (this.metadata.size === 0) return undefined;
-    
-    // Find the most recent timestamp
-    let latestTime = 0;
-    let latestMeta: ChannelMetadata | undefined = undefined;
-    
-    for (const [time, meta] of this.metadata) {
-      if (time > latestTime) {
-        latestTime = time;
-        latestMeta = meta;
-      }
-    }
-    
-    return latestMeta;
-  }
-  
-  /**
-   * Store custom metadata for the channel
+   * Set metadata for the channel
    */
   public setMetadata(key: string, value: any): void {
-    this.customMetadata.set(key, value);
+    this.metadata.set(key, value);
   }
   
   /**
-   * Get custom metadata
+   * Get metadata from the channel
    */
   public getMetadata(key: string): any {
-    return this.customMetadata.get(key);
+    return this.metadata.get(key);
   }
   
   /**
-   * Get the channel name
+   * Get all metadata as an object
+   */
+  public getAllMetadata(): Record<string, any> {
+    const result: Record<string, any> = {};
+    this.metadata.forEach((value, key) => {
+      result[key] = value;
+    });
+    return result;
+  }
+  
+  /**
+   * Reset the channel
+   */
+  public reset(): void {
+    this.values = [];
+    this.metadata.clear();
+    this.lastProcessTime = 0;
+  }
+  
+  /**
+   * Get channel name
    */
   public getName(): string {
     return this.name;
   }
   
   /**
-   * Reset the channel to its initial state
+   * Calculate the average of the last N values
    */
-  public reset(): void {
-    this.values = [];
-    this.metadata.clear();
-    this.customMetadata.clear();
-    console.log(`SignalChannel: Reset channel "${this.name}"`);
+  public getAverage(count?: number): number {
+    if (this.values.length === 0) return 0;
+    
+    const n = count && count < this.values.length ? count : this.values.length;
+    const valuesToAverage = this.values.slice(-n);
+    
+    return valuesToAverage.reduce((sum, val) => sum + val, 0) / valuesToAverage.length;
+  }
+  
+  /**
+   * Calculate the standard deviation of the last N values
+   */
+  public getStandardDeviation(count?: number): number {
+    if (this.values.length === 0) return 0;
+    
+    const n = count && count < this.values.length ? count : this.values.length;
+    const valuesToProcess = this.values.slice(-n);
+    const avg = this.getAverage(n);
+    
+    const squaredDiffs = valuesToProcess.map(val => Math.pow(val - avg, 2));
+    const avgSquaredDiff = squaredDiffs.reduce((sum, val) => sum + val, 0) / n;
+    
+    return Math.sqrt(avgSquaredDiff);
+  }
+  
+  /**
+   * Calculate the minimum value of the last N values
+   */
+  public getMinimum(count?: number): number {
+    if (this.values.length === 0) return 0;
+    
+    const n = count && count < this.values.length ? count : this.values.length;
+    const valuesToProcess = this.values.slice(-n);
+    
+    return Math.min(...valuesToProcess);
+  }
+  
+  /**
+   * Calculate the maximum value of the last N values
+   */
+  public getMaximum(count?: number): number {
+    if (this.values.length === 0) return 0;
+    
+    const n = count && count < this.values.length ? count : this.values.length;
+    const valuesToProcess = this.values.slice(-n);
+    
+    return Math.max(...valuesToProcess);
+  }
+  
+  /**
+   * Calculate the signal-to-noise ratio
+   */
+  public getSignalToNoiseRatio(count?: number): number {
+    const avg = this.getAverage(count);
+    const stdDev = this.getStandardDeviation(count);
+    
+    if (stdDev === 0) return 0;
+    return Math.abs(avg) / stdDev;
   }
 }
