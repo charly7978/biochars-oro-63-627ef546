@@ -117,6 +117,88 @@ export class SignalChannel {
   }
   
   /**
+   * Get all metadata as a map
+   * Added for optimization support
+   */
+  public getAllMetadata(): Map<number, ChannelMetadata> {
+    return new Map(this.metadata);
+  }
+  
+  /**
+   * Update all values in the channel
+   * Added for optimization support
+   */
+  public updateValues(newValues: number[]): void {
+    this.values = [...newValues];
+    if (this.values.length > this.bufferSize) {
+      this.values = this.values.slice(-this.bufferSize);
+    }
+  }
+  
+  /**
+   * Get signal quality metrics
+   * Added for optimization support
+   */
+  public getQualityMetrics(): {
+    snr: number;
+    stability: number;
+    amplitude: number;
+    averageQuality: number;
+  } {
+    if (this.values.length < 10) {
+      return {
+        snr: 0,
+        stability: 0,
+        amplitude: 0,
+        averageQuality: 0
+      };
+    }
+    
+    // Calculate signal quality metrics
+    const recentValues = this.values.slice(-30);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
+    
+    // Calculate noise level
+    let noiseLevel = 0;
+    for (let i = 1; i < recentValues.length; i++) {
+      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
+    }
+    noiseLevel /= (recentValues.length - 1);
+    
+    // Calculate SNR
+    const snr = amplitude / (noiseLevel || 0.001);
+    
+    // Calculate stability
+    let variance = 0;
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    for (const val of recentValues) {
+      variance += Math.pow(val - mean, 2);
+    }
+    variance /= recentValues.length;
+    const stability = 1 - Math.min(1, variance * 10);
+    
+    // Get average quality from metadata
+    let totalQuality = 0;
+    let count = 0;
+    for (const [_, meta] of this.metadata) {
+      if (typeof meta.quality === 'number') {
+        totalQuality += meta.quality;
+        count++;
+      }
+    }
+    const averageQuality = count > 0 ? totalQuality / count : 0;
+    
+    return {
+      snr,
+      stability,
+      amplitude,
+      averageQuality
+    };
+  }
+  
+  /**
    * Reset the channel to its initial state
    */
   public reset(): void {
