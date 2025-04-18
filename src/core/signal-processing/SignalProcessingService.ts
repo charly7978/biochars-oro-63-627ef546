@@ -1,9 +1,11 @@
+
 /**
  * Centralized Signal Processing Service
  * Manages multiple specialized signal channels for different vital signs
  * ONLY processes real data, no simulations
  */
 import { SignalCoreProcessor, SignalProcessingConfig } from './SignalCoreProcessor';
+import { SignalChannel } from './SignalChannel'; // Add the import for SignalChannel
 import { BehaviorSubject, Observable } from 'rxjs';
 import { ProcessedSignal } from '../../types/signal';
 
