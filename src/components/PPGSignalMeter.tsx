@@ -64,6 +64,8 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
+  
+  const peakDetectorRef = useRef<PeakDetector>(new PeakDetector());
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;

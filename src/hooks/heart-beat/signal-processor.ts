@@ -6,10 +6,29 @@ import {
   checkWeakSignal, 
   shouldProcessMeasurement, 
   createWeakSignalResult, 
-  handlePeakDetection,
   updateLastValidBpm,
   processLowConfidenceResult
 } from './signal-processing';
+
+// Define the missing handlePeakDetection function that was previously imported
+function handlePeakDetection(
+  result: any, 
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  requestBeepCallback: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
+): void {
+  const now = Date.now();
+  
+  // Only process peaks with minimum confidence
+  if (result.isPeak && result.confidence > 0.4) {
+    lastPeakTimeRef.current = now;
+    
+    if (isMonitoringRef.current && result.confidence > 0.5) {
+      requestBeepCallback(value);
+    }
+  }
+}
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
