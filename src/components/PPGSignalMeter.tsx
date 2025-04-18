@@ -64,8 +64,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  
-  const peakDetectorRef = useRef<PeakDetector>(new PeakDetector());
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -443,25 +441,19 @@ const PPGSignalMeter = memo(({
     
     const points = dataBufferRef.current.getPoints();
 
-    if (peakDetectorRef.current) {
-        const valuesForDetection = points.map(p => p.value);
-        const peakResult = peakDetectorRef.current.detectPeaks(valuesForDetection);
+    const valuesForDetection = points.map(p => p.value);
+    const peakResult = peakDetectorRef.current.detectPeaks(valuesForDetection);
 
-        peaksRef.current = peakResult.peakIndices.map(idx => {
-            const point = points[idx];
-            if (!point) return null;
-            return {
-                time: point.time,
-                value: point.value,
-                isArrhythmia: point.isArrhythmia || false,
-                beepPlayed: false
-            };
-        }).filter(peak => peak !== null && now - peak.time < WINDOW_WIDTH_MS)
-          .slice(-MAX_PEAKS_TO_DISPLAY) as {time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[];
-    } else {
-        console.warn("peakDetectorRef.current no está inicializado en renderSignal");
-        peaksRef.current = [];
-    }
+    peaksRef.current = peakResult.peakIndices.map(idx => {
+        const point = points[idx];
+        return {
+            time: point.time,
+            value: point.value,
+            isArrhythmia: point.isArrhythmia || false,
+            beepPlayed: false
+        };
+    }).filter(peak => now - peak.time < WINDOW_WIDTH_MS)
+      .slice(-MAX_PEAKS_TO_DISPLAY);
 
     let shouldBeep = false;
     if (peaksRef.current.length > 0) {
@@ -549,7 +541,7 @@ const PPGSignalMeter = memo(({
       }
     }
     
-    if (shouldBeep && isFingerDetected &&
+    if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Pico detectado, intentando beep");
       const isCurrentArrhythmiaForBeep = peaksRef.current.length > 0 ? peaksRef.current[peaksRef.current.length - 1].isArrhythmia : false;
@@ -582,11 +574,7 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
-    if (peakDetectorRef.current) {
-        peakDetectorRef.current.reset();
-    } else {
-        console.warn("peakDetectorRef.current no está inicializado en handleReset");
-    }
+    peakDetectorRef.current.reset();
     onReset();
   }, [onReset]);
 

@@ -5,7 +5,7 @@
  * Index file for signal processing utilities
  */
 export * from './signal-quality';
-// export * from './peak-detection'; // Eliminado - Lógica centralizada en PeakDetector
+export * from './peak-detection';
 export * from './result-processor';
 
 // Export specific functions for direct use
@@ -16,10 +16,9 @@ export {
   resetSignalQualityState
 } from './signal-quality';
 
-// Eliminada la exportación de handlePeakDetection
-// export { 
-//   handlePeakDetection 
-// } from './peak-detection';
+export { 
+  handlePeakDetection 
+} from './peak-detection';
 
 export { 
   updateLastValidBpm, 

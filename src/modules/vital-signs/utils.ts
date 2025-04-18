@@ -4,24 +4,40 @@
  */
 
 /**
- * Re-export utilities from the centralized location to maintain compatibility
+ * Re-export utilities from individual files to maintain compatibility
  * All functions process only real data without simulation.
  */
 
-// Re-export relevant utilities from the central location
+// Re-export signal processing utilities
 export {
   calculateAC,
   calculateDC,
   calculateStandardDeviation,
   calculateEMA,
-  normalizeValue,
-  calculatePerfusionIndex,
-  calculateAmplitude // Asegurarse que `calculateAmplitude` esté en lib/utils.ts
-} from '@/lib/utils';
+  normalizeValue
+} from './utils/signal-processing-utils';
 
-// Nota: `findPeaksAndValleys` está obsoleto debido a PeakDetector.
-// Nota: `applySMAFilter` y `amplifySignal` podrían estar en lib/utils o necesitar importación específica si se movieron a otro lugar.
-// Si se usan externamente a través de este archivo, deben añadirse sus exportaciones desde la ubicación correcta.
+// Re-export peak detection utilities
+export {
+  findPeaksAndValleys,
+  calculateAmplitude
+} from './utils/peak-detection-utils';
 
-// Re-export aliases if needed for compatibility (example)
-// export { calculateAC as getAC } from '@/lib/utils';
+// Re-export filter utilities
+export {
+  applySMAFilter,
+  amplifySignal
+} from './utils/filter-utils';
+
+// Re-export perfusion utilities
+export {
+  calculatePerfusionIndex
+} from './utils/perfusion-utils';
+
+// Re-export from core utils
+export {
+  calculateAC as getAC,
+  calculateDC as getDC,
+  calculateStandardDeviation as getStandardDeviation,
+  amplifySignal as getAmplifiedSignal
+} from '../../utils/vitalSignsUtils';
