@@ -2,238 +2,265 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { SpO2Processor } from './spo2-processor';
-import { BloodPressureProcessor } from './blood-pressure-processor';
-import { ArrhythmiaProcessor } from './arrhythmia-processor';
+// Quitar imports de procesadores antiguos
+// import { SpO2Processor } from './spo2-processor';
+// import { BloodPressureProcessor } from './blood-pressure-processor';
+// import { ArrhythmiaProcessor } from './arrhythmia-processor';
+// import { GlucoseProcessor } from './glucose-processor';
+// import { LipidProcessor } from './lipid-processor';
+// import { HydrationEstimator } from '../../core/analysis/HydrationEstimator'; // Podría ser un canal
+
+// Añadir imports de canales nuevos
+import { SpO2Channel } from './channels/SpO2Channel';
+import { BloodPressureChannel } from './channels/BloodPressureChannel';
+import { GlucoseChannel } from './channels/GlucoseChannel';
+import { HeartRateChannel } from './channels/HeartRateChannel';
+import { ArrhythmiaChannel, ArrhythmiaResultData } from './channels/ArrhythmiaChannel';
+import { LipidChannel } from './channels/LipidChannel';
+// import { HydrationChannel } from './channels/HydrationChannel'; // (Si se crea)
+
 import { SignalProcessor } from './signal-processor';
-import { GlucoseProcessor } from './glucose-processor';
-import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
-import { ConfidenceCalculator } from './calculators/confidence-calculator';
+// import { ConfidenceCalculator } from './calculators/confidence-calculator'; // Reemplazar cálculo
 import { VitalSignsResult } from './types/vital-signs-result';
-import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
+import { ISignalChannel, ChannelResult, ChannelQualityMetrics, ChannelConfig, RRData } from './channels/ISignalChannel';
 
 /**
- * Main vital signs processor
- * Integrates different specialized processors to calculate health metrics
+ * Main vital signs processor - Refactored to use specialized channels
+ * Integrates different specialized channels to calculate health metrics
  * Operates ONLY in direct measurement mode without reference values or simulation
  */
 export class VitalSignsProcessor {
-  // Specialized processors
-  private spo2Processor: SpO2Processor;
-  private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
+  // Colección de canales de procesamiento
+  private channels: Map<string, ISignalChannel> = new Map();
+
+  // Procesador de señal general para filtrado inicial y calidad
   private signalProcessor: SignalProcessor;
-  private glucoseProcessor: GlucoseProcessor;
-  private lipidProcessor: LipidProcessor;
-  private hydrationEstimator: HydrationEstimator;
-  
-  // Validators and calculators
-  private signalValidator: SignalValidator;
-  private confidenceCalculator: ConfidenceCalculator;
+
+  // Validadores y calculadores generales (pueden moverse a canales específicos o a un sistema de feedback)
+  private signalValidator: SignalValidator; // Mantener por ahora para validación general
+  // private confidenceCalculator: ConfidenceCalculator; // Reemplazado por métricas de canal
+  // private arrhythmiaProcessor: ArrhythmiaProcessor; // Lógica movida a ArrhythmiaChannel
+
+  // Último resultado agregado (para referencia interna si es necesario)
+  private lastAggregatedResult: VitalSignsResult | null = null;
 
   /**
-   * Constructor that initializes all specialized processors
-   * Using only direct measurement
+   * Constructor que inicializa el procesador de señal y registra los canales.
    */
   constructor() {
-    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
-    
-    // Initialize specialized processors
-    this.spo2Processor = new SpO2Processor();
-    this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
+    console.log("VitalSignsProcessor [Channel Based]: Initializing new instance");
+
+    // Inicializar componentes centrales
     this.signalProcessor = new SignalProcessor();
-    this.glucoseProcessor = new GlucoseProcessor();
-    this.lipidProcessor = new LipidProcessor();
-    this.hydrationEstimator = new HydrationEstimator();
-    
-    // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
-    this.confidenceCalculator = new ConfidenceCalculator(0.15);
+    // this.confidenceCalculator = new ConfidenceCalculator(0.15); // Quitar
+    // this.arrhythmiaProcessor = new ArrhythmiaProcessor(); // Quitar
+
+    // Registrar los canales especializados
+    this.registerChannel(new HeartRateChannel());
+    this.registerChannel(new SpO2Channel());
+    this.registerChannel(new BloodPressureChannel());
+    this.registerChannel(new GlucoseChannel());
+    this.registerChannel(new LipidChannel());
+    this.registerChannel(new ArrhythmiaChannel());
+    // this.registerChannel(new HydrationChannel()); // (Si se crea)
+
+    // Eliminar instancias de procesadores antiguos
+    // this.spo2Processor = new SpO2Processor();
+    // this.bpProcessor = new BloodPressureProcessor();
+    // this.glucoseProcessor = new GlucoseProcessor();
+    // this.lipidProcessor = new LipidProcessor();
+    // this.hydrationEstimator = new HydrationEstimator();
+
   }
-  
+
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Registra un nuevo canal de procesamiento.
+   * @param channel Instancia de una clase que implementa ISignalChannel.
+   */
+  public registerChannel(channel: ISignalChannel): void {
+    if (this.channels.has(channel.id)) {
+      console.warn(`Channel with id '${channel.id}' already registered. Overwriting.`);
+    }
+    this.channels.set(channel.id, channel);
+    console.log(`Registered channel: ${channel.id}`);
+  }
+
+  /**
+   * Procesa la señal PPG, distribuyéndola a los canales registrados y agregando los resultados.
    */
   public processSignal(
-    ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
+    ppgValue: number
+    // rrData se obtendrá internamente del canal HeartRate
   ): VitalSignsResult {
-    // Check for near-zero signal
-    if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Apply filtering to the real PPG signal
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
-    
-    // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
-    
-    // Get PPG values for processing
-    const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
-    
-    // Limit the real data buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
-    
-    // Check if we have enough data points
-    if (!this.signalValidator.hasEnoughData(ppgValues)) {
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
-    const amplitude = signalMax - signalMin;
-    
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Calculate SpO2 using real data only
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
-    
-    // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
-    const pressure = bp.systolic > 0 && bp.diastolic > 0 
-      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
-      : "--/--";
-    
-    // Calculate glucose with real data only
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
-    
-    // Calculate lipids with real data only
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
-    const lipidsConfidence = this.lipidProcessor.getConfidence();
-    
-    // Calculate hydration with real PPG data
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
-    
-    // Calculate overall confidence
-    const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
-      glucoseConfidence,
-      lipidsConfidence
-    );
 
-    // Only show values if confidence exceeds threshold
-    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
-    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
-      totalCholesterol: Math.round(lipids.totalCholesterol),
-      triglycerides: Math.round(lipids.triglycerides)
-    } : {
-      totalCholesterol: 0,
-      triglycerides: 0
-    };
+    // 1. Pre-procesamiento y validación inicial de la señal
+    const { filteredValue, quality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
 
-    console.log("VitalSignsProcessor: Results with confidence", {
-      spo2,
-      pressure,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      glucose: finalGlucose,
-      glucoseConfidence,
-      lipidsConfidence,
-      hydration,
-      signalAmplitude: amplitude,
-      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
+    if (!fingerDetected || quality < 20) { // Umbral básico de calidad
+      // console.log("VitalSignsProcessor: Finger not detected or low quality", { fingerDetected, quality });
+      // Devolver el último resultado válido si existe, si no, uno vacío. Evita que los valores desaparezcan.
+      return this.lastAggregatedResult || ResultFactory.createEmptyResults();
+    }
+
+    const ppgChunk = this.signalProcessor.getPPGValues(); // Obtener el chunk de datos filtrados
+
+    // 2. Procesamiento en paralelo por cada canal registrado
+    let rrDataForChannels: RRData | undefined = undefined;
+
+    // Procesar primero HeartRate para obtener RRData
+    const hrChannel = this.channels.get('heartRate');
+    if (hrChannel) {
+        try {
+            hrChannel.process(ppgChunk);
+            const hrResult = hrChannel.getResult();
+            if (hrResult && typeof hrResult === 'object' && 'rrData' in hrResult) {
+                rrDataForChannels = (hrResult as { rrData?: RRData }).rrData;
+            }
+        } catch (error) {
+             console.error(`Error processing channel heartRate:`, error);
+        }
+    }
+
+    // Procesar los demás canales
+    this.channels.forEach((channel, id) => {
+      if (id === 'heartRate') return; // Ya procesado
+      try {
+          // Pasar rrData al canal de arritmia, y potencialmente a otros que lo necesiten
+          channel.process(ppgChunk, rrDataForChannels);
+      } catch (error) {
+        console.error(`Error processing channel ${id}:`, error);
+      }
     });
 
-    // Prepare result with all metrics including hydration
-    return ResultFactory.createResult(
-      spo2,
-      pressure,
-      arrhythmiaResult.arrhythmiaStatus || "--",
-      finalGlucose,
-      finalLipids,
-      Math.round(this.calculateDefaultHemoglobin(spo2)),
-      hydration,
-      glucoseConfidence,
-      lipidsConfidence,
+    // 3. Recopilación y agregación de resultados y métricas de calidad
+    const resultsMap: Record<string, ChannelResult | null> = {};
+    const qualityMap: Record<string, ChannelQualityMetrics | null> = {};
+    let totalConfidence = 0;
+    let contributingChannels = 0;
+
+    this.channels.forEach(channel => {
+        const result = channel.getResult();
+        const qualityMetrics = channel.getQualityMetrics();
+        resultsMap[channel.id] = result;
+        qualityMap[channel.id] = qualityMetrics;
+
+        // Calcular confianza general promedio
+        const minConfidence = channel.getConfig().minConfidence ?? 0.5;
+        if (result && qualityMetrics && qualityMetrics.confidence >= minConfidence) {
+            totalConfidence += qualityMetrics.confidence;
+            contributingChannels++;
+        }
+    });
+
+    // Calcular confianza general (promedio de canales confiables)
+    const overallConfidence = contributingChannels > 0 ? totalConfidence / contributingChannels : 0;
+
+    // 4. Construir el resultado agregado usando ResultFactory
+    const spo2Result = resultsMap['spo2'] as { spo2: number } | null;
+    const bpResult = resultsMap['bloodPressure'] as { systolic: number, diastolic: number } | null;
+    const arrhythmiaResult = resultsMap['arrhythmia'] as { arrhythmia: ArrhythmiaResultData } | null;
+    const glucoseResult = resultsMap['glucose'] as { glucose: number } | null;
+    const lipidsResult = resultsMap['lipids'] as { lipids: { totalCholesterol: number, triglycerides: number } } | null;
+    const heartRateResult = resultsMap['heartRate'] as { bpm?: number, rrData?: RRData } | null;
+
+    const aggregatedResult = ResultFactory.createResult(
+      spo2Result?.spo2 ?? (this.lastAggregatedResult?.spo2 || 0),
+      bpResult ? `${bpResult.systolic}/${bpResult.diastolic}` : (this.lastAggregatedResult?.pressure || "--/--"),
+      arrhythmiaResult?.arrhythmia?.status ?? (this.lastAggregatedResult?.arrhythmiaStatus || 'normal'),
+      glucoseResult?.glucose ?? (this.lastAggregatedResult?.glucose || 0),
+      lipidsResult?.lipids ?? (this.lastAggregatedResult?.lipids || { totalCholesterol: 0, triglycerides: 0 }),
+      this.calculateDefaultHemoglobin(spo2Result?.spo2 ?? (this.lastAggregatedResult?.spo2 || 0)),
+      this.lastAggregatedResult?.hydration || 0,
+      qualityMap['glucose']?.confidence ?? 0,
+      qualityMap['lipids']?.confidence ?? 0,
       overallConfidence,
-      arrhythmiaResult.lastArrhythmiaData
+      null // arrhythmiaResult?.arrhythmia?.lastArrhythmiaData || null
     );
+
+    // 5. (Futuro) Aplicar Validación Cruzada y Feedback
+
+    this.lastAggregatedResult = aggregatedResult; // Guardar el último resultado
+    return aggregatedResult;
   }
+
+  // --- Métodos antiguos (a ser reemplazados/refactorizados) ---
 
   /**
    * Calculate a default hemoglobin value based on SpO2
    */
   private calculateDefaultHemoglobin(spo2: number): number {
+    // Mantener temporalmente o mover a un futuro HemoglobinChannel
     if (spo2 <= 0) return 0;
-    
-    // Very basic approximation
     const base = 14;
-    
-    if (spo2 > 95) return base + this.calculatePerfusionAdjustment(spo2);
-    if (spo2 > 90) return base - 1 + this.calculatePerfusionAdjustment(spo2);
-    if (spo2 > 85) return base - 2 + this.calculatePerfusionAdjustment(spo2);
-    
-    return base - 3 + this.calculatePerfusionAdjustment(spo2);
+    // Ajustes simplificados, idealmente basados en correlaciones más complejas
+    if (spo2 > 95) return Math.round(base + ((spo2 - 95) * 0.1));
+    if (spo2 > 90) return Math.round(base - 1 + ((spo2 - 90) * 0.08));
+    if (spo2 > 85) return Math.round(base - 2 + ((spo2 - 85) * 0.06));
+    return Math.round(base - 3);
   }
 
   /**
-   * Calculate perfusion adjustment based on SpO2
+   * Calculate perfusion adjustment based on SpO2 - Este método ya no es necesario aquí.
+   * La perfusión se manejaría dentro de cada canal si es relevante.
    */
-  private calculatePerfusionAdjustment(spo2: number): number {
-    // Calcula el ajuste basado en la desviación del SpO2 del valor óptimo (98%)
-    const optimalSpo2 = 98;
-    const deviation = Math.abs(spo2 - optimalSpo2);
-    const perfusionFactor = 0.1; // Factor de ajuste basado en estudios clínicos
-    return deviation * perfusionFactor;
-  }
+  // private calculatePerfusionAdjustment(spo2: number): number { ... }
 
   /**
-   * Reset the processor to ensure a clean state
-   * No reference values or simulations
+   * Reset the processor and all registered channels.
    */
   public reset(): VitalSignsResult | null {
-    this.spo2Processor.reset();
-    this.bpProcessor.reset();
-    this.arrhythmiaProcessor.reset();
+    console.log("VitalSignsProcessor [Channel Based]: Resetting...");
     this.signalProcessor.reset();
-    this.glucoseProcessor.reset();
-    this.lipidProcessor.reset();
-    this.hydrationEstimator.reset();
-    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null; // Always return null to ensure measurements start from zero
+    // this.arrhythmiaProcessor.reset(); // Quitar
+
+    // Resetear procesadores antiguos temporalmente - QUITAR
+    // this.spo2Processor.reset();
+    // this.bpProcessor.reset();
+    // this.glucoseProcessor.reset();
+    // this.lipidProcessor.reset();
+    // this.hydrationEstimator.reset();
+
+    this.channels.forEach(channel => channel.reset());
+    this.lastAggregatedResult = null;
+    return null; // Force fresh measurements
   }
-  
+
   /**
-   * Get arrhythmia counter
+   * Get arrhythmia counter (now fetched from ArrhythmiaChannel).
    */
   public getArrhythmiaCounter(): number {
-    return this.arrhythmiaProcessor.getArrhythmiaCount();
+    const arrhythmiaResult = this.channels.get('arrhythmia')?.getResult() as { arrhythmia: ArrhythmiaResultData } | null;
+    return arrhythmiaResult?.arrhythmia?.count ?? 0;
   }
-  
+
   /**
-   * Get the last valid results - always returns null
-   * Forces fresh measurements without reference values
+   * Get the last valid results - Now returns last aggregated or null.
    */
   public getLastValidResults(): VitalSignsResult | null {
-    return null; // Always return null to ensure measurements start from zero
+    return this.lastAggregatedResult;
   }
-  
+
   /**
-   * Completely reset the processor
-   * Ensures fresh start with no data carryover
+   * Completely reset the processor and channels.
    */
   public fullReset(): void {
     this.reset();
-    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+    console.log("VitalSignsProcessor [Channel Based]: Full reset completed");
   }
+
+  // --- Variables y métodos temporales para transición - QUITAR ---
+  // private spo2Processor: SpO2Processor;
+  // private bpProcessor: BloodPressureProcessor;
+  // private glucoseProcessor: GlucoseProcessor;
+  // private lipidProcessor: LipidProcessor;
+  // private hydrationEstimator: HydrationEstimator; // Quitar o convertir en canal
+
 }
 
 // Re-export the VitalSignsResult type
 export type { VitalSignsResult } from './types/vital-signs-result';
+// Re-export RRData si es necesario externamente (aunque ahora se maneja internamente)
+export type { RRData } from './channels/ISignalChannel';
