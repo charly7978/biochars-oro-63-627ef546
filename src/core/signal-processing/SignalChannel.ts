@@ -1,211 +1,267 @@
 
 /**
- * Represents a specialized channel for processing a specific vital sign
- * ONLY uses real data, no simulations
+ * Signal Channel - Represents a specialized processing channel for a specific vital sign
  */
+
+import { 
+  SignalChannelConfig, 
+  SignalFeedback, 
+  ChannelMetadata 
+} from './types';
+
 export class SignalChannel {
-  private name: string;
-  private bufferSize: number;
+  private readonly name: string;
+  private readonly bufferSize: number;
   private values: number[] = [];
-  private metadata: Map<string, any> = new Map();
-  private lastProcessTime: number = 0;
+  private metadata: Map<string, ChannelMetadata> = new Map();
+  private readonly config: SignalChannelConfig;
+  private gain: number = 1.0;
+  private baseline: number = 0;
+  private qualityHistory: number[] = [];
+  private readonly QUALITY_HISTORY_SIZE = 10;
   
-  constructor(name: string, bufferSize: number = 300) {
+  constructor(name: string, bufferSize: number = 300, config?: SignalChannelConfig) {
     this.name = name;
     this.bufferSize = bufferSize;
-    
-    // Initialize default metadata based on channel type
-    this.initializeDefaultMetadata();
+    this.config = config || {
+      sampleRate: 30,
+      feedbackEnabled: false,
+      optimizationLevel: 'low'
+    };
+    console.log(`SignalChannel: Created new channel "${name}" with buffer size ${bufferSize}`);
   }
   
   /**
-   * Initialize default metadata values based on channel type
-   * Uses zeros and null values - no simulated data
+   * Add a new value to the channel with metadata
    */
-  private initializeDefaultMetadata(): void {
-    // Common defaults - all zeros/nulls
-    this.metadata.set('quality', 0);
+  public addValue(value: number, metadata: ChannelMetadata): void {
+    // Aplicar ganancia y corrección de línea base
+    const processedValue = (value * this.gain) + this.baseline;
     
-    // Channel-specific metadata initialization with zeros
-    switch (this.name) {
-      case 'heartbeat':
-        this.metadata.set('heartRate', 0);
-        this.metadata.set('rrIntervals', []);
-        this.metadata.set('lastPeakTime', null);
-        break;
-      case 'spo2':
-        this.metadata.set('spo2', 0);
-        this.metadata.set('redRatio', 0);
-        this.metadata.set('irRatio', 0);
-        break;
-      case 'bloodPressure':
-        this.metadata.set('systolic', 0);
-        this.metadata.set('diastolic', 0);
-        break;
-      case 'arrhythmia':
-        this.metadata.set('status', '--');
-        this.metadata.set('count', 0);
-        break;
-      case 'glucose':
-        this.metadata.set('glucose', 0);
-        this.metadata.set('confidence', 0);
-        break;
-      case 'lipids':
-        this.metadata.set('totalCholesterol', 0);
-        this.metadata.set('triglycerides', 0);
-        this.metadata.set('confidence', 0);
-        break;
-      case 'hemoglobin':
-        this.metadata.set('value', 0);
-        break;
-      case 'hydration':
-        this.metadata.set('value', 0);
-        break;
-    }
-  }
-  
-  /**
-   * Add a value to the channel and automatically limit buffer size
-   */
-  public addValue(value: number, options?: {
-    quality?: number;
-    timestamp?: number;
-    timeDelta?: number;
-    rawValue?: number;
-  }): void {
-    this.values.push(value);
+    this.values.push(processedValue);
+    this.metadata.set(metadata.timestamp.toString(), metadata);
     
+    // Auto-trim al agregar nuevos valores
     if (this.values.length > this.bufferSize) {
-      this.values.shift();
+      this.trimHistory(this.bufferSize);
     }
+  }
+  
+  /**
+   * Add a new value to the channel with feedback
+   */
+  public addValueWithFeedback(value: number, metadata: ChannelMetadata): SignalFeedback {
+    this.addValue(value, metadata);
+
+    if (!this.config.feedbackEnabled) {
+      return { quality: 100, needsOptimization: false };
+    }
+
+    // Calcular calidad de señal
+    const quality = this.calculateSignalQuality();
+    this.qualityHistory.push(quality);
+    if (this.qualityHistory.length > this.QUALITY_HISTORY_SIZE) {
+      this.qualityHistory.shift();
+    }
+
+    // Determinar si se necesita optimización
+    const needsOptimization = this.shouldOptimize();
     
-    if (options) {
-      if (options.quality !== undefined) {
-        this.setMetadata('quality', options.quality);
-      }
-      
-      if (options.timestamp !== undefined) {
-        this.lastProcessTime = options.timestamp;
-        this.setMetadata('lastProcessTime', options.timestamp);
-      }
-      
-      if (options.timeDelta !== undefined) {
-        this.setMetadata('timeDelta', options.timeDelta);
-      }
-      
-      if (options.rawValue !== undefined) {
-        this.setMetadata('rawValue', options.rawValue);
-      }
+    // Generar sugerencias de optimización si es necesario
+    const feedback: SignalFeedback = {
+      quality,
+      needsOptimization
+    };
+
+    if (needsOptimization) {
+      feedback.optimizationSuggestions = this.generateOptimizationSuggestions();
     }
-  }
-  
-  /**
-   * Set metadata for the channel
-   */
-  public setMetadata(key: string, value: any): void {
-    this.metadata.set(key, value);
-  }
-  
-  /**
-   * Get metadata from the channel
-   */
-  public getMetadata(key: string): any {
-    return this.metadata.get(key);
-  }
-  
-  /**
-   * Get all metadata as an object
-   */
-  public getAllMetadata(): Record<string, any> {
-    const result: Record<string, any> = {};
-    this.metadata.forEach((value, key) => {
-      result[key] = value;
-    });
-    return result;
+
+    return feedback;
   }
   
   /**
    * Get all values in the channel
    */
   public getValues(): number[] {
-    return [...this.values];
+    return this.values;
   }
   
   /**
    * Get the latest value
    */
-  public getLatestValue(): number | undefined {
-    return this.values.length > 0 ? this.values[this.values.length - 1] : undefined;
+  public getLastValue(): number | null {
+    if (this.values.length === 0) return null;
+    return this.values[this.values.length - 1];
   }
   
   /**
-   * Reset the channel
+   * Get the metadata for a specific timestamp
    */
-  public reset(): void {
-    this.values = [];
-    this.metadata.clear();
-    this.lastProcessTime = 0;
-    
-    // Reinitialize default metadata to zeros
-    this.initializeDefaultMetadata();
+  public getMetadata(key: string): any {
+    return this.metadata.get(key);
   }
   
   /**
-   * Get channel name
+   * Get the latest metadata
+   */
+  public getLastMetadata(): any {
+    if (this.values.length === 0) return null;
+    const lastTimestamp = this.values.length - 1;
+    return this.metadata.get(lastTimestamp.toString());
+  }
+  
+  /**
+   * Store custom metadata for the channel
+   */
+  public setMetadata(key: string, value: any): void {
+    this.metadata.set(key, value);
+  }
+  
+  /**
+   * Get the channel name
    */
   public getName(): string {
     return this.name;
   }
   
   /**
-   * Calculate the average of the last N values
+   * Reset the channel to its initial state
    */
-  public getAverage(count?: number): number {
-    if (this.values.length === 0) return 0;
-    
-    const n = count && count < this.values.length ? count : this.values.length;
-    const valuesToAverage = this.values.slice(-n);
-    
-    return valuesToAverage.reduce((sum, val) => sum + val, 0) / valuesToAverage.length;
+  public reset(): void {
+    this.values = [];
+    this.metadata.clear();
+    this.qualityHistory = [];
+    this.gain = 1.0;
+    this.baseline = 0;
+    console.log(`SignalChannel: Reset channel "${this.name}"`);
   }
-  
-  /**
-   * Calculate the standard deviation of the last N values
-   */
-  public getStandardDeviation(count?: number): number {
-    if (this.values.length === 0) return 0;
-    
-    const n = count && count < this.values.length ? count : this.values.length;
-    const valuesToProcess = this.values.slice(-n);
-    const avg = this.getAverage(n);
-    
-    const squaredDiffs = valuesToProcess.map(val => Math.pow(val - avg, 2));
-    const avgSquaredDiff = squaredDiffs.reduce((sum, val) => sum + val, 0) / n;
-    
-    return Math.sqrt(avgSquaredDiff);
+
+  private calculateSignalQuality(): number {
+    if (this.values.length < 2) return 100;
+
+    // Calcular calidad basada en varios factores
+    const amplitudeQuality = this.calculateAmplitudeQuality();
+    const noiseQuality = this.calculateNoiseQuality();
+    const stabilityQuality = this.calculateStabilityQuality();
+
+    // Promedio ponderado de factores de calidad
+    return Math.round(
+      (amplitudeQuality * 0.4) +
+      (noiseQuality * 0.3) +
+      (stabilityQuality * 0.3)
+    );
   }
-  
-  /**
-   * Calculate the minimum value of the last N values
-   */
-  public getMinimum(count?: number): number {
-    if (this.values.length === 0) return 0;
+
+  private calculateAmplitudeQuality(): number {
+    const recentValues = this.values.slice(-30);
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    const amplitude = max - min;
     
-    const n = count && count < this.values.length ? count : this.values.length;
-    const valuesToProcess = this.values.slice(-n);
-    
-    return Math.min(...valuesToProcess);
+    // Normalizar a 0-100
+    return Math.min(100, Math.max(0, amplitude * 100));
   }
-  
-  /**
-   * Calculate the maximum value of the last N values
-   */
-  public getMaximum(count?: number): number {
-    if (this.values.length === 0) return 0;
+
+  private calculateNoiseQuality(): number {
+    const recentValues = this.values.slice(-30);
+    let noiseLevel = 0;
     
-    const n = count && count < this.values.length ? count : this.values.length;
-    const valuesToProcess = this.values.slice(-n);
+    for (let i = 1; i < recentValues.length; i++) {
+      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
+    }
     
-    return Math.max(...valuesToProcess);
+    noiseLevel /= (recentValues.length - 1);
+    
+    // Convertir a calidad (menos ruido = mayor calidad)
+    return Math.min(100, Math.max(0, 100 - (noiseLevel * 100)));
+  }
+
+  private calculateStabilityQuality(): number {
+    const recentValues = this.values.slice(-30);
+    const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+    let variance = 0;
+    
+    recentValues.forEach(value => {
+      variance += Math.pow(value - mean, 2);
+    });
+    
+    variance /= recentValues.length;
+    
+    // Convertir a calidad (menos varianza = mayor estabilidad)
+    return Math.min(100, Math.max(0, 100 - (Math.sqrt(variance) * 50)));
+  }
+
+  private shouldOptimize(): boolean {
+    if (this.qualityHistory.length < this.QUALITY_HISTORY_SIZE) {
+      return false;
+    }
+
+    // Calcular tendencia de calidad
+    const recentQuality = this.qualityHistory.slice(-3).reduce((a, b) => a + b, 0) / 3;
+    const oldQuality = this.qualityHistory.slice(0, 3).reduce((a, b) => a + b, 0) / 3;
+
+    // Optimizar si la calidad está disminuyendo o es baja
+    return recentQuality < oldQuality || recentQuality < 70;
+  }
+
+  private generateOptimizationSuggestions(): SignalFeedback['optimizationSuggestions'] {
+    const suggestions: NonNullable<SignalFeedback['optimizationSuggestions']> = {};
+
+    // Analizar señal reciente
+    const recentValues = this.values.slice(-30);
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
+    const amplitude = max - min;
+    const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+
+    // Sugerir ajustes de ganancia si la amplitud es muy baja o alta
+    if (amplitude < 0.1) {
+      suggestions.gainAdjustment = this.gain * 1.5;
+    } else if (amplitude > 0.9) {
+      suggestions.gainAdjustment = this.gain * 0.75;
+    }
+
+    // Sugerir corrección de línea base si la señal está descentrada
+    if (Math.abs(mean) > 0.1) {
+      suggestions.baselineCorrection = -mean;
+    }
+
+    // Sugerir ajustes de filtros basados en ruido
+    const noiseLevel = this.calculateNoiseQuality();
+    if (noiseLevel < 70) {
+      suggestions.filters = {
+        lowPass: this.config.filters?.lowPass ? this.config.filters.lowPass * 0.8 : 5,
+        highPass: this.config.filters?.highPass ? this.config.filters.highPass * 1.2 : 0.5
+      };
+    }
+
+    return suggestions;
+  }
+
+  public setGain(gain: number): void {
+    this.gain = gain;
+  }
+
+  public setBaseline(baseline: number): void {
+    this.baseline = baseline;
+  }
+
+  public trimHistory(maxLength: number): void {
+    if (this.values.length <= maxLength) return;
+
+    const excess = this.values.length - maxLength;
+    this.values = this.values.slice(excess);
+    
+    // Actualizar metadata
+    const newMetadata = new Map<string, ChannelMetadata>();
+    this.metadata.forEach((value, key) => {
+      if (!isNaN(parseInt(key)) && parseInt(key) >= excess) {
+        newMetadata.set((parseInt(key) - excess).toString(), value);
+      } else {
+        newMetadata.set(key, value);
+      }
+    });
+    this.metadata = newMetadata;
   }
 }

@@ -1,3 +1,4 @@
+
 /**
  * Central Signal Processing Hook - provides access to the core signal processor
  */
@@ -88,7 +89,7 @@ export function useSignalCore(options = {}) {
       
       // Get heartbeat channel for quality
       const heartbeatChannel = channels.get('heartbeat');
-      const quality = heartbeatChannel?.getMetadata('quality') || 0;
+      const quality = heartbeatChannel?.getLastMetadata()?.quality || 0;
       
       // Update state (limit updates to reduce render overhead)
       if (processingStatsRef.current.processedFrames % 3 === 0) {

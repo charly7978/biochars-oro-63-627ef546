@@ -66,7 +66,7 @@ const PPGSignalMeter = memo(({
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
-  const CANVAS_HEIGHT = 1000;
+  const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
   const verticalScale = 76.0;
@@ -74,11 +74,11 @@ const PPGSignalMeter = memo(({
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
-  const PEAK_DETECTION_WINDOW = 6;
+  const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 300;
+  const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
-  const MAX_PEAKS_TO_DISPLAY = 20;
+  const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
@@ -87,7 +87,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 300;
+  const MIN_BEEP_INTERVAL_MS = 350;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 

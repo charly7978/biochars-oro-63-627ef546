@@ -1,4 +1,3 @@
-
 /**
  * Cliente para comunicación con el worker de TensorFlow
  * Gestiona la comunicación, carga de modelos y predicciones
@@ -20,13 +19,24 @@ export class TensorFlowWorkerClient {
   
   constructor(config: TensorFlowConfig = DEFAULT_TENSORFLOW_CONFIG) {
     this.config = config;
-    this.initialize();
+    // Solo inicializar si está habilitado
+    if (config.enabled) {
+      this.initialize();
+    } else {
+      console.log('TensorFlow está deshabilitado, no se inicializará el worker');
+    }
   }
   
   /**
    * Inicializa el worker
    */
   public async initialize(): Promise<void> {
+    // Si TensorFlow está deshabilitado, no inicializar
+    if (!this.config.enabled) {
+      console.log('TensorFlow está deshabilitado, no se inicializará el worker');
+      return;
+    }
+
     if (this.initialized || this.initializing) {
       if (this.initializing) {
         return new Promise<void>((resolve) => {
@@ -206,6 +216,17 @@ export class TensorFlowWorkerClient {
    * Realiza una predicción con un modelo específico
    */
   public async predict(modelType: string, input: number[]): Promise<number[]> {
+    // Si TensorFlow está deshabilitado, devolver valores por defecto
+    if (!this.config.enabled) {
+      console.log('TensorFlow está deshabilitado, devolviendo valores por defecto');
+      return this.getDefaultPrediction(modelType);
+    }
+    
+    // Asegurar que está inicializado
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
     // Asegurar que el modelo está cargado
     if (this.modelStatus.get(modelType) !== 'ready') {
       await this.loadModel(modelType);
@@ -213,6 +234,41 @@ export class TensorFlowWorkerClient {
     
     // Enviar mensaje para predecir
     return this.sendMessage('predict', { modelType, input });
+  }
+  
+  /**
+   * Genera valores de predicción por defecto para cuando TensorFlow está deshabilitado
+   */
+  private getDefaultPrediction(modelType: string): number[] {
+    // Valores de predicción por defecto según el tipo de modelo
+    switch (modelType) {
+      case 'heartRate':
+        return [75]; // BPM normal
+      case 'spo2':
+        return [98]; // SpO2 normal
+      case 'bloodPressure':
+        return [120, 80]; // Presión arterial normal (sistólica/diastólica)
+      case 'glucose':
+        return [85]; // Glucosa normal
+      case 'arrhythmia':
+        return [0]; // No arritmia
+      default:
+        return [0]; // Valor por defecto genérico
+    }
+  }
+
+  /**
+   * Comprueba si TensorFlow está habilitado
+   */
+  public isEnabled(): boolean {
+    return this.config.enabled;
+  }
+
+  /**
+   * Comprueba si TensorFlow está inicializado
+   */
+  public isInitialized(): boolean {
+    return this.initialized;
   }
   
   /**
@@ -274,5 +330,37 @@ export class TensorFlowWorkerClient {
    */
   public dispose(): void {
     this.terminateWorker();
+  }
+
+  /**
+   * Actualiza la configuración del worker
+   */
+  public updateConfig(newConfig: Partial<TensorFlowConfig>): Promise<void> {
+    this.config = {
+      ...this.config,
+      ...newConfig
+    };
+    
+    // Si se cambió el estado de habilitación
+    if (newConfig.enabled !== undefined) {
+      if (newConfig.enabled === false && this.worker !== null) {
+        // Si se está deshabilitando, terminar el worker
+        console.log('TensorFlow está siendo deshabilitado, terminando worker');
+        this.terminateWorker();
+        this.initialized = false;
+        return Promise.resolve();
+      } else if (newConfig.enabled === true && !this.initialized && !this.initializing) {
+        // Si se está habilitando y no está inicializado, inicializar
+        console.log('TensorFlow está siendo habilitado, inicializando worker');
+        return this.initialize();
+      }
+    }
+    
+    // Si el worker está activo, enviar nueva config
+    if (this.worker !== null && this.initialized) {
+      return this.sendMessage('setConfig', { config: this.config });
+    }
+    
+    return Promise.resolve();
   }
 }

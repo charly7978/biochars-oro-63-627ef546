@@ -1,31 +1,26 @@
 
-import { SignalCoreProcessor } from './SignalCoreProcessor';
-import { SignalChannel } from './SignalChannel';
-import { signalProcessingService } from './SignalProcessingService';
+/**
+ * Signal Processing Core Module
+ * Centralized signal processing system with specialized channels for vital signs
+ */
 
-// Create a factory function to ensure we can create the right type of processor
-export const createSignalProcessor = () => {
+export * from './SignalCoreProcessor';
+export * from './SignalChannel';
+export * from './filters/SignalFilter';
+
+// Create a default instance for simpler usage
+import { SignalCoreProcessor, SignalProcessingConfig } from './SignalCoreProcessor';
+
+const defaultConfig: SignalProcessingConfig = {
+  bufferSize: 300,
+  sampleRate: 30,
+  channels: ['heartbeat', 'spo2', 'arrhythmia', 'bloodPressure']
+};
+
+// Export default processor instance
+export const createSignalProcessor = (config?: Partial<SignalProcessingConfig>) => {
   return new SignalCoreProcessor({
-    bufferSize: 300,
-    sampleRate: 30,
-    channels: [
-      'heartbeat',
-      'spo2',
-      'bloodPressure',
-      'arrhythmia',
-      'glucose',
-      'lipids',
-      'hemoglobin',
-      'hydration'
-    ]
+    ...defaultConfig,
+    ...config
   });
 };
-
-// Export all core signal processing classes
-export {
-  SignalCoreProcessor,
-  SignalChannel,
-  signalProcessingService
-};
-
-export * from './SignalProcessingService';
