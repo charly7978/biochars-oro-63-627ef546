@@ -1,6 +1,7 @@
 
 /**
  * Represents a specialized channel for processing a specific vital sign
+ * ONLY uses real data, no simulations
  */
 export class SignalChannel {
   private name: string;
@@ -19,20 +20,23 @@ export class SignalChannel {
   
   /**
    * Initialize default metadata values based on channel type
-   * This ensures we have reasonable defaults for each vital sign
+   * Uses zeros and null values - no simulated data
    */
   private initializeDefaultMetadata(): void {
-    // Common defaults
+    // Common defaults - all zeros/nulls
     this.metadata.set('quality', 0);
     
-    // Channel-specific defaults
+    // Channel-specific metadata initialization with zeros
     switch (this.name) {
       case 'heartbeat':
         this.metadata.set('heartRate', 0);
         this.metadata.set('rrIntervals', []);
+        this.metadata.set('lastPeakTime', null);
         break;
       case 'spo2':
         this.metadata.set('spo2', 0);
+        this.metadata.set('redRatio', 0);
+        this.metadata.set('irRatio', 0);
         break;
       case 'bloodPressure':
         this.metadata.set('systolic', 0);
@@ -93,178 +97,6 @@ export class SignalChannel {
         this.setMetadata('rawValue', options.rawValue);
       }
     }
-    
-    // Update channel-specific metadata based on new value
-    this.updateChannelMetadata(value);
-  }
-  
-  /**
-   * Update channel-specific metadata based on new values
-   * This simulates the specialized processing for each vital sign
-   */
-  private updateChannelMetadata(value: number): void {
-    const quality = this.metadata.get('quality') || 0;
-    
-    // Skip updates if quality is too low
-    if (quality < 10 && this.values.length < 5) return;
-    
-    // Different processing logic for each channel type
-    switch (this.name) {
-      case 'spo2':
-        this.updateSpo2Metadata();
-        break;
-      case 'bloodPressure':
-        this.updateBloodPressureMetadata();
-        break;
-      case 'glucose':
-        this.updateGlucoseMetadata();
-        break;
-      case 'lipids':
-        this.updateLipidsMetadata();
-        break;
-      case 'hemoglobin':
-        this.updateHemoglobinMetadata();
-        break;
-      case 'hydration':
-        this.updateHydrationMetadata();
-        break;
-    }
-  }
-  
-  /**
-   * Update SpO2 metadata based on signal characteristics
-   */
-  private updateSpo2Metadata(): void {
-    if (this.values.length < 5) return;
-    
-    // Simple SpO2 simulation based on signal characteristics
-    const avg = this.getAverage(10);
-    const stdDev = this.getStandardDeviation(10);
-    
-    // Calculate SpO2 from signal characteristics
-    // Using reasonable SpO2 values that are based on signal quality
-    const quality = this.metadata.get('quality') || 0;
-    const baseSpO2 = 95; // Healthy baseline
-    
-    // Calculate SpO2 with small variations based on signal
-    const spo2 = Math.min(99, Math.max(92, baseSpO2 + (avg * 5) - (stdDev * 10)));
-    
-    this.metadata.set('spo2', Math.round(spo2));
-  }
-  
-  /**
-   * Update blood pressure metadata
-   */
-  private updateBloodPressureMetadata(): void {
-    if (this.values.length < 10) return;
-    
-    // Get heart rate from heartbeat channel if available
-    const heartRate = this.metadata.get('heartRate') || 70;
-    
-    // Calculate blood pressure based on signal characteristics
-    const avg = this.getAverage(10);
-    const min = this.getMinimum(10);
-    const max = this.getMaximum(10);
-    const range = max - min;
-    
-    // Calculate systolic and diastolic pressures
-    // Using reasonable defaults modified by signal characteristics
-    const baseSystolic = 120;
-    const baseDiastolic = 80;
-    
-    const systolic = baseSystolic + (heartRate - 70) * 0.5 + range * 50;
-    const diastolic = baseDiastolic + (heartRate - 70) * 0.2 + min * 30;
-    
-    this.metadata.set('systolic', Math.round(systolic));
-    this.metadata.set('diastolic', Math.round(diastolic));
-  }
-  
-  /**
-   * Update glucose metadata
-   */
-  private updateGlucoseMetadata(): void {
-    if (this.values.length < 10) return;
-    
-    // Calculate glucose based on signal characteristics
-    const avg = this.getAverage(10);
-    const stdDev = this.getStandardDeviation(10);
-    
-    // Base glucose value with small variations
-    const baseGlucose = 90;
-    const glucose = baseGlucose + avg * 30 + stdDev * 10;
-    
-    this.metadata.set('glucose', Math.round(glucose));
-    this.metadata.set('confidence', Math.min(1, this.values.length / 30));
-  }
-  
-  /**
-   * Update lipids metadata
-   */
-  private updateLipidsMetadata(): void {
-    if (this.values.length < 10) return;
-    
-    // Calculate lipid values based on signal characteristics
-    const avg = this.getAverage(15);
-    const stdDev = this.getStandardDeviation(15);
-    
-    // Base values with variations
-    const baseCholesterol = 180;
-    const baseTriglycerides = 140;
-    
-    const cholesterol = baseCholesterol + avg * 50 + stdDev * 20;
-    const triglycerides = baseTriglycerides + avg * 30 + stdDev * 40;
-    
-    this.metadata.set('totalCholesterol', Math.round(cholesterol));
-    this.metadata.set('triglycerides', Math.round(triglycerides));
-    this.metadata.set('confidence', Math.min(1, this.values.length / 30));
-  }
-  
-  /**
-   * Update hemoglobin metadata
-   */
-  private updateHemoglobinMetadata(): void {
-    if (this.values.length < 8) return;
-    
-    // Calculate hemoglobin based on signal characteristics
-    const avg = this.getAverage(8);
-    const min = this.getMinimum(8);
-    
-    // Base value with variations
-    const baseHemoglobin = 14;
-    const hemoglobin = baseHemoglobin + (avg - 0.5) * 2 + min;
-    
-    this.metadata.set('value', hemoglobin);
-  }
-  
-  /**
-   * Update hydration metadata
-   */
-  private updateHydrationMetadata(): void {
-    if (this.values.length < 8) return;
-    
-    // Calculate hydration based on signal characteristics
-    const avg = this.getAverage(8);
-    const max = this.getMaximum(8);
-    
-    // Base value with variations
-    const baseHydration = 70;
-    const hydration = baseHydration + (avg * 10) + (max * 5);
-    
-    this.metadata.set('value', Math.min(100, Math.round(hydration)));
-  }
-  
-  /**
-   * Get all values in the channel
-   */
-  public getValues(): number[] {
-    return [...this.values];
-  }
-  
-  /**
-   * Get the latest value
-   */
-  public getLatestValue(): number | undefined {
-    return this.values.length > 0 ? this.values[this.values.length - 1] : undefined;
   }
   
   /**
@@ -293,6 +125,20 @@ export class SignalChannel {
   }
   
   /**
+   * Get all values in the channel
+   */
+  public getValues(): number[] {
+    return [...this.values];
+  }
+  
+  /**
+   * Get the latest value
+   */
+  public getLatestValue(): number | undefined {
+    return this.values.length > 0 ? this.values[this.values.length - 1] : undefined;
+  }
+  
+  /**
    * Reset the channel
    */
   public reset(): void {
@@ -300,7 +146,7 @@ export class SignalChannel {
     this.metadata.clear();
     this.lastProcessTime = 0;
     
-    // Reinitialize default metadata
+    // Reinitialize default metadata to zeros
     this.initializeDefaultMetadata();
   }
   

@@ -1,7 +1,7 @@
-
 /**
  * Centralized Signal Processing Service
  * Manages multiple specialized signal channels for different vital signs
+ * ONLY processes real data, no simulations
  */
 import { SignalCoreProcessor, SignalProcessingConfig } from './SignalCoreProcessor';
 import { BehaviorSubject, Observable } from 'rxjs';
@@ -160,155 +160,192 @@ export class SignalProcessingService {
   }
   
   /**
-   * Process a frame from camera with improved finger detection logic
+   * Process a frame from the camera
+   * Extract ROI and calculate PPG signal
    */
   public processFrame(imageData: ImageData): ProcessedSignal | null {
     if (!this.isProcessing) return null;
     
-    // Simple red channel extraction for PPG signal
-    // In a real app, more sophisticated algorithms would be used
-    let redSum = 0;
-    let pixelCount = 0;
-    
-    // Process only the center region for better signal
-    const centerX = Math.floor(imageData.width / 2);
-    const centerY = Math.floor(imageData.height / 2);
-    const regionSize = Math.min(100, Math.min(imageData.width, imageData.height) / 3);
-    
-    for (let y = centerY - regionSize/2; y < centerY + regionSize/2; y++) {
-      for (let x = centerX - regionSize/2; x < centerX + regionSize/2; x++) {
-        if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
-          const idx = (y * imageData.width + x) * 4;
-          redSum += imageData.data[idx]; // Red channel
-          pixelCount++;
-        }
-      }
+    // Calculate PPG signal from image data
+    const roiData = this.extractROI(imageData);
+    if (!roiData) {
+      console.log("SignalProcessingService: Could not extract ROI");
+      return null;
     }
     
-    // Calculate average red value and normalize to 0-1
-    const redAvg = pixelCount > 0 ? redSum / pixelCount / 255 : 0;
+    const { signal, quality, isFingerDetected, roi } = roiData;
     
-    // More permissive finger detection logic (lower threshold)
-    // We're detecting finger presence with a more lenient algorithm
-    const isFingerDetected = redAvg > this.MIN_RED_THRESHOLD && redAvg < this.MAX_RED_THRESHOLD;
+    // Process the extracted signal
+    const processedSignal = this.processSignal(signal, quality, isFingerDetected);
     
-    // Debug log key values
-    console.log("Frame processing:", {
-      redAvg, 
-      isFingerDetected,
-      minThreshold: this.MIN_RED_THRESHOLD, 
-      maxThreshold: this.MAX_RED_THRESHOLD
-    });
-    
-    // Improved quality estimation
-    let quality = 0;
-    if (isFingerDetected) {
-      // Optimize the quality calculation to be more linear and generous
-      // Higher starting quality to give measurements a better chance
-      const optimalBrightness = 0.4;
-      const distance = Math.abs(redAvg - optimalBrightness);
-      const maxDistance = 0.3;
-      quality = Math.max(30, Math.round((1 - Math.min(distance, maxDistance) / maxDistance) * 100));
+    if (processedSignal) {
+      processedSignal.roi = roi;
     }
     
-    return this.processSignal(redAvg, quality, isFingerDetected);
+    return processedSignal;
   }
   
   /**
-   * Get stable finger detection status using a buffer
-   * to avoid flicker - modified to be more sensitive
+   * Extract ROI from image and calculate PPG signal
+   * Uses real-time analysis of the red channel for finger detection
    */
-  private getStableFingerDetection(currentStatus: boolean): boolean {
-    this.fingerDetectionBuffer.push(currentStatus);
-    if (this.fingerDetectionBuffer.length > 5) {
+  private extractROI(imageData: ImageData): { 
+    signal: number; 
+    quality: number; 
+    isFingerDetected: boolean;
+    roi: { x: number; y: number; width: number; height: number; }
+  } | null {
+    try {
+      // Focus on the center portion of the image
+      const centerX = Math.floor(imageData.width / 2);
+      const centerY = Math.floor(imageData.height / 2);
+      const roiSize = Math.min(80, Math.floor(Math.min(imageData.width, imageData.height) * 0.25));
+      
+      const roi = {
+        x: Math.max(0, centerX - roiSize / 2),
+        y: Math.max(0, centerY - roiSize / 2),
+        width: roiSize,
+        height: roiSize
+      };
+      
+      let totalRed = 0;
+      let totalGreen = 0;
+      let totalBlue = 0;
+      let pixelCount = 0;
+      
+      // Extract RGB values from ROI
+      for (let y = roi.y; y < roi.y + roi.height; y++) {
+        for (let x = roi.x; x < roi.x + roi.width; x++) {
+          const idx = (y * imageData.width + x) * 4;
+          
+          if (idx >= 0 && idx < imageData.data.length - 3) {
+            const r = imageData.data[idx];
+            const g = imageData.data[idx + 1];
+            const b = imageData.data[idx + 2];
+            
+            totalRed += r;
+            totalGreen += g;
+            totalBlue += b;
+            pixelCount++;
+          }
+        }
+      }
+      
+      if (pixelCount === 0) {
+        console.log("SignalProcessingService: No pixels in ROI");
+        return null;
+      }
+      
+      // Calculate average color values in ROI
+      const avgRed = totalRed / pixelCount / 255;
+      const avgGreen = totalGreen / pixelCount / 255;
+      const avgBlue = totalBlue / pixelCount / 255;
+      
+      // Check if a finger is detected based on red channel
+      // Fingers cause high red values when illuminated by flash
+      const isFingerDetected = avgRed > this.MIN_RED_THRESHOLD && avgRed < this.MAX_RED_THRESHOLD;
+      
+      // Use smoothed red channel as PPG signal
+      const signal = avgRed;
+      
+      // Calculate signal quality based on signal stability
+      // This is a real measure of the signal quality
+      const quality = this.calculateFrameQuality(avgRed, avgGreen, avgBlue);
+      
+      return { signal, quality, isFingerDetected, roi };
+    } catch (error) {
+      console.error("SignalProcessingService: Error extracting ROI", error);
+      return null;
+    }
+  }
+  
+  /**
+   * Calculate quality of the frame data
+   * Based on real signal characteristics
+   */
+  private calculateFrameQuality(red: number, green: number, blue: number): number {
+    // Calculate quality based on color balance and range
+    // A finger on the camera with proper illumination has specific characteristics
+    
+    // Check if red channel is dominant (typical for PPG)
+    const redDominance = red / (green + blue + 0.001);
+    
+    // Calculate standard PPG quality score (0-100)
+    let quality = 0;
+    
+    // Red should be higher than other channels but not saturated
+    if (red > 0.1 && red < 0.95 && redDominance > 1.0) {
+      quality = 50 + (redDominance - 1.0) * 25;
+    }
+    
+    return Math.min(100, Math.max(0, quality));
+  }
+  
+  /**
+   * Get stable finger detection status by averaging recent detections
+   */
+  private getStableFingerDetection(current: boolean): boolean {
+    // Keep a buffer of recent detections for stability
+    this.fingerDetectionBuffer.push(current);
+    
+    // Limit buffer size
+    if (this.fingerDetectionBuffer.length > 10) {
       this.fingerDetectionBuffer.shift();
     }
     
-    // Count true values in buffer - more sensitive logic
-    const trueCount = this.fingerDetectionBuffer.filter(Boolean).length;
+    // Calculate the percentage of positive detections
+    const positiveRatio = this.fingerDetectionBuffer.filter(d => d).length / 
+                          Math.max(1, this.fingerDetectionBuffer.length);
     
-    // More sensitive thresholds - we only need 2/5 true values to consider a finger detected
-    // This improves detection especially at the beginning of measurements
-    if (trueCount >= 2) {
-      return true;
-    } else if (trueCount === 0) {
-      return false;
-    } else {
-      // Maintain previous state for borderline cases
-      return this.metricsSubject.value.fingerDetected;
-    }
+    // Return true if more than 50% of recent frames detected a finger
+    return positiveRatio > 0.5;
   }
   
   /**
-   * Get observable for processed signals
+   * Get the signal observable for subscribing to processed signals
    */
   public getSignalObservable(): Observable<ProcessedSignal | null> {
     return this.processingSubject.asObservable();
   }
   
   /**
-   * Get observable for processing metrics
+   * Get the metrics observable for subscribing to processing metrics
    */
   public getMetricsObservable(): Observable<ProcessingMetrics> {
     return this.metricsSubject.asObservable();
   }
   
   /**
-   * Get the last processed signal
+   * Get metrics snapshot
    */
-  public getLastSignal(): ProcessedSignal | null {
-    return this.processingSubject.value;
+  public getMetrics(): ProcessingMetrics {
+    return this.metricsSubject.value;
   }
   
   /**
-   * Get all channels data
-   */
-  public getAllChannels(): Map<string, ChannelData> {
-    const channelsData = new Map<string, ChannelData>();
-    
-    const processorChannels = this.processor.getAllChannels();
-    processorChannels.forEach((channel, name) => {
-      channelsData.set(name, {
-        name,
-        values: channel.getValues(),
-        metadata: channel.getAllMetadata()
-      });
-    });
-    
-    return channelsData;
-  }
-  
-  /**
-   * Get a specific channel
-   */
-  public getChannel(name: string): ChannelData | undefined {
-    const channel = this.processor.getChannel(name);
-    if (!channel) return undefined;
-    
-    return {
-      name,
-      values: channel.getValues(),
-      metadata: channel.getAllMetadata()
-    };
-  }
-  
-  /**
-   * Reset all processing state
+   * Reset the processor
    */
   public reset(): void {
     console.log("SignalProcessingService: Resetting processor");
     this.processor.reset();
     this.fingerDetectionBuffer = [];
     this.processingSubject.next(null);
-    this.metricsSubject.next({
-      fps: 0,
-      quality: 0,
-      fingerDetected: false,
-      startTime: this.isProcessing ? Date.now() : null,
-      processedFrames: 0
-    });
+  }
+  
+  /**
+   * Get a signal channel by name
+   */
+  public getChannel(name: string): SignalChannel | undefined {
+    return this.processor.getChannel(name);
+  }
+  
+  /**
+   * Get all channels
+   */
+  public getAllChannels(): Map<string, SignalChannel> {
+    return this.processor.getAllChannels();
   }
 }
 
-// Export singleton instance for easy imports
+// Create singleton instance
 export const signalProcessingService = SignalProcessingService.getInstance();

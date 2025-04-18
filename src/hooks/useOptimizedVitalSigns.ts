@@ -1,6 +1,7 @@
 
 /**
  * Hook for optimized vital signs processing using specialized channels
+ * ONLY uses real data, no simulations or placeholder values
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSignalProcessing } from './useSignalProcessing';
@@ -64,42 +65,38 @@ export function useOptimizedVitalSigns() {
       bp: bpChannel?.metadata
     });
     
-    // Extract heart rate
-    const heartRate = heartbeatChannel?.metadata?.heartRate || 0;
+    // Only use real measured values, zero if not available
+    const heartRate = heartbeatChannel?.getMetadata('heartRate') || 0;
+    const spo2 = spo2Channel?.getMetadata('spo2') || 0;
     
-    // Extract SpO2 - use min default value of 92 if not enough signal
-    // This ensures we get an initial reading rather than showing 0
-    const spo2 = spo2Channel?.metadata?.spo2 || 92;
-    
-    // Extract blood pressure with sane defaults if not yet calculated
-    // Using typical defaults for early display
-    const systolic = bpChannel?.metadata?.systolic || 120;
-    const diastolic = bpChannel?.metadata?.diastolic || 80;
+    // Blood pressure - use zeros if not calculated
+    const systolic = bpChannel?.getMetadata('systolic') || 0;
+    const diastolic = bpChannel?.getMetadata('diastolic') || 0;
     const pressure = (systolic > 0 && diastolic > 0) ? 
-      `${Math.round(systolic)}/${Math.round(diastolic)}` : "120/80";
+      `${Math.round(systolic)}/${Math.round(diastolic)}` : "--/--";
     
-    // Extract arrhythmia status
-    const arrhythmiaStatus = arrhythmiaChannel?.metadata?.status || "--";
-    const arrhythmiaCount = arrhythmiaChannel?.metadata?.count || 0;
-    const lastArrhythmiaData = arrhythmiaChannel?.metadata?.lastEvent || null;
+    // Arrhythmia - use real values only
+    const arrhythmiaStatus = arrhythmiaChannel?.getMetadata('status') || "--";
+    const arrhythmiaCount = arrhythmiaChannel?.getMetadata('count') || 0;
+    const lastArrhythmiaData = arrhythmiaChannel?.getMetadata('lastEvent') || null;
     
-    // Extract glucose with default
-    const glucose = glucoseChannel?.metadata?.glucose || 90;
-    const glucoseConfidence = glucoseChannel?.metadata?.confidence || 0.5;
+    // Glucose - use real values only
+    const glucose = glucoseChannel?.getMetadata('glucose') || 0;
+    const glucoseConfidence = glucoseChannel?.getMetadata('confidence') || 0;
     
-    // Extract lipids with defaults
-    const totalCholesterol = lipidsChannel?.metadata?.totalCholesterol || 180;
-    const triglycerides = lipidsChannel?.metadata?.triglycerides || 140;
-    const lipidsConfidence = lipidsChannel?.metadata?.confidence || 0.5;
+    // Lipids - use real values only
+    const totalCholesterol = lipidsChannel?.getMetadata('totalCholesterol') || 0;
+    const triglycerides = lipidsChannel?.getMetadata('triglycerides') || 0;
+    const lipidsConfidence = lipidsChannel?.getMetadata('confidence') || 0;
     
-    // Extract hemoglobin
-    const hemoglobin = hemoglobinChannel?.metadata?.value || 14;
+    // Hemoglobin - use real values only
+    const hemoglobin = hemoglobinChannel?.getMetadata('value') || 0;
     
-    // Extract hydration
-    const hydration = hydrationChannel?.metadata?.value || 70;
+    // Hydration - use real values only
+    const hydration = hydrationChannel?.getMetadata('value') || 0;
     
-    // Calculate overall confidence
-    const overallConfidence = Math.max(0.5, (glucoseConfidence + lipidsConfidence) / 2);
+    // Calculate overall confidence from real values
+    const overallConfidence = Math.max(0, (glucoseConfidence + lipidsConfidence) / 2);
     
     // Calculate elapsed time
     const elapsed = startTimeRef.current ? Math.floor((now - startTimeRef.current) / 1000) : 0;
@@ -180,7 +177,7 @@ export function useOptimizedVitalSigns() {
   
   return {
     vitalSigns,
-    heartRate: getChannel('heartbeat')?.metadata?.heartRate || 0,
+    heartRate: getChannel('heartbeat')?.getMetadata('heartRate') || 0,
     startMonitoring,
     stopMonitoring,
     isMonitoring: processingIntervalRef.current !== null,
