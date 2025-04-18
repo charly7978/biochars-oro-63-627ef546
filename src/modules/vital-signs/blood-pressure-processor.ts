@@ -1,293 +1,58 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 
+/**
+ * Procesador de presión arterial que usa modelo neuronal para análisis directo
+ */
 export class BloodPressureProcessor {
-  // Optimización de parámetros para mayor precisión
-  private readonly BP_BUFFER_SIZE = 20;  // Aumentado para mejor estabilidad
-  private readonly MEDIAN_WEIGHT = 0.7;  // Mayor peso a la mediana
-  private readonly MEAN_WEIGHT = 0.3;    // Menor peso al promedio
-  
-  private systolicBuffer: number[] = [];
-  private diastolicBuffer: number[] = [];
-  
-  // Rangos fisiológicos ajustados
-  private readonly MIN_SYSTOLIC = 70;
-  private readonly MAX_SYSTOLIC = 200;
-  private readonly MIN_DIASTOLIC = 40;
-  private readonly MAX_DIASTOLIC = 130;
-  private readonly MIN_PULSE_PRESSURE = 20;
-  private readonly MAX_PULSE_PRESSURE = 100;
-  
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001;
-  private readonly MIN_PEAK_COUNT = 2;
-  private readonly MIN_FPS = 30;  // Aumentado para mejor muestreo
-  
-  private lastCalculationTime: number = 0;
-  private forceRecalculationInterval: number = 1500; // Reducido para actualización más frecuente
+  private lastValidPeakValue: number = 0;
+  private lastValidValleyValue: number = 0;
+  private neuralModel: BloodPressureNeuralModel;
 
-  /**
-   * Calculates blood pressure using PPG signal features directly
-   * No simulation or reference values - direct measurement only
-   */
-  public calculateBloodPressure(values: number[]): {
-    systolic: number;
-    diastolic: number;
-  } {
-    try {
-      const currentTime = Date.now();
-      
-      // Validación mejorada de señal
-      if (!this.validateSignal(values)) {
-        return this.getLastValidOrDefault();
-      }
-
-      // Análisis de picos mejorado
-      const { peakIndices, valleyIndices } = this.findPeaksAndValleys(values);
-      
-      if (!this.validatePeaks(peakIndices)) {
-        return this.getLastValidOrDefault();
-      }
-
-      // Cálculo de PTT optimizado
-      const pttValues = this.calculatePTTValues(peakIndices);
-      
-      if (pttValues.length < 2) {
-        return this.getLastValidOrDefault();
-      }
-
-      // Cálculo mejorado de presión
-      const { systolic, diastolic } = this.calculatePressureValues(pttValues, values);
-
-      // Actualizar buffers
-      this.updateBuffers(systolic, diastolic);
-
-      // Calcular valores finales con ponderación optimizada
-      const result = this.calculateFinalValues();
-
-      this.lastCalculationTime = currentTime;
-      
-      return {
-        systolic: Math.round(result.finalSystolic),
-        diastolic: Math.round(result.finalDiastolic)
-      };
-    } catch (error) {
-      console.error('Error en cálculo de presión arterial:', error);
-      return this.getLastValidOrDefault();
-    }
-  }
-
-  private validateSignal(values: number[]): boolean {
-    if (!values || values.length < 100) return false;
-    
-    const amplitude = Math.max(...values) - Math.min(...values);
-    return amplitude >= this.MIN_SIGNAL_AMPLITUDE;
-  }
-
-  private validatePeaks(peakIndices: number[]): boolean {
-    return peakIndices.length >= this.MIN_PEAK_COUNT;
-  }
-
-  private calculatePTTValues(peakIndices: number[]): number[] {
-    const msPerSample = 1000 / this.MIN_FPS;
-    const pttValues: number[] = [];
-    
-    for (let i = 1; i < peakIndices.length; i++) {
-      const dt = (peakIndices[i] - peakIndices[i - 1]) * msPerSample;
-      if (dt >= 200 && dt <= 2000) {
-        pttValues.push(dt);
-      }
-    }
-    
-    return pttValues;
-  }
-
-  private calculatePressureValues(pttValues: number[], values: number[]): {
-    systolic: number;
-    diastolic: number;
-  } {
-    // Filtrar outliers
-    const filteredPTT = this.filterOutliers(pttValues);
-    
-    // Calcular PTT promedio ponderado
-    const weightedPTT = this.calculateWeightedPTT(filteredPTT);
-    
-    // Calcular presión basada en PTT y amplitud
-    const amplitude = this.calculateAmplitude(values);
-    
-    const systolic = this.calculateSystolic(weightedPTT, amplitude);
-    const diastolic = this.calculateDiastolic(weightedPTT, amplitude);
-    
-    return { systolic, diastolic };
-  }
-
-  private calculateSystolic(ptt: number, amplitude: number): number {
-    const base = 120;
-    const pttFactor = (1000 - ptt) * 0.1;
-    const ampFactor = amplitude * 0.3;
-    
-    return this.constrainValue(
-      base + pttFactor + ampFactor,
-      this.MIN_SYSTOLIC,
-      this.MAX_SYSTOLIC
-    );
-  }
-
-  private calculateDiastolic(ptt: number, amplitude: number): number {
-    const base = 80;
-    const pttFactor = (1000 - ptt) * 0.05;
-    const ampFactor = amplitude * 0.15;
-    
-    return this.constrainValue(
-      base + pttFactor + ampFactor,
-      this.MIN_DIASTOLIC,
-      this.MAX_DIASTOLIC
-    );
-  }
-
-  private constrainValue(value: number, min: number, max: number): number {
-    return Math.min(max, Math.max(min, value));
+  constructor() {
+    this.neuralModel = new BloodPressureNeuralModel();
   }
 
   /**
-   * Returns the last valid BP values from buffer or default values
+   * Calcula la presión arterial usando el modelo neuronal y valores PPG reales
    */
-  private getLastValidOrDefault(): { systolic: number, diastolic: number } {
-    if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
-      return {
-        systolic: Math.round(this.systolicBuffer[this.systolicBuffer.length - 1]),
-        diastolic: Math.round(this.diastolicBuffer[this.diastolicBuffer.length - 1])
+  public calculateBloodPressure(ppgSignal: number[]): { systolic: number; diastolic: number } {
+    if (!ppgSignal || ppgSignal.length < 2) {
+      return { 
+        systolic: this.lastValidPeakValue, 
+        diastolic: this.lastValidValleyValue 
       };
     }
-    return { systolic: 110, diastolic: 70 }; // Default starting point
-  }
-  
-  /**
-   * Calculate median of an array
-   */
-  private calculateMedian(sortedArray: number[]): number {
-    if (sortedArray.length === 0) return 0;
+
+    // Obtener picos y valles reales de la señal PPG sin manipulación
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgSignal);
     
-    const medianIndex = Math.floor(sortedArray.length / 2);
-    return sortedArray.length % 2 === 0
-      ? (sortedArray[medianIndex - 1] + sortedArray[medianIndex]) / 2
-      : sortedArray[medianIndex];
-  }
-  
-  /**
-   * Filter outliers using IQR method with configurable threshold
-   */
-  private filterOutliers(values: number[], iqrThreshold: number = 1.5): number[] {
-    if (values.length < 4) return values;
-    
-    const sortedValues = [...values].sort((a, b) => a - b);
-    const q1Index = Math.floor(sortedValues.length / 4);
-    const q3Index = Math.floor(3 * sortedValues.length / 4);
-    const q1 = sortedValues[q1Index];
-    const q3 = sortedValues[q3Index];
-    const iqr = q3 - q1;
-    const lowerBound = q1 - iqrThreshold * iqr;
-    const upperBound = q3 + iqrThreshold * iqr;
-    
-    return values.filter(val => val >= lowerBound && val <= upperBound);
-  }
-  
-  /**
-   * Calculate weighted PTT value with more recent values having higher weight
-   */
-  private calculateWeightedPTT(filteredPTT: number[]): number {
-    if (filteredPTT.length < 1) return 0;
-    
-    let weightSum = 0;
-    let weightedSum = 0;
-    
-    filteredPTT.forEach((val, idx) => {
-      const weight = Math.pow(1.5, idx) / filteredPTT.length;
-      weightedSum += val * weight;
-      weightSum += weight;
-    });
-    
-    return weightSum > 0 ? weightedSum / weightSum : 0;
-  }
-  
-  /**
-   * Calculate final blood pressure values using median and mean
-   * for greater stability and noise rejection
-   */
-  private calculateFinalValues(): { finalSystolic: number, finalDiastolic: number } {
-    if (this.systolicBuffer.length === 0) {
-      return { finalSystolic: 110, finalDiastolic: 70 }; // Default values if empty
+    if (peakIndices.length === 0 || valleyIndices.length === 0) {
+      return { 
+        systolic: this.lastValidPeakValue, 
+        diastolic: this.lastValidValleyValue 
+      };
     }
+
+    // Usar el modelo neuronal para procesar la señal PPG
+    const prediction = this.neuralModel.predict(ppgSignal);
     
-    // 1. Calculate medians
-    const sortedSystolic = [...this.systolicBuffer].sort((a, b) => a - b);
-    const sortedDiastolic = [...this.diastolicBuffer].sort((a, b) => a - b);
-    
-    const systolicMedian = this.calculateMedian(sortedSystolic);
-    const diastolicMedian = this.calculateMedian(sortedDiastolic);
-    
-    // 2. Calculate averages
-    const systolicMean = this.systolicBuffer.reduce((sum, val) => sum + val, 0) / this.systolicBuffer.length;
-    const diastolicMean = this.diastolicBuffer.reduce((sum, val) => sum + val, 0) / this.diastolicBuffer.length;
-    
-    // 3. Apply weighting between median and average
-    let finalSystolic = (systolicMedian * this.MEDIAN_WEIGHT) + (systolicMean * this.MEAN_WEIGHT);
-    let finalDiastolic = (diastolicMedian * this.MEDIAN_WEIGHT) + (diastolicMean * this.MEAN_WEIGHT);
-    
-    // 4. Verify pressure differential in final result
-    const finalDifferential = finalSystolic - finalDiastolic;
-    if (finalDifferential < this.MIN_PULSE_PRESSURE) {
-      finalDiastolic = finalSystolic - this.MIN_PULSE_PRESSURE;
-    } else if (finalDifferential > this.MAX_PULSE_PRESSURE) {
-      finalDiastolic = finalSystolic - this.MAX_PULSE_PRESSURE;
-    }
-    
-    // 5. Apply physiological limits one last time
-    finalSystolic = Math.max(this.MIN_SYSTOLIC, Math.min(this.MAX_SYSTOLIC, finalSystolic));
-    finalDiastolic = Math.max(this.MIN_DIASTOLIC, Math.min(this.MAX_DIASTOLIC, finalDiastolic));
-    
-    return { finalSystolic, finalDiastolic };
+    // Extraer valores de presión del resultado del modelo
+    this.lastValidPeakValue = prediction[0];  // Sistólica
+    this.lastValidValleyValue = prediction[1]; // Diastólica
+
+    // Retornar valores reales sin ningún tipo de ajuste o normalización
+    return {
+      systolic: this.lastValidPeakValue,
+      diastolic: this.lastValidValleyValue
+    };
   }
-  
+
   /**
-   * Reset the blood pressure processor state
+   * Reinicia el procesador a su estado inicial
    */
   public reset(): void {
-    this.systolicBuffer = [];
-    this.diastolicBuffer = [];
-    this.lastCalculationTime = 0;
-    console.log("BloodPressureProcessor: Reset completed");
-  }
-
-  private findPeaksAndValleys(values: number[]): { peakIndices: number[], valleyIndices: number[] } {
-    const peakIndices: number[] = [];
-    const valleyIndices: number[] = [];
-    
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > values[i-1] && values[i] > values[i+1]) {
-        peakIndices.push(i);
-      }
-      if (values[i] < values[i-1] && values[i] < values[i+1]) {
-        valleyIndices.push(i);
-      }
-    }
-    
-    return { peakIndices, valleyIndices };
-  }
-
-  private updateBuffers(systolic: number, diastolic: number): void {
-    this.systolicBuffer.push(systolic);
-    this.diastolicBuffer.push(diastolic);
-    
-    if (this.systolicBuffer.length > this.BP_BUFFER_SIZE) {
-      this.systolicBuffer.shift();
-      this.diastolicBuffer.shift();
-    }
-  }
-
-  private calculateAmplitude(values: number[]): number {
-    if (!values || values.length === 0) return 0;
-    
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    return max - min;
+    this.lastValidPeakValue = 0;
+    this.lastValidValleyValue = 0;
   }
 }
