@@ -1,3 +1,4 @@
+
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -8,7 +9,6 @@ import {
   TensorUtils,
   Tensor1D 
 } from './NeuralNetworkBase';
-import { PeakDetector } from '@/core/signal/PeakDetector';
 
 /**
  * Modelo neuronal para estimación de glucosa en sangre
@@ -40,8 +40,6 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
   // Importancia de diferentes características
   private featureWeights: number[] = [0.4, 0.25, 0.2, 0.15]; // Espectral, temporal, morfológico, perfusión
   
-  private peakDetector: PeakDetector;
-  
   constructor() {
     super(
       'GlucoseNeuralModel',
@@ -49,8 +47,6 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
       [1],   // Salida: nivel de glucosa (mg/dL)
       '1.5.0'
     );
-    
-    this.peakDetector = new PeakDetector();
     
     // Inicializar capas
     this.conv1 = new Conv1DLayer(1, 24, 15, 1, 'relu');
@@ -238,14 +234,9 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
     peakValleyRatio: number;
     areaUnderCurve: number;
   } {
-    // Usar el PeakDetector consolidado
-    const { peakIndices, valleyIndices } = this.peakDetector.detectPeaks(signal);
-    // Mapear índices a valores
-    const peaks = peakIndices; // Renombrar si se prefiere
-    const valleys = valleyIndices;
-    const peakValues = peakIndices.map(idx => signal[idx]);
-    const valleyValues = valleyIndices.map(idx => signal[idx]);
-
+    // Detectar picos y valles
+    const { peaks, valleys } = this.findPeaksAndValleys(signal);
+    
     if (peaks.length < 2 || valleys.length < 2) {
       return {
         riseFallRatio: 1.0,
@@ -254,90 +245,76 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
         areaUnderCurve: 0.5
       };
     }
-
+    
     // Calcular tiempos de subida y bajada
     let avgRiseTime = 0;
     let avgFallTime = 0;
-    let validPairs = 0;
-
-    for (let i = 0; i < Math.min(peaks.length, valleys.length); i++) {
-        // Asumimos un patrón valle -> pico -> (siguiente valle)
-        const currentPeakIdx = peaks[i];
-        // Encontrar valle anterior más cercano
-        const prevValleyIdx = valleys.filter(vIdx => vIdx < currentPeakIdx).pop(); // Último valle antes del pico
-        // Encontrar valle posterior más cercano
-        const nextValleyIdx = valleys.find(vIdx => vIdx > currentPeakIdx); // Primer valle después del pico
-
-        if (prevValleyIdx !== undefined && nextValleyIdx !== undefined) {
-            avgRiseTime += currentPeakIdx - prevValleyIdx;
-            avgFallTime += nextValleyIdx - currentPeakIdx;
-            validPairs++;
-        }
+    
+    for (let i = 0; i < Math.min(peaks.length, valleys.length) - 1; i++) {
+      avgRiseTime += peaks[i] - valleys[i];
+      avgFallTime += valleys[i+1] - peaks[i];
     }
-
-    if (validPairs === 0) { 
-        return { riseFallRatio: 1.0, dicroticNotchHeight: 0.1, peakValleyRatio: 1.2, areaUnderCurve: 0.5 };
-    }
-
-    avgRiseTime /= validPairs;
-    avgFallTime /= validPairs;
-
-    const riseFallRatio = avgFallTime > 0 ? avgRiseTime / avgFallTime : 1;
-
+    
+    avgRiseTime /= Math.min(peaks.length, valleys.length) - 1;
+    avgFallTime /= Math.min(peaks.length, valleys.length) - 1;
+    
+    const riseFallRatio = avgRiseTime / avgFallTime;
+    
     // Calcular relación pico-valle
-    const peakAvg = peakValues.length > 0 ? peakValues.reduce((a, b) => a + b, 0) / peakValues.length : 0;
-    const valleyAvg = valleyValues.length > 0 ? valleyValues.reduce((a, b) => a + b, 0) / valleyValues.length : 0;
-    const peakValleyRatio = valleyAvg !== 0 ? Math.abs(peakAvg / valleyAvg) : 1;
-
-    // Buscar muesca dicrótica (lógica compleja, mantener por ahora, pero usa picos/valles)
+    let peakSum = 0;
+    let valleySum = 0;
+    
+    for (const peakIdx of peaks) {
+      peakSum += signal[peakIdx];
+    }
+    
+    for (const valleyIdx of valleys) {
+      valleySum += signal[valleyIdx];
+    }
+    
+    const peakAvg = peakSum / peaks.length;
+    const valleyAvg = valleySum / valleys.length;
+    const peakValleyRatio = Math.abs(peakAvg / (valleyAvg || 0.001));
+    
+    // Buscar muesca dicrótica
     let dicroticNotchHeight = 0;
+    
     for (let i = 0; i < peaks.length - 1; i++) {
       const start = peaks[i];
-      // Encontrar el siguiente valle después del pico actual
-      const endValleyIdx = valleys.find(vIdx => vIdx > start);
-      if (endValleyIdx === undefined) continue;
-      const end = endValleyIdx;
-
+      const end = valleys[i+1] || signal.length - 1;
+      
       if (end - start < 5) continue;
-
+      
+      // Buscar muesca dicrótica en la fase de descenso
       let minSecondDeriv = 0;
       let notchHeight = 0;
-      let potentialNotchIdx = -1;
-
+      
       for (let j = start + 2; j < end - 2; j++) {
-        if (j-2 < 0 || j+2 >= signal.length) continue; // Bounds check
         const secondDeriv = signal[j-2] - 2 * signal[j] + signal[j+2];
-
-        // Buscamos un mínimo local en la segunda derivada (punto de inflexión)
-        if (secondDeriv < minSecondDeriv) { // Podría necesitar ajustes
+        
+        if (secondDeriv < minSecondDeriv) {
           minSecondDeriv = secondDeriv;
-          potentialNotchIdx = j;
+          notchHeight = (signal[start] - signal[j]) / (signal[start] - signal[end]);
         }
       }
-      // Calcular altura relativa si se encontró un punto de inflexión potencial
-      if(potentialNotchIdx !== -1 && start < signal.length && end < signal.length) {
-          const peakVal = signal[start];
-          const valleyVal = signal[end];
-          if(peakVal - valleyVal !== 0) {
-              notchHeight = (signal[potentialNotchIdx] - valleyVal) / (peakVal - valleyVal);
-              dicroticNotchHeight += Math.max(0, Math.min(1, notchHeight)); // Acotar entre 0 y 1
-          }
-      }
+      
+      dicroticNotchHeight += notchHeight;
     }
-    dicroticNotchHeight = peaks.length > 1 ? dicroticNotchHeight / (peaks.length - 1) : 0;
-
+    
+    dicroticNotchHeight /= peaks.length;
+    
     // Calcular área bajo la curva
     let areaUnderCurve = 0;
     for (let i = 0; i < signal.length; i++) {
       areaUnderCurve += Math.max(0, signal[i]); // Solo área positiva
     }
     areaUnderCurve /= signal.length;
-
+    
     return {
-      riseFallRatio: isNaN(riseFallRatio) ? 1.0 : Math.max(0.1, Math.min(5, riseFallRatio)),
-      dicroticNotchHeight: isNaN(dicroticNotchHeight) ? 0.1 : Math.max(0, Math.min(1, dicroticNotchHeight)),
-      peakValleyRatio: isNaN(peakValleyRatio) ? 1.2 : Math.max(1, Math.min(5, peakValleyRatio)),
-      areaUnderCurve: isNaN(areaUnderCurve) ? 0.5 : Math.max(0, Math.min(1, areaUnderCurve))
+      riseFallRatio,
+      dicroticNotchHeight,
+      peakValleyRatio,
+      areaUnderCurve
     };
   }
   
@@ -460,6 +437,38 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
       dominantFrequency,
       spectralEntropy
     };
+  }
+  
+  /**
+   * Encuentra picos y valles en la señal
+   */
+  private findPeaksAndValleys(signal: Tensor1D): { peaks: number[]; valleys: number[] } {
+    const peaks: number[] = [];
+    const valleys: number[] = [];
+    const minDistance = 10; // Mínima distancia entre picos
+    
+    // Detectar picos y valles
+    for (let i = 1; i < signal.length - 1; i++) {
+      // Es un pico
+      if (signal[i] > signal[i-1] && signal[i] > signal[i+1]) {
+        if (peaks.length === 0 || i - peaks[peaks.length-1] >= minDistance) {
+          peaks.push(i);
+        } else if (signal[i] > signal[peaks[peaks.length-1]]) {
+          peaks[peaks.length-1] = i; // Reemplazar con pico más alto
+        }
+      }
+      
+      // Es un valle
+      if (signal[i] < signal[i-1] && signal[i] < signal[i+1]) {
+        if (valleys.length === 0 || i - valleys[valleys.length-1] >= minDistance) {
+          valleys.push(i);
+        } else if (signal[i] < signal[valleys[valleys.length-1]]) {
+          valleys[valleys.length-1] = i; // Reemplazar con valle más bajo
+        }
+      }
+    }
+    
+    return { peaks, valleys };
   }
   
   private nextPowerOf2(n: number): number {
