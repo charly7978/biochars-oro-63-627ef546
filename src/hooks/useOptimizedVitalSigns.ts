@@ -1,3 +1,4 @@
+
 /**
  * Hook for optimized vital signs processing
  * Integrates signal optimization with vital signs calculations
@@ -24,7 +25,7 @@ export function useOptimizedVitalSigns() {
   
   // Use the optimized signals hook
   const {
-    processValue,
+    processValue: processOptimizedValue,
     startProcessing: startSignalProcessing,
     stopProcessing: stopSignalProcessing,
     provideResults,
@@ -75,7 +76,7 @@ export function useOptimizedVitalSigns() {
     
     try {
       // Process the raw signal with optimization
-      const processedSignal = processValue(value);
+      const processedSignal = processOptimizedValue(value);
       processedFramesRef.current++;
       
       // Only calculate vital signs every 10 frames for efficiency
@@ -136,7 +137,7 @@ export function useOptimizedVitalSigns() {
     signalQuality, 
     optimizationStats, 
     provideResults,
-    processValue
+    processOptimizedValue
   ]);
   
   /**
