@@ -7,6 +7,8 @@
  * - "Novel approaches to non-invasive lipid measurement" (Mayo Clinic Proceedings, 2019)
  * - "Correlation between hemodynamic parameters and serum lipid profiles" (2018)
  */
+import { PeakDetector } from '@/core/signal/PeakDetector';
+
 export class LipidProcessor {
   // Valores de referencia fisiológicamente relevantes
   private readonly MIN_CHOLESTEROL = 130; // Mínimo fisiológico (mg/dL)
@@ -37,6 +39,13 @@ export class LipidProcessor {
   private lastCholesterolEstimate: number = 170; // Valor basal conservador
   private lastTriglyceridesEstimate: number = 100; // Valor basal conservador
   private confidenceScore: number = 0;
+  
+  private peakDetector: PeakDetector;
+  
+  constructor() {
+    this.peakDetector = new PeakDetector();
+    this.reset();
+  }
   
   /**
    * Calcula perfil lipídico basado en características de señal PPG
@@ -182,8 +191,11 @@ export class LipidProcessor {
     dicroticNotchHeight: number;
     elasticityIndex: number;
   } {
-    // Encontrar picos y valles con detección mejorada
-    const { peaks, troughs } = this.findPeaksAndTroughs(ppgValues);
+    // Usar PeakDetector consolidado
+    const { peakIndices, valleyIndices } = this.peakDetector.detectPeaks(ppgValues);
+    // Renombrar por consistencia interna de esta función si se prefiere
+    const peaks = peakIndices;
+    const troughs = valleyIndices;
     
     if (peaks.length < 2 || troughs.length < 2) {
       // Retornar características predeterminadas conservadoras si no hay suficientes picos
@@ -397,47 +409,42 @@ export class LipidProcessor {
    * Calcula puntuación de confianza para la estimación lipídica
    */
   private calculateConfidence(features: any, signal: number[]): number {
-    // Validar amplitud mínima de señal para mediciones confiables
     const range = Math.max(...signal) - Math.min(...signal);
     if (range < 0.05) {
-      return 0.1; // Señal demasiado débil
+      return 0.1;
     }
-    
-    // Calcular relación señal-ruido
+
     const mean = signal.reduce((a, b) => a + b, 0) / signal.length;
     const variance = signal.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / signal.length;
     const snr = variance > 0 ? mean / Math.sqrt(variance) : 0;
-    
-    // Verificar valores fisiológicamente implausibles
-    const implausibleFeatures = 
-      features.areaUnderCurve < 0.2 || 
+
+    const implausibleFeatures =
+      features.areaUnderCurve < 0.2 ||
       features.areaUnderCurve > 0.8 ||
       features.augmentationIndex < 0.1 ||
       features.augmentationIndex > 0.7;
-    
-    // Calcular puntuación de confianza final
-    let confidence = 0.7; // Comenzar con confianza moderada
-    
-    // Aplicar factores de reducción basados en indicadores de calidad
+
+    let confidence = 0.7;
+
     if (implausibleFeatures) confidence *= 0.5;
     if (snr < this.MIN_SNR) confidence *= 0.6;
-    
-    // Criterio adicional: consistencia de intervalos de pulso
-    const { peaks } = this.findPeaksAndTroughs(signal);
+
+    // Usar PeakDetector para obtener picos para cálculo de confianza
+    const { peakIndices } = this.peakDetector.detectPeaks(signal);
+    const peaks = peakIndices; // Renombrar para consistencia local
+
     if (peaks.length >= 3) {
       const intervals = [];
       for (let i = 1; i < peaks.length; i++) {
         intervals.push(peaks[i] - peaks[i-1]);
       }
-      
-      // Calcular desviación estándar de intervalos
+
       const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
       if (avgInterval > 0) {
         const intervalVariance = intervals.reduce((a, b) => a + Math.pow(b - avgInterval, 2), 0) / intervals.length;
         const intervalStdDev = Math.sqrt(intervalVariance);
         const coefficientOfVariation = intervalStdDev / avgInterval;
-        
-        // Alta variabilidad reduce confianza
+
         if (coefficientOfVariation > this.MAX_VARIATION) {
           confidence *= 0.7;
         }
@@ -445,11 +452,9 @@ export class LipidProcessor {
         confidence *= 0.6;
       }
     } else {
-      // Muy pocos picos detectados
       confidence *= 0.5;
     }
-    
-    // Limitar el rango de confianza para evitar valores extremos
+
     return Math.max(0.1, Math.min(0.9, confidence));
   }
   
@@ -462,6 +467,9 @@ export class LipidProcessor {
     this.confidenceScore = 0;
     this.cholesterolHistory = [];
     this.triglyceridesHistory = [];
+    if(this.peakDetector) { // Asegurar existencia
+        this.peakDetector.reset();
+    }
   }
   
   /**

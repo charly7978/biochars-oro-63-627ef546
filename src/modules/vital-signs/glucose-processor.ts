@@ -3,6 +3,8 @@
  * Calculates glucose levels directly from PPG signal characteristics
  * with no reliance on synthetic data or reference values
  */
+import { PeakDetector } from '@/core/signal/PeakDetector';
+
 export class GlucoseProcessor {
   private confidence: number = 0;
   private readonly MIN_SAMPLES = 20; // Increased required samples
@@ -24,10 +26,13 @@ export class GlucoseProcessor {
   // Flag to track if data quality is sufficient
   private hasQualityData: boolean = false;
   
+  private peakDetector: PeakDetector;
+  
   /**
    * Initialize the processor
    */
   constructor() {
+    this.peakDetector = new PeakDetector();
     this.reset();
   }
   
@@ -210,9 +215,13 @@ export class GlucoseProcessor {
     areaUnderCurve: number;
     signalVariability: number;
   } {
-    // Calculate amplitude (AC component) with improved peak detection
-    const { peakValues, valleyValues } = this.findPeaksAndValleys(values);
-    
+    // Usar PeakDetector para obtener picos y valles
+    const { peakIndices, valleyIndices } = this.peakDetector.detectPeaks(values);
+
+    // Mapear índices a valores si es necesario
+    const peakValues = peakIndices.map(idx => values[idx]);
+    const valleyValues = valleyIndices.map(idx => values[idx]);
+
     let amplitude = 0;
     if (peakValues.length > 0 && valleyValues.length > 0) {
       const avgPeak = peakValues.reduce((sum, val) => sum + val, 0) / peakValues.length;
@@ -232,7 +241,7 @@ export class GlucoseProcessor {
     
     // Calculate frequency through zero crossings with improved algorithm
     let crossings = 0;
-    let lastSign = values[0] > avg;
+    let lastSign = values.length > 0 ? values[0] > avg : true;
     for (let i = 1; i < values.length; i++) {
       const currentSign = values[i] > avg;
       if (currentSign !== lastSign) {
@@ -251,7 +260,9 @@ export class GlucoseProcessor {
       for (let i = 0; i < values.length - lag; i++) {
         correlation += (values[i] - avg) * (values[i + lag] - avg);
       }
-      correlation /= (values.length - lag);
+      if (values.length - lag > 0) { // Evitar división por cero
+         correlation /= (values.length - lag);
+      }
       if (correlation > maxCorrelation) {
         maxCorrelation = correlation;
         phase = lag / values.length;
@@ -272,30 +283,6 @@ export class GlucoseProcessor {
       areaUnderCurve,
       signalVariability: variability
     };
-  }
-  
-  /**
-   * Find peaks and valleys in the signal for better amplitude calculation
-   */
-  private findPeaksAndValleys(values: number[]): { peakValues: number[], valleyValues: number[] } {
-    const peakValues: number[] = [];
-    const valleyValues: number[] = [];
-    
-    // We need at least 3 points to find peaks and valleys
-    if (values.length < 3) return { peakValues, valleyValues };
-    
-    for (let i = 1; i < values.length - 1; i++) {
-      // Peak detection (local maximum)
-      if (values[i] > values[i-1] && values[i] > values[i+1]) {
-        peakValues.push(values[i]);
-      }
-      // Valley detection (local minimum)
-      if (values[i] < values[i-1] && values[i] < values[i+1]) {
-        valleyValues.push(values[i]);
-      }
-    }
-    
-    return { peakValues, valleyValues };
   }
   
   /**
@@ -391,6 +378,9 @@ export class GlucoseProcessor {
     this.previousValues = [];
     this.lastCalculatedGlucose = 0;
     this.hasQualityData = false;
+    if (this.peakDetector) { // Asegurarse que peakDetector existe antes de resetear
+        this.peakDetector.reset();
+    }
     console.log("GlucoseProcessor: Reset complete");
   }
 }

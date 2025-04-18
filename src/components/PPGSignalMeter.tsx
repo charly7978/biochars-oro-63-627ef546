@@ -3,6 +3,7 @@ import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
+import { PeakDetector } from '@/core/signal/PeakDetector';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -332,72 +333,6 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
-  const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
-    if (points.length < PEAK_DETECTION_WINDOW) return;
-    
-    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
-    
-    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
-      const currentPoint = points[i];
-      
-      const recentlyProcessed = peaksRef.current.some(
-        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (recentlyProcessed) continue;
-      
-      let isPeak = true;
-      
-      for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
-        if (points[j].value >= currentPoint.value) {
-          isPeak = false;
-          break;
-        }
-      }
-      
-      if (isPeak) {
-        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
-          if (j < points.length && points[j].value > currentPoint.value) {
-            isPeak = false;
-            break;
-          }
-        }
-      }
-      
-      const isInArrhythmiaSegment = isPointInArrhythmiaSegment(currentPoint.time);
-      
-      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
-        potentialPeaks.push({
-          index: i,
-          value: currentPoint.value,
-          time: currentPoint.time,
-          isArrhythmia: isInArrhythmiaSegment || currentPoint.isArrhythmia || false
-        });
-      }
-    }
-    
-    for (const peak of potentialPeaks) {
-      const tooClose = peaksRef.current.some(
-        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
-      );
-      
-      if (!tooClose) {
-        peaksRef.current.push({
-          time: peak.time,
-          value: peak.value,
-          isArrhythmia: peak.isArrhythmia,
-          beepPlayed: false
-        });
-      }
-    }
-    
-    peaksRef.current.sort((a, b) => a.time - b.time);
-    
-    peaksRef.current = peaksRef.current
-      .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
-      .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY]);
-
   const updateArrhythmiaSegments = useCallback((isCurrentArrhythmia: boolean, now: number) => {
     if (isCurrentArrhythmia !== lastArrhythmiaStateRef.current) {
       if (isCurrentArrhythmia) {
@@ -505,10 +440,29 @@ const PPGSignalMeter = memo(({
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
-    detectPeaks(points, now);
-    
+
+    const valuesForDetection = points.map(p => p.value);
+    const peakResult = peakDetectorRef.current.detectPeaks(valuesForDetection);
+
+    peaksRef.current = peakResult.peakIndices.map(idx => {
+        const point = points[idx];
+        return {
+            time: point.time,
+            value: point.value,
+            isArrhythmia: point.isArrhythmia || false,
+            beepPlayed: false
+        };
+    }).filter(peak => now - peak.time < WINDOW_WIDTH_MS)
+      .slice(-MAX_PEAKS_TO_DISPLAY);
+
     let shouldBeep = false;
-    
+    if (peaksRef.current.length > 0) {
+        const lastDetectedPeak = peaksRef.current[peaksRef.current.length - 1];
+        if(lastDetectedPeak.time > lastBeepTimeRef.current + MIN_BEEP_INTERVAL_MS / 2) {
+            shouldBeep = true;
+        }
+    }
+
     if (points.length > 1) {
       renderCtx.beginPath();
       renderCtx.strokeStyle = '#0EA5E9';
@@ -576,11 +530,6 @@ const PPGSignalMeter = memo(({
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          
-          if (!peak.beepPlayed) {
-            shouldBeep = true;
-            peak.beepPlayed = true;
-          }
         }
       });
     }
@@ -594,17 +543,17 @@ const PPGSignalMeter = memo(({
     
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+      console.log("PPGSignalMeter: Pico detectado, intentando beep");
+      const isCurrentArrhythmiaForBeep = peaksRef.current.length > 0 ? peaksRef.current[peaksRef.current.length - 1].isArrhythmia : false;
+      playBeep(1.0, isCurrentArrhythmiaForBeep);
     }
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
-    value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
-    detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
-    isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
+    value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid,
+    smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments,
+    isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS,
     WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
   ]);
 
@@ -625,6 +574,7 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
+    peakDetectorRef.current.reset();
     onReset();
   }, [onReset]);
 

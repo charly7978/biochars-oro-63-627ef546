@@ -1,6 +1,5 @@
-import { calculateAmplitude, findPeaksAndValleys } from './utils';
-
-// Import the consolidated median calculation function
+import { calculateAmplitude } from '@/lib/utils';
+import { PeakDetector } from '@/core/signal/PeakDetector';
 import { calculateMedian } from '@/core/signal/filters/medianFilter';
 
 export class BloodPressureProcessor {
@@ -27,6 +26,12 @@ export class BloodPressureProcessor {
   // Keep track of last calculation time to prevent sticking
   private lastCalculationTime: number = 0;
   private forceRecalculationInterval: number = 2000; // Force recalculation every 2 seconds
+  private peakDetector: PeakDetector;
+
+  constructor() {
+    this.peakDetector = new PeakDetector();
+    // Asegúrate de que cualquier otra inicialización necesaria esté aquí
+  }
 
   /**
    * Calculates blood pressure using PPG signal features directly
@@ -72,7 +77,8 @@ export class BloodPressureProcessor {
       return this.getLastValidOrDefault();
     }
 
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+    // Usar el PeakDetector consolidado
+    const { peakIndices, valleyIndices } = this.peakDetector.detectPeaks(values);
     if (peakIndices.length < this.MIN_PEAK_COUNT) {
       console.log("BloodPressureProcessor: Not enough peaks detected", {
         peaksFound: peakIndices.length,
@@ -314,6 +320,7 @@ export class BloodPressureProcessor {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
     this.lastCalculationTime = 0;
+    this.peakDetector.reset(); // Resetear también el detector de picos
     console.log("BloodPressureProcessor: Reset completed");
   }
 }
