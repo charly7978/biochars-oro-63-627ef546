@@ -35,17 +35,12 @@ const VitalSign: React.FC<VitalSignProps> = ({
       className={cn(
         "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300",
         highlighted 
-          ? "bg-gray-900/60 border border-gray-700/40" 
-          : "bg-gray-900/40",
+          ? "bg-gray-900/80 border border-gray-800/50" 
+          : "bg-gray-100/20",
         compact ? "h-auto" : "h-full"
       )}
-      style={{
-        transition: "all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
-        transform: highlighted ? "translateY(0)" : "translateY(0)",
-        boxShadow: highlighted ? "0 0 15px rgba(0, 0, 0, 0.3)" : "none"
-      }}
     >
-      <div className="text-xs sm:text-sm font-medium text-gray-400 uppercase tracking-wide mb-1">
+      <div className="text-xs sm:text-sm font-medium text-gray-700 uppercase tracking-wide mb-1">
         {label}
       </div>
       
@@ -55,19 +50,15 @@ const VitalSign: React.FC<VitalSignProps> = ({
           "font-bold transition-colors duration-300",
           highlighted 
             ? "text-white" 
-            : "text-gray-300"
+            : "text-gray-700"
         )}
         style={{ 
-          animation: highlighted ? animations["result-animate"] : "none",
-          textShadow: highlighted ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
+          animation: highlighted ? animations["result-animate"] : "none" 
         }}
       >
         <span 
           className="inline-flex items-center"
-          style={{ 
-            animation: highlighted ? animations["number-highlight"] : "none",
-            transition: "all 0.6s ease-out"
-          }}
+          style={{ animation: highlighted ? animations["number-highlight"] : "none" }}
         >
           {value}
           {icon && <span className="ml-1">{icon}</span>}
