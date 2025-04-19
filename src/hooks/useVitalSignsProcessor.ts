@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -217,10 +216,8 @@ export const useVitalSignsProcessor = () => {
     optimizerManager.applyFeedback('bp', { 
       metricType: 'bp', 
       quality: 100, 
-      confidence: 1, 
-      manualOverride: true, 
+      confidence: 1.0 
     });
-    // Notificar calibración al usuario
     toast.success(`Calibración de presión arterial aplicada: ${systolic}/${diastolic} mmHg`);
   }, [optimizerManager]);
 
