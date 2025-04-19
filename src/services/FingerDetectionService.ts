@@ -44,6 +44,9 @@ class FingerDetectionService {
     minConsistentPatterns: 4
   };
 
+  private fingerDetectionWindow = 0;
+  private fingerDetected = false;
+
   private constructor() {
     this.validator = new SignalValidator();
     this.kalmanFilter = new KalmanFilter();
@@ -125,15 +128,31 @@ class FingerDetectionService {
     (this as any)._lastQuality = quality;
     quality = Math.round(quality * 100);
 
-    // Detección robusta de dedo
+    // Detección robusta de dedo (mejorada)
     const isFingerDetected = (
-      ampScore > 0.2 &&
-      periodicityScore > 0.2 &&
-      stabilityScore > 0.2 &&
+      ampScore > 0.35 && // umbral más estricto
+      periodicityScore > 0.35 && // umbral más estricto
+      stabilityScore > 0.35 && // umbral más estricto
       !isFlat &&
       !isSaturated &&
-      this.validator.isFingerDetected() // patrón rítmico consistente
+      noiseScore > 0.7 && // penaliza ruido alto
+      this.validator.isFingerDetected() // patrón rítmico consistente y fisiológico
     );
+
+    // Ventana de confirmación más larga
+    if (isFingerDetected) {
+      this.fingerDetectionWindow++;
+      if (this.fingerDetectionWindow > 75) this.fingerDetected = true; // 2.5s a 30Hz
+    } else {
+      this.fingerDetectionWindow = 0;
+      this.fingerDetected = false;
+    }
+
+    // Chequeo de caídas bruscas
+    if (recentSignals.length > 1 && (recentSignals[recentSignals.length-2] - recentSignals[recentSignals.length-1]) > 0.2) {
+      this.fingerDetectionWindow = 0;
+      this.fingerDetected = false;
+    }
 
     // Calcular confianza
     const confidence = (ampScore * 0.3 + periodicityScore * 0.3 + stabilityScore * 0.2 + noiseScore * 0.2) * flatPenalty * satPenalty;
@@ -226,6 +245,8 @@ class FingerDetectionService {
     this.bandpassFilter.reset();
     this.validator.resetFingerDetection();
     this.lastNotificationTime = 0;
+    this.fingerDetectionWindow = 0;
+    this.fingerDetected = false;
     console.log("FingerDetectionService: Reset completed");
   }
 }

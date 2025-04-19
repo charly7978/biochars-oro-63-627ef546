@@ -120,10 +120,10 @@ export class SignalValidator {
       }
       // Criterios fisiológicos robustos
       const patternDetected = (
-        peaks.length >= 3 &&
-        validIntervals.length >= 2 &&
-        periodicityScore > 0.2 &&
-        cv < 0.25 &&
+        peaks.length >= 4 &&
+        validIntervals.length >= 3 &&
+        periodicityScore > 0.35 &&
+        cv < 0.18 &&
         !isFlat &&
         !isSaturated
       );
