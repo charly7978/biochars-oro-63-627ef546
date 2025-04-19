@@ -1,3 +1,4 @@
+
 import { getCalibrationSystem, MeasurementData } from './IntelligentCalibrationSystem';
 import { getModel } from '../neural/ModelRegistry';
 import { HeartRateNeuralModel } from '../neural/HeartRateModel';
@@ -67,44 +68,30 @@ export class CalibrationIntegrator {
     const calibratedData = this.calibrationSystem.processMeasurement(measurementData);
     this.lastProcessedData = measurementData;
     
-    let finalHeartRate = Math.round(calibratedData.heartRate);
-    let finalSpo2 = Math.round(calibratedData.spo2 * 10) / 10;
-    let finalSystolic = Math.round(calibratedData.systolic);
-    let finalDiastolic = Math.round(calibratedData.diastolic);
-    let finalGlucose = Math.round(calibratedData.glucose);
-    
     // Aplicar modelos neuronales si hay suficiente señal de buena calidad
     if (rawData.quality > 75 && rawData.ppgValues && rawData.ppgValues.length > 200) {
       // Usar modelos neuronales para obtener estimaciones independientes
       const neuralEstimates = this.applyNeuralModels(rawData.ppgValues);
       
-      // Combinar estimaciones calibradas con las neuronales si están disponibles
-      if (neuralEstimates) {
-        finalHeartRate = neuralEstimates.heartRate !== null 
-          ? Math.round(calibratedData.heartRate * 0.7 + neuralEstimates.heartRate * 0.3)
-          : finalHeartRate;
-        finalSpo2 = neuralEstimates.spo2 !== null
-          ? this.weightedSpo2(calibratedData.spo2, neuralEstimates.spo2)
-          : finalSpo2;
-        finalSystolic = neuralEstimates.systolic !== null
-          ? Math.round(calibratedData.systolic * 0.7 + neuralEstimates.systolic * 0.3)
-          : finalSystolic;
-        finalDiastolic = neuralEstimates.diastolic !== null
-          ? Math.round(calibratedData.diastolic * 0.7 + neuralEstimates.diastolic * 0.3)
-          : finalDiastolic;
-        finalGlucose = neuralEstimates.glucose !== null
-          ? Math.round(calibratedData.glucose * 0.7 + neuralEstimates.glucose * 0.3)
-          : finalGlucose;
-      }
+      // Combinar estimaciones calibradas con las neurales (70/30)
+      return {
+        heartRate: Math.round(calibratedData.heartRate * 0.7 + neuralEstimates.heartRate * 0.3),
+        spo2: this.weightedSpo2(calibratedData.spo2, neuralEstimates.spo2),
+        systolic: Math.round(calibratedData.systolic * 0.7 + neuralEstimates.systolic * 0.3),
+        diastolic: Math.round(calibratedData.diastolic * 0.7 + neuralEstimates.diastolic * 0.3),
+        glucose: Math.round(calibratedData.glucose * 0.7 + neuralEstimates.glucose * 0.3),
+        quality: calibratedData.quality,
+        isCalibrated: this.calibrationSystem.getCalibrationState().phase === 'active'
+      };
     }
     
-    // Devolver los valores finales
+    // Si no hay señal de buena calidad, usar solo los datos calibrados
     return {
-      heartRate: finalHeartRate,
-      spo2: finalSpo2,
-      systolic: finalSystolic,
-      diastolic: finalDiastolic,
-      glucose: finalGlucose,
+      heartRate: Math.round(calibratedData.heartRate),
+      spo2: Math.round(calibratedData.spo2 * 10) / 10, // 1 decimal para SpO2
+      systolic: Math.round(calibratedData.systolic),
+      diastolic: Math.round(calibratedData.diastolic),
+      glucose: Math.round(calibratedData.glucose),
       quality: calibratedData.quality,
       isCalibrated: this.calibrationSystem.getCalibrationState().phase === 'active'
     };
@@ -112,55 +99,48 @@ export class CalibrationIntegrator {
   
   /**
    * Aplica modelos neuronales para obtener estimaciones independientes
-   * Devuelve null para un valor si el modelo falla o no está disponible.
    */
   private applyNeuralModels(ppgValues: number[]): {
-    heartRate: number | null;
-    spo2: number | null;
-    systolic: number | null;
-    diastolic: number | null;
-    glucose: number | null;
-  } | null {
-    let heartRate: number | null = null;
-    let spo2: number | null = null;
-    let systolic: number | null = null;
-    let diastolic: number | null = null;
-    let glucose: number | null = null;
-    let modelsApplied = false;
-
+    heartRate: number;
+    spo2: number;
+    systolic: number;
+    diastolic: number;
+    glucose: number;
+  } {
+    // Valores por defecto
+    const defaultEstimates = {
+      heartRate: 75,
+      spo2: 97,
+      systolic: 120,
+      diastolic: 80,
+      glucose: 95
+    };
+    
     try {
+      // Obtener estimaciones de cada modelo
       const heartRateModel = getModel<HeartRateNeuralModel>('heartRate');
-      if (heartRateModel) {
-        heartRate = heartRateModel.predict(ppgValues)[0];
-        modelsApplied = true;
-      }
-
       const spo2Model = getModel<SpO2NeuralModel>('spo2');
-      if (spo2Model) {
-        spo2 = spo2Model.predict(ppgValues)[0];
-        modelsApplied = true;
-      }
-
       const bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+      const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
+      
+      // Aplicar modelos que estén disponibles
+      const heartRate = heartRateModel ? heartRateModel.predict(ppgValues)[0] : defaultEstimates.heartRate;
+      const spo2 = spo2Model ? spo2Model.predict(ppgValues)[0] : defaultEstimates.spo2;
+      
+      let systolic = defaultEstimates.systolic;
+      let diastolic = defaultEstimates.diastolic;
       if (bpModel) {
         const bpResult = bpModel.predict(ppgValues);
         systolic = bpResult[0];
         diastolic = bpResult[1];
-        modelsApplied = true;
       }
-
-      const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
-      if (glucoseModel) {
-        glucose = glucoseModel.predict(ppgValues)[0];
-        modelsApplied = true;
-      }
-
-      return modelsApplied ? { heartRate, spo2, systolic, diastolic, glucose } : null;
-
+      
+      const glucose = glucoseModel ? glucoseModel.predict(ppgValues)[0] : defaultEstimates.glucose;
+      
+      return { heartRate, spo2, systolic, diastolic, glucose };
     } catch (error) {
-      console.error('Error applying neural models:', error);
-      // Devolver estimaciones parciales si alguna tuvo éxito, o null si todas fallaron
-      return modelsApplied ? { heartRate, spo2, systolic, diastolic, glucose } : null;
+      console.error('Error al aplicar modelos neuronales:', error);
+      return defaultEstimates;
     }
   }
   

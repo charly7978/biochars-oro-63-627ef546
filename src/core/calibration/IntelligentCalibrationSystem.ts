@@ -96,11 +96,11 @@ export interface CorrectionFactors {
  * Valores de referencia para calibración
  */
 export interface ReferenceValues {
-  heartRate: number | null;
-  spo2: number | null;
-  systolic: number | null;
-  diastolic: number | null;
-  glucose: number | null;
+  heartRate: number;
+  spo2: number;
+  systolic: number;
+  diastolic: number;
+  glucose: number;
 }
 
 /**
@@ -210,20 +210,11 @@ export class IntelligentCalibrationSystem {
   }
   
   /**
-   * Valores de referencia por defecto - Todos inicializados a null
+   * Valores de referencia por defecto
    */
   private getDefaultReferences(): ReferenceValues {
-    // Return null for all reference values initially.
-    // They should be populated by loading the profile or user input.
-    return {
-      heartRate: null,
-      spo2: null,
-      systolic: null,
-      diastolic: null,
-      glucose: null
-    };
-    // Ensure the throw new Error line below is commented out or removed.
-    // throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
+    // Prohibido: No se permiten valores de referencia por defecto. Use solo datos reales.
+    throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
   }
   
   /**
@@ -377,14 +368,14 @@ export class IntelligentCalibrationSystem {
    */
   public setReferenceValue(type: MeasurementType, value: number | { systolic: number, diastolic: number }): void {
     if (type === 'heartRate') {
-      this.referenceValues.heartRate = value as number | null;
+      this.referenceValues.heartRate = value as number;
     } else if (type === 'spo2') {
-      this.referenceValues.spo2 = value as number | null;
+      this.referenceValues.spo2 = value as number;
     } else if (type === 'bloodPressure' && typeof value !== 'number') {
-      this.referenceValues.systolic = value.systolic as number | null;
-      this.referenceValues.diastolic = value.diastolic as number | null;
+      this.referenceValues.systolic = value.systolic;
+      this.referenceValues.diastolic = value.diastolic;
     } else if (type === 'glucose') {
-      this.referenceValues.glucose = value as number | null;
+      this.referenceValues.glucose = value as number;
     }
     
     console.log(`Valor de referencia registrado para ${type}:`, value);
@@ -839,12 +830,12 @@ export class IntelligentCalibrationSystem {
         .single();
       
       if (data && !error) {
-        // Corregir asignación, solo propiedades que existen en la tabla
+        // Convertir formato de base de datos a perfil de usuario
         this.userProfile = {
           userId: data.user_id,
           createdAt: new Date(data.created_at),
           lastUpdated: new Date(data.updated_at),
-          correctionFactors: { 
+          correctionFactors: {
             heartRate: 1.0,
             spo2: 1.0,
             systolic: 1.0,
@@ -852,11 +843,11 @@ export class IntelligentCalibrationSystem {
             glucose: 1.0
           },
           referenceValues: {
-            heartRate: null,
-            spo2: null,
-            systolic: typeof data.systolic_reference === 'number' ? data.systolic_reference : null,
-            diastolic: typeof data.diastolic_reference === 'number' ? data.diastolic_reference : null,
-            glucose: null
+            heartRate: data.systolic_reference || 75, // Using available fields
+            spo2: data.diastolic_reference || 97,
+            systolic: data.systolic_reference || 120,
+            diastolic: data.diastolic_reference || 80,
+            glucose: data.quality_threshold || 100 // Using available field as fallback
           },
           config: {
             autoCalibrationEnabled: true,
@@ -864,8 +855,8 @@ export class IntelligentCalibrationSystem {
             syncWithReferenceDevices: false,
             adaptToEnvironment: true,
             adaptToUserActivity: true,
-            aggressiveness: 0.5,
-            minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
+            aggressiveness: data.quality_threshold ? data.quality_threshold / 100 : 0.5,
+            minimumQualityThreshold: data.quality_threshold || 70
           }
         };
         

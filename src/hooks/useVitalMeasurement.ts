@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+
+import { useState, useEffect, useRef } from 'react';
 
 interface VitalMeasurements {
   heartRate: number;
@@ -21,7 +22,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
-  const measurementStartTime = useRef<number | null>(null);
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -30,6 +31,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       elapsedTime,
       arrhythmiaWindows: arrhythmiaWindows.length,
       timestamp: new Date().toISOString(),
+      session: sessionId.current
     });
 
     // Always reset to zero when stopping or not measuring

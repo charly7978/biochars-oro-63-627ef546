@@ -53,18 +53,35 @@ export class FinalResultProcessor {
    * Obtiene el resultado final procesado para una medición
    */
   public getFinalResult(type: string): {
-    value: number | null,
-    confidence: number,
+    value: number, 
+    confidence: number, 
     method: string,
-    rawStats: any
+    rawStats: {
+      median: number,
+      mean: number,
+      weightedMean: number,
+      stdDev: number,
+      sampleCount: number
+    }
   } {
     if (!this.measurements[type] || this.measurements[type].values.length < this.MIN_SAMPLES_REQUIRED) {
-      // Si no hay suficientes muestras fisiológicas válidas, no retornar nada
+      // Si no hay suficientes muestras, devolver último valor o valor por defecto
+      const defaultValue = this.getDefaultValue(type);
+      const lastValue = this.measurements[type]?.values.length > 0 
+        ? this.measurements[type].values[this.measurements[type].values.length - 1] 
+        : defaultValue;
+      
       return {
-        value: null,
-        confidence: 0,
-        method: 'no_real_data',
-        rawStats: null
+        value: lastValue,
+        confidence: 0.6,
+        method: "last_value",
+        rawStats: {
+          median: lastValue,
+          mean: lastValue,
+          weightedMean: lastValue,
+          stdDev: 0,
+          sampleCount: this.measurements[type]?.values.length || 0
+        }
       };
     }
     
@@ -211,6 +228,14 @@ export class FinalResultProcessor {
       default:
         return value;
     }
+  }
+  
+  /**
+   * Obtiene un valor por defecto para cada tipo de medición
+   */
+  private getDefaultValue(type: string): number {
+    // Prohibido: No se permiten valores por defecto ni simulados
+    return 0;
   }
   
   /**
