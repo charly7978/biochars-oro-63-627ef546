@@ -34,6 +34,9 @@ const Index = () => {
   const measurementTimerRef = useRef<number | null>(null);
   const minimumMeasurementTime = 10; // Segundos mínimos antes de mostrar resultados
   const optimalMeasurementTime = 30; // Tiempo óptimo para resultados más precisos
+  const [lastArrhythmiaTimestamp, setLastArrhythmiaTimestamp] = useState<number | null>(null);
+  const [lastArrhythmiaData, setLastArrhythmiaData] = useState<any>(null);
+  const [lastArrhythmiaStatus, setLastArrhythmiaStatus] = useState<string>("--");
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -134,6 +137,15 @@ const Index = () => {
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, elapsedTime]);
+
+  // Monitorear cambios en vitalSigns para detectar arritmia
+  useEffect(() => {
+    if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+      setLastArrhythmiaTimestamp(Date.now());
+      setLastArrhythmiaData(vitalSigns.lastArrhythmiaData);
+      setLastArrhythmiaStatus(vitalSigns.arrhythmiaStatus);
+    }
+  }, [vitalSigns.arrhythmiaStatus, vitalSigns.lastArrhythmiaData]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -325,6 +337,11 @@ const Index = () => {
     return 'text-red-500';
   };
 
+  // En el render, decidir qué status y data pasar a PPGSignalMeter
+  const arrhythmiaActive = lastArrhythmiaTimestamp && (Date.now() - lastArrhythmiaTimestamp < 2000);
+  const arrhythmiaStatusToShow = arrhythmiaActive ? lastArrhythmiaStatus : vitalSigns.arrhythmiaStatus;
+  const arrhythmiaDataToShow = arrhythmiaActive ? lastArrhythmiaData : null;
+
   return (
     <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
@@ -363,7 +380,8 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
+              arrhythmiaStatus={arrhythmiaStatusToShow || "--"}
+              rawArrhythmiaData={arrhythmiaDataToShow}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />
