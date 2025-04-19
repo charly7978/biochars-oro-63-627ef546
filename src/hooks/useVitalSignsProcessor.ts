@@ -21,6 +21,10 @@ const OPTIMIZER_CHANNELS = ['hr', 'spo2', 'bp', 'glucose', 'lipids', 'hydration'
 // Definición local si no está en archivo importado
 interface ExtendedProcessedSignalForHook extends ProcessedSignal {
   preBandpassValue?: number;
+  // Añadimos propiedades que estaban faltando en la interfaz
+  windowValues?: number[];
+  minValue?: number;
+  maxValue?: number;
 }
 
 /**
@@ -120,8 +124,9 @@ export const useVitalSignsProcessor = () => {
         
         // Normalizar datos para entrada del modelo
         const normalizedInput = signalWindow.slice(-64).map(val => {
-          return (val - extendedSignal.minValue) / 
-                 (extendedSignal.maxValue - extendedSignal.minValue || 1);
+          const minVal = extendedSignal.minValue !== undefined ? extendedSignal.minValue : 0;
+          const maxVal = extendedSignal.maxValue !== undefined ? extendedSignal.maxValue : 1;
+          return (val - minVal) / ((maxVal - minVal) || 1);
         });
         
         // Rellenar array si es necesario
@@ -129,14 +134,17 @@ export const useVitalSignsProcessor = () => {
           normalizedInput.unshift(0);
         }
         
-        // Inferencia del modelo
-        const prediction = tfPredict(normalizedInput);
-        
-        if (prediction && prediction.length > 0) {
-          // Usar resultado para mejorar el valor optimizado
-          const enhancementFactor = prediction[0];
-          tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
-          console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+        // Inferencia del modelo y manejo adecuado del resultado
+        const predictionPromise = tfPredict(normalizedInput);
+        if (predictionPromise) {
+          const prediction = await Promise.resolve(predictionPromise);
+          
+          if (prediction && prediction.length > 0) {
+            // Usar resultado para mejorar el valor optimizado
+            const enhancementFactor = prediction[0];
+            tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
+            console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+          }
         }
       } catch (err) {
         console.error("Error en procesamiento TensorFlow:", err);

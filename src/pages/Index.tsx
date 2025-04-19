@@ -11,6 +11,7 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
+import { ProcessedSignal } from "@/types/signal";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -114,7 +115,7 @@ const Index = () => {
           
           // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            const vitals = processVitalSigns(lastSignal, heartBeatResult.rrData);
             if (vitals) {
               // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
               if (elapsedTime >= minimumMeasurementTime) {

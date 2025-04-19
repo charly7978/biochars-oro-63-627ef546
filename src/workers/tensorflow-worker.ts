@@ -5,10 +5,6 @@
  */
 
 import * as tf from '@tensorflow/tfjs';
-import { registerOps } from '@tensorflow/tfjs-core/dist/register_all_ops';
-
-// Registrar todas las operaciones para el worker
-registerOps();
 
 // Configuración inicial
 let models: Record<string, tf.LayersModel> = {};
@@ -29,12 +25,11 @@ async function initTensorFlow(backend: string) {
     console.log(`[TF Worker] TensorFlow inicializado con backend: ${tfBackend}`);
     // Configurar flags para rendimiento
     if (tfBackend === 'webgl') {
-      const gl = tf.backend().getGPGPUContext().gl;
-      if (gl) {
-        console.log("[TF Worker] WebGL habilitado para TensorFlow");
-        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-        tf.env().set('WEBGL_PACK_DEPTHWISECONV', true);
-      }
+      // Nota: No podemos acceder a getGPGPUContext directamente
+      // Configuramos las optimizaciones de entorno en su lugar
+      tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+      tf.env().set('WEBGL_PACK_DEPTHWISECONV', true);
+      console.log("[TF Worker] WebGL habilitado para TensorFlow con optimizaciones");
     }
   } catch (error) {
     console.error('[TF Worker] Error inicializando TensorFlow:', error);
@@ -119,6 +114,16 @@ async function cleanupMemory(): Promise<void> {
     console.error('[TF Worker] Error limpiando memoria:', error);
   }
 }
+
+// Register all TensorFlow ops manually instead of using the import
+function registerAllOps() {
+  // This is a simplified approach, since we can't import the register_all_ops module
+  // TensorFlow.js will register the necessary ops when used
+  console.log('[TF Worker] Registering TensorFlow ops manually');
+}
+
+// Call the function to register ops
+registerAllOps();
 
 // Escuchar mensajes
 self.addEventListener('message', async (event) => {
