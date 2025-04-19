@@ -859,12 +859,12 @@ export class IntelligentCalibrationSystem {
             glucose: null
           },
           config: {
-            autoCalibrationEnabled: typeof data.auto_calibration_enabled === 'boolean' ? data.auto_calibration_enabled : (data.auto_calibration ?? true),
-            continuousLearningEnabled: typeof data.continuous_learning_enabled === 'boolean' ? data.continuous_learning_enabled : (data.continuous_learning ?? true),
-            syncWithReferenceDevices: typeof data.sync_with_reference_devices === 'boolean' ? data.sync_with_reference_devices : (data.sync_reference_devices ?? false),
-            adaptToEnvironment: typeof data.adapt_to_environment === 'boolean' ? data.adapt_to_environment : (data.environment_adaptation ?? true),
-            adaptToUserActivity: typeof data.adapt_to_user_activity === 'boolean' ? data.adapt_to_user_activity : (data.user_activity_adaptation ?? true),
-            aggressiveness: typeof data.aggressiveness === 'number' ? data.aggressiveness : 0.5,
+            autoCalibrationEnabled: true,
+            continuousLearningEnabled: true,
+            syncWithReferenceDevices: false,
+            adaptToEnvironment: true,
+            adaptToUserActivity: true,
+            aggressiveness: 0.5,
             minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
           }
         };
