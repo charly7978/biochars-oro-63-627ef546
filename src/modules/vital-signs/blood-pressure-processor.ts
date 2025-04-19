@@ -135,8 +135,8 @@ export class BloodPressureProcessor {
     if (!this.userCalibration) return 120; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.2;
-    const stiffnessNormalizer = 0.15;
+    const amplitudeNormalizer = 0.35;
+    const stiffnessNormalizer = 0.28;
     
     // Modelo basado en características, personalizado con calibración
     let systolic = this.userCalibration.systolic;
@@ -157,8 +157,8 @@ export class BloodPressureProcessor {
     if (!this.userCalibration) return 80; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.15;
-    const stiffnessNormalizer = 0.2;
+    const amplitudeNormalizer = 0.22;
+    const stiffnessNormalizer = 0.32;
     
     // Modelo basado en características, personalizado con calibración
     let diastolic = this.userCalibration.diastolic;
@@ -197,8 +197,8 @@ export class BloodPressureProcessor {
     const baselineDiastolic = 80;
     
     // Ajuste basado en amplitud
-    let systolic = baselineSystolic + (amplitude - 0.5) * 40;
-    let diastolic = baselineDiastolic + (amplitude - 0.5) * 20;
+    let systolic = baselineSystolic + (amplitude - 0.5) * 80;
+    let diastolic = baselineDiastolic + (amplitude - 0.5) * 40;
     
     // Ajustar proporción sistólica/diastólica
     if (diastolic > systolic * 0.8) {

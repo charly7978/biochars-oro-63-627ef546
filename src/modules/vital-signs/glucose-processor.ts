@@ -79,11 +79,11 @@ export class GlucoseProcessor {
     // Directly calculate glucose from signal characteristics with reduced factors
     let glucoseEstimate = this.GLUCOSE_BASELINE;
     
-    // Apply smaller adjustments to prevent extreme values
-    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 100;
-    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 150;
-    glucoseEstimate += phase * this.PHASE_FACTOR * 50;
-    glucoseEstimate += areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35;
+    // Apply larger adjustments to increase sensitivity
+    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 180;
+    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 250;
+    glucoseEstimate += phase * this.PHASE_FACTOR * 90;
+    glucoseEstimate += areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 70;
     
     // Perfusion index contribution
     const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 40;
@@ -111,10 +111,10 @@ export class GlucoseProcessor {
     
     console.log("GlucoseProcessor: Calculation details", {
       baseValue: this.GLUCOSE_BASELINE,
-      amplitudeContribution: amplitude * this.AMPLITUDE_FACTOR * 100,
-      frequencyContribution: frequency * this.FREQUENCY_FACTOR * 150,
-      phaseContribution: phase * this.PHASE_FACTOR * 50,
-      aucContribution: areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35,
+      amplitudeContribution: amplitude * this.AMPLITUDE_FACTOR * 180,
+      frequencyContribution: frequency * this.FREQUENCY_FACTOR * 250,
+      phaseContribution: phase * this.PHASE_FACTOR * 90,
+      aucContribution: areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 70,
       perfusionContribution: perfusionAdjustment,
       variabilityContribution: (variability - 0.5) * 8,
       individualFactor,

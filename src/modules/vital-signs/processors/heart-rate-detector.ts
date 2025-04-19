@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -17,7 +16,7 @@ export class HeartRateDetector {
    * Calculate heart rate from real PPG values with enhanced peak detection
    */
   public calculateHeartRate(ppgValues: number[], sampleRate: number = 30): number {
-    if (ppgValues.length < sampleRate * 1.0) { // Reducido para detección más rápida
+    if (ppgValues.length < sampleRate * 0.5) { // Permitir buffers más cortos
       return 0;
     }
     
@@ -28,7 +27,7 @@ export class HeartRateDetector {
     this.lastProcessTime = now;
     
     // Get recent real data - analizamos más datos para mejor detección
-    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 6)); // Aumentado para mejor detección
+    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 3)); // Menor ventana para más sensibilidad
     
     // Calculate signal statistics for adaptive thresholding
     const mean = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
@@ -37,7 +36,7 @@ export class HeartRateDetector {
     );
     
     // Find peaks in real data with adaptive threshold
-    const peaks = this.findPeaksEnhanced(recentData, mean, stdDev);
+    const peaks = this.findPeaksEnhanced(recentData, mean, stdDev * 0.8); // Umbral más inclusivo
     
     if (peaks.length < 2) {
       return 0;
@@ -48,14 +47,14 @@ export class HeartRateDetector {
     const peakTimes = peaks.map(idx => now - (recentData.length - idx) * sampleDuration);
     
     // Update stored peak times
-    this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-15); // Aumentado para mejor análisis
+    this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-20); // Más historia para variabilidad
     
     // Calculate intervals between consecutive peaks
     const intervals: number[] = [];
     for (let i = 1; i < this.peakTimes.length; i++) {
       const interval = this.peakTimes[i] - this.peakTimes[i-1];
       // Only use physiologically plausible intervals (30-240 BPM)
-      if (interval >= 250 && interval <= 2000) { // Ampliado para detectar FC más altas
+      if (interval >= 200 && interval <= 2200) { // Permitir mayor rango fisiológico
         intervals.push(interval);
       }
     }
@@ -74,8 +73,8 @@ export class HeartRateDetector {
     // Calculate average interval with outlier rejection - mejora en el filtrado
     intervals.sort((a, b) => a - b);
     const filteredIntervals = intervals.slice(
-      Math.floor(intervals.length * 0.1), // Más inclusivo
-      Math.ceil(intervals.length * 0.9)   // Más inclusivo
+      Math.floor(intervals.length * 0.05), // Más inclusivo aún
+      Math.ceil(intervals.length * 0.95)
     );
     
     if (filteredIntervals.length === 0) {
