@@ -1,122 +1,145 @@
 
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="description" content="Aplicación de medición real de signos vitales a través de cámara trasera con linterna" />
-    <meta name="theme-color" content="#8B5CF6" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>BioSignal Monitor</title>
-    
-    <!-- Precargar recursos críticos -->
-    <link rel="preload" href="https://docs.opencv.org/4.7.0/opencv.js" as="script" />
-    
-    <!-- Estilos críticos para la experiencia del usuario -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="fullscreen" content="yes">
+    <meta name="screen-orientation" content="portrait">
+    <!-- High DPI display support -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
+    <title>healthpulse-captain</title>
     <style>
-      body {
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sar: env(safe-area-inset-right);
+        --sab: env(safe-area-inset-bottom);
+        --sal: env(safe-area-inset-left);
+      }
+      
+      * {
         margin: 0;
         padding: 0;
-        overflow: hidden;
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
         touch-action: none;
-        -webkit-user-select: none;
-        user-select: none;
-        background-color: #222;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       }
       
-      #loading-screen {
+      html {
+        height: 100%;
+        height: -webkit-fill-available;
+        width: 100%;
+        overflow: hidden;
         position: fixed;
-        top: 0;
-        left: 0;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        text-rendering: optimizeLegibility;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      
+      body {
+        min-height: 100%;
+        min-height: -webkit-fill-available;
+        width: 100vw;
+        background: #000;
+        overflow: hidden;
+        position: fixed;
+        inset: 0;
+        padding: var(--sat) var(--sar) var(--sab) var(--sal);
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      
+      #root {
         width: 100%;
         height: 100%;
-        background: linear-gradient(to bottom, #8B5CF6, #D946EF);
+        height: 100vh;
+        height: 100dvh;
+        height: -webkit-fill-available;
         display: flex;
         flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        z-index: 9999;
-        transition: opacity 0.5s;
+        background: #000;
+        overflow: hidden;
+        touch-action: none;
+      }
+
+      @supports (height: 100dvh) {
+        #root {
+          height: 100dvh;
+        }
       }
       
-      #loading-screen.fade-out {
-        opacity: 0;
+      /* High resolution interface settings */
+      .high-res-interface {
+        transform-origin: top left;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+        backface-visibility: hidden;
+        -webkit-font-smoothing: subpixel-antialiased;
       }
       
-      .loading-spinner {
-        width: 50px;
-        height: 50px;
-        border: 5px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s ease-in-out infinite;
+      @media screen and (min-width: 1024px) {
+        .high-res-interface {
+          transform: scale(1);
+        }
       }
       
-      .loading-text {
-        margin-top: 20px;
-        color: white;
-        font-size: 18px;
-        text-align: center;
+      @media screen and (min-width: 2048px) {
+        .high-res-interface {
+          transform: scale(0.5);
+          width: 200%;
+          height: 200%;
+        }
       }
       
-      @keyframes spin {
-        to { transform: rotate(360deg); }
+      @media screen and (min-width: 3840px) {
+        .high-res-interface {
+          transform: scale(0.25);
+          width: 400%;
+          height: 400%;
+        }
+      }
+      
+      /* Improve text rendering */
+      h1, h2, h3, h4, h5, h6, p, span, button {
+        text-rendering: geometricPrecision;
+      }
+      
+      /* Crisp UI elements */
+      svg, img, canvas {
+        image-rendering: crisp-edges;
+        shape-rendering: crispEdges;
+      }
+      
+      /* High density display optimizations */
+      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+        body {
+          -webkit-font-smoothing: antialiased;
+          -moz-osx-font-smoothing: grayscale;
+        }
+        
+        button, input, select, textarea {
+          transform: translateZ(0);
+        }
+        
+        canvas, .ppg-graph {
+          backface-visibility: hidden;
+          will-change: transform;
+          transform: translate3d(0, 0, 0);
+        }
       }
     </style>
   </head>
   <body>
-    <!-- Pantalla de carga para precarga de recursos -->
-    <div id="loading-screen">
-      <div class="loading-spinner"></div>
-      <div class="loading-text">Iniciando Procesamiento Avanzado</div>
-    </div>
-    
     <div id="root"></div>
-    
+    <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <script>
-      // Ocultar la pantalla de carga cuando la app esté lista
-      document.addEventListener('DOMContentLoaded', function() {
-        // Dar tiempo para cargar bibliotecas principales
-        setTimeout(function() {
-          const loadingScreen = document.getElementById('loading-screen');
-          if (loadingScreen) {
-            loadingScreen.classList.add('fade-out');
-            setTimeout(function() {
-              loadingScreen.style.display = 'none';
-            }, 500);
-          }
-        }, 1500);
-      });
-      
-      // Mantener la pantalla encendida
-      function keepScreenOn() {
-        if (navigator.wakeLock) {
-          navigator.wakeLock.request('screen')
-            .then(wakeLock => {
-              console.log('Pantalla bloqueada para mantenerse encendida');
-              
-              document.addEventListener('visibilitychange', () => {
-                if (document.visibilityState === 'visible') {
-                  keepScreenOn();
-                }
-              });
-            })
-            .catch(err => {
-              console.error('Error al intentar mantener la pantalla encendida:', err);
-            });
-        }
-      }
-      
-      // Intentar mantener la pantalla encendida después de interacción
-      document.addEventListener('click', function() {
-        keepScreenOn();
-      });
-    </script>
   </body>
 </html>
