@@ -1,10 +1,11 @@
+
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
   // Ajustamos umbrales para mayor sensibilidad manteniendo confiabilidad
-  private readonly BP_BUFFER_SIZE = 15;  // Reducido para respuesta más rápida
-  private readonly MEDIAN_WEIGHT = 0.65;  // Ajustado para balance
-  private readonly MEAN_WEIGHT = 0.35;   
+  private readonly BP_BUFFER_SIZE = 12;  // Reducido para respuesta más rápida
+  private readonly MEDIAN_WEIGHT = 0.6;  // Ajustado para balance
+  private readonly MEAN_WEIGHT = 0.4;   
   
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
@@ -17,13 +18,15 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 20;
   private readonly MAX_PULSE_PRESSURE = 100;
   
-  // Umbrales de validación ajustados
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.0008; // Reducido de 0.001
-  private readonly MIN_PEAK_COUNT = 1;  // Reducido de 2
-  private readonly MIN_FPS = 25;  // Reducido de 30
+  // Umbrales de validación reducidos para mayor sensibilidad
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.0005; // Reducido significativamente
+  private readonly MIN_PEAK_COUNT = 1;  // Mantenemos en 1 para mayor sensibilidad
+  private readonly MIN_FPS = 20;  // Reducido para funcionar con menos frames
   
   private lastCalculationTime: number = 0;
-  private forceRecalculationInterval: number = 1200; // Reducido para actualización más frecuente
+  private forceRecalculationInterval: number = 1000; // Reducido para actualización más frecuente
+  private calibrationApplied: boolean = false;
+  private debugMode: boolean = true; // Activado para diagnóstico
 
   /**
    * Calculates blood pressure using PPG signal features directly
@@ -36,15 +39,35 @@ export class BloodPressureProcessor {
     try {
       const currentTime = Date.now();
       
+      // Log para diagnóstico
+      if (this.debugMode) {
+        console.log("BloodPressureProcessor: Procesando señal", {
+          valuesLength: values.length,
+          lastBufferSize: this.systolicBuffer.length,
+          time: new Date(currentTime).toISOString(),
+          firstThreeValues: values.slice(0, 3),
+          lastThreeValues: values.slice(-3)
+        });
+      }
+      
       // Validación mejorada de señal
       if (!this.validateSignal(values)) {
+        if (this.debugMode) {
+          console.log("BloodPressureProcessor: Señal inválida, retornando último valor válido");
+        }
         return this.getLastValidOrDefault();
       }
 
       // Análisis de picos mejorado
-      const { peakIndices, valleyIndices } = this.findPeaksAndValleys(values);
+      const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
       
       if (!this.validatePeaks(peakIndices)) {
+        if (this.debugMode) {
+          console.log("BloodPressureProcessor: Picos insuficientes", {
+            peakCount: peakIndices.length,
+            minRequired: this.MIN_PEAK_COUNT
+          });
+        }
         return this.getLastValidOrDefault();
       }
 
@@ -52,6 +75,12 @@ export class BloodPressureProcessor {
       const pttValues = this.calculatePTTValues(peakIndices);
       
       if (pttValues.length < 2) {
+        if (this.debugMode) {
+          console.log("BloodPressureProcessor: PTT insuficiente", {
+            pttLength: pttValues.length,
+            minRequired: 2
+          });
+        }
         return this.getLastValidOrDefault();
       }
 
@@ -66,6 +95,14 @@ export class BloodPressureProcessor {
 
       this.lastCalculationTime = currentTime;
       
+      if (this.debugMode) {
+        console.log("BloodPressureProcessor: Presión calculada exitosamente", {
+          systolic: Math.round(result.finalSystolic),
+          diastolic: Math.round(result.finalDiastolic),
+          time: new Date(currentTime).toISOString()
+        });
+      }
+      
       return {
         systolic: Math.round(result.finalSystolic),
         diastolic: Math.round(result.finalDiastolic)
@@ -77,14 +114,40 @@ export class BloodPressureProcessor {
   }
 
   private validateSignal(values: number[]): boolean {
-    if (!values || values.length < 100) return false;
+    if (!values || values.length < 50) {
+      if (this.debugMode) {
+        console.log("BloodPressureProcessor: Longitud de señal insuficiente", {
+          length: values?.length,
+          minRequired: 50
+        });
+      }
+      return false;
+    }
     
     const amplitude = Math.max(...values) - Math.min(...values);
-    return amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    const isValid = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    
+    if (!isValid && this.debugMode) {
+      console.log("BloodPressureProcessor: Amplitud de señal insuficiente", {
+        amplitude,
+        minRequired: this.MIN_SIGNAL_AMPLITUDE
+      });
+    }
+    
+    return isValid;
   }
 
   private validatePeaks(peakIndices: number[]): boolean {
-    return peakIndices.length >= this.MIN_PEAK_COUNT;
+    const isValid = peakIndices.length >= this.MIN_PEAK_COUNT;
+    
+    if (!isValid && this.debugMode) {
+      console.log("BloodPressureProcessor: Picos insuficientes", {
+        peakCount: peakIndices.length,
+        minRequired: this.MIN_PEAK_COUNT
+      });
+    }
+    
+    return isValid;
   }
 
   private calculatePTTValues(peakIndices: number[]): number[] {
@@ -96,6 +159,13 @@ export class BloodPressureProcessor {
       if (dt >= 200 && dt <= 2000) {
         pttValues.push(dt);
       }
+    }
+    
+    if (this.debugMode && pttValues.length < 2) {
+      console.log("BloodPressureProcessor: PTT insuficiente", {
+        pttValues,
+        peakIndices
+      });
     }
     
     return pttValues;
@@ -112,7 +182,7 @@ export class BloodPressureProcessor {
     const weightedPTT = this.calculateWeightedPTT(filteredPTT);
     
     // Calcular presión basada en PTT y amplitud
-    const amplitude = this.calculateAmplitude(values);
+    const amplitude = calculateAmplitude(values);
     
     const systolic = this.calculateSystolic(weightedPTT, amplitude);
     const diastolic = this.calculateDiastolic(weightedPTT, amplitude);
@@ -122,7 +192,7 @@ export class BloodPressureProcessor {
 
   private calculateSystolic(ptt: number, amplitude: number): number {
     const base = 120;
-    const pttFactor = (1000 - ptt) * 0.1;
+    const pttFactor = ptt > 0 ? (1000 - Math.min(ptt, 1000)) * 0.1 : 0;
     const ampFactor = amplitude * 0.3;
     
     return this.constrainValue(
@@ -134,7 +204,7 @@ export class BloodPressureProcessor {
 
   private calculateDiastolic(ptt: number, amplitude: number): number {
     const base = 80;
-    const pttFactor = (1000 - ptt) * 0.05;
+    const pttFactor = ptt > 0 ? (1000 - Math.min(ptt, 1000)) * 0.05 : 0;
     const ampFactor = amplitude * 0.15;
     
     return this.constrainValue(
@@ -255,25 +325,37 @@ export class BloodPressureProcessor {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
     this.lastCalculationTime = 0;
-    console.log("BloodPressureProcessor: Reset completed");
+    this.calibrationApplied = false;
+    console.log("BloodPressureProcessor: Reset completado");
   }
 
-  private findPeaksAndValleys(values: number[]): { peakIndices: number[], valleyIndices: number[] } {
-    const peakIndices: number[] = [];
-    const valleyIndices: number[] = [];
-    
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > values[i-1] && values[i] > values[i+1]) {
-        peakIndices.push(i);
-      }
-      if (values[i] < values[i-1] && values[i] < values[i+1]) {
-        valleyIndices.push(i);
-      }
+  /**
+   * Apply user's manual calibration to the blood pressure processor
+   */
+  public applyCalibration(systolicCalibration: number, diastolicCalibration: number): void {
+    if (systolicCalibration > 0 && diastolicCalibration > 0) {
+      // Reiniciar buffers con valores calibrados
+      this.systolicBuffer = [systolicCalibration];
+      this.diastolicBuffer = [diastolicCalibration];
+      this.calibrationApplied = true;
+      
+      console.log("BloodPressureProcessor: Calibración aplicada", {
+        systolic: systolicCalibration,
+        diastolic: diastolicCalibration
+      });
     }
-    
-    return { peakIndices, valleyIndices };
   }
 
+  /**
+   * Set debug mode
+   */
+  public setDebugMode(enabled: boolean): void {
+    this.debugMode = enabled;
+  }
+
+  /**
+   * Update buffers with new BP values
+   */
   private updateBuffers(systolic: number, diastolic: number): void {
     this.systolicBuffer.push(systolic);
     this.diastolicBuffer.push(diastolic);
@@ -282,13 +364,5 @@ export class BloodPressureProcessor {
       this.systolicBuffer.shift();
       this.diastolicBuffer.shift();
     }
-  }
-
-  private calculateAmplitude(values: number[]): number {
-    if (!values || values.length === 0) return 0;
-    
-    const max = Math.max(...values);
-    const min = Math.min(...values);
-    return max - min;
   }
 }
