@@ -1,12 +1,12 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
-import { AudioService } from '../../services/AudioService';
-import { useSignalProcessor } from './signal-processor';
+import { useArrhythmiaDetector } from './arrhythmia-detector';
 
 /**
- * Hook para el procesamiento de la frecuencia cardíaca a partir de señales PPG reales
- * No se permite ninguna simulación o datos sintéticos
+ * Hook para procesamiento preciso de frecuencia cardíaca desde señal PPG real,
+ * con cálculo robusto BPM basado en ventana temporal, detección avanzada de picos y arritmias.
  */
 export const useHeartBeatProcessor = () => {
   const [heartBeatResult, setHeartBeatResult] = useState<HeartBeatResult>({
@@ -14,42 +14,34 @@ export const useHeartBeatProcessor = () => {
     confidence: 0,
     isPeak: false,
     arrhythmiaCount: 0,
-    rrData: { intervals: [], lastPeakTime: null }
+    rrData: { intervals: [], lastPeakTime: null },
+    isArrhythmia: false
   });
-  
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [isArrhythmia, setIsArrhythmia] = useState(false);
-  const [ppgData, setPpgData] = useState<number[]>([]);
-  
-  const processorRef = useRef<HeartBeatProcessor | null>(null);
-  const isMonitoringRef = useRef<boolean>(false);
-  const lastBpmRef = useRef<number>(0);
-  const lastRRIntervalsRef = useRef<number[]>([]);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
-  
-  const { 
-    processSignal: processorFunc, 
-    reset: resetProcessor,
-    lastPeakTimeRef,
-    lastValidBpmRef
-  } = useSignalProcessor();
 
-  // Inicializar el procesador una sola vez
+  const processorRef = useRef<HeartBeatProcessor | null>(null);
+  const isMonitoringRef = useRef(false);
+  const lastBpmRef = useRef(0);
+  
+  // Hook detector de arritmia basado en análisis RR
+  const {
+    detectArrhythmia,
+    lastRRIntervalsRef: arrhythmiaRRRef,
+    reset: resetArrhythmiaDetector
+  } = useArrhythmiaDetector();
+
   useEffect(() => {
     if (!processorRef.current) {
-      console.log("useHeartBeatProcessor: Inicializando detector de frecuencia cardíaca");
       processorRef.current = new HeartBeatProcessor();
-      
-      // Registrar a nivel global para debug si es necesario
-      if (typeof window !== 'undefined') {
-        window.heartBeatProcessor = processorRef.current;
-      }
+      if (typeof window !== 'undefined') window.heartBeatProcessor = processorRef.current;
     }
   }, []);
 
   /**
-   * Procesa la señal PPG y devuelve resultados de frecuencia cardíaca
-   * Solo utiliza datos reales
+   * Procesa cada nuevo valor PPG, aplica detección, cálculo BPM y estado arrítmico
+   * Solo se usa procesamiento de valores reales, sin simulación ni promedios arbitrarios
    */
   const processSignal = useCallback((value: number) => {
     if (!processorRef.current || !isMonitoringRef.current) {
@@ -59,139 +51,104 @@ export const useHeartBeatProcessor = () => {
         isPeak: false,
         filteredValue: value,
         arrhythmiaCount: 0,
-        rrData: { intervals: [], lastPeakTime: null }
+        rrData: { intervals: [], lastPeakTime: null },
+        isArrhythmia: false
       };
     }
-    
-    // Actualizar datos para visualización
-    setPpgData(prevData => {
-      const newData = [...prevData, value];
-      if (newData.length > 150) {
-        return newData.slice(-150);
-      }
-      return newData;
-    });
-    
+
     try {
-      // Procesamiento real de la señal PPG (sin simulaciones)
-      const result = processorFunc(
-        value,
-        lastBpmRef.current,
-        heartBeatResult.confidence,
-        processorRef.current,
-        requestImmediateBeep,
-        isMonitoringRef,
-        lastRRIntervalsRef,
-        currentBeatIsArrhythmiaRef
-      );
-      
-      // Actualizar resultado y referencias
-      lastBpmRef.current = result.bpm || lastBpmRef.current;
-      setHeartBeatResult(result);
-      
-      // Verificar arritmia
-      if (result.isArrhythmia) {
-        setIsArrhythmia(true);
-        setTimeout(() => setIsArrhythmia(false), 1500);
+      const result = processorRef.current.processSignal(value);
+      const rrData = processorRef.current.getRRIntervals();
+
+      if (rrData && rrData.intervals) {
+        arrhythmiaRRRef.current = rrData.intervals;
       }
-      
-      return {
+
+      const arrhythmiaDetection = detectArrhythmia(arrhythmiaRRRef.current);
+      setIsArrhythmia(arrhythmiaDetection.isArrhythmia);
+
+      const updatedArrhythmiaCount = arrhythmiaDetection.isArrhythmia
+        ? (heartBeatResult.arrhythmiaCount + 1)
+        : heartBeatResult.arrhythmiaCount;
+
+      const updatedResult: HeartBeatResult = {
         ...result,
-        filteredValue: value,
+        arrhythmiaCount: updatedArrhythmiaCount,
+        isArrhythmia: arrhythmiaDetection.isArrhythmia,
         rrData: {
-          intervals: lastRRIntervalsRef.current,
-          lastPeakTime: lastPeakTimeRef.current
+          intervals: rrData.intervals,
+          lastPeakTime: rrData.lastPeakTime
         }
       };
-    } catch (e) {
-      console.error("useHeartBeatProcessor: Error procesando señal", e);
-      // Return null for values that cannot be determined due to error
+
+      setHeartBeatResult(updatedResult);
+      lastBpmRef.current = result.bpm || lastBpmRef.current;
+
       return {
-        bpm: null, // Indicate BPM is unavailable
-        confidence: 0, // Confidence is 0 on error
+        ...updatedResult,
+        filteredValue: value,
+        rrData: {
+          intervals: rrData.intervals,
+          lastPeakTime: rrData.lastPeakTime
+        }
+      };
+    } catch (error) {
+      console.error('useHeartBeatProcessor: error procesando señal', error);
+      return {
+        bpm: 0,
+        confidence: 0,
         isPeak: false,
         filteredValue: value,
-        // No specific counter method, return 0 as default/fallback on error
         arrhythmiaCount: 0,
         rrData: { intervals: [], lastPeakTime: null },
-        isArrhythmia: false // Default to false on error
+        isArrhythmia: false
       };
     }
-  }, [processorFunc, heartBeatResult.confidence, lastPeakTimeRef]);
+  }, [detectArrhythmia, heartBeatResult.arrhythmiaCount, arrhythmiaRRRef]);
 
   /**
-   * Inicia el monitoreo de frecuencia cardíaca
+   * Inicia el monitoreo
    */
   const startMonitoring = useCallback(() => {
-    console.log("useHeartBeatProcessor: Iniciando monitoreo");
     setIsProcessing(true);
     isMonitoringRef.current = true;
-    resetProcessor();
+    if (processorRef.current) processorRef.current.reset();
+    resetArrhythmiaDetector();
     setHeartBeatResult({
       bpm: 0,
       confidence: 0,
       isPeak: false,
       arrhythmiaCount: 0,
-      rrData: { intervals: [], lastPeakTime: null }
+      rrData: { intervals: [], lastPeakTime: null },
+      isArrhythmia: false
     });
-    setPpgData([]);
-  }, [resetProcessor]);
+  }, [resetArrhythmiaDetector]);
 
   /**
-   * Detiene el monitoreo de frecuencia cardíaca
+   * Detiene el monitoreo
    */
   const stopMonitoring = useCallback(() => {
-    console.log("useHeartBeatProcessor: Deteniendo monitoreo");
     setIsProcessing(false);
     isMonitoringRef.current = false;
   }, []);
 
   /**
-   * Reinicia el procesador de frecuencia cardíaca
+   * Reinicia internamente el hook y procesador
    */
   const reset = useCallback(() => {
-    console.log("useHeartBeatProcessor: Reiniciando procesador");
-    
     if (processorRef.current) {
       processorRef.current.reset();
     }
-    
-    resetProcessor();
-    lastBpmRef.current = 0;
-    lastRRIntervalsRef.current = [];
-    currentBeatIsArrhythmiaRef.current = false;
-    
+    resetArrhythmiaDetector();
     setHeartBeatResult({
       bpm: 0,
       confidence: 0,
       isPeak: false,
       arrhythmiaCount: 0,
-      rrData: { intervals: [], lastPeakTime: null }
+      rrData: { intervals: [], lastPeakTime: null },
+      isArrhythmia: false
     });
-    
-    setPpgData([]);
-    setIsArrhythmia(false);
-  }, [resetProcessor]);
-
-  /**
-   * Función de retroalimentación para pulsos cardíacos
-   * Utiliza AudioService para señales auditivas
-   */
-  const requestImmediateBeep = useCallback((value: number) => {
-    if (!isMonitoringRef.current) return false;
-    
-    try {
-      // Solo reproducir sonido si estamos procesando y tenemos buena calidad
-      if (lastValidBpmRef.current > 40 && value > 0.2) {
-        AudioService.playHeartbeatSound();
-        return true;
-      }
-    } catch (e) {
-      console.error("Error reproduciendo sonido", e);
-    }
-    
-    return false;
-  }, [lastValidBpmRef]);
+  }, [resetArrhythmiaDetector]);
 
   return {
     heartBeatResult,
@@ -204,9 +161,7 @@ export const useHeartBeatProcessor = () => {
     startMonitoring,
     stopMonitoring,
     lastBpm: lastBpmRef.current,
-    lastValidBpm: lastValidBpmRef.current,
-    hasBpmData: lastValidBpmRef.current > 0,
-    isMonitoring: isMonitoringRef.current,
-    ppgData
+    hasBpmData: lastBpmRef.current > 0,
+    isMonitoring: isMonitoringRef.current
   };
 };

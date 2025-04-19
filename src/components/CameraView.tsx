@@ -5,7 +5,6 @@ interface CameraViewProps {
   isMonitoring: boolean;
   isFingerDetected?: boolean;
   signalQuality?: number;
-  isOpenCVReady?: boolean;
 }
 
 const CameraView = ({ 
@@ -13,8 +12,7 @@ const CameraView = ({
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
-  isOpenCVReady = true
-}: CameraViewProps & { isOpenCVReady?: boolean }) => {
+}: CameraViewProps) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchEnabled, setTorchEnabled] = useState(false);
@@ -260,10 +258,6 @@ const CameraView = ({
   }, [stream, isFocusing, isAndroid]);
 
   useEffect(() => {
-    if (!isOpenCVReady) {
-      console.error('OpenCV no está listo. No se puede iniciar la cámara.');
-      return;
-    }
     if (isMonitoring && !stream) {
       console.log("Starting camera because isMonitoring=true");
       startCamera();
@@ -271,11 +265,12 @@ const CameraView = ({
       console.log("Stopping camera because isMonitoring=false");
       stopCamera();
     }
+    
     return () => {
       console.log("CameraView component unmounting, stopping camera");
       stopCamera();
     };
-  }, [isMonitoring, isOpenCVReady]);
+  }, [isMonitoring]);
 
   useEffect(() => {
     if (stream && isFingerDetected && !torchEnabled) {
@@ -300,15 +295,6 @@ const CameraView = ({
 
   const targetFrameInterval = isAndroid ? 1000/10 : 
                              signalQuality > 70 ? 1000/30 : 1000/15;
-
-  if (!isOpenCVReady) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <h2 className="text-xl font-bold mb-2 text-red-600">OpenCV no está inicializado</h2>
-        <p className="text-muted-foreground">No se puede iniciar la cámara ni capturar frames hasta que OpenCV esté listo.</p>
-      </div>
-    );
-  }
 
   return (
     <video

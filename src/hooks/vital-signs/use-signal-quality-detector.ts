@@ -1,131 +1,137 @@
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
 
-import { useRef, useState, useCallback } from 'react';
-import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
+// Reforzar la detección confiable de dedo real y evitar falsas detecciones
+
+import { useRef, useCallback } from 'react';
 
 /**
- * Enhanced hook that detects finger presence based on consistent rhythmic patterns
- * Uses physiological characteristics of human finger (heartbeat patterns)
+ * Hook reforzado para detección activa y precisa de dedo humano en cámara
+ * Algoritmo mejorado con análisis de estabilidad, periodicidad, amplitud y ruido
  */
 export const useSignalQualityDetector = () => {
-  // Buffer de señal para análisis (últimos 2-3 segundos)
   const signalBufferRef = useRef<number[]>([]);
-  const lastQualityRef = useRef<number>(0);
-  const fingerDetectionWindowRef = useRef<number>(0);
-  const fingerDetectedRef = useRef<boolean>(false);
+  const fingerDetectedRef = useRef(false);
+  const lastFingerDetectedTimeRef = useRef<number>(0);
+  const confirmationCountRef = useRef(0);
 
-  // Parámetros fisiológicos
-  const SAMPLE_RATE = 30; // Hz
-  const BUFFER_SIZE = SAMPLE_RATE * 3; // 3 segundos
-  const AMP_MIN = 0.01, AMP_MAX = 0.2;
-  const PERIODICITY_MIN = 0.2;
-  const STABILITY_MIN = 0.2;
-  const NOISE_MAX = 0.05;
-  const FLATLINE_STDDEV = 0.002;
-  const SATURATION_THRESH = 0.95;
-  const FINGER_CONFIRM_WINDOW = SAMPLE_RATE * 1.5; // 1.5 segundos
+  const SAMPLE_RATE = 30;
+  const BUFFER_SECONDS = 8;
+  const BUFFER_SIZE = SAMPLE_RATE * BUFFER_SECONDS;
 
-  // API: detectWeakSignal
-  const detectWeakSignal = (value: number): boolean => {
-    // Actualizar buffer
-    signalBufferRef.current.push(value);
-    if (signalBufferRef.current.length > BUFFER_SIZE) signalBufferRef.current.shift();
+  const MIN_AMPLITUDE = 0.06;
+  const MAX_AMPLITUDE = 0.45;
+  const MIN_AUTOCORR = 0.60;
+  const MAX_NOISE = 0.015;
+  const MIN_CONFIRMATION_TIME_MS = SAMPLE_RATE * 4; // 4 segundos de confirmación
+
+  // Cálculo autocorrelación normalizada simple
+  const autocorrelation = (signal: number[], lag: number): number => {
+    const n = signal.length;
+    if (lag >= n) return 0;
+    const mean = signal.reduce((acc, v) => acc + v, 0) / n;
+    let numerator = 0, denomLeft = 0, denomRight = 0;
+    for (let i = 0; i < n - lag; i++) {
+      const left = signal[i] - mean;
+      const right = signal[i + lag] - mean;
+      numerator += left * right;
+      denomLeft += left * left;
+      denomRight += right * right;
+    }
+    const denom = Math.sqrt(denomLeft) * Math.sqrt(denomRight);
+    return denom === 0 ? 0 : numerator / denom;
+  };
+
+  // Ruido RMS basado en derivada de la señal
+  const rmsNoise = (values: number[]) => {
+    if (values.length < 2) return 0;
+    let sumSqDiff = 0;
+    for (let i = 1; i < values.length; i++) {
+      const diff = values[i] - values[i - 1];
+      sumSqDiff += diff * diff;
+    }
+    return Math.sqrt(sumSqDiff / (values.length - 1));
+  };
+
+  // Función para detección robusta de dedo
+  const detectFinger = useCallback((value: number) => {
+    if (value == null || isNaN(value)) {
+      fingerDetectedRef.current = false;
+      confirmationCountRef.current = 0;
+      signalBufferRef.current = [];
+      return false;
+    }
+
     const buf = signalBufferRef.current;
-    if (buf.length < SAMPLE_RATE) return true; // No hay suficiente señal
+    buf.push(value);
+    if (buf.length > BUFFER_SIZE) buf.shift();
 
-    // Cálculos fisiológicos
-    const amp = Math.max(...buf) - Math.min(...buf);
-    const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
-    const variance = buf.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buf.length;
-    const stdDev = Math.sqrt(variance);
-    const isFlat = stdDev < FLATLINE_STDDEV;
-    const isSaturated = buf.filter(v => Math.abs(v) > SATURATION_THRESH).length > buf.length * 0.2;
-    // Periodicidad (autocorrelación máxima en ventana fisiológica)
-    function autocorr(sig: number[], lag: number) {
-      let sum = 0;
-      for (let i = 0; i < sig.length - lag; i++) {
-        sum += (sig[i] - mean) * (sig[i + lag] - mean);
-      }
-      return sum / (sig.length - lag);
+    if (buf.length < BUFFER_SIZE) {
+      fingerDetectedRef.current = false;
+      confirmationCountRef.current = 0;
+      return false;
     }
-    let periodicityScore = 0;
-    for (let lag = 8; lag <= 45; lag++) {
-      const ac = autocorr(buf, lag);
-      if (ac > periodicityScore) periodicityScore = ac;
-    }
-    periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-    // Ruido: varianza de la derivada
-    const diffs = buf.slice(1).map((v, i) => v - buf[i]);
-    const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
-    const noiseScore = 1 - Math.min(1, noise / NOISE_MAX);
-    // Amplitud normalizada
-    const ampScore = Math.max(0, Math.min(1, (amp - AMP_MIN) / (AMP_MAX - AMP_MIN)));
-    // Estabilidad (1 - coeficiente de variación)
-    const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
-    // Penalizaciones
-    const flatPenalty = isFlat ? 0 : 1;
-    const satPenalty = isSaturated ? 0 : 1;
-    // Calidad compuesta
-    let quality = (
-      0.3 * ampScore +
-      0.3 * periodicityScore +
-      0.2 * stabilityScore +
-      0.2 * noiseScore
-    ) * flatPenalty * satPenalty;
-    // Suavizado temporal (EMA)
-    if (!lastQualityRef.current) lastQualityRef.current = quality;
-    quality = 0.2 * quality + 0.8 * lastQualityRef.current;
-    lastQualityRef.current = quality;
-    quality = Math.round(quality * 100);
 
-    // Finger detection robusta
-    const fingerDetected = (
-      ampScore > 0.2 &&
-      periodicityScore > PERIODICITY_MIN &&
-      stabilityScore > STABILITY_MIN &&
-      !isFlat &&
-      !isSaturated
-    );
-    // Ventana de confirmación
-    if (fingerDetected) {
-      fingerDetectionWindowRef.current++;
-      if (fingerDetectionWindowRef.current > FINGER_CONFIRM_WINDOW) fingerDetectedRef.current = true;
+    const minVal = Math.min(...buf);
+    const maxVal = Math.max(...buf);
+    const amplitude = maxVal - minVal;
+
+    if (amplitude < MIN_AMPLITUDE || amplitude > MAX_AMPLITUDE) {
+      confirmationCountRef.current = 0;
+      fingerDetectedRef.current = false;
+      return false;
+    }
+
+    // Evaluar periodicidad autocorrelada en rango fisiológico
+    let maxAutocorr = -Infinity;
+    for (let lag = 12; lag <= 40; lag++) {
+      const ac = autocorrelation(buf, lag);
+      if (ac > maxAutocorr) maxAutocorr = ac;
+    }
+
+    if (maxAutocorr < MIN_AUTOCORR) {
+      confirmationCountRef.current = 0;
+      fingerDetectedRef.current = false;
+      return false;
+    }
+
+    // Calcular ruido en derivada
+    const noise = rmsNoise(buf);
+    if (noise > MAX_NOISE) {
+      confirmationCountRef.current = 0;
+      fingerDetectedRef.current = false;
+      return false;
+    }
+
+    // Confirmar detección estable durante el tiempo mínimo
+    confirmationCountRef.current++;
+    if (confirmationCountRef.current >= MIN_CONFIRMATION_TIME_MS) {
+      fingerDetectedRef.current = true;
+      lastFingerDetectedTimeRef.current = Date.now();
     } else {
-      fingerDetectionWindowRef.current = 0;
       fingerDetectedRef.current = false;
     }
 
-    // Logs para depuración
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[SignalQualityDetector] amp:', ampScore.toFixed(2), 'per:', periodicityScore.toFixed(2), 'stab:', stabilityScore.toFixed(2), 'noise:', noiseScore.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'qual:', quality, 'finger:', fingerDetectedRef.current);
+      console.debug("[useSignalQualityDetector] Amplitude:", amplitude.toFixed(3),
+        "MaxAutoCorr:", maxAutocorr.toFixed(3),
+        "Noise:", noise.toFixed(3),
+        "ConfirmCount:", confirmationCountRef.current,
+        "FingerDetected:", fingerDetectedRef.current);
     }
 
-    // Considerar señal débil si no hay dedo detectado o calidad baja
-    return !fingerDetectedRef.current || quality < 30;
-  };
-
-  // API: isFingerDetected
-  const isFingerDetected = useCallback(() => {
     return fingerDetectedRef.current;
   }, []);
 
-  // API: reset
-  const reset = () => {
+  const reset = useCallback(() => {
     signalBufferRef.current = [];
-    lastQualityRef.current = 0;
-    fingerDetectionWindowRef.current = 0;
     fingerDetectedRef.current = false;
-  };
+    confirmationCountRef.current = 0;
+  }, []);
 
   return {
-    detectWeakSignal,
-    isFingerDetected,
-    reset,
-    signalBufferRef,
-    lastQualityRef,
-    fingerDetectionWindowRef,
-    fingerDetectedRef
+    detectFinger,
+    isFingerDetected: () => fingerDetectedRef.current,
+    reset
   };
 };
+
+

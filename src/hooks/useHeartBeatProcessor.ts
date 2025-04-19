@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -77,11 +78,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         }
       }
       
-      if (processorRef.current) {
-        processorRef.current.setMonitoring(true);
-        console.log('HeartBeatProcessor: Monitoring state set to true, audio centralizado en PPGSignalMeter');
-        isMonitoringRef.current = true;
-      }
+      // setMonitoring removed because it does not exist
+      isMonitoringRef.current = true;
+      
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
       toast.error('Error initializing heartbeat processor');
@@ -92,10 +91,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         timestamp: new Date().toISOString()
       });
       
-      if (processorRef.current) {
-        processorRef.current.setMonitoring(false);
-        processorRef.current = null;
-      }
+      // No setMonitoring call on cleanup either
+      isMonitoringRef.current = false;
+      processorRef.current = null;
       
       if (typeof window !== 'undefined') {
         (window as any).heartBeatProcessor = undefined;
@@ -167,7 +165,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     });
     
     if (processorRef.current) {
-      processorRef.current.setMonitoring(false);
+      // No setMonitoring here either
       isMonitoringRef.current = false;
       
       processorRef.current.reset();
@@ -190,7 +188,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     console.log('useHeartBeatProcessor: Starting monitoring');
     if (processorRef.current) {
       isMonitoringRef.current = true;
-      processorRef.current.setMonitoring(true);
+      // No setMonitoring method call
       console.log('HeartBeatProcessor: Monitoring state set to true');
       
       lastPeakTimeRef.current = null;
@@ -212,7 +210,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
     if (processorRef.current) {
       isMonitoringRef.current = false;
-      processorRef.current.setMonitoring(false);
+      // No setMonitoring method call
       console.log('HeartBeatProcessor: Monitoring state set to false');
     }
     
@@ -233,3 +231,4 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     stopMonitoring
   };
 };
+

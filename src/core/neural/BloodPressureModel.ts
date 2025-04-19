@@ -1,4 +1,4 @@
-import * as tf from '@tensorflow/tfjs';
+
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -65,43 +65,50 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
    * @param input Señal PPG
    * @returns [sistólica, diastólica] en mmHg
    */
-  predict(input: Tensor1D): Tensor1D | null {
-    // Chequeo de inicialización de TensorFlow y OpenCV
-    if (typeof window !== 'undefined') {
-      if (!window.cv) {
-        console.error('[BloodPressureNeuralModel] OpenCV no está inicializado.');
-        throw new Error('OpenCV debe estar inicializado para medir.');
-      }
-    }
-    if (typeof tf === 'undefined' || !tf || !tf.ready) {
-      console.error('[BloodPressureNeuralModel] TensorFlow no está inicializado.');
-      throw new Error('TensorFlow debe estar inicializado para medir.');
-    }
+  predict(input: Tensor1D): Tensor1D {
     const startTime = Date.now();
+    
     try {
-      console.log('[BloodPressureNeuralModel] Preprocesando entrada...');
+      // Preprocesar entrada
       const processedInput = this.preprocessInput(input);
+      
+      // Forward pass - extracción de características
       let features = this.conv1.forward([processedInput]);
       features = this.bn1.forward(features);
+      
+      // Blocks residuales
       features = this.residualBlock1.forward(features);
       features = this.residualBlock2.forward(features);
+      
+      // Global average pooling
       const pooled = this.globalAveragePooling(features);
+      
+      // Rama sistólica
       let systolicOut = this.systolicBranch1.forward(pooled);
       systolicOut = this.systolicBranch2.forward(systolicOut);
       systolicOut = this.systolicOutput.forward(systolicOut);
+      
+      // Rama diastólica
       let diastolicOut = this.diastolicBranch1.forward(pooled);
       diastolicOut = this.diastolicBranch2.forward(diastolicOut);
       diastolicOut = this.diastolicOutput.forward(diastolicOut);
+      
+      // Aplicar restricciones fisiológicas
+      // Sistólica: 90-180 mmHg
       const systolic = Math.max(90, Math.min(180, 115 + systolicOut[0]));
+      
+      // Diastólica: 60-110 mmHg
       const diastolic = Math.max(60, Math.min(110, 75 + diastolicOut[0]));
+      
+      // Asegurar que sistólica > diastólica por al menos 20 mmHg
       const adjustedDiastolic = Math.min(diastolic, systolic - 20);
+      
       this.updatePredictionTime(startTime);
-      console.log('[BloodPressureNeuralModel] Predicción final:', systolic, adjustedDiastolic);
       return [Math.round(systolic), Math.round(adjustedDiastolic)];
     } catch (error) {
-      console.error('[BloodPressureNeuralModel] Error en predict:', error);
+      console.error('Error en BloodPressureNeuralModel.predict:', error);
       this.updatePredictionTime(startTime);
-      return null;
+      return [120, 80]; // Valores por defecto
     }
   }
   

@@ -830,21 +830,21 @@ export class IntelligentCalibrationSystem {
         this.applyUserProfile();
         console.log('Perfil de calibración cargado desde localStorage');
       }
-
+      
       // Intentar sincronizar con Supabase si está disponible
       const { data, error } = await supabase
         .from('calibration_settings')
         .select('*')
         .eq('is_active', true)
         .single();
-
+      
       if (data && !error) {
-        // Convertir formato de base de datos a perfil de usuario
+        // Corregir asignación, solo propiedades que existen en la tabla
         this.userProfile = {
           userId: data.user_id,
           createdAt: new Date(data.created_at),
-          lastUpdated: new Date(data.updated_at ?? data.last_calibration_date ?? Date.now()),
-          correctionFactors: {
+          lastUpdated: new Date(data.updated_at),
+          correctionFactors: { 
             heartRate: 1.0,
             spo2: 1.0,
             systolic: 1.0,
@@ -868,7 +868,7 @@ export class IntelligentCalibrationSystem {
             minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
           }
         };
-
+        
         this.applyUserProfile();
         console.log('Perfil de calibración sincronizado con Supabase');
       }
