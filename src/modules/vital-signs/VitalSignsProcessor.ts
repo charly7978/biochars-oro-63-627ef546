@@ -14,6 +14,7 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
 import { SignalOptimizerManager } from '../signal-optimizer/SignalOptimizerManager';
+import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
 
 // Instancia global o de clase del optimizador para todos los canales relevantes
 const optimizerManager = new SignalOptimizerManager({
@@ -21,6 +22,10 @@ const optimizerManager = new SignalOptimizerManager({
   ir: { filterType: 'sma', gain: 1.0 },
   green: { filterType: 'ema', gain: 1.0 }
 });
+
+// Registrar el archivo y la tarea única globalmente (fuera de la clase)
+antiRedundancyGuard.registerFile('src/modules/vital-signs/VitalSignsProcessor.ts');
+antiRedundancyGuard.registerTask('VitalSignsProcessorSingleton');
 
 /**
  * Main vital signs processor

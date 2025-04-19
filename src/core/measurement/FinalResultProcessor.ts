@@ -5,6 +5,8 @@
  * mediciones antes de mostrar el resultado final al usuario, mejorando
  * significativamente la estabilidad y precisión de las métricas reportadas.
  */
+import { antiRedundancyGuard } from 'src/core/validation/CrossValidationSystem';
+
 export class FinalResultProcessor {
   // Almacenamiento de mediciones para cada tipo
   private measurements: Record<string, {
@@ -252,6 +254,10 @@ export class FinalResultProcessor {
     }
   }
 }
+
+// Registrar el archivo y la tarea única globalmente (fuera de la clase)
+antiRedundancyGuard.registerFile('src/core/measurement/FinalResultProcessor.ts');
+antiRedundancyGuard.registerTask('FinalResultProcessorSingleton');
 
 /**
  * Instancia singleton para uso global
