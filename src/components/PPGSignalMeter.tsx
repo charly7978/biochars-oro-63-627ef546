@@ -634,8 +634,37 @@ const PPGSignalMeter = memo(({
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
+  // Mostrar alerta visual de arritmia cuando isArrhythmia sea true
+  useEffect(() => {
+    if (isArrhythmia) {
+      setShowArrhythmiaAlert(true);
+      const timeout = setTimeout(() => setShowArrhythmiaAlert(false), 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [isArrhythmia]);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+      {showArrhythmiaAlert && (
+        <div style={{
+          position: 'absolute',
+          top: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 100,
+          background: '#DC2626',
+          color: '#fff',
+          padding: '12px 32px',
+          borderRadius: '16px',
+          fontWeight: 'bold',
+          fontSize: '1.3rem',
+          boxShadow: '0 2px 16px #0008',
+          letterSpacing: '0.05em',
+          animation: 'fade-in 0.3s',
+        }}>
+          ¡ARRITMIA DETECTADA!
+        </div>
+      )}
       <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
         <canvas
           ref={canvasRef}
