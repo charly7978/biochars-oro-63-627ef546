@@ -85,21 +85,18 @@ class FingerDetectionService {
 
     // Ampliar el buffer de análisis a 120 muestras (~4 segundos)
     const ANALYSIS_BUFFER_SIZE = 120;
+    const CONFIRM_WINDOW = 90; // 3 segundos a 30Hz
     const recentSignals = this.signalHistory.slice(-ANALYSIS_BUFFER_SIZE);
     const amplitude = Math.max(...recentSignals) - Math.min(...recentSignals);
     const mean = recentSignals.reduce((sum, val) => sum + val, 0) / recentSignals.length;
     const variance = recentSignals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentSignals.length;
     const stdDev = Math.sqrt(variance);
-    // Flatline: desviación muy baja
     const isFlat = stdDev < 0.002;
-    // Saturación: valores muy cerca de los extremos
     const isSaturated = recentSignals.filter(v => Math.abs(v) > 0.95).length > recentSignals.length * 0.2;
-    // SNR (Signal-to-Noise Ratio)
     const signalPower = mean * mean;
     const noisePower = variance;
     const snr = noisePower > 0 ? 10 * Math.log10(signalPower / noisePower) : 0;
-    const snrLow = snr < 5; // 5 dB mínimo
-    // Periodicidad: autocorrelación simple
+    const snrLow = snr < 7; // Más estricto: 7 dB mínimo
     function autocorr(sig: number[], lag: number) {
       let sum = 0;
       for (let i = 0; i < sig.length - lag; i++) {
@@ -108,28 +105,23 @@ class FingerDetectionService {
       return sum / (sig.length - lag);
     }
     let periodicityScore = 0;
-    for (let lag = 8; lag <= 45; lag++) { // 40-200 BPM
+    for (let lag = 8; lag <= 45; lag++) {
       const ac = autocorr(recentSignals, lag);
       if (ac > periodicityScore) periodicityScore = ac;
     }
     periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-    // Ruido: varianza de la derivada
     const diffs = recentSignals.slice(1).map((v, i) => v - recentSignals[i]);
     const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
-    const noiseScore = 1 - Math.min(1, noise / 0.05);
-    // Amplitud normalizada
-    const ampScore = Math.max(0, Math.min(1, (amplitude - 0.01) / 0.2));
-    // Estabilidad (1 - coeficiente de variación)
+    const noiseScore = 1 - Math.min(1, noise / 0.04); // Más estricto
+    const ampScore = Math.max(0, Math.min(1, (amplitude - 0.015) / 0.18)); // Más estricto
     const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
-    // Forma de onda fisiológica: subida más rápida que bajada
     let upTime = 0, downTime = 0;
     for (let i = 1; i < recentSignals.length; i++) {
       if (recentSignals[i] > recentSignals[i-1]) upTime++;
       else if (recentSignals[i] < recentSignals[i-1]) downTime++;
     }
     const upDownRatio = downTime > 0 ? upTime / downTime : 0;
-    const physiologicalShape = upDownRatio > 0.7 && upDownRatio < 1.5;
-    // Calidad compuesta
+    const physiologicalShape = upDownRatio > 0.8 && upDownRatio < 1.2; // Más estricto
     const flatPenalty = isFlat ? 0 : 1;
     const satPenalty = isSaturated ? 0 : 1;
     let quality = (
@@ -142,48 +134,30 @@ class FingerDetectionService {
     quality = 0.2 * quality + 0.8 * (this as any)._lastQuality;
     (this as any)._lastQuality = quality;
     quality = Math.round(quality * 100);
-    // Detección robusta de dedo (mejorada)
-    const isFingerDetected = (
-      ampScore > 0.35 &&
-      periodicityScore > 0.35 &&
-      stabilityScore > 0.35 &&
+    // Criterios fisiológicos robustos
+    const allCriteria = (
+      ampScore > 0.45 &&
+      periodicityScore > 0.45 &&
+      stabilityScore > 0.45 &&
       !isFlat &&
       !isSaturated &&
-      noiseScore > 0.7 &&
+      noiseScore > 0.8 &&
       !snrLow &&
       physiologicalShape &&
       this.validator.isFingerDetected()
     );
-    // Cooldown tras detección falsa
-    if (!isFingerDetected && this.fingerDetectionWindow > 0) {
-      if (!this._cooldownStart) this._cooldownStart = Date.now();
-      if (Date.now() - this._cooldownStart < 1000) {
-        // Mantener ventana en 0 durante cooldown
-        this.fingerDetectionWindow = 0;
-        this.fingerDetected = false;
-        return this._lastResult || {
-          isFingerDetected: false,
-          quality,
-          confidence: 0,
-          rhythmDetected: false,
-          signalStrength: amplitude,
-          lastUpdate: Date.now(),
-          feedback: 'Cooldown tras detección falsa'
-        };
-      } else {
-        this._cooldownStart = null;
-      }
-    }
-    // Ventana de confirmación más larga
-    if (isFingerDetected) {
+    // Ventana de confirmación continua: si falla cualquier criterio, reiniciar
+    if (allCriteria) {
       this.fingerDetectionWindow++;
-      if (this.fingerDetectionWindow > 75) this.fingerDetected = true;
+      if (this.fingerDetectionWindow >= CONFIRM_WINDOW) {
+        this.fingerDetected = true;
+      }
     } else {
       this.fingerDetectionWindow = 0;
       this.fingerDetected = false;
     }
-    // Chequeo de caídas bruscas o saltos grandes
-    if (recentSignals.length > 1 && Math.abs(recentSignals[recentSignals.length-2] - recentSignals[recentSignals.length-1]) > 0.3) {
+    // Chequeo de saltos grandes
+    if (recentSignals.length > 1 && Math.abs(recentSignals[recentSignals.length-2] - recentSignals[recentSignals.length-1]) > 0.2) {
       this.fingerDetectionWindow = 0;
       this.fingerDetected = false;
     }
@@ -195,7 +169,15 @@ class FingerDetectionService {
       rhythmDetected: this.validator.isFingerDetected(),
       signalStrength: amplitude,
       lastUpdate: Date.now(),
-      feedback: this.generateFeedback(isFingerDetected, quality, amplitude, this.validator.isFingerDetected(), snr, physiologicalShape)
+      feedback: this.generateFeedback(
+        allCriteria,
+        quality,
+        amplitude,
+        this.validator.isFingerDetected(),
+        snr,
+        physiologicalShape,
+        noiseScore
+      )
     };
     return this._lastResult;
   }
@@ -231,7 +213,7 @@ class FingerDetectionService {
     );
   }
 
-  private generateFeedback(isFingerDetected: boolean, quality: number, signalStrength: number, rhythmDetected: boolean, snr?: number, physiologicalShape?: boolean): string {
+  private generateFeedback(isFingerDetected: boolean, quality: number, signalStrength: number, rhythmDetected: boolean, snr?: number, physiologicalShape?: boolean, noiseScore?: number): string {
     if (!isFingerDetected) {
       if (signalStrength < this.config.minSignalAmplitude) {
         return "Señal muy débil - Asegure que su dedo cubra completamente la cámara";
@@ -242,11 +224,14 @@ class FingerDetectionService {
       if (quality < this.config.minQualityThreshold) {
         return "Calidad de señal baja - Ajuste la posición del dedo";
       }
-      if (snr !== undefined && snr < 5) {
-        return "Relación señal/ruido baja - Evite movimiento y luz ambiental excesiva";
+      if (snr !== undefined && snr < 7) {
+        return "Relación señal/ruido insuficiente - Evite movimiento y luz ambiental excesiva";
       }
       if (physiologicalShape === false) {
         return "Forma de onda no fisiológica - Ajuste el dedo para mejor contacto";
+      }
+      if (noiseScore !== undefined && noiseScore < 0.8) {
+        return "Ruido excesivo en la señal - Mantenga el dedo firme y evite vibraciones";
       }
     }
     return "Señal OK";
