@@ -1,7 +1,10 @@
-
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
+ *
+ * NOTA IMPORTANTE SOBRE VIBRACIÓN:
+ * - navigator.vibrate SOLO funciona en dispositivos compatibles (Android, algunos navegadores móviles)
+ * - SOLO funciona en contexto seguro (HTTPS), y tras interacción de usuario
  */
 
 import { toast } from "@/hooks/use-toast";
@@ -29,38 +32,37 @@ const isVibrationSupported = (): boolean => {
   return 'vibrate' in navigator;
 };
 
-// Verificar si estamos en un entorno de desarrollo o producción
-const isDevelopmentMode = (): boolean => {
-  return process.env.NODE_ENV === 'development' || window.location.hostname.includes('localhost');
-};
-
 // Instancia de servicio para evitar duplicidad
 let instance: typeof FeedbackService | null = null;
 
 export const FeedbackService = {
-  // Retroalimentación háptica
+  /**
+   * Retroalimentación háptica (vibración)
+   * @param pattern Patrón de vibración (ms o array)
+   * @returns true si se intentó vibrar
+   */
   vibrate: (pattern: number | number[] = 200): boolean => {
     if (!isVibrationSupported()) {
-      console.warn('Vibración no soportada en este dispositivo');
+      console.warn('[FeedbackService] Vibración no soportada en este dispositivo/navegador');
       return false;
     }
-    
     try {
-      // En desarrollo, solo simulamos la vibración
-      if (isDevelopmentMode()) {
-        console.log('Simulando vibración:', pattern);
-        return true;
+      const ok = navigator.vibrate(pattern);
+      if (!ok) {
+        console.warn('[FeedbackService] navigator.vibrate fue llamado pero el navegador lo ignoró (¿no hay interacción de usuario o no es HTTPS?)', pattern);
       }
-      
-      navigator.vibrate(pattern);
-      return true;
+      return ok;
     } catch (error) {
-      console.error('Error al activar vibración:', error);
+      console.error('[FeedbackService] Error al activar vibración:', error);
       return false;
     }
   },
 
-  // Retroalimentación háptica específica para latidos
+  /**
+   * Retroalimentación háptica específica para latidos
+   * ¡Se recomienda llamar tras interacción de usuario y en HTTPS!
+   * @param isArrhythmia Si es arritmia, vibra más fuerte
+   */
   vibrateHeartbeat: (isArrhythmia: boolean = false): boolean => {
     if (isArrhythmia) {
       return FeedbackService.vibrate([50, 100, 50, 100]);

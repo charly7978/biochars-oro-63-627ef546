@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -9,7 +10,6 @@ import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
-import { ResultFactory } from '../modules/vital-signs/factories/result-factory';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -74,9 +74,21 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    // Procesar la señal directamente usando el SignalProcessor centralizado
+    // Check for weak signal to detect finger removal using centralized function
+    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+      value,
+      weakSignalsCountRef.current,
+      {
+        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
+        maxWeakSignalCount: MAX_WEAK_SIGNALS
+      }
+    );
+    
+    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    
+    // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       const currentTime = Date.now();
       
       // Add safe null check for arrhythmiaStatus
@@ -108,10 +120,24 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
+      // Always return real result
       return result;
     } catch (error) {
-      console.error("Error procesando señal en useVitalSignsProcessor:", error);
-      return ResultFactory.createEmptyResults();
+      console.error("Error processing vital signs:", error);
+      
+      // Return safe fallback values on error that include hydration
+      return {
+        spo2: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        },
+        hemoglobin: 0,
+        hydration: 0
+      };
     }
   };
 
