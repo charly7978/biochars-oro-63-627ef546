@@ -61,69 +61,55 @@ export const useVitalSignsProcessor = () => {
       return ResultFactory.createEmptyResults();
     }
 
-    // Incrementar contador de señales procesadas
     processedSignals.current += 1;
 
-    // --- Inicio: Procesamiento con SignalOptimizerManager --- 
+    // --- Procesamiento con SignalOptimizerManager --- 
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
-      // Pasamos rawValue del ROI al optimizador de cada canal
       optimizedValues[channel] = optimizerManager.process(channel, processedSignal.rawValue);
     }
-    // El valor 'general' o uno específico (ej. 'hr') se podría usar como principal
     const primaryOptimizedValue = optimizedValues['general'] ?? processedSignal.filteredValue;
-    // --- Fin: Procesamiento con SignalOptimizerManager --- 
 
-    // >> Llamar a VitalSignsProcessor con la nueva firma <<
-    //    (VitalSignsProcessor.processSignal necesita ser modificada)
+    // --- Llamada a VitalSignsProcessor --- 
     const result = processorRef.current.processSignal(
-      primaryOptimizedValue, // Pasar el valor optimizado principal
-      processedSignal,       // Pasar el objeto completo para contexto (calidad, etc.)
+      primaryOptimizedValue,
+      processedSignal,
       rrData,
-      optimizedValues      // Pasar todos los valores optimizados para uso interno si es necesario
+      optimizedValues
     );
 
-    // Actualizar el último resultado válido si hay datos significativos
-    if (result.spo2 > 0 || result.pressure !== "--/--" || result.glucose > 0) {
-        setLastValidResults(result);
-    }
-    
-    // --- Inicio: Aplicar Feedback al Optimizador --- 
-    const feedback: Record<string, ChannelFeedback> = {};
-    const baseQuality = processedSignal.quality; // Usar calidad de la señal base
-    const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85)); // Normalizar calidad a confianza (0-1)
+    // *** CORRECCIÓN: Actualizar siempre el estado ***
+    // Actualizar el estado SIEMPRE con el último resultado obtenido del procesador,
+    // sea válido, vacío o intermedio. La UI se encargará de mostrar "--" o 0 si es necesario.
+    setLastValidResults(result);
 
-    // Feedback genérico basado en calidad general
+    // --- Aplicar Feedback al Optimizador (sin cambios) --- 
+    const feedback: Record<string, ChannelFeedback> = {};
+    const baseQuality = processedSignal.quality;
+    const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
     OPTIMIZER_CHANNELS.forEach(channel => {
       feedback[channel] = { metricType: channel, quality: baseQuality, confidence: baseConfidence };
     });
-
-    // Sobrescribir con feedback específico si hay más información
     if (result.glucoseConfidence !== undefined) {
-        feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence); // Combinar confianzas
+        feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence);
     }
     if (result.lipidsConfidence !== undefined) {
-        feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence); // Combinar confianzas
+        feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence);
     }
-    // Podríamos añadir lógica para BP basada en Pulse Pressure o estabilidad, etc.
-    // ...
-    
-    // Aplicar feedback a cada canal del optimizador
     for (const channel of OPTIMIZER_CHANNELS) {
         if (feedback[channel]) {
             optimizerManager.applyFeedback(channel, feedback[channel]);
         }
     }
-    // --- Fin: Aplicar Feedback al Optimizador --- 
 
-    // Log y visualización de arritmia
+    // --- Log y visualización (sin cambios) --- 
     logSignalData(primaryOptimizedValue, result, processedSignals.current);
     if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);
     }
 
     return result;
-  }, [optimizerManager, logSignalData, addArrhythmiaWindow]); // Dependencia del optimizador
+  }, [optimizerManager, logSignalData, addArrhythmiaWindow]);
 
   const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
     processorRef.current?.applyBloodPressureCalibration(systolic, diastolic);

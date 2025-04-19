@@ -84,29 +84,28 @@ export class VitalSignsProcessor {
     rrData?: RRData,
     allOptimizedValues?: Record<string, number>
   ): VitalSignsResult {
-    // Validar entrada básica
     if (!contextSignal || typeof primaryOptimizedValue !== 'number') {
         console.warn("VitalSignsProcessor: Entrada inválida para processSignal");
         return this.lastValidResult ?? ResultFactory.createEmptyResults();
     }
 
-    // Usar calidad y detección de dedo del contexto
     const { quality, fingerDetected } = contextSignal;
 
     // Si no hay dedo o la calidad es muy baja, devolver último válido o vacío
-    if (!fingerDetected || quality < 20) { // Umbral de calidad mínimo
-      return this.lastValidResult ?? ResultFactory.createEmptyResults();
+    if (!fingerDetected || quality < 15) { // ANTES: 20
+      // Devolver vacío en lugar del último válido para forzar reseteo visual si se pierde dedo/calidad
+      return ResultFactory.createEmptyResults(); 
     }
 
-    // --- Buffering del valor optimizado principal --- 
     this.ppgBuffer.push(primaryOptimizedValue);
     if (this.ppgBuffer.length > this.BUFFER_SIZE) {
       this.ppgBuffer.shift();
     }
 
     // No procesar si el buffer no está lleno
-    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.8) { // Esperar a tener ~80% del buffer
-        return this.lastValidResult ?? ResultFactory.createEmptyResults();
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.5) { // ANTES: 0.8
+        // Devolver vacío si el buffer no está suficientemente lleno
+        return ResultFactory.createEmptyResults(); 
     }
 
     // --- Cálculos específicos usando el buffer optimizado --- 
