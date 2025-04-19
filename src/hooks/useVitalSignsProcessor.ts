@@ -35,6 +35,23 @@ interface ExtendedProcessedSignalForHook extends ProcessedSignal {
   maxValue?: number;
 }
 
+// Función throttle genérica para limitar la frecuencia de ejecución de una función asíncrona.
+function throttle<T extends (...args: any[]) => Promise<any>>(func: T, limit: number): T {
+  let inThrottle = false;
+  return (async function (...args: any[]) {
+    if (!inThrottle) {
+      inThrottle = true;
+      try {
+        return await func(...args);
+      } finally {
+        setTimeout(() => {
+          inThrottle = false;
+        }, limit);
+      }
+    }
+  } as T);
+}
+
 export const useVitalSignsProcessor = () => {
   const processorRef = useRef<VitalSignsProcessor | null>(null);
   const processedSignals = useRef<number>(0);
@@ -143,20 +160,20 @@ export const useVitalSignsProcessor = () => {
     }
   }, [tfModelReady, tfPredict, normalizeSignal]);
 
-  const processSignal = useCallback(async (processedSignal: ProcessedSignal, rrData?: { intervals: number[], lastPeakTime: number | null }): Promise<VitalSignsResult> => {
+  // Lógica principal de procesamiento, envuelta en throttle
+  const processSignalInternal = async (
+    processedSignal: ProcessedSignal,
+    rrData?: { intervals: number[]; lastPeakTime: number | null }
+  ): Promise<VitalSignsResult> => {
     if (!processorRef.current || !processingEnabledRef.current) {
       console.warn("VitalSignsProcessor not initialized or processing disabled.");
       return ResultFactory.createEmptyResults();
     }
-
     const now = Date.now();
-    if (now - lastProcessingTime.current < MIN_PROCESSING_INTERVAL_MS) { 
-      if (lastValidResults) {
-        return lastValidResults;
-      }
+    if (now - lastProcessingTime.current < MIN_PROCESSING_INTERVAL_MS && lastValidResults) {
+      return lastValidResults;
     }
     lastProcessingTime.current = now;
-
     const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
     processedSignals.current += 1;
 
@@ -306,7 +323,13 @@ export const useVitalSignsProcessor = () => {
     }
 
     return result;
-  }, [optimizerManager, logSignalData, addArrhythmiaWindow, lastValidResults, tfModelReady, predictWithTensorFlow]);
+  };
+
+  // Envolver la función interna con throttle para limitar su frecuencia de ejecución
+  const processSignal = useCallback(
+    throttle(processSignalInternal, 30),
+    [optimizerManager, logSignalData, addArrhythmiaWindow, tfModelReady, tfPredict]
+  );
 
   const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
     console.log(`Applying blood pressure calibration: ${systolic}/${diastolic} mmHg`);
