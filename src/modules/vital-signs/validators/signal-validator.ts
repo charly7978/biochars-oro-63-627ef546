@@ -8,16 +8,16 @@
 export class SignalValidator {
   private readonly minAmplitude: number;
   private readonly minDataPoints: number;
-  private readonly minSignalStrength: number = 0.0005; // Reduced to improve sensitivity
+  private readonly minSignalStrength: number = 0.005; // Reducido para mayor sensibilidad
   
-  // Finger detection variables - more sensitive settings
+  // Finger detection variables
   private signalPatternBuffer: number[] = [];
   private patternDetectionCounter: number = 0;
   private fingerDetected: boolean = false;
-  private readonly PATTERN_BUFFER_SIZE = 15; // Reduced from 20 for faster detection
-  private readonly MIN_PATTERN_DETECTION_COUNT = 2; // Reduced from 3 for faster detection
+  private readonly PATTERN_BUFFER_SIZE = 30;
+  private readonly MIN_PATTERN_DETECTION_COUNT = 5;
 
-  constructor(minAmplitude: number = 0.003, minDataPoints: number = 8) {
+  constructor(minAmplitude: number = 0.005, minDataPoints: number = 10) {
     this.minAmplitude = minAmplitude;
     this.minDataPoints = minDataPoints;
   }
@@ -43,15 +43,11 @@ export class SignalValidator {
     if (values.length < 5) return false;
     
     // Tomar solo los últimos valores para análisis
-    const recentValues = values.slice(-10); // Reduced from 15 for faster response
+    const recentValues = values.slice(-15);
     
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
     const amplitude = max - min;
-    
-    console.log("SignalValidator amplitude check:", {
-      min, max, amplitude, threshold: this.minAmplitude
-    });
     
     return amplitude >= this.minAmplitude;
   }
@@ -59,7 +55,6 @@ export class SignalValidator {
   /**
    * Track signal for rhythmic pattern detection to identify finger presence
    * Uses physiological characteristics to recognize true finger signals
-   * More aggressive detection now
    */
   public trackSignalForPatternDetection(value: number): void {
     // Add value to pattern buffer
@@ -76,18 +71,12 @@ export class SignalValidator {
       
       if (hasRhythmicPattern) {
         this.patternDetectionCounter = Math.min(this.patternDetectionCounter + 1, this.MIN_PATTERN_DETECTION_COUNT + 3);
-        console.log("SignalValidator: Rhythmic pattern detected", { counter: this.patternDetectionCounter });
       } else {
         this.patternDetectionCounter = Math.max(0, this.patternDetectionCounter - 1);
       }
       
       // Update finger detection status based on consistent pattern detection
-      const wasDetected = this.fingerDetected;
       this.fingerDetected = this.patternDetectionCounter >= this.MIN_PATTERN_DETECTION_COUNT;
-      
-      if (this.fingerDetected !== wasDetected) {
-        console.log("SignalValidator: Finger detection changed to", this.fingerDetected);
-      }
     }
   }
   
@@ -110,24 +99,23 @@ export class SignalValidator {
   /**
    * Detect rhythmic patterns in signal that are characteristic of PPG
    * Looking for periodic patterns with physiological timing
-   * Much more sensitive parameters used here
    */
   private detectRhythmicPattern(values: number[]): boolean {
-    if (values.length < 8) return false; // Reduced from 10
+    if (values.length < 10) return false;
     
-    // Calculate local peaks to find heartbeat rhythm - more lenient peak detection
+    // Calculate local peaks to find heartbeat rhythm
     const peaks: number[] = [];
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > values[i-1] && values[i] > values[i+1]) {
+    for (let i = 2; i < values.length - 2; i++) {
+      if (values[i] > values[i-1] && 
+          values[i] > values[i-2] && 
+          values[i] > values[i+1] && 
+          values[i] > values[i+2]) {
         peaks.push(i);
       }
     }
     
     // Need at least 2 peaks to analyze intervals
-    if (peaks.length < 2) {
-      console.log("SignalValidator: Not enough peaks found", { peakCount: peaks.length });
-      return false;
-    }
+    if (peaks.length < 2) return false;
     
     // Calculate intervals between peaks
     const intervals: number[] = [];
@@ -135,33 +123,20 @@ export class SignalValidator {
       intervals.push(peaks[i] - peaks[i-1]);
     }
     
-    // Check if intervals are within physiological range (30-220 BPM)
-    // At 30Hz sampling, that's roughly between 8-60 samples between peaks
-    // Much more lenient now: 25-240 BPM or 7-72 samples
-    const validIntervals = intervals.filter(interval => interval >= 7 && interval <= 72);
+    // Check if intervals are within physiological range (40-200 BPM)
+    // At 30Hz sampling, that's roughly between 9-45 samples between peaks
+    const validIntervals = intervals.filter(interval => interval >= 9 && interval <= 45);
     
-    // Calculate consistency of intervals (CV < 0.30 for stable rhythm - more lenient)
+    // Calculate consistency of intervals (CV < 0.2 for stable rhythm)
     if (validIntervals.length >= 2) {
       const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
       const variance = validIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / validIntervals.length;
       const cv = Math.sqrt(variance) / avgInterval; // Coefficient of variation
       
-      console.log("SignalValidator rhythm metrics:", { 
-        validIntervals: validIntervals.length,
-        totalIntervals: intervals.length,
-        avgInterval, 
-        cv, 
-        threshold: 0.30 
-      });
-      
-      // CV < 0.30 indicates consistent periodic pattern (more lenient than 0.25)
-      return cv < 0.30;
+      // CV < 0.2 indicates consistent periodic pattern
+      return cv < 0.2;
     }
     
-    console.log("SignalValidator: Not enough valid intervals found", { 
-      validIntervals: validIntervals.length, 
-      totalIntervals: intervals.length 
-    });
     return false;
   }
   

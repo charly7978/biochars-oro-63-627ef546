@@ -3,8 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { SignalProcessor } from '../modules/vital-signs/signal-processor';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
 /**
@@ -19,7 +19,7 @@ export const useSignalProcessor = () => {
       sessionId: Math.random().toString(36).substring(2, 9)
     });
     
-    return new SignalProcessor();
+    return new PPGSignalProcessor();
   });
   
   // Basic state
@@ -34,174 +34,50 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
 
-  const frameBuffer = useRef<ImageData[]>([]);
-  const lastFrameTimeRef = useRef<number>(0);
-  const frameRateRef = useRef<number>(30);
-  const processingErrorsRef = useRef<number>(0);
-  const logPeriodRef = useRef<number>(0);
-  const FRAME_BUFFER_SIZE = 5;
-  const MAX_CONSECUTIVE_ERRORS = 10;
-  const targetFrameInterval = 1000 / 30; // Target 30fps
-
-  // Process a frame to extract PPG values
-  const processFrame = useCallback((imageData: ImageData) => {
-    if (!isProcessing) return;
-
-    try {
-      const now = Date.now();
-      
-      // Maintain consistent framerate - only process frames at target interval
-      if (now - lastFrameTimeRef.current < targetFrameInterval) {
-        return;
-      }
-      
-      lastFrameTimeRef.current = now;
-
-      // Add frame to buffer
-      frameBuffer.current.push(imageData);
-      if (frameBuffer.current.length > FRAME_BUFFER_SIZE) {
-        frameBuffer.current.shift();
-      }
-
-      // Check if ImageData is valid
-      if (!imageData || !imageData.data || imageData.width <= 0 || imageData.height <= 0) {
-        console.error("useSignalProcessor: Invalid ImageData received");
-        return;
-      }
-
-      // Extract red and green channel average from center region (larger region for better signal)
-      const centerX = Math.floor(imageData.width / 2);
-      const centerY = Math.floor(imageData.height / 2);
-      const regionSize = 40; // Increased for better signal coverage
-      
-      let redSum = 0;
-      let greenSum = 0;
-      let blueSum = 0;
-      let pixelCount = 0;
-      
-      for (let y = centerY - regionSize; y < centerY + regionSize; y++) {
-        for (let x = centerX - regionSize; x < centerX + regionSize; x++) {
-          if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
-            const i = (y * imageData.width + x) * 4;
-            redSum += imageData.data[i]; // Red channel
-            greenSum += imageData.data[i + 1]; // Green channel
-            blueSum += imageData.data[i + 2]; // Blue channel
-            pixelCount++;
-          }
-        }
-      }
-      
-      if (pixelCount === 0) {
-        console.error("useSignalProcessor: No valid pixels found in ROI");
-        return;
-      }
-      
-      // Log ROI stats periodically
-      logPeriodRef.current++;
-      if (logPeriodRef.current % 30 === 0) { // Log every ~1s at 30fps
-        console.log("ROI stats:", {
-          redAvg: redSum / pixelCount,
-          greenAvg: greenSum / pixelCount,
-          blueAvg: blueSum / pixelCount,
-          pixelCount,
-          brightnessAvg: (redSum + greenSum + blueSum) / (pixelCount * 3)
-        });
-        logPeriodRef.current = 0;
-      }
-      
-      // Use green channel as it typically provides better PPG signal
-      const ppgValue = greenSum / pixelCount;
-      
-      // Process the value through signal processor
-      procesarValor(ppgValue);
-      
-      // Reset error counter on success
-      processingErrorsRef.current = 0;
-      
-    } catch (err) {
-      console.error("Error processing frame:", err);
-      processingErrorsRef.current++;
-      
-      if (processingErrorsRef.current > MAX_CONSECUTIVE_ERRORS) {
-        setError({
-          code: 'PROCESSING_ERROR',
-          message: `Consecutive processing errors (${processingErrorsRef.current})`,
-          timestamp: Date.now()
-        });
-      }
-    }
-  }, [isProcessing]);
-
-  // Process a raw PPG value through filters
-  const procesarValor = useCallback((valorPPG: number) => {
-    try {
-      // Validate input
-      if (isNaN(valorPPG) || !isFinite(valorPPG)) {
-        console.error("useSignalProcessor: Invalid PPG value", valorPPG);
-        return;
-      }
-      
-      const resultado = processor.applyFilters(valorPPG);
-      
-      // Create full processed signal object for easier integration
-      const processedSignal: ProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: valorPPG,
-        filteredValue: resultado.filteredValue,
-        quality: resultado.quality,
-        fingerDetected: resultado.fingerDetected,
-        roi: {
-          x: 0, // Set to default, updated in frame processing
-          y: 0,
-          width: 0,
-          height: 0
-        },
-        value: resultado.filteredValue // For backwards compatibility
-      };
-      
-      setLastSignal(processedSignal);
+  // Set up processor callbacks and cleanup
+  useEffect(() => {
+    // Signal callback
+    processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
+      
+      // Update signal statistics
       setSignalStats(prev => {
         return {
-          minValue: Math.min(prev.minValue, resultado.filteredValue),
-          maxValue: Math.max(prev.maxValue, resultado.filteredValue),
-          avgValue: (prev.avgValue * prev.totalValues + resultado.filteredValue) / (prev.totalValues + 1),
+          minValue: Math.min(prev.minValue, signal.filteredValue),
+          maxValue: Math.max(prev.maxValue, signal.filteredValue),
+          avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
           totalValues: prev.totalValues + 1
         };
       });
-    } catch (err) {
-      console.error("Error procesando valor PPG:", err);
-      setError({
-        code: 'PROCESSING_ERROR',
-        message: 'Error procesando valor PPG',
-        timestamp: Date.now()
-      });
-    }
+    };
+
+    // Error callback
+    processor.onError = (error: ProcessingError) => {
+      console.error("useSignalProcessor: Error en procesamiento:", error);
+      setError(error);
+    };
+
+    // Initialize processor
+    processor.initialize().catch(error => {
+      console.error("useSignalProcessor: Error de inicialización:", error);
+    });
+
+    // Cleanup
+    return () => {
+      processor.stop();
+    };
   }, [processor]);
 
-  // Start/stop processing control
+  /**
+   * Start processing signals
+   */
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento");
+    
     setIsProcessing(true);
-    frameBuffer.current = [];
-    lastFrameTimeRef.current = 0;
-    processingErrorsRef.current = 0;
-    logPeriodRef.current = 0;
-  }, []);
-
-  const stopProcessing = useCallback(() => {
-    console.log("useSignalProcessor: Deteniendo procesamiento");
-    setIsProcessing(false);
-    frameBuffer.current = [];
-  }, []);
-
-  // Reset function to clear all state
-  const reset = useCallback(() => {
-    console.log("useSignalProcessor: Reset");
-    processor.reset();
-    setLastSignal(null);
-    setError(null);
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
@@ -209,28 +85,32 @@ export const useSignalProcessor = () => {
       avgValue: 0,
       totalValues: 0
     });
-    setIsProcessing(false);
-    frameBuffer.current = [];
-    lastFrameTimeRef.current = 0;
-    processingErrorsRef.current = 0;
-    logPeriodRef.current = 0;
+    
+    processor.start();
   }, [processor]);
 
-  // Log periodic stats for debugging
-  useEffect(() => {
+  /**
+   * Stop processing signals
+   */
+  const stopProcessing = useCallback(() => {
+    console.log("useSignalProcessor: Deteniendo procesamiento");
+    
+    setIsProcessing(false);
+    processor.stop();
+  }, [processor]);
+
+  /**
+   * Process a frame from camera
+   */
+  const processFrame = useCallback((imageData: ImageData) => {
     if (isProcessing) {
-      const statsInterval = setInterval(() => {
-        console.log("useSignalProcessor stats:", {
-          framesProcessed,
-          signalQuality: lastSignal?.quality || 0,
-          fingerDetected: lastSignal?.fingerDetected || false,
-          errors: processingErrorsRef.current
-        });
-      }, 3000);
-      
-      return () => clearInterval(statsInterval);
+      try {
+        processor.processFrame(imageData);
+      } catch (err) {
+        console.error("useSignalProcessor: Error procesando frame:", err);
+      }
     }
-  }, [isProcessing, framesProcessed, lastSignal]);
+  }, [isProcessing, processor]);
 
   return {
     isProcessing,
@@ -240,8 +120,6 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    procesarValor,
-    processFrame,
-    reset
+    processFrame
   };
 };
