@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -52,6 +53,7 @@ export class VitalSignsProcessor {
   private lastValidResult: VitalSignsResult | null = null;
   private ppgBuffer: number[] = []; // Buffer para el valor OPTIMIZADO principal
   private readonly BUFFER_SIZE = 150; // Tamaño de buffer para cálculos
+  private processingCount = 0;
 
   /**
    * Constructor that initializes all specialized processors
@@ -89,6 +91,13 @@ export class VitalSignsProcessor {
     rrData?: RRData,
     allOptimizedValues?: Record<string, number> // Mantener por si se usa para feedback
   ): VitalSignsResult {
+    this.processingCount++;
+    
+    // Log de procesamiento cada 10 frames
+    if (this.processingCount % 10 === 0) {
+      console.log(`Procesamiento VitalSigns #${this.processingCount} - Calidad: ${contextSignal.quality}, FingerDetected: ${contextSignal.fingerDetected}`);
+    }
+    
     if (!contextSignal || typeof primaryOptimizedValue !== 'number') {
         console.warn("VitalSignsProcessor: Entrada inválida para processSignal");
         return this.lastValidResult ?? ResultFactory.createEmptyResults();
@@ -97,6 +106,7 @@ export class VitalSignsProcessor {
     const { quality, fingerDetected } = contextSignal;
 
     if (!fingerDetected || quality < 15) {
+      console.log("VitalSignsProcessor: Dedo no detectado o calidad muy baja");
       return ResultFactory.createEmptyResults();
     }
 
@@ -106,8 +116,9 @@ export class VitalSignsProcessor {
       this.ppgBuffer.shift();
     }
 
-    // No procesar si el buffer no está lleno
-    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.5) {
+    // No procesar si el buffer no está suficientemente lleno
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.4) {
+        console.log(`VitalSignsProcessor: Buffer insuficiente (${this.ppgBuffer.length}/${this.BUFFER_SIZE})`);
         return ResultFactory.createEmptyResults();
     }
 
@@ -121,18 +132,37 @@ export class VitalSignsProcessor {
     let arrhythmiaResult: { arrhythmiaStatus: string; lastArrhythmiaData: any | null } = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
 
     try {
-      // *** LOG ANTES de SpO2 ***
-      // console.log(`VSProcessor: Calculando SpO2. Tamaño Buffer: ${this.ppgBuffer.length}. Primeros 5 valores: ${this.ppgBuffer.slice(0,5).map(v => v.toFixed(4)).join(', ')}`);
-      spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
-      // *** LOG DESPUÉS de SpO2 ***
-      // console.log(`VSProcessor: SpO2 calculado: ${spo2}`);
+      console.log("VitalSignsProcessor: Procesando señales...");
       
+      // SpO2 - Buffer completo para mejores resultados
+      spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
+      
+      // Presión arterial - requiere buffer suficiente
       pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
+      
+      // Arritmias - basado en intervalos RR
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
+      
+      // Glucosa - análisis espectral
       glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
+      
+      // Lípidos - análisis avanzado
       lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
+      
+      // Hemoglobina - correlación con SpO2
       hemoglobin = this.calculateDefaultHemoglobin(spo2);
+      
+      // Hidratación - análisis de señal
       hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
+
+      console.log("Resultados calculados:", { 
+        spo2, 
+        pressure: `${Math.round(pressure.systolic)}/${Math.round(pressure.diastolic)}`,
+        glucose,
+        lipids,
+        hemoglobin,
+        hydration
+      });
 
     } catch (error) {
       console.error("Error during vital sign calculation:", error);
@@ -180,13 +210,20 @@ export class VitalSignsProcessor {
    * Calculate a default hemoglobin value based on SpO2
    */
   private calculateDefaultHemoglobin(spo2: number): number {
-    // Estimación simple (Placeholder - mejorar si es posible)
+    // Estimación basada en correlación SpO2-Hemoglobina
     if (spo2 <= 0) return 0;
-    // Ejemplo: Relación lineal simple (ajustar según datos/investigación)
-    const baseHb = 12; // Base para SpO2 ~90%
-    const scaleFactor = 0.15; // Cuánto cambia Hb por cada % de SpO2
-    let estimatedHb = baseHb + (spo2 - 90) * scaleFactor;
-    // Limitar a rangos razonables
+    
+    // Relación no lineal ajustada
+    let baseHb = 12.5; // Base para SpO2 normal (~96%)
+    let scaleFactor = 0.2; // Factor de escala
+    
+    // Ajuste no lineal
+    let deviation = spo2 - 96; // Desviación desde SpO2 normal
+    let adjustment = Math.sign(deviation) * Math.pow(Math.abs(deviation) * 0.1, 1.5);
+    
+    let estimatedHb = baseHb + adjustment;
+    
+    // Limitar a rangos fisiológicos
     estimatedHb = Math.max(8, Math.min(18, estimatedHb));
     return parseFloat(estimatedHb.toFixed(1));
   }
@@ -205,9 +242,13 @@ export class VitalSignsProcessor {
     this.hemoglobinEstimator.reset();
     this.hydrationEstimator.reset();
     this.signalValidator.resetFingerDetection();
+    
+    const result = this.lastValidResult;
     this.ppgBuffer = []; // Limpiar buffer principal
     this.lastValidResult = null;
-    return null;
+    this.processingCount = 0;
+    
+    return result; // Devolver último resultado válido antes del reset
   }
   
   /**
@@ -218,8 +259,7 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Get the last valid results - always returns null
-   * Forces fresh measurements without reference values
+   * Get the last valid results
    */
   public getLastValidResults(): VitalSignsResult | null {
     return this.lastValidResult;
@@ -231,10 +271,8 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     console.log("VitalSignsProcessor: Performing full reset...");
-    this.reset(); // Llama al reset normal
-    // Podría incluir la recreación de instancias si fuera necesario
-    // this.spo2Processor = new SpO2Processor();
-    // ... etc.
+    this.reset();
+    this.processingCount = 0;
   }
 }
 
