@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -50,16 +49,8 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
-    isTensorFlowReady
+    lastValidResults
   } = useVitalSignsProcessor();
-
-  // Si tensorflow está listo, mostrar mensaje
-  useEffect(() => {
-    if (isTensorFlowReady) {
-      console.log("✅ TensorFlow inicializado correctamente para procesamiento PPG");
-    }
-  }, [isTensorFlowReady]);
 
   const enterFullScreen = async () => {
     try {
@@ -362,9 +353,6 @@ const Index = () => {
             </div>
             <div className="text-white text-sm">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-            </div>
-            <div className="text-white text-sm">
-              {isTensorFlowReady ? "TF ✓" : "TF ✗"}
             </div>
           </div>
 

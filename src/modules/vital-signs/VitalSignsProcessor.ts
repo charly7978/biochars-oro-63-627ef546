@@ -201,7 +201,7 @@ export class VitalSignsProcessor {
    */
   public applyBloodPressureCalibration(systolic: number, diastolic: number): void {
     console.log(`VitalSignsProcessor: Applying BP Calibration - S: ${systolic}, D: ${diastolic}`);
-    this.bpProcessor.applyCalibration(systolic, diastolic);
+    this.bpProcessor.updateCalibration(systolic, diastolic);
   }
 
   /**

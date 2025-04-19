@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -67,7 +66,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       }
       
       if (processorRef.current) {
-        processorRef.current.setMonitoring(true);
+        processorRef.current.startMonitoring();
         console.log('HeartBeatProcessor: Monitoring state set to true, audio centralizado en PPGSignalMeter');
         isMonitoringRef.current = true;
       }
@@ -83,7 +82,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       });
       
       if (processorRef.current) {
-        processorRef.current.setMonitoring(false);
+        processorRef.current.stopMonitoring();
         processorRef.current = null;
       }
       
@@ -158,7 +157,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     });
     
     if (processorRef.current) {
-      processorRef.current.setMonitoring(false);
+      processorRef.current.stopMonitoring();
       isMonitoringRef.current = false;
       
       processorRef.current.reset();
@@ -181,7 +180,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     console.log('useHeartBeatProcessor: Starting monitoring');
     if (processorRef.current) {
       isMonitoringRef.current = true;
-      processorRef.current.setMonitoring(true);
+      processorRef.current.startMonitoring();
       console.log('HeartBeatProcessor: Monitoring state set to true');
       
       lastPeakTimeRef.current = null;
@@ -203,7 +202,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
     if (processorRef.current) {
       isMonitoringRef.current = false;
-      processorRef.current.setMonitoring(false);
+      processorRef.current.stopMonitoring();
       console.log('HeartBeatProcessor: Monitoring state set to false');
     }
     
