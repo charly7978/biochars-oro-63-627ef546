@@ -643,19 +643,6 @@ const PPGSignalMeter = memo(({
     }
   }, [isArrhythmia]);
 
-  // Diagnóstico: log de la prop isArrhythmia
-  useEffect(() => {
-    console.log("PPGSignalMeter: isArrhythmia prop:", isArrhythmia);
-    // Diagnóstico: si nunca llega true, forzar visualización cada 10s
-    if (!isArrhythmia) {
-      const interval = setInterval(() => {
-        setShowArrhythmiaAlert(true);
-        setTimeout(() => setShowArrhythmiaAlert(false), 2000);
-      }, 10000);
-      return () => clearInterval(interval);
-    }
-  }, [isArrhythmia]);
-
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {showArrhythmiaAlert && (
