@@ -1,3 +1,6 @@
+
+// Corregir rutas de importación para hooks, ahora apuntan a la carpeta `vital-signs/`
+
 /**
  * Refactor to consume centralized engines readiness
  */
@@ -6,30 +9,31 @@ import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
 import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '@/modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
-import { useArrhythmiaVisualization } from '@/hooks/use-arrhythmia-visualization';
-import { useVitalSignsLogging } from '@/hooks/use-vital-signs-logging';
-import { ProcessedSignal } from '@/types/signal';
+import { useArrhythmiaVisualization } from '@/hooks/vital-signs/use-arrhythmia-visualization';
+import { useVitalSignsLogging } from '@/hooks/vital-signs/use-vital-signs-logging';
 import { SignalOptimizerManager } from '@/modules/signal-optimizer/SignalOptimizerManager';
-import { ChannelFeedback, SignalChannelOptimizerParams } from '@/modules/signal-optimizer/SignalChannelOptimizer';
-import { useTensorFlowModel, useMultipleTensorFlowModels } from '@/hooks/useTensorFlowModel';
+import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 import { toast } from 'sonner';
 import { useEnginesReady } from '@/hooks/useEnginesReady';
 
 // Definir los canales que usará el optimizador
-const OPTIMIZER_CHANNELS = ['hr', 'spo2', 'bp', 'glucose', 'lipids', 'hydration', 'general'];
-
-interface ExtendedProcessedSignalForHook extends ProcessedSignal {
-  preBandpassValue?: number;
-  windowValues?: number[];
-  minValue?: number;
-  maxValue?: number;
-}
+const OPTIMIZER_CHANNELS = [
+  'hr',
+  'spo2',
+  'bp',
+  'glucose',
+  'lipids',
+  'hydration',
+  'general'
+];
 
 export const useVitalSignsProcessor = () => {
   const processorRef = useRef<VitalSignsProcessor | null>(null);
   const processedSignals = useRef<number>(0);
+
   const { arrhythmiaWindows, addArrhythmiaWindow, clearArrhythmiaWindows } = useArrhythmiaVisualization();
   const { logSignalData, clearLog, getSignalLog, signalLog } = useVitalSignsLogging();
+
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   const [processingEnabled, setProcessingEnabled] = useState<boolean>(true);
   const processingEnabledRef = useRef<boolean>(true);
@@ -45,7 +49,7 @@ export const useVitalSignsProcessor = () => {
   // Crear optimizador solo una vez
   const optimizerManager = useMemo(() => {
     console.log("Initializing SignalOptimizerManager...");
-    const initialConfigs: Record<string, Partial<SignalChannelOptimizerParams>> = {
+    const initialConfigs: Record<string, Partial<any>> = {
       hr: { gain: 1.5, filterType: 'kalman', kalmanQ: 0.08, kalmanR: 0.01 },
       spo2: { gain: 1.0, filterType: 'sma', filterWindow: 5 },
       bp: { gain: 1.8, filterType: 'kalman', kalmanQ: 0.1, kalmanR: 0.02 },
@@ -64,7 +68,7 @@ export const useVitalSignsProcessor = () => {
   const { predict: tfPredict } = useTensorFlowModel('vital-signs-ppg', false); // No cargar por separado, ya lo hace useEnginesReady
 
   const processSignal = useCallback(async (
-    processedSignal: ProcessedSignal,
+    processedSignal: any,
     rrData?: { intervals: number[], lastPeakTime: number | null }
   ): Promise<VitalSignsResult> => {
     if (!processorRef.current || !processingEnabledRef.current) {
@@ -85,7 +89,7 @@ export const useVitalSignsProcessor = () => {
     }
     lastProcessingTime.current = now;
 
-    const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
+    const extendedSignal = processedSignal;
 
     processedSignals.current += 1;
 
@@ -93,6 +97,7 @@ export const useVitalSignsProcessor = () => {
     for (const channel of OPTIMIZER_CHANNELS) {
       optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
     }
+
     const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
 
     let tfEnhancedValue = primaryOptimizedValue;
@@ -143,7 +148,7 @@ export const useVitalSignsProcessor = () => {
 
     setLastValidResults(result);
 
-    const feedback: Record<string, ChannelFeedback> = {};
+    const feedback: Record<string, any> = {};
     const baseQuality = extendedSignal.quality;
     const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
     OPTIMIZER_CHANNELS.forEach(channel => {
@@ -174,7 +179,15 @@ export const useVitalSignsProcessor = () => {
     }
 
     return result;
-  }, [optimizerManager, logSignalData, addArrhythmiaWindow, lastValidResults, tfModelReady, tfPredict, cvReady]);
+  }, [
+    optimizerManager,
+    logSignalData,
+    addArrhythmiaWindow,
+    lastValidResults,
+    tfModelReady,
+    tfPredict,
+    cvReady
+  ]);
 
   const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
     console.log(`Aplicando calibración de presión arterial: ${systolic}/${diastolic} mmHg`);
