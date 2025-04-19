@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
+import { checkSignalQuality as checkBaseSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 /**
  * Check for weak signal to detect finger removal
@@ -19,7 +19,7 @@ export function checkWeakSignal(
   isWeakSignal: boolean;
   updatedWeakSignalsCount: number;
 } {
-  return checkSignalQuality(value, consecutiveWeakSignalsCount, config);
+  return checkBaseSignalQuality(value, consecutiveWeakSignalsCount, config);
 }
 
 /**
@@ -33,7 +33,7 @@ export function shouldProcessMeasurement(
     maxWeakSignalCount?: number;
   } = {}
 ): boolean {
-  const { isWeakSignal } = checkSignalQuality(
+  const { isWeakSignal } = checkBaseSignalQuality(
     value,
     weakSignalsCount,
     options

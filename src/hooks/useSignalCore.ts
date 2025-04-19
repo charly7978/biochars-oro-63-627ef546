@@ -1,9 +1,12 @@
 
 /**
  * Central Signal Processing Hook - provides access to the core signal processor
+ * with dedicated channels for each vital sign and bidirectional feedback
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createSignalProcessor, SignalChannel } from '../core/signal-processing';
+import { VITAL_SIGN_CHANNELS } from '../core/signal-processing/SignalCoreProcessor';
+import { VitalSignIntegrator } from '../core/integration/VitalSignIntegrator';
 
 export interface SignalCoreResult {
   channels: Map<string, SignalChannel>;
@@ -18,8 +21,16 @@ export interface SignalCoreResult {
 }
 
 export function useSignalCore(options = {}) {
-  // Create processor instance
-  const processorRef = useRef(createSignalProcessor());
+  // Create processor instance with dedicated channels
+  const processorRef = useRef(createSignalProcessor({
+    bufferSize: 300,
+    sampleRate: 30,
+    channels: Object.values(VITAL_SIGN_CHANNELS)
+  }));
+  
+  // Initialize the VitalSignIntegrator
+  const integratorRef = useRef<VitalSignIntegrator | null>(null);
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const processingStatsRef = useRef({
     processedFrames: 0,
@@ -40,6 +51,18 @@ export function useSignalCore(options = {}) {
       fps: 0
     }
   });
+
+  // Initialize the VitalSignIntegrator
+  useEffect(() => {
+    integratorRef.current = VitalSignIntegrator.getInstance(processorRef.current);
+    
+    return () => {
+      // Clean up when unmounting
+      if (integratorRef.current) {
+        integratorRef.current.dispose();
+      }
+    };
+  }, []);
 
   /**
    * Start signal processing
@@ -84,11 +107,23 @@ export function useSignalCore(options = {}) {
         processingStatsRef.current.processedFrames = 0;
       }
       
-      // Process the value
-      const channels = processorRef.current.processSignal(value);
+      // First add to RAW channel directly
+      const rawChannel = processorRef.current.getChannel(VITAL_SIGN_CHANNELS.RAW);
+      if (rawChannel) {
+        rawChannel.addValue(value, {
+          quality: 100,
+          timestamp: now
+        });
+      } else {
+        // Process through traditional method if RAW channel doesn't exist
+        processorRef.current.processSignal(value);
+      }
+      
+      // Get all channels
+      const channels = new Map(processorRef.current.channels);
       
       // Get heartbeat channel for quality
-      const heartbeatChannel = channels.get('heartbeat');
+      const heartbeatChannel = channels.get(VITAL_SIGN_CHANNELS.HEARTBEAT);
       const quality = heartbeatChannel?.getLastMetadata()?.quality || 0;
       
       // Update state (limit updates to reduce render overhead)
@@ -154,6 +189,25 @@ export function useSignalCore(options = {}) {
   }, [isProcessing, processValue]);
 
   /**
+   * Register processor metrics for bidirectional feedback
+   */
+  const registerProcessorMetrics = useCallback((processorName: string, metrics: any) => {
+    if (integratorRef.current) {
+      integratorRef.current.registerProcessorMetrics(processorName, metrics);
+    }
+  }, []);
+
+  /**
+   * Subscribe to a vital sign channel
+   */
+  const subscribeToVitalSign = useCallback((vitalSign: string, callback: (value: number, metadata: any) => void) => {
+    if (integratorRef.current) {
+      return integratorRef.current.subscribeToVitalSign(vitalSign, callback);
+    }
+    return () => {}; // No-op unsubscribe
+  }, []);
+
+  /**
    * Reset all processing state
    */
   const reset = useCallback(() => {
@@ -185,6 +239,20 @@ export function useSignalCore(options = {}) {
     return processorRef.current.getChannel(channelName);
   }, []);
 
+  /**
+   * Get data from a vital sign channel
+   */
+  const getVitalSignData = useCallback((vitalSign: string) => {
+    if (integratorRef.current) {
+      return integratorRef.current.getVitalSignData(vitalSign);
+    }
+    return {
+      values: [],
+      latestValue: null,
+      metadata: {}
+    };
+  }, []);
+
   return {
     signalState,
     startProcessing,
@@ -193,6 +261,10 @@ export function useSignalCore(options = {}) {
     processFrame,
     reset,
     getChannel,
-    isProcessing
+    isProcessing,
+    registerProcessorMetrics,
+    subscribeToVitalSign,
+    getVitalSignData,
+    VITAL_SIGN_CHANNELS
   };
 }
