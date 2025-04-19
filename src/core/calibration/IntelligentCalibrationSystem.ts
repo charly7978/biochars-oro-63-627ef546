@@ -830,20 +830,20 @@ export class IntelligentCalibrationSystem {
         this.applyUserProfile();
         console.log('Perfil de calibración cargado desde localStorage');
       }
-
+      
       // Intentar sincronizar con Supabase si está disponible
       const { data, error } = await supabase
         .from('calibration_settings')
         .select('*')
         .eq('is_active', true)
         .single();
-
+      
       if (data && !error) {
         // Convertir formato de base de datos a perfil de usuario
         this.userProfile = {
           userId: data.user_id,
           createdAt: new Date(data.created_at),
-          lastUpdated: new Date(data.updated_at ?? data.last_calibration_date ?? Date.now()),
+          lastUpdated: new Date(data.updated_at),
           correctionFactors: {
             heartRate: 1.0,
             spo2: 1.0,
@@ -859,16 +859,16 @@ export class IntelligentCalibrationSystem {
             glucose: null
           },
           config: {
-            autoCalibrationEnabled: true,
-            continuousLearningEnabled: true,
-            syncWithReferenceDevices: false,
-            adaptToEnvironment: true,
-            adaptToUserActivity: true,
-            aggressiveness: 0.5,
+            autoCalibrationEnabled: typeof data.auto_calibration_enabled === 'boolean' ? data.auto_calibration_enabled : true,
+            continuousLearningEnabled: typeof data.continuous_learning_enabled === 'boolean' ? data.continuous_learning_enabled : true,
+            syncWithReferenceDevices: typeof data.sync_with_reference_devices === 'boolean' ? data.sync_with_reference_devices : false,
+            adaptToEnvironment: typeof data.adapt_to_environment === 'boolean' ? data.adapt_to_environment : true,
+            adaptToUserActivity: typeof data.adapt_to_user_activity === 'boolean' ? data.adapt_to_user_activity : true,
+            aggressiveness: typeof data.aggressiveness === 'number' ? data.aggressiveness : 0.5,
             minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
           }
         };
-
+        
         this.applyUserProfile();
         console.log('Perfil de calibración sincronizado con Supabase');
       }

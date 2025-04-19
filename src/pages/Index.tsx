@@ -1,6 +1,3 @@
-
-// Corrección de la desestructuración de useEnginesReady para evitar error de propiedad 'retry' inexistente
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -19,7 +16,7 @@ import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 
 const Index = () => {
   // Motores: OpenCV y TensorFlow
-  const { isOpenCVReady, isTensorFlowReady, error: enginesError, retryOpenCV, retryTensorFlowModels } = useEnginesReady();
+  const { isOpenCVReady, isTensorFlowReady, error: enginesError, retry: retryEngines } = useEnginesReady();
 
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
@@ -445,4 +442,3 @@ const Index = () => {
 };
 
 export default Index;
-

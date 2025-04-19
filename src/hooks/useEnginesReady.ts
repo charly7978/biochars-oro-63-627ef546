@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 
 export function useEnginesReady() {
   const [isOpenCVReady, setIsOpenCVReady] = useState(false);
   const [cvError, setCvError] = useState<string | null>(null);
   const [cvTries, setCvTries] = useState(0);
-  const maxWaitMs = 10000; // 10 segundos
+  const maxCvTries = 10;
 
   // TensorFlow
   const {
@@ -13,40 +13,38 @@ export function useEnginesReady() {
     error: tfError
   } = useTensorFlowModel('vital-signs-ppg', true);
 
-  // OpenCV polling robusto
+  // OpenCV polling
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    let timeout: NodeJS.Timeout;
+    let tries = 0;
     function checkOpenCV() {
+      tries++;
       if (window.cv && (window as any).cvReady) {
         setIsOpenCVReady(true);
         setCvError(null);
         clearInterval(interval);
-        clearTimeout(timeout);
+      } else if (tries >= maxCvTries) {
+        setIsOpenCVReady(false);
+        setCvError('No se pudo inicializar OpenCV.');
+        clearInterval(interval);
       }
     }
     checkOpenCV();
     if (!isOpenCVReady) {
-      interval = setInterval(checkOpenCV, 300);
-      timeout = setTimeout(() => {
-        setIsOpenCVReady(false);
-        setCvError('OpenCV no se cargó correctamente tras 10 segundos. Verifica tu conexión o la ruta del script.');
-        clearInterval(interval);
-      }, maxWaitMs);
+      interval = setInterval(checkOpenCV, 1000);
     }
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
+    return () => clearInterval(interval);
   }, [isOpenCVReady, cvTries]);
 
-  let error: string | null = null;
-  if (cvError) error = cvError;
-  else if (tfError) error = `TensorFlow: ${tfError}`;
+  // Retry handler
+  const retry = useCallback(() => {
+    setCvTries(t => t + 1);
+  }, []);
 
   return {
     isOpenCVReady,
     isTensorFlowReady,
-    error
+    error: cvError || tfError || null,
+    retry
   };
-}
+} 
