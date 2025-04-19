@@ -213,7 +213,7 @@ export const useVitalSignsProcessor = () => {
 
   const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
     console.log(`Aplicando calibración de presión arterial: ${systolic}/${diastolic} mmHg`);
-    processorRef.current?.applyCalibration(systolic, diastolic);
+    processorRef.current?.applyBloodPressureCalibration(systolic, diastolic);
     optimizerManager.applyFeedback('bp', { 
       metricType: 'bp', 
       quality: 100, 
