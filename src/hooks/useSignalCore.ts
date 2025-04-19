@@ -1,4 +1,3 @@
-
 /**
  * Central Signal Processing Hook - provides access to the core signal processor
  * with dedicated channels for each vital sign and bidirectional feedback
@@ -119,8 +118,8 @@ export function useSignalCore(options = {}) {
         processorRef.current.processSignal(value);
       }
       
-      // Get all channels
-      const channels = new Map(processorRef.current.channels);
+      // Get all channels using the public method
+      const channels = processorRef.current.getChannels();
       
       // Get heartbeat channel for quality
       const heartbeatChannel = channels.get(VITAL_SIGN_CHANNELS.HEARTBEAT);

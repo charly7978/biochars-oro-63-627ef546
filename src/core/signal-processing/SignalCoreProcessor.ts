@@ -1,3 +1,4 @@
+
 /**
  * Central Signal Processing Module
  * Handles core signal processing functionality with separate channels for different vital signs
@@ -301,6 +302,13 @@ export class SignalCoreProcessor {
    */
   public getChannel(channelName: string): SignalChannel | undefined {
     return this.channels.get(channelName);
+  }
+  
+  /**
+   * Get all channels
+   */
+  public getChannels(): Map<string, SignalChannel> {
+    return new Map(this.channels);
   }
   
   /**
