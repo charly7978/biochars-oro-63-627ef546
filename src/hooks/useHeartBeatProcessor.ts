@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -7,7 +8,7 @@ import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
 
-export const useHeartBeatProcessor = (onPeakDetected?: () => void): UseHeartBeatReturn => {
+export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
@@ -141,19 +142,13 @@ export const useHeartBeatProcessor = (onPeakDetected?: () => void): UseHeartBeat
       result.isArrhythmia = currentBeatIsArrhythmiaRef.current;
     }
 
-    // NUEVO: Llama al callback de latido fisiológico si se detecta un pico
-    if (result.isPeak && typeof onPeakDetected === 'function') {
-      onPeakDetected();
-    }
-
     return result;
   }, [
     currentBPM, 
     confidence, 
     processSignalInternal, 
     requestBeep, 
-    detectArrhythmia,
-    onPeakDetected
+    detectArrhythmia
   ]);
 
   const reset = useCallback(() => {

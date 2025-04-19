@@ -25,15 +25,6 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
-  /**
-   * Ref para exponer triggerPeakFeedback al padre. El padre debe pasar un ref y llamarlo cuando reciba isPeak: true del procesador.
-   * Ejemplo de uso:
-   * const peakRef = useRef<() => void>(null);
-   * <PPGSignalMeter ... triggerPeakFeedbackRef={peakRef} />
-   * ...
-   * if (isPeak) peakRef.current?.();
-   */
-  triggerPeakFeedbackRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -56,8 +47,7 @@ const PPGSignalMeter = memo(({
   arrhythmiaStatus,
   rawArrhythmiaData,
   preserveResults = false,
-  isArrhythmia = false,
-  triggerPeakFeedbackRef
+  isArrhythmia = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -650,22 +640,6 @@ const PPGSignalMeter = memo(({
 
   const displayQuality = getAverageQuality();
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
-
-  // NUEVO: expón playBeep para el callback fisiológico
-  const playBeepRef = useRef(playBeep);
-  useEffect(() => { playBeepRef.current = playBeep; }, [playBeep]);
-
-  // NUEVO: expón un método triggerPeakFeedback que puede ser llamado desde el padre o hook
-  const triggerPeakFeedback = useCallback(() => {
-    playBeep(1.0, isArrhythmia);
-  }, [playBeep, isArrhythmia]);
-
-  // Expón triggerPeakFeedback vía ref al padre
-  useEffect(() => {
-    if (triggerPeakFeedbackRef) {
-      triggerPeakFeedbackRef.current = triggerPeakFeedback;
-    }
-  }, [triggerPeakFeedbackRef, triggerPeakFeedback]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
