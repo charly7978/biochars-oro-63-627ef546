@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 
 /**
@@ -49,8 +48,7 @@ class TensorFlowService {
       
       this.isInitialized = true;
       console.log('TensorFlow.js inicializado correctamente', {
-        backend: tf.getBackend(),
-        flags: tf.ENV.flags
+        backend: tf.getBackend()
       });
     } catch (error) {
       console.error('Error al inicializar TensorFlow.js:', error);

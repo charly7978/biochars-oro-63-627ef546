@@ -5,6 +5,7 @@ import CameraView from "@/components/CameraView";
 import { useAdvancedSignalProcessor } from "@/hooks/useAdvancedSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
+import { useOptimizedFingerDetection } from "@/hooks/useOptimizedFingerDetection";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
@@ -34,8 +35,21 @@ const Index = () => {
   const [showResults, setShowResults] = useState(false);
   const [processingStats, setProcessingStats] = useState({ fps: 0 });
   const measurementTimerRef = useRef<number | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<number>(0);
   
-  // Usar el nuevo procesador avanzado
+  // Usar el detector de dedos optimizado
+  const { 
+    isFingerDetected, 
+    processFrame: processFingerDetection, 
+    getPerformanceStats: getFingerDetectionStats 
+  } = useOptimizedFingerDetection({
+    detectionInterval: 150, // ms
+    detectionThreshold: 3
+  });
+  
+  // Usar el procesador de señal avanzado
   const { 
     startProcessing, 
     stopProcessing, 
@@ -72,11 +86,84 @@ const Index = () => {
       console.log('Error al entrar en pantalla completa:', err);
     }
   };
-
+  
+  // Procesamiento de frames de manera optimizada
+  const processVideoFrame = () => {
+    if (!isMonitoring || !videoRef.current || !canvasRef.current) {
+      return;
+    }
+    
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    if (!ctx || video.readyState !== video.HAVE_ENOUGH_DATA) {
+      animationRef.current = requestAnimationFrame(processVideoFrame);
+      return;
+    }
+    
+    // Ajustar canvas al tamaño del video
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    
+    // Dibujar solo la región de interés (centro del video)
+    const centerX = video.videoWidth / 2;
+    const centerY = video.videoHeight / 2;
+    const roiSize = Math.min(video.videoWidth, video.videoHeight) * 0.4; // 40% del tamaño
+    
+    // Posición desde donde capturar la imagen en el video
+    const sx = centerX - roiSize / 2;
+    const sy = centerY - roiSize / 2;
+    
+    // Usar drawImage con recorte para mejor rendimiento
+    ctx.drawImage(
+      video,
+      sx, sy, roiSize, roiSize, // Región de origen (recorte del centro)
+      0, 0, canvas.width, canvas.height // Región de destino (toda la canvas)
+    );
+    
+    // Obtener los datos de la imagen del canvas
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      
+      // Detección de dedo optimizada
+      processFingerDetection(imageData).then(fingerDetected => {
+        // Solo procesamos la señal si se detecta un dedo
+        if (fingerDetected) {
+          processFrame(imageData);
+        }
+      });
+      
+      // Actualizar estadísticas de procesamiento
+      const fingerStats = getFingerDetectionStats();
+      setProcessingStats(prev => ({
+        ...prev,
+        fingerProcessingTime: fingerStats.avgTime,
+        fps: Math.round(1000 / (fingerStats.avgTime || 1))
+      }));
+      
+    } catch (error) {
+      console.error('Error al procesar frame:', error);
+    }
+    
+    // Programar el siguiente frame
+    animationRef.current = requestAnimationFrame(processVideoFrame);
+  };
+  
   useEffect(() => {
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
+
+    // Crear el canvas oculto para procesamiento
+    if (!canvasRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.style.display = 'none';
+      document.body.appendChild(canvas);
+      canvasRef.current = canvas;
+    }
 
     // Notificar al usuario sobre la inicialización
     if (isInitializing) {
@@ -91,7 +178,17 @@ const Index = () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
       
-      // Limpiar temporizador al desmontar
+      // Limpiar el canvas
+      if (canvasRef.current) {
+        document.body.removeChild(canvasRef.current);
+      }
+      
+      // Cancelar animación
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+      
+      // Limpiar temporizador
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
       }
@@ -105,11 +202,12 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Procesar señal optimizada
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      if (isFingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult.confidence > 0.4) {
@@ -126,17 +224,10 @@ const Index = () => {
         }
         
         setSignalQuality(lastSignal.quality);
-        
-        // Actualizar estadísticas de procesamiento
-        if (signalStats) {
-          setProcessingStats({
-            fps: signalStats.fps
-          });
-        }
       } else {
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        if (!isFingerDetected && heartRate > 0) {
           // No reiniciar el ritmo cardíaco inmediatamente para evitar parpadeo
           if (signalQuality > 0) {
             setSignalQuality(prev => Math.max(0, prev - 5));
@@ -148,7 +239,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, signalQuality, signalStats]);
+  }, [lastSignal, isMonitoring, isFingerDetected, processHeartBeat, processVitalSigns, heartRate, signalQuality]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -165,6 +256,9 @@ const Index = () => {
       
       startProcessing();
       startHeartBeatMonitoring();
+      
+      // Iniciar procesamiento de video
+      animationRef.current = requestAnimationFrame(processVideoFrame);
       
       setElapsedTime(0);
       
@@ -200,6 +294,11 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     
+    // Cancelar animación
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+    
     FeedbackService.signalMeasurementComplete(signalQuality >= 70);
     
     if (measurementTimerRef.current) {
@@ -226,6 +325,11 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
+    
+    // Cancelar animación
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
     
     FeedbackService.vibrate([50, 30, 50]);
     
@@ -255,224 +359,173 @@ const Index = () => {
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
+    // Guardar referencia al stream para procesar
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
     } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
+      // Crear elemento video oculto si no existe
+      const video = document.createElement('video');
+      video.autoplay = true;
+      video.playsInline = true;
+      video.muted = true;
+      video.style.display = 'none';
+      video.srcObject = stream;
+      document.body.appendChild(video);
+      videoRef.current = video;
       
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
-      
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
-          
-          lastProcessTime = now;
-        } catch (error) {
-          console.error("Error capturando frame:", error);
-        }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
-      }
-    };
-
-    processImage();
-  };
-
-  const handleToggleMonitoring = () => {
-    if (isMonitoring) {
-      finalizeMeasurement();
-    } else {
-      startMonitoring();
+      // Iniciar procesamiento cuando el video esté listo
+      video.onloadeddata = () => {
+        animationRef.current = requestAnimationFrame(processVideoFrame);
+      };
     }
-  };
-
-  const getHydrationColor = (hydration: number) => {
-    if (hydration >= 80) return 'text-blue-500';
-    if (hydration >= 65) return 'text-green-500';
-    if (hydration >= 50) return 'text-yellow-500';
-    return 'text-red-500';
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col" style={{ 
-      height: '100vh',
-      width: '100vw',
-      maxWidth: '100vw',
-      maxHeight: '100vh',
-      overflow: 'hidden',
-      paddingTop: 'env(safe-area-inset-top)',
-      paddingBottom: 'env(safe-area-inset-bottom)',
-      background: 'linear-gradient(to bottom, #9b87f5 0%, #D6BCFA 15%, #8B5CF6 30%, #D946EF 45%, #F97316 60%, #0EA5E9 75%, #1A1F2C 85%, #221F26 92%, #222222 100%)'
-    }}>
-      <div className="flex-1 relative">
-        <div className="absolute inset-0">
-          <CameraView 
-            onStreamReady={handleStreamReady}
-            isMonitoring={isCameraOn}
-            isFingerDetected={lastSignal?.fingerDetected}
+    <div className="relative min-h-screen bg-gradient-to-b from-gray-900 to-gray-700 text-white overflow-hidden">
+      {/* Capa de video (siempre detrás) */}
+      {isCameraOn && (
+        <CameraView 
+          onStreamReady={handleStreamReady}
+          isMonitoring={isMonitoring}
+          isFingerDetected={isFingerDetected}
+          signalQuality={signalQuality}
+        />
+      )}
+
+      {/* App UI */}
+      <div className="relative z-10 flex flex-col min-h-screen p-4">
+        {/* Encabezado */}
+        <AppTitle />
+        
+        {/* Visualización de señal PPG */}
+        <div className="mt-2">
+          <PPGSignalMeter
+            signalValue={lastSignal?.filteredValue || 0}
             signalQuality={signalQuality}
+            isFingerDetected={isFingerDetected}
+            heartRate={heartRate}
+            isArrhythmia={isArrhythmia}
           />
         </div>
-
-        <div className="relative z-10 h-full flex flex-col">
-          <div className="px-4 py-2 flex justify-around items-center bg-black/20">
-            <div className="text-white text-sm">
-              Calidad: {signalQuality}
-            </div>
-            <div className="text-white text-sm">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-            </div>
-            <div className="text-white text-sm">
-              FPS: {processingStats.fps.toFixed(1)}
-            </div>
-          </div>
-
-          <div className="flex-1">
-            <PPGSignalMeter 
-              value={lastSignal?.filteredValue || 0}
-              quality={lastSignal?.quality || 0}
-              isFingerDetected={lastSignal?.fingerDetected || false}
-              onStartMeasurement={startMonitoring}
-              onReset={handleReset}
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
-              preserveResults={showResults}
-              isArrhythmia={isArrhythmia}
-            />
-          </div>
-
-          <AppTitle />
-
-          <div className="absolute inset-x-0 bottom-[40px] h-[40%] px-2 py-2">
-            <div className="grid grid-cols-2 h-full gap-2">
-              <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
+        
+        {/* Área principal: Mediciones o resultados */}
+        <div className="flex-1 flex flex-col items-center justify-center mt-4">
+          {isMonitoring ? (
+            <>
+              {/* Indicador de tiempo */}
+              <div className="w-full max-w-md bg-black bg-opacity-50 rounded-lg p-3 mb-6 text-center">
+                <span className="text-xl">Tiempo: {elapsedTime}s / 30s</span>
+              </div>
+              
+              {/* Mediciones en curso */}
+              <div className="grid grid-cols-2 gap-4 w-full max-w-md">
                 <VitalSign 
-                  label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
-                  unit="BPM"
-                  highlighted={showResults}
-                  compact={false}
-                  icon={<ActivitySquare className="h-4 w-4 text-red-500" />}
+                  icon={<ActivitySquare className="h-6 w-6" />}
+                  label="Ritmo Cardíaco" 
+                  value={heartRate > 0 ? `${heartRate} BPM` : "Midiendo..."}
+                  isLoading={heartRate === 0}
                 />
                 <VitalSign 
-                  label="SPO2"
-                  value={vitalSigns.spo2 || "--"}
-                  unit="%"
-                  highlighted={showResults}
-                  compact={false}
+                  icon={<Zap className="h-6 w-6" />}
+                  label="SpO₂" 
+                  value={vitalSigns.spo2 > 0 ? `${vitalSigns.spo2}%` : "Midiendo..."}
+                  isLoading={vitalSigns.spo2 === 0}
+                />
+                <VitalSign 
+                  label="Presión Arterial" 
+                  value={vitalSigns.pressure !== "--/--" ? vitalSigns.pressure : "Midiendo..."}
+                  isLoading={vitalSigns.pressure === "--/--"}
+                />
+                <VitalSign 
+                  icon={<Droplet className="h-6 w-6" />}
+                  label="Hidratación" 
+                  value={vitalSigns.hydration > 0 ? `${vitalSigns.hydration}%` : "Midiendo..."}
+                  isLoading={vitalSigns.hydration === 0}
                 />
               </div>
-              <div className="col-span-2 grid grid-cols-2 gap-2">
+            </>
+          ) : showResults ? (
+            // Mostrar resultados completos
+            <div className="w-full max-w-md">
+              <div className="mb-6 text-center">
+                <h2 className="text-2xl font-bold mb-2">Resultados</h2>
+                <p className="text-gray-300 text-sm">
+                  Medición completada con éxito
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
                 <VitalSign 
-                  label="PRESIÓN"
-                  value={vitalSigns.pressure || "--/--"}
-                  unit="mmHg"
-                  highlighted={showResults}
-                  compact={false}
-                  icon={<Zap className="h-4 w-4 text-yellow-500" />}
+                  icon={<ActivitySquare className="h-6 w-6" />}
+                  label="Ritmo Cardíaco" 
+                  value={`${vitalSigns.heartRate || "--"} BPM`}
+                  detail={vitalSigns.arrhythmiaStatus}
                 />
                 <VitalSign 
-                  label="HIDRATACIÓN"
-                  value={vitalSigns.hydration || "--"}
-                  unit="%"
-                  highlighted={showResults}
-                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
-                  compact={false}
+                  icon={<Zap className="h-6 w-6" />}
+                  label="SpO₂" 
+                  value={`${vitalSigns.spo2 || "--"}%`}
+                />
+                <VitalSign 
+                  label="Presión Arterial" 
+                  value={vitalSigns.pressure}
+                />
+                <VitalSign 
+                  icon={<Droplet className="h-6 w-6" />}
+                  label="Hidratación" 
+                  value={`${vitalSigns.hydration || "--"}%`}
+                />
+                <VitalSign 
+                  label="Hemoglobina" 
+                  value={`${vitalSigns.hemoglobin || "--"} g/dL`}
+                />
+                <VitalSign 
+                  label="Glucosa" 
+                  value={`${vitalSigns.glucose || "--"} mg/dL`}
+                />
+                <VitalSign 
+                  label="Colesterol" 
+                  value={`${vitalSigns.lipids?.totalCholesterol || "--"} mg/dL`}
+                />
+                <VitalSign 
+                  label="Triglicéridos" 
+                  value={`${vitalSigns.lipids?.triglycerides || "--"} mg/dL`}
                 />
               </div>
-              <VitalSign 
-                label="GLUCOSA"
-                value={vitalSigns.glucose || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="COLESTEROL"
-                value={vitalSigns.lipids?.totalCholesterol || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="TRIGLICÉRIDOS"
-                value={vitalSigns.lipids?.triglycerides || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="HEMOGLOBINA"
-                value={Math.round(vitalSigns.hemoglobin) || "--"}
-                unit="g/dL"
-                highlighted={showResults}
-                compact={false}
-              />
             </div>
-          </div>
-
-          {isMonitoring && (
-            <div className="absolute bottom-24 left-0 right-0 text-center">
-              <span className="text-xl font-bold text-white bg-black/40 px-4 py-1 rounded-full">
-                {elapsedTime}s / 30s
-              </span>
+          ) : (
+            // Instrucciones iniciales
+            <div className="text-center max-w-md mx-auto">
+              <h2 className="text-2xl font-bold mb-4">Medición de Signos Vitales</h2>
+              <p className="mb-6 text-gray-300">
+                Coloque su dedo sobre la cámara trasera cubriendo la linterna para comenzar a medir sus signos vitales.
+              </p>
+              <div className="bg-black bg-opacity-30 rounded-lg p-4 mb-4">
+                <h3 className="font-bold mb-2">Advertencia legal:</h3>
+                <p className="text-sm text-gray-300">
+                  Esta app no reemplaza atención médica profesional. Es solo una herramienta de monitoreo orientativo.
+                </p>
+              </div>
             </div>
           )}
-
-          <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
-            <div className="w-1/2">
-              <MonitorButton 
-                isMonitoring={isMonitoring} 
-                onToggle={handleToggleMonitoring} 
-                variant="monitor"
-              />
-            </div>
-            <div className="w-1/2">
-              <MonitorButton 
-                isMonitoring={isMonitoring} 
-                onToggle={handleReset} 
-                variant="reset"
-              />
-            </div>
-          </div>
         </div>
+        
+        {/* Botones de acción */}
+        <div className="mt-auto pt-4 flex justify-center">
+          <MonitorButton 
+            isMonitoring={isMonitoring}
+            onClick={startMonitoring}
+            onReset={handleReset}
+            showReset={showResults}
+          />
+        </div>
+        
+        {/* Información de desarrollo */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="absolute bottom-1 left-1 text-xs text-gray-400">
+            FPS: {processingStats.fps} | Q: {signalQuality} | F: {isFingerDetected ? 'Sí' : 'No'}
+          </div>
+        )}
       </div>
     </div>
   );
