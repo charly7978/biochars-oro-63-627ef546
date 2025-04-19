@@ -12,6 +12,7 @@ import { Droplet } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
 import { ProcessedSignal } from "@/types/signal";
 import { useEnginesReady } from '@/hooks/useEnginesReady';
+import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 
 const Index = () => {
   // Motores: OpenCV y TensorFlow
@@ -56,10 +57,6 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
-  // Estado para intentos de carga
-  const [engineRetryCount, setEngineRetryCount] = useState(0);
-  const maxEngineRetries = 5;
-
   // Si tensorflow está listo, mostrar mensaje
   useEffect(() => {
     if (isTensorFlowReady) {
@@ -67,32 +64,10 @@ const Index = () => {
     }
   }, [isTensorFlowReady]);
 
-  // Efecto para reintentar carga de motores
-  useEffect(() => {
-    if (!isTensorFlowReady || !isOpenCVReady) {
-      if (engineRetryCount < maxEngineRetries) {
-        const retryTimeout = setTimeout(() => {
-          setEngineRetryCount(c => c + 1);
-          window.location.reload();
-        }, 3000);
-        return () => clearTimeout(retryTimeout);
-      }
-    }
-  }, [isTensorFlowReady, isOpenCVReady, engineRetryCount]);
-
-  const enterFullScreen = async () => {
-    try {
-      await document.documentElement.requestFullscreen();
-    } catch (err) {
-      console.log('Error al entrar en pantalla completa:', err);
-    }
-  };
-
   useEffect(() => {
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
-
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
@@ -101,10 +76,7 @@ const Index = () => {
 
   // Importante: Monitorear resultados válidos
   useEffect(() => {
-    // Si hay resultados válidos y no estamos monitoreando, actualizar UI
     if (lastValidResults && !isMonitoring) {
-      console.log("Resultados válidos disponibles:", lastValidResults);
-      // Solo actualizar si son diferentes a los actuales
       if (JSON.stringify(lastValidResults) !== JSON.stringify(vitalSigns)) {
         setVitalSigns(lastValidResults);
         setShowResults(true);
@@ -112,34 +84,20 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring, vitalSigns]);
 
-  // Monitor de señal PPG y procesamiento
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
-      
-      // Actualizar calidad de señal siempre
       setSignalQuality(lastSignal.quality);
-      
-      // Solo procesar si la señal tiene calidad aceptable y hay dedo detectado
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        // Procesar para ritmo cardíaco
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
-          // Actualizar UI con ritmo cardíaco
           if (heartBeatResult.bpm > 0) {
-            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
             setHeartRate(heartBeatResult.bpm);
           }
-          
-          // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
-            // Utilizar el procesamiento asíncrono
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
-                // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
                 if (elapsedTime >= minimumMeasurementTime) {
-                  console.log("Actualizando signos vitales:", vitals);
                   setVitalSigns(vitals);
                 }
               })
@@ -151,14 +109,11 @@ const Index = () => {
           }
         }
       } else {
-        // Si no hay dedo detectado o la calidad es mala, resetear la frecuencia cardíaca
         if (!lastSignal.fingerDetected && heartRate > 0) {
-          console.log("Dedo no detectado, reseteando frecuencia cardíaca");
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
-      // Cuando no se está monitoreando, señal debe ser 0
       setSignalQuality(0);
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, elapsedTime]);
@@ -173,26 +128,18 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
-      
       FeedbackService.vibrate(100);
       FeedbackService.playSound('notification');
-      
       startProcessing();
       startHeartBeatMonitoring();
-      
       setElapsedTime(0);
-      
       if (measurementTimerRef.current) {
         clearInterval(measurementTimerRef.current);
       }
-      
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
-          
           if (newTime >= optimalMeasurementTime) {
-            console.log("Tiempo óptimo de medición alcanzado.");
             finalizeMeasurement();
             return optimalMeasurementTime;
           }
@@ -203,48 +150,36 @@ const Index = () => {
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición");
-    
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    
     FeedbackService.signalMeasurementComplete(signalQuality >= 70);
-    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
-    // Importante: guardar los resultados antes de resetear
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Guardando resultados finales:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
     }
-    
     setElapsedTime(0);
     setSignalQuality(0);
   };
 
   const handleReset = () => {
-    console.log("Reseteando completamente la aplicación");
     setIsMonitoring(false);
     setIsCameraOn(false);
     setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
-    
     FeedbackService.vibrate([50, 30, 50]);
-    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
     fullResetVitalSigns();
     setElapsedTime(0);
     setHeartRate(0);
@@ -265,76 +200,52 @@ const Index = () => {
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
-    
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
-    
     if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
       videoTrack.applyConstraints({
         advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+      }).catch(err => {});
     }
-    
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
+    if (!tempCtx) return;
     let lastProcessTime = 0;
     const targetFrameInterval = 1000/30;
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
-    
     const processImage = async () => {
       if (!isMonitoring) return;
-      
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
-      
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           const frame = await imageCapture.grabFrame();
-          
           const targetWidth = Math.min(320, frame.width);
           const targetHeight = Math.min(240, frame.height);
-          
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
-          
           tempCtx.drawImage(
             frame, 
             0, 0, frame.width, frame.height, 
             0, 0, targetWidth, targetHeight
           );
-          
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
           processFrame(imageData);
-          
           frameCount++;
           lastProcessTime = now;
-          
           if (now - lastFpsUpdateTime > 1000) {
             processingFps = frameCount;
             frameCount = 0;
             lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
           }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
-        }
+        } catch (error) {}
       }
-      
       if (isMonitoring) {
         requestAnimationFrame(processImage);
       }
     };
-
     processImage();
   };
 
@@ -353,23 +264,16 @@ const Index = () => {
     return 'text-red-500';
   };
 
-  // Mostrar mensaje y bloquear medición si falta algún motor
-  if (!isOpenCVReady || !isTensorFlowReady) {
-    if (engineRetryCount >= maxEngineRetries) {
-      return (
-        <div className="flex flex-col items-center justify-center h-full text-center p-8">
-          <h2 className="text-2xl font-bold mb-4 text-red-600">No se pudo inicializar OpenCV o TensorFlow</h2>
-          <p className="mb-2 text-lg">Verifica tu conexión a internet y recarga la página.</p>
-          <button
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-            onClick={() => window.location.reload()}
-          >
-            Recargar página
-          </button>
-          <p className="text-sm text-muted-foreground mt-4">Si el problema persiste, revisa la consola del navegador o contacta soporte.</p>
-        </div>
-      );
+  const enterFullScreen = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (err) {
+      console.log('Error al entrar en pantalla completa:', err);
     }
+  };
+
+  // BLOQUEO Y MENSAJES DE MOTORES
+  if (!isOpenCVReady || !isTensorFlowReady) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
         <h2 className="text-2xl font-bold mb-4 text-yellow-600">Cargando motores...</h2>
@@ -380,11 +284,10 @@ const Index = () => {
           <span className={isTensorFlowReady ? 'text-green-600' : 'text-red-600'}>TensorFlow: {isTensorFlowReady ? 'Listo' : 'No inicializado'}</span>
         </p>
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4" />
-        <p className="text-sm text-muted-foreground">Intento {engineRetryCount + 1} de {maxEngineRetries}...</p>
+        <p className="text-sm text-muted-foreground">Por favor, espera a que ambos motores estén listos o recarga la página si el problema persiste.</p>
       </div>
     );
   }
-
   if (enginesError) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
@@ -392,9 +295,9 @@ const Index = () => {
         <p className="mb-2 text-lg">{enginesError}</p>
         <button
           className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-          onClick={retryEngines}
+          onClick={() => window.location.reload()}
         >
-          Reintentar
+          Recargar página
         </button>
         <p className="text-sm text-muted-foreground mt-4">Si el problema persiste, revisa la consola del navegador o contacta soporte.</p>
       </div>
