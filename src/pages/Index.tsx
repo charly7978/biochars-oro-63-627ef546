@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -31,6 +32,13 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  const frameProcessingRef = useRef<boolean>(false);
+  const lastProcessTimeRef = useRef<number>(0);
+  const frameCountRef = useRef<number>(0);
+  const imageProcessingErrorsRef = useRef<number>(0);
+  const fingerDetectionStableRef = useRef<boolean>(false);
+  const fingerDetectionCountRef = useRef<number>(0);
+  const lastFpsUpdateTimeRef = useRef<number>(Date.now());
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -50,9 +58,15 @@ const Index = () => {
 
   const enterFullScreen = async () => {
     try {
-      await document.documentElement.requestFullscreen();
+      if (document.documentElement.requestFullscreen) {
+        console.log("Requesting fullscreen...");
+        await document.documentElement.requestFullscreen();
+      } else {
+        console.log("Fullscreen API not available");
+      }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
+      // Continue even if fullscreen fails
     }
   };
 
@@ -76,15 +90,47 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      const minQualityThreshold = 20; // Reduced from 40 for better sensitivity
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      // Log finger detection for debugging
+      console.log("Signal state:", {
+        fingerDetected: lastSignal.fingerDetected,
+        quality: lastSignal.quality,
+        value: lastSignal.filteredValue
+      });
+      
+      // Track finger detection stability
+      if (lastSignal.fingerDetected) {
+        fingerDetectionCountRef.current += 1;
+        if (fingerDetectionCountRef.current >= 5 && !fingerDetectionStableRef.current) {
+          fingerDetectionStableRef.current = true;
+          console.log("Finger detection stabilized!");
+          FeedbackService.vibrate(100); // Provide feedback when finger is detected
+        }
+      } else {
+        fingerDetectionCountRef.current = Math.max(0, fingerDetectionCountRef.current - 1);
+        if (fingerDetectionCountRef.current < 3 && fingerDetectionStableRef.current) {
+          fingerDetectionStableRef.current = false;
+          console.log("Finger detection lost!");
+        }
+      }
+      
+      // Only process vital signs if we have good signal quality or confirmed finger
+      if (lastSignal.fingerDetected && (lastSignal.quality >= minQualityThreshold || fingerDetectionStableRef.current)) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
+        if (heartBeatResult && heartBeatResult.confidence > 0.3) { // Reduced from 0.4 for better responsiveness
+          // Update heart rate if valid
+          if (heartBeatResult.bpm > 30 && heartBeatResult.bpm < 200) {
+            setHeartRate(prev => {
+              // Apply smoothing to avoid jumps
+              if (prev === 0) return heartBeatResult.bpm;
+              return Math.round(prev * 0.7 + heartBeatResult.bpm * 0.3);
+            });
+          }
           
           try {
+            // Process vital signs with the latest heart rate data
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
@@ -96,9 +142,11 @@ const Index = () => {
         
         setSignalQuality(lastSignal.quality);
       } else {
+        // Still update signal quality even when not processing vitals
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        // Reset heart rate if finger detection is lost for a significant time
+        if (!lastSignal.fingerDetected && fingerDetectionCountRef.current < 2 && heartRate > 0) {
           setHeartRate(0);
         }
       }
@@ -111,18 +159,26 @@ const Index = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
+      // Start a new measurement session
       enterFullScreen();
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
       
+      // Reset finger detection state
+      fingerDetectionStableRef.current = false;
+      fingerDetectionCountRef.current = 0;
+      
+      // Provide feedback to user
       FeedbackService.vibrate(100);
       FeedbackService.playSound('notification');
       
+      // Start processors
       startProcessing();
       startHeartBeatMonitoring();
       
+      // Set up timer
       setElapsedTime(0);
       
       if (measurementTimerRef.current) {
@@ -132,8 +188,15 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
           
+          // Log progress
+          if (newTime % 5 === 0) {
+            console.log(`Tiempo transcurrido: ${newTime}s, Finger detected: ${
+              fingerDetectionStableRef.current ? 'Yes (stable)' : lastSignal?.fingerDetected ? 'Yes' : 'No'
+            }, Quality: ${lastSignal?.quality || 0}`);
+          }
+          
+          // Auto-finalize after 30 seconds
           if (newTime >= 30) {
             finalizeMeasurement();
             return 30;
@@ -152,23 +215,34 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     
+    // Provide completion feedback
     const lastQuality = lastSignal?.quality ?? signalQuality;
-    FeedbackService.signalMeasurementComplete(lastQuality >= 70);
+    FeedbackService.signalMeasurementComplete(lastQuality >= 50); // Reduced threshold
     
+    // Clean up timer
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
     
+    // Get final results
     const savedResults = resetVitalSigns();
     if (savedResults) {
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
+    // Reset state
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
+    
+    // Don't immediately reset heart rate to maintain display
+    // setHeartRate(0);
+    
+    // Reset frame processing state
+    frameProcessingRef.current = false;
+    imageProcessingErrorsRef.current = 0;
+    frameCountRef.current = 0;
   };
 
   const handleReset = () => {
@@ -203,81 +277,152 @@ const Index = () => {
       hydration: 0
     });
     setSignalQuality(0);
+    
+    // Reset frame processing state
+    frameProcessingRef.current = false;
+    imageProcessingErrorsRef.current = 0;
+    fingerDetectionStableRef.current = false;
+    fingerDetectionCountRef.current = 0;
   };
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
-    
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
-      return;
-    }
-    
-    let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
-    
-    const processImage = async () => {
-      if (!isMonitoring) return;
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        console.error("No video track available");
+        return;
+      }
       
-      const now = Date.now();
-      const timeSinceLastProcess = now - lastProcessTime;
+      // Create ImageCapture object
+      const imageCapture = new ImageCapture(videoTrack);
+      console.log("ImageCapture created with video track:", videoTrack.label || "unnamed track");
       
-      if (timeSinceLastProcess >= targetFrameInterval) {
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
-          
-          frameCount++;
-          lastProcessTime = now;
-          
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
+      // Try to enable torch if available
+      if (videoTrack.getCapabilities()?.torch) {
+        console.log("Activando linterna para mejorar la señal PPG");
+        videoTrack.applyConstraints({
+          advanced: [{ torch: true }]
+        }).catch(err => console.error("Error activando linterna:", err));
+      } else {
+        console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
+      }
+      
+      // Set up canvas for processing
+      const tempCanvas = document.createElement('canvas');
+      const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
+      if (!tempCtx) {
+        console.error("No se pudo obtener el contexto 2D");
+        return;
+      }
+      
+      // Frame processing variables
+      let lastProcessTime = 0;
+      const targetFrameInterval = 1000/30; // Target 30fps
+      
+      // Frame rate monitoring
+      frameCountRef.current = 0;
+      lastFpsUpdateTimeRef.current = Date.now();
+      
+      // Frame processing function
+      const processImage = async () => {
+        if (!isMonitoring) {
+          console.log("Monitoring stopped, ending frame processing");
+          frameProcessingRef.current = false;
+          return;
         }
-      }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
-      }
-    };
+        
+        // Prevent concurrent frame processing
+        if (frameProcessingRef.current) {
+          requestAnimationFrame(processImage);
+          return;
+        }
+        
+        frameProcessingRef.current = true;
+        
+        const now = Date.now();
+        const timeSinceLastProcess = now - lastProcessTime;
+        
+        // Throttle frame processing to maintain consistent frame rate
+        if (timeSinceLastProcess >= targetFrameInterval) {
+          try {
+            // Capture frame
+            const frame = await imageCapture.grabFrame();
+            
+            // Resize for performance
+            const targetWidth = Math.min(320, frame.width);
+            const targetHeight = Math.min(240, frame.height);
+            
+            tempCanvas.width = targetWidth;
+            tempCanvas.height = targetHeight;
+            
+            // Draw frame to canvas
+            tempCtx.drawImage(
+              frame, 
+              0, 0, frame.width, frame.height, 
+              0, 0, targetWidth, targetHeight
+            );
+            
+            // Get image data and process
+            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+            processFrame(imageData);
+            
+            // Update metrics
+            frameCountRef.current++;
+            lastProcessTime = now;
+            
+            // Log FPS periodically
+            if (now - lastFpsUpdateTimeRef.current > 5000) {
+              const processingFps = frameCountRef.current / 5;
+              frameCountRef.current = 0;
+              lastFpsUpdateTimeRef.current = now;
+              console.log(`Rendimiento de procesamiento: ${processingFps.toFixed(1)} FPS`);
+            }
+            
+            // Reset error counter on success
+            imageProcessingErrorsRef.current = 0;
+            
+          } catch (error) {
+            // Handle errors with retry logic
+            imageProcessingErrorsRef.current++;
+            
+            if (imageProcessingErrorsRef.current <= 3) {
+              console.warn("Error capturando frame (retry):", error);
+            } else if (imageProcessingErrorsRef.current === 4) {
+              console.error("Error capturando frame (multiple failures):", error);
+            }
+            
+            // If track ended or invalid, try to restart
+            if (error instanceof DOMException && 
+                (error.name === 'InvalidStateError' || error.message.includes('ended'))) {
+              console.log("Video track appears to be in invalid state, attempting recovery...");
+              
+              // Set delay before next attempt
+              setTimeout(() => {
+                console.log("Resuming frame processing after error");
+                frameProcessingRef.current = false;
+                requestAnimationFrame(processImage);
+              }, 500);
+              return;
+            }
+          }
+        }
+        
+        frameProcessingRef.current = false;
+        
+        // Continue processing if still monitoring
+        if (isMonitoring) {
+          requestAnimationFrame(processImage);
+        }
+      };
 
-    processImage();
+      // Start frame processing
+      processImage();
+      
+    } catch (error) {
+      console.error("Error initializing video processing:", error);
+    }
   };
 
   const handleToggleMonitoring = () => {

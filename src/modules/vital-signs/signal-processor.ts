@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -21,22 +22,22 @@ export class SignalProcessor extends BaseProcessor {
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
   
-  // Finger detection state
+  // Finger detection state - more sensitive thresholds
   private rhythmBasedFingerDetection: boolean = false;
   private fingerDetectionConfirmed: boolean = false;
   private fingerDetectionStartTime: number | null = null;
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
+  // Signal quality variables - adjusted thresholds for better detection
+  private readonly MIN_QUALITY_FOR_FINGER = 25; // Decreased for higher sensitivity
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 2500; // Decreased for faster detection
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.15; // Decreased from previous value
   
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
+    this.signalValidator = new SignalValidator(0.005, 8); // More sensitive thresholds
   }
   
   /**
@@ -80,7 +81,10 @@ export class SignalProcessor extends BaseProcessor {
    * Incorporates rhythmic pattern-based finger detection
    */
   public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
-    // Track the signal for pattern detection
+    // Early signal validation - log raw values for debugging
+    console.log("SignalProcessor raw value:", value);
+    
+    // Track the signal for pattern detection - critical for finger detection
     this.signalValidator.trackSignalForPatternDetection(value);
 
     // Apply filters
@@ -98,19 +102,30 @@ export class SignalProcessor extends BaseProcessor {
       this.ppgValues.shift();
     }
     
-    // Enhanced finger detection with amplitude checks
+    // Enhanced finger detection with amplitude checks - more forgiving
     let amplitude = 0;
-    if (this.ppgValues.length > 10) {
-      const recentValues = this.ppgValues.slice(-10);
+    if (this.ppgValues.length > 5) {
+      const recentValues = this.ppgValues.slice(-5);
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
     
-    // Check for valid finger detection conditions
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                         (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed) &&
-                         amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    // Check for valid finger detection conditions - more lenient conditions
+    const validatorDetection = this.signalValidator.isFingerDetected();
+    const qualityCheck = qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed;
+    const amplitudeCheck = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    
+    // Log detection metrics for debugging
+    console.log("Finger detection metrics:", {
+      validatorDetection,
+      qualityValue,
+      qualityCheck,
+      amplitude,
+      amplitudeCheck
+    });
+    
+    const fingerDetected = validatorDetection && qualityCheck && amplitudeCheck;
 
-    // Update finger detection state
+    // Update finger detection state with more progressive detection
     if (fingerDetected && !this.fingerDetectionConfirmed) {
       const now = Date.now();
       
@@ -134,16 +149,22 @@ export class SignalProcessor extends BaseProcessor {
         });
       }
     } else if (!fingerDetected) {
+      // Be more conservative about losing finger detection - add hysteresis
       if (this.fingerDetectionConfirmed) {
-        console.log("Signal processor: Finger detection lost", {
-          quality: qualityValue,
-          amplitude
-        });
+        // Only lose detection if conditions are really bad
+        if (amplitude < this.MIN_SIGNAL_AMPLITUDE * 0.5 || qualityValue < this.MIN_QUALITY_FOR_FINGER * 0.5) {
+          console.log("Signal processor: Finger detection lost", {
+            quality: qualityValue,
+            amplitude
+          });
+          this.fingerDetectionConfirmed = false;
+          this.fingerDetectionStartTime = null;
+          this.rhythmBasedFingerDetection = false;
+        }
+      } else {
+        this.fingerDetectionStartTime = null;
+        this.rhythmBasedFingerDetection = false;
       }
-      
-      this.fingerDetectionConfirmed = false;
-      this.fingerDetectionStartTime = null;
-      this.rhythmBasedFingerDetection = false;
     }
 
     return {

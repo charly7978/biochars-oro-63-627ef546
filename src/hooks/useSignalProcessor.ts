@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { SignalProcessor } from '../modules/vital-signs/signal-processor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
 
@@ -35,25 +35,40 @@ export const useSignalProcessor = () => {
   });
 
   const frameBuffer = useRef<ImageData[]>([]);
+  const lastFrameTimeRef = useRef<number>(0);
+  const frameRateRef = useRef<number>(30);
+  const processingErrorsRef = useRef<number>(0);
   const FRAME_BUFFER_SIZE = 5;
+  const MAX_CONSECUTIVE_ERRORS = 10;
+  const targetFrameInterval = 1000 / 30; // Target 30fps
 
+  // Process a frame to extract PPG values
   const processFrame = useCallback((imageData: ImageData) => {
     if (!isProcessing) return;
 
-    // Add frame to buffer
-    frameBuffer.current.push(imageData);
-    if (frameBuffer.current.length > FRAME_BUFFER_SIZE) {
-      frameBuffer.current.shift();
-    }
-
-    // Process frame to extract PPG value
     try {
-      // Extract red channel average from center region
+      const now = Date.now();
+      
+      // Maintain consistent framerate - only process frames at target interval
+      if (now - lastFrameTimeRef.current < targetFrameInterval) {
+        return;
+      }
+      
+      lastFrameTimeRef.current = now;
+
+      // Add frame to buffer
+      frameBuffer.current.push(imageData);
+      if (frameBuffer.current.length > FRAME_BUFFER_SIZE) {
+        frameBuffer.current.shift();
+      }
+
+      // Extract red channel average from center region (larger region for better signal)
       const centerX = Math.floor(imageData.width / 2);
       const centerY = Math.floor(imageData.height / 2);
-      const regionSize = 20;
+      const regionSize = 30; // Increased from 20
       
       let redSum = 0;
+      let greenSum = 0; // Added green channel which often has better PPG signal
       let pixelCount = 0;
       
       for (let y = centerY - regionSize; y < centerY + regionSize; y++) {
@@ -61,25 +76,36 @@ export const useSignalProcessor = () => {
           if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
             const i = (y * imageData.width + x) * 4;
             redSum += imageData.data[i]; // Red channel
+            greenSum += imageData.data[i + 1]; // Green channel
             pixelCount++;
           }
         }
       }
       
-      const ppgValue = redSum / pixelCount;
+      // Use green channel as it typically provides better PPG signal
+      const ppgValue = greenSum / pixelCount;
+      
+      // Process the value through signal processor
       procesarValor(ppgValue);
+      
+      // Reset error counter on success
+      processingErrorsRef.current = 0;
       
     } catch (err) {
       console.error("Error processing frame:", err);
-      setError({
-        code: 'PROCESSING_ERROR',
-        message: 'Error processing frame',
-        timestamp: Date.now()
-      });
+      processingErrorsRef.current++;
+      
+      if (processingErrorsRef.current > MAX_CONSECUTIVE_ERRORS) {
+        setError({
+          code: 'PROCESSING_ERROR',
+          message: `Consecutive processing errors (${processingErrorsRef.current})`,
+          timestamp: Date.now()
+        });
+      }
     }
   }, [isProcessing]);
 
-  // Nueva función para procesar un valor PPG real
+  // Process a raw PPG value through filters
   const procesarValor = useCallback((valorPPG: number) => {
     try {
       const resultado = processor.applyFilters(valorPPG);
@@ -95,6 +121,7 @@ export const useSignalProcessor = () => {
         };
       });
     } catch (err) {
+      console.error("Error procesando valor PPG:", err);
       setError({
         code: 'PROCESSING_ERROR',
         message: 'Error procesando valor PPG',
@@ -103,19 +130,24 @@ export const useSignalProcessor = () => {
     }
   }, [processor]);
 
-  // Control de inicio/parada
+  // Start/stop processing control
   const startProcessing = useCallback(() => {
+    console.log("useSignalProcessor: Iniciando procesamiento");
     setIsProcessing(true);
     frameBuffer.current = [];
+    lastFrameTimeRef.current = 0;
+    processingErrorsRef.current = 0;
   }, []);
 
   const stopProcessing = useCallback(() => {
+    console.log("useSignalProcessor: Deteniendo procesamiento");
     setIsProcessing(false);
     frameBuffer.current = [];
   }, []);
 
   // Reset function to clear all state
   const reset = useCallback(() => {
+    console.log("useSignalProcessor: Reset");
     processor.reset();
     setLastSignal(null);
     setError(null);
@@ -128,7 +160,25 @@ export const useSignalProcessor = () => {
     });
     setIsProcessing(false);
     frameBuffer.current = [];
+    lastFrameTimeRef.current = 0;
+    processingErrorsRef.current = 0;
   }, [processor]);
+
+  // Log periodic stats for debugging
+  useEffect(() => {
+    if (isProcessing) {
+      const statsInterval = setInterval(() => {
+        console.log("useSignalProcessor stats:", {
+          framesProcessed,
+          signalQuality: lastSignal?.quality || 0,
+          fingerDetected: lastSignal?.fingerDetected || false,
+          errors: processingErrorsRef.current
+        });
+      }, 3000);
+      
+      return () => clearInterval(statsInterval);
+    }
+  }, [isProcessing, framesProcessed, lastSignal]);
 
   return {
     isProcessing,

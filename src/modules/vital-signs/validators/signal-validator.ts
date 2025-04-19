@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,14 +9,14 @@
 export class SignalValidator {
   private readonly minAmplitude: number;
   private readonly minDataPoints: number;
-  private readonly minSignalStrength: number = 0.005; // Reducido para mayor sensibilidad
+  private readonly minSignalStrength: number = 0.001; // Reducido para mayor sensibilidad
   
-  // Finger detection variables
+  // Finger detection variables - more sensitive settings
   private signalPatternBuffer: number[] = [];
   private patternDetectionCounter: number = 0;
   private fingerDetected: boolean = false;
-  private readonly PATTERN_BUFFER_SIZE = 30;
-  private readonly MIN_PATTERN_DETECTION_COUNT = 5;
+  private readonly PATTERN_BUFFER_SIZE = 20; // Reduced from 30 for faster detection
+  private readonly MIN_PATTERN_DETECTION_COUNT = 3; // Reduced from 5 for faster detection
 
   constructor(minAmplitude: number = 0.005, minDataPoints: number = 10) {
     this.minAmplitude = minAmplitude;
@@ -49,6 +50,10 @@ export class SignalValidator {
     const max = Math.max(...recentValues);
     const amplitude = max - min;
     
+    console.log("SignalValidator amplitude check:", {
+      min, max, amplitude, threshold: this.minAmplitude
+    });
+    
     return amplitude >= this.minAmplitude;
   }
   
@@ -71,12 +76,18 @@ export class SignalValidator {
       
       if (hasRhythmicPattern) {
         this.patternDetectionCounter = Math.min(this.patternDetectionCounter + 1, this.MIN_PATTERN_DETECTION_COUNT + 3);
+        console.log("SignalValidator: Rhythmic pattern detected", { counter: this.patternDetectionCounter });
       } else {
         this.patternDetectionCounter = Math.max(0, this.patternDetectionCounter - 1);
       }
       
       // Update finger detection status based on consistent pattern detection
+      const wasDetected = this.fingerDetected;
       this.fingerDetected = this.patternDetectionCounter >= this.MIN_PATTERN_DETECTION_COUNT;
+      
+      if (this.fingerDetected !== wasDetected) {
+        console.log("SignalValidator: Finger detection changed to", this.fingerDetected);
+      }
     }
   }
   
@@ -99,6 +110,7 @@ export class SignalValidator {
   /**
    * Detect rhythmic patterns in signal that are characteristic of PPG
    * Looking for periodic patterns with physiological timing
+   * More sensitive parameters used here
    */
   private detectRhythmicPattern(values: number[]): boolean {
     if (values.length < 10) return false;
@@ -115,7 +127,10 @@ export class SignalValidator {
     }
     
     // Need at least 2 peaks to analyze intervals
-    if (peaks.length < 2) return false;
+    if (peaks.length < 2) {
+      console.log("SignalValidator: Not enough peaks found", { peakCount: peaks.length });
+      return false;
+    }
     
     // Calculate intervals between peaks
     const intervals: number[] = [];
@@ -125,18 +140,31 @@ export class SignalValidator {
     
     // Check if intervals are within physiological range (40-200 BPM)
     // At 30Hz sampling, that's roughly between 9-45 samples between peaks
-    const validIntervals = intervals.filter(interval => interval >= 9 && interval <= 45);
+    // More lenient now: 30-220 BPM or 8-60 samples
+    const validIntervals = intervals.filter(interval => interval >= 8 && interval <= 60);
     
-    // Calculate consistency of intervals (CV < 0.2 for stable rhythm)
+    // Calculate consistency of intervals (CV < 0.25 for stable rhythm - more lenient than before)
     if (validIntervals.length >= 2) {
       const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
       const variance = validIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / validIntervals.length;
       const cv = Math.sqrt(variance) / avgInterval; // Coefficient of variation
       
-      // CV < 0.2 indicates consistent periodic pattern
-      return cv < 0.2;
+      console.log("SignalValidator rhythm metrics:", { 
+        validIntervals: validIntervals.length,
+        totalIntervals: intervals.length,
+        avgInterval, 
+        cv, 
+        threshold: 0.25 
+      });
+      
+      // CV < 0.25 indicates consistent periodic pattern (more lenient than 0.2)
+      return cv < 0.25;
     }
     
+    console.log("SignalValidator: Not enough valid intervals found", { 
+      validIntervals: validIntervals.length, 
+      totalIntervals: intervals.length 
+    });
     return false;
   }
   
