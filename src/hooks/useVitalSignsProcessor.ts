@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -136,18 +137,31 @@ export const useVitalSignsProcessor = () => {
         // Inferencia del modelo y manejo adecuado del resultado
         const predictionPromise = tfPredict(normalizedInput);
         if (predictionPromise) {
-          const prediction = await Promise.resolve(predictionPromise);
-          
-          if (prediction && prediction.length > 0) {
-            // Usar resultado para mejorar el valor optimizado
-            const enhancementFactor = prediction[0];
-            tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
-            console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+          try {
+            const prediction = await Promise.resolve(predictionPromise);
+            
+            if (prediction && prediction.length > 0) {
+              // Usar resultado para mejorar el valor optimizado
+              const enhancementFactor = prediction[0];
+              tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
+              console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+            }
+          } catch (e) {
+            console.error("Error procesando predicción TensorFlow:", e);
           }
         }
       } catch (err) {
         console.error("Error en procesamiento TensorFlow:", err);
       }
+    }
+
+    // --- DEBUG: Verificar si llegan datos RR para arrhythmia --- 
+    if (rrData && rrData.intervals.length > 0 && processedSignals.current % 30 === 0) {
+      console.log("Datos RR disponibles para detección de arritmias:", {
+        intervalCount: rrData.intervals.length,
+        lastIntervals: rrData.intervals.slice(-3),
+        lastPeakTime: rrData.lastPeakTime
+      });
     }
 
     // --- Llamada a VitalSignsProcessor (Con la firma CORRECTA según VitalSignsProcessor.ts) --- 
@@ -178,6 +192,14 @@ export const useVitalSignsProcessor = () => {
         if (feedback[channel]) {
             optimizerManager.applyFeedback(channel, feedback[channel]);
         }
+    }
+
+    // --- Debug: Resultados de signos vitales --- 
+    if (processedSignals.current % 30 === 0) {
+      console.log("Resultados procesados:", {
+        lipids: result.lipids,
+        arrhythmiaStatus: result.arrhythmiaStatus
+      });
     }
 
     // --- Log y visualización --- 

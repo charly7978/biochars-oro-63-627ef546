@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -116,7 +117,7 @@ export class VitalSignsProcessor {
     }
 
     // No procesar si el buffer no está suficientemente lleno
-    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.4) {
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.3) { // Reducido para procesar antes
         console.log(`VitalSignsProcessor: Buffer insuficiente (${this.ppgBuffer.length}/${this.BUFFER_SIZE})`);
         return ResultFactory.createEmptyResults();
     }
@@ -131,22 +132,22 @@ export class VitalSignsProcessor {
     let arrhythmiaResult: { arrhythmiaStatus: string; lastArrhythmiaData: any | null } = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
 
     try {
-      console.log("VitalSignsProcessor: Procesando señales...");
-      
       // SpO2 - Buffer completo para mejores resultados
       spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
       
       // Presión arterial - requiere buffer suficiente
       pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
       
-      // Arritmias - basado en intervalos RR
+      // Arritmias - basado en intervalos RR - REGISTRO ADICIONAL
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
+      console.log("Resultado de procesamiento de arritmias:", arrhythmiaResult);
       
       // Glucosa - análisis espectral
       glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
       
-      // Lípidos - análisis avanzado
+      // Lípidos - análisis avanzado - REGISTRO ADICIONAL
       lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
+      console.log("Resultado de procesamiento de lípidos:", lipids);
       
       // Hemoglobina - correlación con SpO2
       hemoglobin = this.calculateDefaultHemoglobin(spo2);
@@ -154,14 +155,18 @@ export class VitalSignsProcessor {
       // Hidratación - análisis de señal
       hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
 
-      console.log("Resultados calculados:", { 
-        spo2, 
-        pressure: `${Math.round(pressure.systolic)}/${Math.round(pressure.diastolic)}`,
-        glucose,
-        lipids,
-        hemoglobin,
-        hydration
-      });
+      // Registro más frecuente
+      if (this.processingCount % 5 === 0) {
+        console.log("Resultados calculados:", { 
+          spo2, 
+          pressure: `${Math.round(pressure.systolic)}/${Math.round(pressure.diastolic)}`,
+          glucose,
+          lipids,
+          hemoglobin,
+          hydration,
+          arrhythmia: arrhythmiaResult.arrhythmiaStatus
+        });
+      }
 
     } catch (error) {
       console.error("Error during vital sign calculation:", error);
