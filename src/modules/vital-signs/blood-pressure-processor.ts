@@ -1,10 +1,10 @@
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
-  // Optimización de parámetros para mayor precisión
-  private readonly BP_BUFFER_SIZE = 20;  // Aumentado para mejor estabilidad
-  private readonly MEDIAN_WEIGHT = 0.7;  // Mayor peso a la mediana
-  private readonly MEAN_WEIGHT = 0.3;    // Menor peso al promedio
+  // Ajustamos umbrales para mayor sensibilidad manteniendo confiabilidad
+  private readonly BP_BUFFER_SIZE = 15;  // Reducido para respuesta más rápida
+  private readonly MEDIAN_WEIGHT = 0.65;  // Ajustado para balance
+  private readonly MEAN_WEIGHT = 0.35;   
   
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
@@ -17,12 +17,13 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 20;
   private readonly MAX_PULSE_PRESSURE = 100;
   
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001;
-  private readonly MIN_PEAK_COUNT = 2;
-  private readonly MIN_FPS = 30;  // Aumentado para mejor muestreo
+  // Umbrales de validación ajustados
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.0008; // Reducido de 0.001
+  private readonly MIN_PEAK_COUNT = 1;  // Reducido de 2
+  private readonly MIN_FPS = 25;  // Reducido de 30
   
   private lastCalculationTime: number = 0;
-  private forceRecalculationInterval: number = 1500; // Reducido para actualización más frecuente
+  private forceRecalculationInterval: number = 1200; // Reducido para actualización más frecuente
 
   /**
    * Calculates blood pressure using PPG signal features directly
