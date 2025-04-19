@@ -1,10 +1,26 @@
 
 import React, { useState } from 'react';
 import { Slider } from '@/components/ui/slider';
-import { Select, SelectItem } from '@/components/ui/select';
+import { 
+  Select,
+  SelectContent,
+  SelectItem, 
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { SignalOptimizerManager, SignalChannelOptimizerParams } from '../modules/signal-optimizer/SignalOptimizerManager';
+import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
+
+// Define the interface locally since it's not exported from the module
+interface SignalChannelOptimizerParams {
+  filterType: string;
+  gain: number;
+  filterWindow: number;
+  emaAlpha: number;
+  kalmanQ: number;
+  kalmanR: number;
+}
 
 interface SignalOptimizerControlProps {
   optimizerManager: SignalOptimizerManager;
@@ -57,9 +73,14 @@ export const SignalOptimizerControl: React.FC<SignalOptimizerControlProps> = ({ 
       <div className="mb-2">
         <label className="block mb-1">Tipo de Filtro:</label>
         <Select value={params.filterType} onValueChange={(v) => handleParamChange('filterType', v)}>
-          {filterTypes.map((ft) => (
-            <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>
-          ))}
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="Seleccionar filtro" />
+          </SelectTrigger>
+          <SelectContent>
+            {filterTypes.map((ft) => (
+              <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>
+            ))}
+          </SelectContent>
         </Select>
       </div>
       <div className="mb-2">
