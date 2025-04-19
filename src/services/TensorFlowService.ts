@@ -43,13 +43,13 @@ class TensorFlowService {
       // Configuraciones adicionales
       tf.enableProdMode(); // Mejor rendimiento en producción
       
-      // Cargar modelos pre-entrenados (usaremos modelos públicos y técnicas de transfer learning)
+      // Cargar modelos pre-entrenados
       await this.loadFingerDetectionModel();
       
       this.isInitialized = true;
       console.log('TensorFlow.js inicializado correctamente', {
         backend: tf.getBackend(),
-        flags: tf.ENV.flags
+        kernelManager: tf.engine().registryFactory
       });
     } catch (error) {
       console.error('Error al inicializar TensorFlow.js:', error);
