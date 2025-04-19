@@ -20,32 +20,32 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
   const max = Math.max(...values);
   const min = Math.min(...values);
   const amplitude = max - min;
-  const threshold = Math.max(0.01, amplitude * 0.05); // Mínimo 1% o 5% de la amplitud
+  const threshold = Math.max(0.005, amplitude * 0.03); // Umbral reducido para mayor sensibilidad
 
   // Algoritmo mejorado para detección de picos y valles en datos reales
-  for (let i = 2; i < values.length - 2; i++) {
+  for (let i = 1; i < values.length - 1; i++) {
     const v = values[i];
     const prev1 = values[i - 1];
-    const prev2 = values[i - 2];
     const next1 = values[i + 1];
-    const next2 = values[i + 2];
     
-    // Detección de picos (mejorada)
-    if (v > prev1 && v > prev2 && v > next1 && v > next2) {
+    // Detección de picos (simplificada para mayor sensibilidad)
+    if (v > prev1 && v > next1) {
       // Verificar que el pico sea significativo respecto a sus vecinos
-      const localMin = Math.min(prev1, prev2, next1, next2);
+      const localMin = Math.min(prev1, next1);
       if (v - localMin > threshold) {
         peakIndices.push(i);
         
-        // Registro detallado del pico detectado
-        console.log("Peak detected at index", i, "value:", v, "diff:", v - localMin);
+        // Registro detallado solo para cada 5to pico para evitar sobrecarga de consola
+        if (peakIndices.length % 5 === 0) {
+          console.log("Peak detected at index", i, "value:", v, "diff:", v - localMin);
+        }
       }
     }
     
-    // Detección de valles (mejorada)
-    if (v < prev1 && v < prev2 && v < next1 && v < next2) {
+    // Detección de valles (simplificada para mayor sensibilidad)
+    if (v < prev1 && v < next1) {
       // Verificar que el valle sea significativo respecto a sus vecinos
-      const localMax = Math.max(prev1, prev2, next1, next2);
+      const localMax = Math.max(prev1, next1);
       if (localMax - v > threshold) {
         valleyIndices.push(i);
       }
@@ -95,7 +95,7 @@ export function calculateAmplitude(
       }
     }
     
-    if (closestValleyIdx !== -1 && minDistance < 20) { // Aumentado de 10 a 20 para mayor sensibilidad
+    if (closestValleyIdx !== -1 && minDistance < 30) { // Aumentado para mayor sensibilidad
       const amp = values[peakIdx] - values[closestValleyIdx];
       if (amp > 0) {
         amps.push(amp);
