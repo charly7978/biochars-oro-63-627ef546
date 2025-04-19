@@ -335,6 +335,18 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
+  // --- Utilidad para vibrar de forma segura ---
+  function safeVibrate(pattern: number | number[]) {
+    if (typeof window !== 'undefined' && navigator && navigator.vibrate) {
+      navigator.vibrate(pattern);
+      console.log('Vibración ejecutada:', pattern);
+      return true;
+    } else {
+      console.log('Vibración NO soportada');
+      return false;
+    }
+  }
+
   const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
     if (points.length < PEAK_DETECTION_WINDOW) return;
     const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
@@ -359,11 +371,11 @@ const PPGSignalMeter = memo(({
           }
         }
       }
-      // Determinar si este pico es arrítmico SOLO en este instante
+      // Solo marcar como arritmia si el timestamp coincide exactamente
       let isArrhythmiaPeak = false;
       if (
         rawArrhythmiaData && arrhythmiaStatus?.includes("ARRHYTHMIA") &&
-        Math.abs(currentPoint.time - rawArrhythmiaData.timestamp) < 1000
+        Math.abs(currentPoint.time - rawArrhythmiaData.timestamp) < 200
       ) {
         isArrhythmiaPeak = true;
       }
@@ -387,6 +399,17 @@ const PPGSignalMeter = memo(({
           isArrhythmia: peak.isArrhythmia,
           beepPlayed: false
         });
+      }
+    }
+    // Limpiar la marca de arritmia en picos antiguos
+    for (const peak of peaksRef.current) {
+      if (
+        !(
+          rawArrhythmiaData && arrhythmiaStatus?.includes("ARRHYTHMIA") &&
+          Math.abs(peak.time - rawArrhythmiaData.timestamp) < 200
+        )
+      ) {
+        peak.isArrhythmia = false;
       }
     }
     peaksRef.current.sort((a, b) => a.time - b.time);
@@ -548,7 +571,6 @@ const PPGSignalMeter = memo(({
         if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
           renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-          // Círculo azul para normal, amarillo para arritmia
           renderCtx.fillStyle = peak.isArrhythmia ? '#FFD600' : '#0EA5E9';
           renderCtx.fill();
           if (peak.isArrhythmia) {
@@ -566,12 +588,12 @@ const PPGSignalMeter = memo(({
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-          // Feedback instantáneo: beep y vibración
+          // Feedback instantáneo: beep y vibración SOLO al detectar el pico
           if (!peak.beepPlayed) {
             if (peak.isArrhythmia) {
-              FeedbackService.vibrate([100, 50, 100]); // vibración larga/doble para arritmia
+              safeVibrate([100, 50, 100]); // vibración larga/doble para arritmia
             } else {
-              FeedbackService.vibrate(40); // vibración corta para normal
+              safeVibrate(40); // vibración corta para normal
             }
             playBeep(1.0, peak.isArrhythmia);
             peak.beepPlayed = true;
