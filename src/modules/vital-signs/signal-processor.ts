@@ -82,44 +82,36 @@ export class SignalProcessor extends BaseProcessor {
   public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
     // Track the signal for pattern detection
     this.signalValidator.trackSignalForPatternDetection(value);
-    
-    // Step 1: Median filter to remove outliers
+
+    // Apply filters
     const medianFiltered = this.applyMedianFilter(value);
-    
-    // Step 2: Low pass filter to smooth the signal
     const lowPassFiltered = this.applyEMAFilter(medianFiltered);
-    
-    // Step 3: Moving average for final smoothing
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
     
-    // Calculate noise level of real signal
+    // Calculate signal quality
     this.quality.updateNoiseLevel(value, smaFiltered);
-    
-    // Calculate signal quality (0-100)
     const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
     
-    // Store the filtered value in the buffer
+    // Update signal buffer
     this.ppgValues.push(smaFiltered);
     if (this.ppgValues.length > 30) {
       this.ppgValues.shift();
     }
     
-    // Check finger detection using pattern recognition with a higher quality threshold
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
-    
-    // Calculate signal amplitude
+    // Enhanced finger detection with amplitude checks
     let amplitude = 0;
     if (this.ppgValues.length > 10) {
       const recentValues = this.ppgValues.slice(-10);
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
     
-    // Require minimum amplitude for detection (physiological requirement)
-    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
-    
-    // If finger is detected by pattern and has valid amplitude, confirm it
-    if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
+    // Check for valid finger detection conditions
+    const fingerDetected = this.signalValidator.isFingerDetected() && 
+                         (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed) &&
+                         amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+
+    // Update finger detection state
+    if (fingerDetected && !this.fingerDetectionConfirmed) {
       const now = Date.now();
       
       if (!this.fingerDetectionStartTime) {
@@ -131,26 +123,21 @@ export class SignalProcessor extends BaseProcessor {
         });
       }
       
-      // If finger detection has been consistent for required time period, confirm it
-      if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
+      if (this.fingerDetectionStartTime && 
+          (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
         this.fingerDetectionConfirmed = true;
         this.rhythmBasedFingerDetection = true;
-        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
+        console.log("Signal processor: Finger detection CONFIRMED!", {
           time: new Date(now).toISOString(),
-          detectionMethod: "Rhythmic pattern detection",
-          detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
           quality: qualityValue,
           amplitude
         });
       }
-    } else if (!fingerDetected || !hasValidAmplitude) {
-      // Reset finger detection if lost or amplitude too low
+    } else if (!fingerDetected) {
       if (this.fingerDetectionConfirmed) {
         console.log("Signal processor: Finger detection lost", {
-          hasValidPattern: fingerDetected,
-          hasValidAmplitude,
-          amplitude,
-          quality: qualityValue
+          quality: qualityValue,
+          amplitude
         });
       }
       
@@ -158,11 +145,11 @@ export class SignalProcessor extends BaseProcessor {
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
     }
-    
-    return { 
+
+    return {
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
+      fingerDetected: fingerDetected || this.fingerDetectionConfirmed
     };
   }
   
