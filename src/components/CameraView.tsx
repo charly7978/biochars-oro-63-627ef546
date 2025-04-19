@@ -22,8 +22,10 @@ const CameraView = ({
   const [isIOS, setIsIOS] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
+  const torchRetryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 5; // Increased from 3 for better reliability
   const lastDeviceIdRef = useRef<string>('');
+  const torchIntervalRef = useRef<number | null>(null);
 
   // Detect device platform
   useEffect(() => {
@@ -45,6 +47,27 @@ const CameraView = ({
     setIsWindows(windowsDetected);
   }, []);
 
+  // Helper to ensure torch is enabled
+  const ensureTorchEnabled = useCallback(async () => {
+    if (!stream) return false;
+    
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack || !videoTrack.getCapabilities()?.torch) {
+      return false;
+    }
+    
+    try {
+      console.log("Intentando activar linterna explícitamente");
+      await videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      });
+      return true;
+    } catch (err) {
+      console.error("Error activando linterna:", err);
+      return false;
+    }
+  }, [stream]);
+
   // Stop camera stream and clean up
   const stopCamera = async () => {
     if (stream) {
@@ -60,6 +83,12 @@ const CameraView = ({
             });
             console.log("Torch turned off successfully");
           }
+        }
+        
+        // Clear torch interval if active
+        if (torchIntervalRef.current) {
+          clearInterval(torchIntervalRef.current);
+          torchIntervalRef.current = null;
         }
         
         // Then stop all tracks
@@ -83,6 +112,7 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
+      torchRetryAttemptsRef.current = 0;
       console.log("Camera stopped successfully");
     }
   };
@@ -110,7 +140,8 @@ const CameraView = ({
         const rearCameras = videoDevices.filter(device => 
           device.label.toLowerCase().includes('back') || 
           device.label.toLowerCase().includes('rear') ||
-          device.label.toLowerCase().includes('trasera')
+          device.label.toLowerCase().includes('trasera') ||
+          device.label.toLowerCase().includes('environment')
         );
         
         if (rearCameras.length > 0) {
@@ -209,6 +240,9 @@ const CameraView = ({
               }
             } catch (err) {
               console.error("Error al activar linterna en Android:", err);
+              // Schedule torch retry 
+              torchRetryAttemptsRef.current = 0;
+              scheduleTorchRetry();
             }
           } else {
             // Apply camera optimizations for non-Android devices
@@ -249,6 +283,9 @@ const CameraView = ({
                 console.log("Torch enabled successfully");
               } catch (err) {
                 console.error("Error activando linterna:", err);
+                // Schedule torch retry
+                torchRetryAttemptsRef.current = 0;
+                scheduleTorchRetry();
               }
             } else {
               console.log("La linterna no está disponible en este dispositivo");
@@ -279,6 +316,23 @@ const CameraView = ({
       // Reset retry counter after successful initialization
       retryAttemptsRef.current = 0;
       
+      // Set up periodic torch check
+      if (torchIntervalRef.current) {
+        clearInterval(torchIntervalRef.current);
+      }
+      
+      torchIntervalRef.current = window.setInterval(() => {
+        if (isMonitoring && !torchEnabled) {
+          ensureTorchEnabled()
+            .then(success => {
+              if (success) {
+                setTorchEnabled(true);
+                console.log("Torch activated via periodic check");
+              }
+            });
+        }
+      }, 5000);
+      
     } catch (err) {
       console.error("Error al iniciar la cámara:", err);
       
@@ -296,6 +350,25 @@ const CameraView = ({
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
     }
+  };
+
+  // Schedule a torch retry with backoff
+  const scheduleTorchRetry = () => {
+    setTimeout(() => {
+      if (stream && !torchEnabled && torchRetryAttemptsRef.current < 5) {
+        torchRetryAttemptsRef.current++;
+        console.log(`Retrying torch activation (attempt ${torchRetryAttemptsRef.current}/5)`);
+        ensureTorchEnabled()
+          .then(success => {
+            if (success) {
+              setTorchEnabled(true);
+              console.log("Torch activated on retry");
+            } else if (torchRetryAttemptsRef.current < 5) {
+              scheduleTorchRetry();
+            }
+          });
+      }
+    }, torchRetryAttemptsRef.current * 1000); // Increasing backoff
   };
 
   // Retry camera initialization with simpler constraints
@@ -328,6 +401,23 @@ const CameraView = ({
       }
       
       console.log("Camera restarted successfully with simplified constraints");
+      
+      // Try to enable torch after a slight delay to allow camera to initialize
+      setTimeout(() => {
+        const videoTrack = newStream.getVideoTracks()[0];
+        if (videoTrack && videoTrack.getCapabilities()?.torch) {
+          console.log("Activando linterna después de reinicio");
+          videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          }).then(() => {
+            setTorchEnabled(true);
+            console.log("Torch enabled after retry");
+          }).catch(err => {
+            console.error("Error activando linterna después de reinicio:", err);
+            scheduleTorchRetry();
+          });
+        }
+      }, 1000);
       
     } catch (err) {
       console.error(`Retry attempt ${retryCount} failed:`, err);
@@ -376,6 +466,10 @@ const CameraView = ({
     
     return () => {
       console.log("CameraView component unmounting, stopping camera");
+      if (torchIntervalRef.current) {
+        clearInterval(torchIntervalRef.current);
+        torchIntervalRef.current = null;
+      }
       stopCamera();
     };
   }, [isMonitoring]);
@@ -394,6 +488,7 @@ const CameraView = ({
           console.log("Torch enabled after finger detection");
         }).catch(err => {
           console.error("Error activando linterna:", err);
+          scheduleTorchRetry();
         });
       }
     }
@@ -405,6 +500,35 @@ const CameraView = ({
       return () => clearInterval(focusInterval);
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
+
+  // Activate torch when not enabled but should be
+  useEffect(() => {
+    if (stream && isMonitoring && !torchEnabled) {
+      // Try to enable torch every second until successful
+      const torchInterval = setInterval(() => {
+        if (!torchEnabled) {
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack && videoTrack.getCapabilities()?.torch) {
+            videoTrack.applyConstraints({
+              advanced: [{ torch: true }]
+            }).then(() => {
+              setTorchEnabled(true);
+              console.log("Torch enabled by interval");
+              clearInterval(torchInterval);
+            }).catch(err => {
+              console.log("Torch activation attempt failed:", err);
+            });
+          } else {
+            clearInterval(torchInterval); // Stop if torch not available
+          }
+        } else {
+          clearInterval(torchInterval); // Stop if torch already enabled
+        }
+      }, 2000);
+
+      return () => clearInterval(torchInterval);
+    }
+  }, [stream, isMonitoring, torchEnabled]);
 
   // Set framerate based on platform and signal quality
   const targetFrameInterval = isAndroid ? 1000/15 : 

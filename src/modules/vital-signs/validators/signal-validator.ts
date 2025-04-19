@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -9,16 +8,16 @@
 export class SignalValidator {
   private readonly minAmplitude: number;
   private readonly minDataPoints: number;
-  private readonly minSignalStrength: number = 0.001; // Reducido para mayor sensibilidad
+  private readonly minSignalStrength: number = 0.0005; // Reduced to improve sensitivity
   
   // Finger detection variables - more sensitive settings
   private signalPatternBuffer: number[] = [];
   private patternDetectionCounter: number = 0;
   private fingerDetected: boolean = false;
-  private readonly PATTERN_BUFFER_SIZE = 20; // Reduced from 30 for faster detection
-  private readonly MIN_PATTERN_DETECTION_COUNT = 3; // Reduced from 5 for faster detection
+  private readonly PATTERN_BUFFER_SIZE = 15; // Reduced from 20 for faster detection
+  private readonly MIN_PATTERN_DETECTION_COUNT = 2; // Reduced from 3 for faster detection
 
-  constructor(minAmplitude: number = 0.005, minDataPoints: number = 10) {
+  constructor(minAmplitude: number = 0.003, minDataPoints: number = 8) {
     this.minAmplitude = minAmplitude;
     this.minDataPoints = minDataPoints;
   }
@@ -44,7 +43,7 @@ export class SignalValidator {
     if (values.length < 5) return false;
     
     // Tomar solo los últimos valores para análisis
-    const recentValues = values.slice(-15);
+    const recentValues = values.slice(-10); // Reduced from 15 for faster response
     
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
@@ -60,6 +59,7 @@ export class SignalValidator {
   /**
    * Track signal for rhythmic pattern detection to identify finger presence
    * Uses physiological characteristics to recognize true finger signals
+   * More aggressive detection now
    */
   public trackSignalForPatternDetection(value: number): void {
     // Add value to pattern buffer
@@ -110,18 +110,15 @@ export class SignalValidator {
   /**
    * Detect rhythmic patterns in signal that are characteristic of PPG
    * Looking for periodic patterns with physiological timing
-   * More sensitive parameters used here
+   * Much more sensitive parameters used here
    */
   private detectRhythmicPattern(values: number[]): boolean {
-    if (values.length < 10) return false;
+    if (values.length < 8) return false; // Reduced from 10
     
-    // Calculate local peaks to find heartbeat rhythm
+    // Calculate local peaks to find heartbeat rhythm - more lenient peak detection
     const peaks: number[] = [];
-    for (let i = 2; i < values.length - 2; i++) {
-      if (values[i] > values[i-1] && 
-          values[i] > values[i-2] && 
-          values[i] > values[i+1] && 
-          values[i] > values[i+2]) {
+    for (let i = 1; i < values.length - 1; i++) {
+      if (values[i] > values[i-1] && values[i] > values[i+1]) {
         peaks.push(i);
       }
     }
@@ -138,12 +135,12 @@ export class SignalValidator {
       intervals.push(peaks[i] - peaks[i-1]);
     }
     
-    // Check if intervals are within physiological range (40-200 BPM)
-    // At 30Hz sampling, that's roughly between 9-45 samples between peaks
-    // More lenient now: 30-220 BPM or 8-60 samples
-    const validIntervals = intervals.filter(interval => interval >= 8 && interval <= 60);
+    // Check if intervals are within physiological range (30-220 BPM)
+    // At 30Hz sampling, that's roughly between 8-60 samples between peaks
+    // Much more lenient now: 25-240 BPM or 7-72 samples
+    const validIntervals = intervals.filter(interval => interval >= 7 && interval <= 72);
     
-    // Calculate consistency of intervals (CV < 0.25 for stable rhythm - more lenient than before)
+    // Calculate consistency of intervals (CV < 0.30 for stable rhythm - more lenient)
     if (validIntervals.length >= 2) {
       const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
       const variance = validIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / validIntervals.length;
@@ -154,11 +151,11 @@ export class SignalValidator {
         totalIntervals: intervals.length,
         avgInterval, 
         cv, 
-        threshold: 0.25 
+        threshold: 0.30 
       });
       
-      // CV < 0.25 indicates consistent periodic pattern (more lenient than 0.2)
-      return cv < 0.25;
+      // CV < 0.30 indicates consistent periodic pattern (more lenient than 0.25)
+      return cv < 0.30;
     }
     
     console.log("SignalValidator: Not enough valid intervals found", { 
