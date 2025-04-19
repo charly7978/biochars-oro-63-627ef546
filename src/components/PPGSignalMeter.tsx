@@ -307,7 +307,7 @@ const PPGSignalMeter = memo(({
     if (arrhythmiaStatus) {
       const [status, count] = arrhythmiaStatus.split('|');
       
-      if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
+      if (status.includes("ARRHYTHMIA") && count === "1" && !showArrhythmiaAlert) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 350, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
@@ -319,7 +319,7 @@ const PPGSignalMeter = memo(({
         ctx.textAlign = 'left';
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
-      } else if (status.includes("ARRITMIA") && Number(count) > 1) {
+      } else if (status.includes("ARRHYTHMIA") && Number(count) > 1) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 250, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
@@ -488,7 +488,7 @@ const PPGSignalMeter = memo(({
     
     let currentIsArrhythmia = false;
     if (rawArrhythmiaData && 
-        arrhythmiaStatus?.includes("ARRITMIA") && 
+        arrhythmiaStatus?.includes("ARRHYTHMIA") && 
         now - rawArrhythmiaData.timestamp < 1000) {
       currentIsArrhythmia = true;
       lastArrhythmiaTime.current = now;
@@ -599,7 +599,7 @@ const PPGSignalMeter = memo(({
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
       playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRHYTHMIA") && now - rawArrhythmiaData.timestamp < 1000));
     }
     
     // --- NUEVO: Marcar puntos recientes como arritmia si hay arritmia activa ---
