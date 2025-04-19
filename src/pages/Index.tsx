@@ -152,8 +152,7 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     
-    const lastQuality = lastSignal?.quality ?? signalQuality;
-    FeedbackService.signalMeasurementComplete(lastQuality >= 70);
+    FeedbackService.signalMeasurementComplete(signalQuality >= 70);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
