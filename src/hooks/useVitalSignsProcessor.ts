@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -78,6 +79,7 @@ export const useVitalSignsProcessor = () => {
   // Inicializa el procesador de signos vitales una vez
   if (!processorRef.current) {
     processorRef.current = new VitalSignsProcessor();
+    console.log("useVitalSignsProcessor: VitalSignsProcessor instance created");
   }
 
   /**
@@ -86,7 +88,10 @@ export const useVitalSignsProcessor = () => {
    * Llama a VitalSignsProcessor con los valores optimizados.
    * Aplica feedback al SignalOptimizerManager.
    */
-  const processSignal = useCallback(async (processedSignal: ProcessedSignal, rrData?: { intervals: number[], lastPeakTime: number | null }): Promise<VitalSignsResult> => {
+  const processSignal = useCallback(async (
+    processedSignal: ProcessedSignal, 
+    rrData?: { intervals: number[], lastPeakTime: number | null }
+  ): Promise<VitalSignsResult> => {
     if (!processorRef.current || !processingEnabledRef.current) {
       console.error("VitalSignsProcessor no inicializado o procesamiento desactivado.");
       return ResultFactory.createEmptyResults();
@@ -96,6 +101,7 @@ export const useVitalSignsProcessor = () => {
     // Evitar cálculos excesivos que pueden sobrecargar el sistema
     if (now - lastProcessingTime.current < 30) { // 30ms mínimo entre procesados
       if (lastValidResults) {
+        console.log("Skipping processing: Minimal interval not met");
         return lastValidResults;
       }
     }
@@ -106,12 +112,24 @@ export const useVitalSignsProcessor = () => {
 
     processedSignals.current += 1;
 
+    console.log(`Processing signal #${processedSignals.current}`, {
+      rawValue: extendedSignal.rawValue,
+      filteredValue: extendedSignal.filteredValue,
+      quality: extendedSignal.quality,
+      fingerDetected: extendedSignal.fingerDetected,
+      timestamp: new Date(extendedSignal.timestamp).toISOString(),
+      rrDataAvailable: rrData !== undefined,
+      rrIntervalsCount: rrData?.intervals.length ?? 0,
+    });
+
     // --- Procesamiento con SignalOptimizerManager --- 
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
       optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
+      console.log(`Optimized value for channel ${channel}: ${optimizedValues[channel].toFixed(4)}`);
     }
     const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
+    console.log(`Primary optimized value used for processing: ${primaryOptimizedValue.toFixed(4)}`);
 
     // --- Opcional: Procesamiento TensorFlow si está disponible ---
     let tfEnhancedValue = primaryOptimizedValue;
@@ -133,6 +151,8 @@ export const useVitalSignsProcessor = () => {
           normalizedInput.unshift(0);
         }
         
+        console.log("Starting TensorFlow inference with normalizedInput", normalizedInput.slice(-10));
+        
         // Inferencia del modelo y manejo adecuado del resultado
         const predictionPromise = tfPredict(normalizedInput);
         if (predictionPromise) {
@@ -143,7 +163,7 @@ export const useVitalSignsProcessor = () => {
               // Usar resultado para mejorar el valor optimizado
               const enhancementFactor = prediction[0];
               tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
-              console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+              console.log("TF enhancement applied:", enhancementFactor.toFixed(4), "Enhanced value:", tfEnhancedValue.toFixed(4));
             }
           } catch (e) {
             console.error("Error procesando predicción TensorFlow:", e);
@@ -156,7 +176,7 @@ export const useVitalSignsProcessor = () => {
 
     // --- DEBUG: Verificar si llegan datos RR para arrhythmia --- 
     if (rrData && rrData.intervals.length > 0 && processedSignals.current % 30 === 0) {
-      console.log("Datos RR disponibles para detección de arritmias:", {
+      console.log("RR data available for arrhythmia detection:", {
         intervalCount: rrData.intervals.length,
         lastIntervals: rrData.intervals.slice(-3),
         lastPeakTime: rrData.lastPeakTime
@@ -171,6 +191,17 @@ export const useVitalSignsProcessor = () => {
       optimizedValues
     );
 
+    console.log("VitalSignsProcessor results:", {
+      heartRate: result.heartRate,
+      spo2: result.spo2,
+      pressure: result.pressure,
+      glucose: result.glucose,
+      lipids: result.lipids,
+      hydration: result.hydration,
+      hemoglobin: result.hemoglobin,
+      arrhythmiaStatus: result.arrhythmiaStatus,
+    });
+
     // Actualizar siempre el estado 
     setLastValidResults(result);
 
@@ -182,29 +213,30 @@ export const useVitalSignsProcessor = () => {
       feedback[channel] = { metricType: channel, quality: baseQuality, confidence: baseConfidence };
     });
     if (result.glucoseConfidence !== undefined) {
-        feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence);
+      feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence);
     }
     if (result.lipidsConfidence !== undefined) {
-        feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence);
+      feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence);
     }
     for (const channel of OPTIMIZER_CHANNELS) {
-        if (feedback[channel]) {
-            optimizerManager.applyFeedback(channel, feedback[channel]);
-        }
+      if (feedback[channel]) {
+        optimizerManager.applyFeedback(channel, feedback[channel]);
+        console.log(`Feedback applied to channel ${channel}:`, feedback[channel]);
+      }
     }
 
     // --- Debug: Resultados de signos vitales --- 
     if (processedSignals.current % 30 === 0) {
-      console.log("Resultados procesados:", {
-        lipids: result.lipids,
-        arrhythmiaStatus: result.arrhythmiaStatus
-      });
+      console.log("Processed signals count: ", processedSignals.current);
+      console.log("Current signal log size: ", signalLog.length);
+      console.log("Results Snapshot:", result);
     }
 
     // --- Log y visualización --- 
     logSignalData(primaryOptimizedValue, result, processedSignals.current); 
     if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);
+      console.log("Arrhythmia window added from", result.lastArrhythmiaData.timestamp - 500, "to", result.lastArrhythmiaData.timestamp + 500);
     }
 
     return result;
@@ -276,3 +308,4 @@ export const useVitalSignsProcessor = () => {
     }
   };
 };
+
