@@ -16,6 +16,11 @@ export class SignalValidator {
   private fingerDetected: boolean = false;
   private readonly PATTERN_BUFFER_SIZE = 30;
   private readonly MIN_PATTERN_DETECTION_COUNT = 5;
+  // Buffer extendido para robustez
+  private readonly EXTENDED_PATTERN_BUFFER_SIZE = 90; // 3 segundos a 30Hz
+  private fingerDetectionWindow: number = 0;
+  private readonly FINGER_CONFIRM_WINDOW = 45; // 1.5 segundos
+  private lastPatternDetected: boolean = false;
 
   constructor(minAmplitude: number = 0.005, minDataPoints: number = 10) {
     this.minAmplitude = minAmplitude;
@@ -57,26 +62,84 @@ export class SignalValidator {
    * Uses physiological characteristics to recognize true finger signals
    */
   public trackSignalForPatternDetection(value: number): void {
-    // Add value to pattern buffer
+    // Buffer extendido
     this.signalPatternBuffer.push(value);
-    
-    // Keep buffer at fixed size
-    if (this.signalPatternBuffer.length > this.PATTERN_BUFFER_SIZE) {
+    if (this.signalPatternBuffer.length > this.EXTENDED_PATTERN_BUFFER_SIZE) {
       this.signalPatternBuffer.shift();
     }
-    
-    // Only attempt pattern detection with sufficient data
-    if (this.signalPatternBuffer.length >= this.PATTERN_BUFFER_SIZE) {
-      const hasRhythmicPattern = this.detectRhythmicPattern(this.signalPatternBuffer);
-      
-      if (hasRhythmicPattern) {
-        this.patternDetectionCounter = Math.min(this.patternDetectionCounter + 1, this.MIN_PATTERN_DETECTION_COUNT + 3);
-      } else {
-        this.patternDetectionCounter = Math.max(0, this.patternDetectionCounter - 1);
+    // Solo intentar detección con suficiente señal
+    if (this.signalPatternBuffer.length >= this.EXTENDED_PATTERN_BUFFER_SIZE) {
+      const buf = this.signalPatternBuffer;
+      // Cálculo fisiológico
+      const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
+      const variance = buf.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buf.length;
+      const stdDev = Math.sqrt(variance);
+      const isFlat = stdDev < 0.002;
+      const isSaturated = buf.filter(v => Math.abs(v) > 0.95).length > buf.length * 0.2;
+      // Detección de picos fisiológicos
+      const peaks: number[] = [];
+      for (let i = 2; i < buf.length - 2; i++) {
+        if (
+          buf[i] > buf[i-1] && buf[i] > buf[i-2] &&
+          buf[i] > buf[i+1] && buf[i] > buf[i+2] &&
+          buf[i] - mean > 0.01 // amplitud mínima fisiológica
+        ) {
+          // Separación mínima entre picos (9 muestras ~200BPM)
+          if (peaks.length === 0 || i - peaks[peaks.length-1] > 8) {
+            peaks.push(i);
+          }
+        }
       }
-      
-      // Update finger detection status based on consistent pattern detection
-      this.fingerDetected = this.patternDetectionCounter >= this.MIN_PATTERN_DETECTION_COUNT;
+      // Periodicidad (autocorrelación máxima en ventana fisiológica)
+      function autocorr(sig: number[], lag: number) {
+        let sum = 0;
+        for (let i = 0; i < sig.length - lag; i++) {
+          sum += (sig[i] - mean) * (sig[i + lag] - mean);
+        }
+        return sum / (sig.length - lag);
+      }
+      let periodicityScore = 0;
+      for (let lag = 8; lag <= 45; lag++) {
+        const ac = autocorr(buf, lag);
+        if (ac > periodicityScore) periodicityScore = ac;
+      }
+      periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
+      // Intervalos entre picos
+      const intervals: number[] = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i-1]);
+      }
+      // Filtro fisiológico de intervalos (40-200BPM)
+      const validIntervals = intervals.filter(iv => iv >= 8 && iv <= 45);
+      // Consistencia de intervalos
+      let cv = 1;
+      if (validIntervals.length >= 2) {
+        const avgIv = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+        const varIv = validIntervals.reduce((a, b) => a + Math.pow(b - avgIv, 2), 0) / validIntervals.length;
+        cv = Math.sqrt(varIv) / avgIv;
+      }
+      // Criterios fisiológicos robustos
+      const patternDetected = (
+        peaks.length >= 3 &&
+        validIntervals.length >= 2 &&
+        periodicityScore > 0.2 &&
+        cv < 0.25 &&
+        !isFlat &&
+        !isSaturated
+      );
+      // Ventana de confirmación
+      if (patternDetected) {
+        this.fingerDetectionWindow++;
+        if (this.fingerDetectionWindow > this.FINGER_CONFIRM_WINDOW) this.fingerDetected = true;
+      } else {
+        this.fingerDetectionWindow = 0;
+        this.fingerDetected = false;
+      }
+      this.lastPatternDetected = patternDetected;
+      // Logs para depuración
+      if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
+        console.log('[SignalValidator] peaks:', peaks.length, 'per:', periodicityScore.toFixed(2), 'cv:', cv.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'finger:', this.fingerDetected);
+      }
     }
   }
   

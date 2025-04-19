@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -78,29 +77,82 @@ class FingerDetectionService {
     // Track for rhythm pattern detection
     this.validator.trackSignalForPatternDetection(filteredValue);
 
-    // Calculate metrics
-    const signalStrength = Math.abs(filteredValue);
-    const rhythmDetected = this.validator.isFingerDetected();
-    const quality = this.calculateSignalQuality();
-    
-    // Determine finger presence
-    const isFingerDetected = this.determineFingerPresence(signalStrength, rhythmDetected, quality);
-    
-    // Calculate confidence
-    const confidence = this.calculateConfidence(signalStrength, rhythmDetected, quality);
+    // --- NUEVA LÓGICA DE DETECCIÓN DE DEDO Y CALIDAD ---
+    const recentSignals = this.signalHistory.slice(-60); // 2 segundos a 30Hz
+    const amplitude = Math.max(...recentSignals) - Math.min(...recentSignals);
+    const mean = recentSignals.reduce((sum, val) => sum + val, 0) / recentSignals.length;
+    const variance = recentSignals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentSignals.length;
+    const stdDev = Math.sqrt(variance);
+    // Flatline: desviación muy baja
+    const isFlat = stdDev < 0.002;
+    // Saturación: valores muy cerca de los extremos
+    const isSaturated = recentSignals.filter(v => Math.abs(v) > 0.95).length > recentSignals.length * 0.2;
+    // Periodicidad: autocorrelación simple
+    function autocorr(sig: number[], lag: number) {
+      let sum = 0;
+      for (let i = 0; i < sig.length - lag; i++) {
+        sum += (sig[i] - mean) * (sig[i + lag] - mean);
+      }
+      return sum / (sig.length - lag);
+    }
+    let periodicityScore = 0;
+    for (let lag = 8; lag <= 45; lag++) { // 40-200 BPM
+      const ac = autocorr(recentSignals, lag);
+      if (ac > periodicityScore) periodicityScore = ac;
+    }
+    periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
+    // Ruido: varianza de la derivada
+    const diffs = recentSignals.slice(1).map((v, i) => v - recentSignals[i]);
+    const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
+    const noiseScore = 1 - Math.min(1, noise / 0.05);
+    // Amplitud normalizada
+    const ampScore = Math.max(0, Math.min(1, (amplitude - 0.01) / 0.2));
+    // Estabilidad (1 - coeficiente de variación)
+    const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
+    // Penalizaciones
+    const flatPenalty = isFlat ? 0 : 1;
+    const satPenalty = isSaturated ? 0 : 1;
+    // Calidad compuesta
+    let quality = (
+      0.3 * ampScore +
+      0.3 * periodicityScore +
+      0.2 * stabilityScore +
+      0.2 * noiseScore
+    ) * flatPenalty * satPenalty;
+    // Suavizado temporal (EMA)
+    if (typeof (this as any)._lastQuality === 'undefined') (this as any)._lastQuality = quality;
+    quality = 0.2 * quality + 0.8 * (this as any)._lastQuality;
+    (this as any)._lastQuality = quality;
+    quality = Math.round(quality * 100);
 
-    // Generate feedback
-    const feedback = this.generateFeedback(isFingerDetected, quality, signalStrength, rhythmDetected);
-    
-    // Show user feedback if needed
-    this.handleUserFeedback(isFingerDetected, quality, rhythmDetected);
+    // Detección robusta de dedo
+    const isFingerDetected = (
+      ampScore > 0.2 &&
+      periodicityScore > 0.2 &&
+      stabilityScore > 0.2 &&
+      !isFlat &&
+      !isSaturated &&
+      this.validator.isFingerDetected() // patrón rítmico consistente
+    );
+
+    // Calcular confianza
+    const confidence = (ampScore * 0.3 + periodicityScore * 0.3 + stabilityScore * 0.2 + noiseScore * 0.2) * flatPenalty * satPenalty;
+
+    // Feedback
+    const feedback = this.generateFeedback(isFingerDetected, quality, amplitude, this.validator.isFingerDetected());
+    this.handleUserFeedback(isFingerDetected, quality, this.validator.isFingerDetected());
+
+    // Logs para depuración
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[FingerDetection] amp:', ampScore.toFixed(2), 'per:', periodicityScore.toFixed(2), 'stab:', stabilityScore.toFixed(2), 'noise:', noiseScore.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'qual:', quality, 'finger:', isFingerDetected);
+    }
 
     return {
       isFingerDetected,
       quality,
       confidence,
-      rhythmDetected,
-      signalStrength,
+      rhythmDetected: this.validator.isFingerDetected(),
+      signalStrength: amplitude,
       lastUpdate: Date.now(),
       feedback
     };
