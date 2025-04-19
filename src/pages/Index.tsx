@@ -10,7 +10,6 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
-import { toast } from "sonner";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -31,35 +30,23 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const [isFirstMeasurement, setIsFirstMeasurement] = useState(true);
   const measurementTimerRef = useRef<number | null>(null);
-  const measurementCountRef = useRef(0);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
-    startProcessing: startHeartBeatMonitoring,
-    stopProcessing: stopHeartBeatMonitoring,
+    isArrhythmia,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
   const { 
-    processSignal: processVitalSigns,
-    applyBloodPressureCalibration,
+    processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
-
-  // Aplicar calibración inicial de presión arterial
-  useEffect(() => {
-    if (isFirstMeasurement) {
-      // Calibración inicial con valores estándar
-      applyBloodPressureCalibration(120, 80);
-      console.log("Calibración inicial de presión arterial aplicada (120/80)");
-      setIsFirstMeasurement(false);
-    }
-  }, [isFirstMeasurement, applyBloodPressureCalibration]);
 
   const enterFullScreen = async () => {
     try {
@@ -101,18 +88,6 @@ const Index = () => {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
-              
-              // Log para monitorear el proceso
-              if (measurementCountRef.current % 50 === 0) {
-                console.log("Index: Actualizando signos vitales", {
-                  heartRate: heartBeatResult.bpm,
-                  spo2: vitals.spo2,
-                  pressure: vitals.pressure,
-                  hydration: vitals.hydration,
-                  count: measurementCountRef.current
-                });
-              }
-              measurementCountRef.current++;
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
@@ -141,13 +116,6 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
-      measurementCountRef.current = 0;
-      
-      // Notificar al usuario
-      toast.info("Coloque su dedo sobre la cámara trasera", {
-        position: "top-center",
-        duration: 3000
-      });
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -174,11 +142,7 @@ const Index = () => {
   };
 
   const finalizeMeasurement = () => {
-    console.log("Finalizando medición", {
-      muestrasObtenidas: measurementCountRef.current,
-      tiempo: elapsedTime,
-      presión: vitalSigns.pressure
-    });
+    console.log("Finalizando medición");
     
     setIsMonitoring(false);
     setIsCameraOn(false);
@@ -190,28 +154,10 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
-    // Guardar resultados
-    if (vitalSigns.pressure !== "--/--" && vitalSigns.spo2 > 0) {
+    const savedResults = resetVitalSigns();
+    if (savedResults) {
+      setVitalSigns(savedResults);
       setShowResults(true);
-      
-      // Notificar éxito
-      toast.success("Medición completada con éxito", {
-        position: "top-center",
-        duration: 3000
-      });
-    } else {
-      // Notificar error
-      toast.error("No se pudo completar la medición. Intente nuevamente.", {
-        position: "top-center",
-        duration: 3000
-      });
-      
-      // Intentar usar último resultado válido
-      const savedResults = resetVitalSigns();
-      if (savedResults) {
-        setVitalSigns(savedResults);
-        setShowResults(true);
-      }
     }
     
     setElapsedTime(0);
@@ -249,15 +195,6 @@ const Index = () => {
       hydration: 0
     });
     setSignalQuality(0);
-    
-    // Notificar
-    toast.info("Sistema reiniciado", {
-      position: "top-center",
-      duration: 2000
-    });
-    
-    // Recalibrar presión arterial
-    applyBloodPressureCalibration(120, 80);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -273,12 +210,6 @@ const Index = () => {
       }).catch(err => console.error("Error activando linterna:", err));
     } else {
       console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-      
-      // Notificar al usuario
-      toast.warning("Su dispositivo no tiene linterna. La precisión puede ser menor.", {
-        position: "top-center",
-        duration: 4000
-      });
     }
     
     const tempCanvas = document.createElement('canvas');
@@ -396,6 +327,7 @@ const Index = () => {
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
               preserveResults={showResults}
+              isArrhythmia={isArrhythmia}
             />
           </div>
 

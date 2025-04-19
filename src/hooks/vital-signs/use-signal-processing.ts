@@ -1,160 +1,170 @@
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
+import { useRef, useCallback } from 'react';
+import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
-import { ArrhythmiaWindow } from './types';
+import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
 
 /**
- * Hook para procesamiento avanzado de señales biométricas
+ * Hook for processing signal using the VitalSignsProcessor
+ * Direct measurement only, no simulation
  */
 export const useSignalProcessing = () => {
-  // State para procesador y datos
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [arrhythmiaCounter, setArrhythmiaCounter] = useState(0);
-  const [signalQuality, setSignalQuality] = useState(0);
-  
-  // Referencias para datos persistentes
-  const vitalSignsProcessor = useRef<VitalSignsProcessor | null>(null);
-  const ppgBuffer = useRef<number[]>([]);
+  // Reference for processor instance
+  const processorRef = useRef<VitalSignsProcessor | null>(null);
   const processedSignals = useRef<number>(0);
-  const debugInfo = useRef<{
-    lastUpdateTime: number;
-    peakCount: number;
-    avgSignalValue: number;
-    [key: string]: any;
-  }>({
-    lastUpdateTime: 0,
-    peakCount: 0,
-    avgSignalValue: 0
-  });
+  const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Inicializar procesador
-  useEffect(() => {
-    if (!vitalSignsProcessor.current) {
-      vitalSignsProcessor.current = new VitalSignsProcessor();
-      console.log("useSignalProcessing: Procesador inicializado");
+  /**
+   * Process PPG signal directly
+   * No simulation or reference values
+   */
+  const processSignal = useCallback((
+    value: number, 
+    rrData?: { intervals: number[], lastPeakTime: number | null },
+    isWeakSignal: boolean = false
+  ): VitalSignsResult => {
+    if (!processorRef.current) {
+      console.log("useVitalSignsProcessor: Processor not initialized");
+      return ResultFactory.createEmptyResults();
     }
     
-    return () => {
-      console.log("useSignalProcessing: Limpieza");
-    };
-  }, []);
-  
-  /**
-   * Iniciar el procesamiento de señales
-   */
-  const startProcessing = useCallback(() => {
-    setIsProcessing(true);
-    processedSignals.current = 0;
-    setArrhythmiaCounter(0);
-    ppgBuffer.current = [];
-    console.log("useSignalProcessing: Iniciando procesamiento");
-  }, []);
-  
-  /**
-   * Detener el procesamiento de señales
-   */
-  const stopProcessing = useCallback(() => {
-    setIsProcessing(false);
-    console.log("useSignalProcessing: Deteniendo procesamiento");
-  }, []);
-  
-  /**
-   * Procesar una señal PPG
-   */
-  const processSignal = useCallback((value: number) => {
-    if (!isProcessing || !vitalSignsProcessor.current) {
-      return null;
-    }
-    
-    // Actualizar contadores
     processedSignals.current++;
     
-    // Almacenar en buffer circular
-    ppgBuffer.current.push(value);
-    if (ppgBuffer.current.length > 300) {
-      ppgBuffer.current.shift();
+    // If too many weak signals, return zeros
+    if (isWeakSignal) {
+      return ResultFactory.createEmptyResults();
     }
     
-    // Calcular calidad de señal básica
-    if (ppgBuffer.current.length > 20) {
-      const recentValues = ppgBuffer.current.slice(-20);
-      const amplitude = Math.max(...recentValues) - Math.min(...recentValues);
-      const normQuality = Math.min(100, Math.max(0, amplitude * 500));
-      setSignalQuality(normQuality);
+    // Logging for diagnostics
+    if (processedSignals.current % 45 === 0) {
+      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
+        inputValue: value,
+        rrDataPresent: !!rrData,
+        rrIntervals: rrData?.intervals.length || 0,
+        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        signalNumber: processedSignals.current
+      });
     }
     
-    // Procesar señal (sin usar rrData aquí)
     try {
-      const result = vitalSignsProcessor.current.processSignal(value);
+      // Process signal directly - no simulation
+      // Important: We've changed this to handle sync processing only, avoiding Promise issues
+      let result = processorRef.current.processSignal(value, rrData);
       
-      // Actualizar información de depuración
-      debugInfo.current = {
-        ...debugInfo.current,
-        lastUpdateTime: Date.now(),
-        signalValue: value,
-        resultSpo2: result.spo2,
-        resultPressure: result.pressure,
-        bufferLength: ppgBuffer.current.length
-      };
-      
-      // Actualizar contador de arritmias si se detecta
-      if (result.arrhythmiaStatus === "Detectada") {
-        setArrhythmiaCounter(prev => prev + 1);
+      // Add null checks for arrhythmia status
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        }
       }
       
+      // Log processed signals
+      signalLog.current.push({
+        timestamp: Date.now(),
+        value,
+        result
+      });
+      
+      if (signalLog.current.length > 100) {
+        signalLog.current = signalLog.current.slice(-100);
+      }
+      
+      // Always return real result
       return result;
     } catch (error) {
-      console.error("useSignalProcessing: Error procesando señal", error);
-      return null;
+      console.error("Error processing vital signs:", error);
+      
+      // Return safe fallback values on error
+      return ResultFactory.createEmptyResults();
     }
-  }, [isProcessing]);
-  
+  }, []);
+
   /**
-   * Obtener ventanas de arritmia
+   * Initialize the processor
+   * Direct measurement only
    */
-  const getArrhythmiaWindows = useCallback((): ArrhythmiaWindow[] => {
-    return [];
+  const initializeProcessor = useCallback(() => {
+    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
+      timestamp: new Date().toISOString()
+    });
+    
+    // Create new instances for direct measurement
+    processorRef.current = new VitalSignsProcessor();
+  }, []);
+
+  /**
+   * Reset the processor
+   * No simulations or reference values
+   */
+  const reset = useCallback(() => {
+    if (!processorRef.current) return null;
+    
+    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode only");
+    
+    processorRef.current.reset();
+    
+    console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
+    return null;
   }, []);
   
   /**
-   * Obtener información de depuración
+   * Perform full reset - clear all data
+   * No simulations or reference values
+   */
+  const fullReset = useCallback(() => {
+    if (!processorRef.current) return;
+    
+    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode only");
+    
+    processorRef.current.fullReset();
+    processedSignals.current = 0;
+    signalLog.current = [];
+    
+    console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
+  }, []);
+
+  /**
+   * Get the arrhythmia counter
+   */
+  const getArrhythmiaCounter = useCallback(() => {
+    return processorRef.current?.getArrhythmiaCounter() || 0;
+  }, []);
+
+  /**
+   * Get debug information about signal processing
    */
   const getDebugInfo = useCallback(() => {
     return {
-      ...debugInfo.current,
       processedSignals: processedSignals.current,
-      ppgBufferLength: ppgBuffer.current.length,
-      arrhythmiaCounter,
-      processorActive: !!vitalSignsProcessor.current,
-      signalLog: [] // Añadimos signalLog vacío para cumplir con el tipo esperado
+      signalLog: signalLog.current.slice(-10)
     };
-  }, [arrhythmiaCounter]);
-  
-  /**
-   * Reset completo
-   */
-  const reset = useCallback(() => {
-    if (vitalSignsProcessor.current) {
-      vitalSignsProcessor.current.reset();
-    }
-    
-    processedSignals.current = 0;
-    ppgBuffer.current = [];
-    setArrhythmiaCounter(0);
-    setSignalQuality(0);
-    
-    console.log("useSignalProcessing: Reset realizado");
   }, []);
-  
+
   return {
-    isProcessing,
-    startProcessing,
-    stopProcessing,
     processSignal,
-    signalQuality,
-    arrhythmiaCounter,
-    getArrhythmiaWindows,
+    initializeProcessor,
+    reset,
+    fullReset,
+    getArrhythmiaCounter,
     getDebugInfo,
-    reset
+    processorRef,
+    processedSignals,
+    signalLog
   };
 };

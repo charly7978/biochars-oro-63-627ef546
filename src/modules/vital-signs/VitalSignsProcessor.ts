@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -33,17 +32,13 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
-  
-  // Debugging
-  private debugMode: boolean = true;
-  private signalCounter: number = 0;
 
   /**
    * Constructor that initializes all specialized processors
    * Using only direct measurement
    */
   constructor() {
-    console.log("VitalSignsProcessor: Inicializando nueva instancia con mediciones directas únicamente");
+    console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
     
     // Initialize specialized processors
     this.spo2Processor = new SpO2Processor();
@@ -57,9 +52,6 @@ export class VitalSignsProcessor {
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
-    
-    // Configurar debug mode en todos los procesadores
-    this.bpProcessor.setDebugMode(this.debugMode);
   }
   
   /**
@@ -70,18 +62,9 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    this.signalCounter++;
-    
-    // Registramos cada 100 señales para monitoreo
-    if (this.debugMode && this.signalCounter % 100 === 0) {
-      console.log(`VitalSignsProcessor: Procesadas ${this.signalCounter} señales`);
-    }
-    
     // Check for near-zero signal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
-      if (this.debugMode) {
-        console.log("VitalSignsProcessor: Señal demasiado débil", { valor: ppgValue });
-      }
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
       return ResultFactory.createEmptyResults();
     }
     
@@ -107,48 +90,27 @@ export class VitalSignsProcessor {
     
     // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
-      if (this.debugMode && this.signalCounter % 100 === 0) {
-        console.log("VitalSignsProcessor: Datos insuficientes", { 
-          longitud: ppgValues.length, 
-          mínimo: 30 
-        });
-      }
       return ResultFactory.createEmptyResults();
     }
     
     // Verify real signal amplitude is sufficient
+    const signalMin = Math.min(...ppgValues.slice(-15));
+    const signalMax = Math.max(...ppgValues.slice(-15));
+    const amplitude = signalMax - signalMin;
+    
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      if (this.debugMode && this.signalCounter % 100 === 0) {
-        const signalMin = Math.min(...ppgValues.slice(-15));
-        const signalMax = Math.max(...ppgValues.slice(-15));
-        const amplitude = signalMax - signalMin;
-        console.log("VitalSignsProcessor: Amplitud insuficiente", { 
-          amplitud: amplitude,
-          valoresRecientes: ppgValues.slice(-3)
-        });
-      }
+      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
       return ResultFactory.createEmptyResults();
     }
     
     // Calculate SpO2 using real data only
     const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
     
-    // Calculate blood pressure using real signal characteristics only - CORREGIDO AQUÍ
-    // Usamos valores más recientes y en mayor cantidad
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-150));
+    // Calculate blood pressure using real signal characteristics only
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
-    
-    // Logging para debug de presión arterial
-    if (this.debugMode && this.signalCounter % 50 === 0) {
-      console.log("VitalSignsProcessor: Resultado de presión arterial", {
-        presión: pressure,
-        sistólica: bp.systolic,
-        diastólica: bp.diastolic,
-        longitud: ppgValues.length
-      });
-    }
     
     // Calculate glucose with real data only
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
@@ -177,18 +139,17 @@ export class VitalSignsProcessor {
       triglycerides: 0
     };
 
-    if (this.debugMode && this.signalCounter % 200 === 0) {
-      console.log("VitalSignsProcessor: Resultados completos", {
-        spo2,
-        pressure,
-        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-        glucose: finalGlucose,
-        glucoseConfidence,
-        lipidsConfidence,
-        hydration,
-        signalCounter: this.signalCounter
-      });
-    }
+    console.log("VitalSignsProcessor: Results with confidence", {
+      spo2,
+      pressure,
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      glucose: finalGlucose,
+      glucoseConfidence,
+      lipidsConfidence,
+      hydration,
+      signalAmplitude: amplitude,
+      confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
+    });
 
     // Prepare result with all metrics including hydration
     return ResultFactory.createResult(
@@ -245,22 +206,8 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
-    this.signalCounter = 0;
-    console.log("VitalSignsProcessor: Reset completo - todos los procesadores a cero");
+    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
     return null; // Always return null to ensure measurements start from zero
-  }
-  
-  /**
-   * Aplicar calibración manual de presión arterial
-   */
-  public applyBloodPressureCalibration(systolic: number, diastolic: number): void {
-    if (systolic > 0 && diastolic > 0) {
-      this.bpProcessor.applyCalibration(systolic, diastolic);
-      console.log("VitalSignsProcessor: Calibración de presión arterial aplicada", {
-        sistólica: systolic,
-        diastólica: diastolic
-      });
-    }
   }
   
   /**
@@ -284,16 +231,7 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    this.signalCounter = 0;
-    console.log("VitalSignsProcessor: Full reset completado - comenzando desde cero");
-  }
-  
-  /**
-   * Establecer modo de depuración
-   */
-  public setDebugMode(enabled: boolean): void {
-    this.debugMode = enabled;
-    this.bpProcessor.setDebugMode(enabled);
+    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }
 
