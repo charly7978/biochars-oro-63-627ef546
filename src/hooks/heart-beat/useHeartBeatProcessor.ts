@@ -105,13 +105,16 @@ export const useHeartBeatProcessor = () => {
       };
     } catch (e) {
       console.error("useHeartBeatProcessor: Error procesando señal", e);
+      // Return null for values that cannot be determined due to error
       return {
-        bpm: lastBpmRef.current || 0,
-        confidence: 0,
+        bpm: null, // Indicate BPM is unavailable
+        confidence: 0, // Confidence is 0 on error
         isPeak: false,
         filteredValue: value,
-        arrhythmiaCount: processorRef.current ? (processorRef.current.reset ? 0 : 0) : 0, // Safe fallback if no getArrhythmiaCounter
-        rrData: { intervals: [], lastPeakTime: null }
+        // No specific counter method, return 0 as default/fallback on error
+        arrhythmiaCount: 0,
+        rrData: { intervals: [], lastPeakTime: null },
+        isArrhythmia: false // Default to false on error
       };
     }
   }, [processorFunc, heartBeatResult.confidence, lastPeakTimeRef]);

@@ -96,11 +96,11 @@ export interface CorrectionFactors {
  * Valores de referencia para calibración
  */
 export interface ReferenceValues {
-  heartRate: number;
-  spo2: number;
-  systolic: number;
-  diastolic: number;
-  glucose: number;
+  heartRate: number | null;
+  spo2: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  glucose: number | null;
 }
 
 /**
@@ -368,14 +368,14 @@ export class IntelligentCalibrationSystem {
    */
   public setReferenceValue(type: MeasurementType, value: number | { systolic: number, diastolic: number }): void {
     if (type === 'heartRate') {
-      this.referenceValues.heartRate = value as number;
+      this.referenceValues.heartRate = value as number | null;
     } else if (type === 'spo2') {
-      this.referenceValues.spo2 = value as number;
+      this.referenceValues.spo2 = value as number | null;
     } else if (type === 'bloodPressure' && typeof value !== 'number') {
-      this.referenceValues.systolic = value.systolic;
-      this.referenceValues.diastolic = value.diastolic;
+      this.referenceValues.systolic = value.systolic as number | null;
+      this.referenceValues.diastolic = value.diastolic as number | null;
     } else if (type === 'glucose') {
-      this.referenceValues.glucose = value as number;
+      this.referenceValues.glucose = value as number | null;
     }
     
     console.log(`Valor de referencia registrado para ${type}:`, value);
@@ -843,20 +843,20 @@ export class IntelligentCalibrationSystem {
             glucose: 1.0
           },
           referenceValues: {
-            heartRate: data.systolic_reference || 75, // Using available fields
-            spo2: data.diastolic_reference || 97,
-            systolic: data.systolic_reference || 120,
-            diastolic: data.diastolic_reference || 80,
-            glucose: data.quality_threshold || 100 // Using available field as fallback
+            heartRate: null,
+            spo2: null,
+            systolic: typeof data.systolic_reference === 'number' ? data.systolic_reference : null,
+            diastolic: typeof data.diastolic_reference === 'number' ? data.diastolic_reference : null,
+            glucose: null
           },
           config: {
-            autoCalibrationEnabled: true,
-            continuousLearningEnabled: true,
-            syncWithReferenceDevices: false,
-            adaptToEnvironment: true,
-            adaptToUserActivity: true,
-            aggressiveness: data.quality_threshold ? data.quality_threshold / 100 : 0.5,
-            minimumQualityThreshold: data.quality_threshold || 70
+            autoCalibrationEnabled: typeof data.auto_calibration_enabled === 'boolean' ? data.auto_calibration_enabled : true,
+            continuousLearningEnabled: typeof data.continuous_learning_enabled === 'boolean' ? data.continuous_learning_enabled : true,
+            syncWithReferenceDevices: typeof data.sync_with_reference_devices === 'boolean' ? data.sync_with_reference_devices : false,
+            adaptToEnvironment: typeof data.adapt_to_environment === 'boolean' ? data.adapt_to_environment : true,
+            adaptToUserActivity: typeof data.adapt_to_user_activity === 'boolean' ? data.adapt_to_user_activity : true,
+            aggressiveness: typeof data.aggressiveness === 'number' ? data.aggressiveness : 0.5,
+            minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
           }
         };
         

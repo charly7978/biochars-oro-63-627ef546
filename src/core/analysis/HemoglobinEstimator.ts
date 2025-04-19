@@ -1,4 +1,3 @@
-
 import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { SignalAnalyzer } from './SignalAnalyzer';
@@ -17,10 +16,12 @@ export class HemoglobinEstimator extends SignalAnalyzer {
   
   /**
    * Analyze hemoglobin level from PPG values
+   * Returns null if not enough data is available.
    */
-  public analyze(ppgValues: number[]): number {
+  public analyze(ppgValues: number[]): number | null {
     if (ppgValues.length < 30) {
-      return this.lastEstimate;
+      // Not enough data for a reliable estimate
+      return null;
     }
     
     // Calculate metrics from PPG
@@ -63,7 +64,7 @@ export class HemoglobinEstimator extends SignalAnalyzer {
   /**
    * Legacy method for compatibility
    */
-  public estimate(ppgValues: number[]): number {
+  public estimate(ppgValues: number[]): number | null {
     return this.analyze(ppgValues);
   }
   
