@@ -1,107 +1,49 @@
 
 /**
- * Utility functions for filtering PPG signals
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 /**
- * Applies a bandpass filter to the signal
- * @param signal Input signal array
- * @param lowCut Low cutoff frequency
- * @param highCut High cutoff frequency
- * @param sampleRate Sample rate of the signal
- * @returns Filtered signal array
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
-export const applyBandpassFilter = (
-  signal: number[],
-  lowCut: number = 0.5,
-  highCut: number = 8.0,
-  sampleRate: number = 100
-): number[] => {
-  if (!signal || signal.length === 0) return [];
-  
-  // Simple implementation of bandpass filter
-  const filteredSignal: number[] = [];
-  const RC_low = 1.0 / (2.0 * Math.PI * lowCut);
-  const RC_high = 1.0 / (2.0 * Math.PI * highCut);
-  const dt = 1.0 / sampleRate;
-  
-  const alpha_low = dt / (RC_low + dt);
-  const alpha_high = RC_high / (RC_high + dt);
-  
-  let lowPassOutput = signal[0];
-  
-  for (let i = 0; i < signal.length; i++) {
-    // Low-pass
-    lowPassOutput = lowPassOutput + alpha_low * (signal[i] - lowPassOutput);
-    
-    // High-pass (if not first sample)
-    if (i > 0) {
-      const highPassOutput = alpha_high * (filteredSignal[i-1] + signal[i] - signal[i-1]);
-      filteredSignal.push(highPassOutput);
-    } else {
-      filteredSignal.push(lowPassOutput);
-    }
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
   }
-  
-  return filteredSignal;
-};
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
+}
 
 /**
- * Applies a lowpass filter to the signal
- * @param signal Input signal array
- * @param cutoff Cutoff frequency
- * @param sampleRate Sample rate of the signal
- * @returns Filtered signal array
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
  */
-export const applyLowpassFilter = (
-  signal: number[],
-  cutoff: number = 5.0,
-  sampleRate: number = 100
-): number[] => {
-  if (!signal || signal.length === 0) return [];
+export function amplifySignal(value: number, recentValues: number[]): number {
+  if (recentValues.length === 0) return value;
   
-  // Simple implementation of lowpass filter
-  const filteredSignal: number[] = [];
-  const RC = 1.0 / (2.0 * Math.PI * cutoff);
-  const dt = 1.0 / sampleRate;
-  const alpha = dt / (RC + dt);
+  // Calcular la amplitud reciente de datos reales
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
+  const recentRange = recentMax - recentMin;
   
-  filteredSignal.push(signal[0]);
-  
-  for (let i = 1; i < signal.length; i++) {
-    const newValue = filteredSignal[i-1] + alpha * (signal[i] - filteredSignal[i-1]);
-    filteredSignal.push(newValue);
+  // Factor de amplificación para señales reales
+  let amplificationFactor = 1.0;
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5;
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8;
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4;
   }
   
-  return filteredSignal;
-};
-
-/**
- * Applies a highpass filter to the signal
- * @param signal Input signal array
- * @param cutoff Cutoff frequency
- * @param sampleRate Sample rate of the signal
- * @returns Filtered signal array
- */
-export const applyHighpassFilter = (
-  signal: number[],
-  cutoff: number = 0.5,
-  sampleRate: number = 100
-): number[] => {
-  if (!signal || signal.length === 0) return [];
+  // Amplificar usando solo datos reales
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+  const centeredValue = value - mean;
+  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   
-  // Simple implementation of highpass filter
-  const filteredSignal: number[] = [];
-  const RC = 1.0 / (2.0 * Math.PI * cutoff);
-  const dt = 1.0 / sampleRate;
-  const alpha = RC / (RC + dt);
-  
-  filteredSignal.push(signal[0]);
-  
-  for (let i = 1; i < signal.length; i++) {
-    const newValue = alpha * (filteredSignal[i-1] + signal[i] - signal[i-1]);
-    filteredSignal.push(newValue);
-  }
-  
-  return filteredSignal;
-};
+  return amplifiedValue;
+}
