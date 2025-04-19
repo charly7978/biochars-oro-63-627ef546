@@ -1,3 +1,5 @@
+import { antiRedundancyGuard } from '../core/validation/CrossValidationSystem';
+
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -526,3 +528,7 @@ export class HeartBeatProcessor {
     };
   }
 }
+
+// Registrar el archivo y la tarea única globalmente (fuera de la clase)
+antiRedundancyGuard.registerFile('src/modules/HeartBeatProcessor.ts');
+antiRedundancyGuard.registerTask('HeartBeatProcessorSingleton');

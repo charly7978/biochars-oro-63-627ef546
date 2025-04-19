@@ -1,9 +1,13 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { calculateAC, calculateDC } from './utils';
+import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
+
+// Registrar el archivo y la tarea única globalmente (fuera de la clase)
+antiRedundancyGuard.registerFile('src/modules/vital-signs/spo2-processor.ts');
+antiRedundancyGuard.registerTask('SpO2ProcessorSingleton');
 
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;

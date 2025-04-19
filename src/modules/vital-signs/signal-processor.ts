@@ -7,6 +7,7 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
+import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
 
 /**
  * Signal processor for real PPG signals
@@ -185,3 +186,7 @@ export class SignalProcessor extends BaseProcessor {
     this.rhythmBasedFingerDetection = false;
   }
 }
+
+// Registrar el archivo y la tarea única globalmente (fuera de la clase)
+antiRedundancyGuard.registerFile('src/modules/vital-signs/signal-processor.ts');
+antiRedundancyGuard.registerTask('SignalProcessorSingleton');
