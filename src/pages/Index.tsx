@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -31,6 +30,7 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  const peakRef = useRef<() => void>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -80,6 +80,10 @@ const Index = () => {
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        if (heartBeatResult.isPeak) {
+          peakRef.current?.();
+        }
         
         if (heartBeatResult.confidence > 0.4) {
           setHeartRate(heartBeatResult.bpm);
@@ -328,6 +332,7 @@ const Index = () => {
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
+              triggerPeakFeedbackRef={peakRef}
             />
           </div>
 
