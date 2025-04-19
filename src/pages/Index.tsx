@@ -11,8 +11,12 @@ import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result
 import { Droplet } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
 import { ProcessedSignal } from "@/types/signal";
+import { useEnginesReady } from '@/hooks/useEnginesReady';
 
 const Index = () => {
+  // Motores: OpenCV y TensorFlow
+  const { isOpenCVReady, isTensorFlowReady, error: enginesError, retry: retryEngines } = useEnginesReady();
+
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
@@ -49,10 +53,12 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
-    isTensorFlowReady,
-    isOpenCVReady
+    lastValidResults
   } = useVitalSignsProcessor();
+
+  // Estado para intentos de carga
+  const [engineRetryCount, setEngineRetryCount] = useState(0);
+  const maxEngineRetries = 5;
 
   // Si tensorflow está listo, mostrar mensaje
   useEffect(() => {
@@ -60,6 +66,19 @@ const Index = () => {
       console.log("✅ TensorFlow inicializado correctamente para procesamiento PPG");
     }
   }, [isTensorFlowReady]);
+
+  // Efecto para reintentar carga de motores
+  useEffect(() => {
+    if (!isTensorFlowReady || !isOpenCVReady) {
+      if (engineRetryCount < maxEngineRetries) {
+        const retryTimeout = setTimeout(() => {
+          setEngineRetryCount(c => c + 1);
+          window.location.reload();
+        }, 3000);
+        return () => clearTimeout(retryTimeout);
+      }
+    }
+  }, [isTensorFlowReady, isOpenCVReady, engineRetryCount]);
 
   const enterFullScreen = async () => {
     try {
@@ -335,18 +354,49 @@ const Index = () => {
   };
 
   // Mostrar mensaje y bloquear medición si falta algún motor
-  if (!isTensorFlowReady || !isOpenCVReady) {
+  if (!isOpenCVReady || !isTensorFlowReady) {
+    if (engineRetryCount >= maxEngineRetries) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center p-8">
+          <h2 className="text-2xl font-bold mb-4 text-red-600">No se pudo inicializar OpenCV o TensorFlow</h2>
+          <p className="mb-2 text-lg">Verifica tu conexión a internet y recarga la página.</p>
+          <button
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+            onClick={() => window.location.reload()}
+          >
+            Recargar página
+          </button>
+          <p className="text-sm text-muted-foreground mt-4">Si el problema persiste, revisa la consola del navegador o contacta soporte.</p>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <h2 className="text-2xl font-bold mb-4 text-red-600">No es posible medir</h2>
-        <p className="mb-2 text-lg">OpenCV y TensorFlow deben estar activos y listos para realizar mediciones reales.</p>
+        <h2 className="text-2xl font-bold mb-4 text-yellow-600">Cargando motores...</h2>
+        <p className="mb-2 text-lg">Esperando a que OpenCV y TensorFlow estén listos para medición real.</p>
         <p className="mb-4 text-sm text-muted-foreground">
           Estado actual:<br/>
           <span className={isOpenCVReady ? 'text-green-600' : 'text-red-600'}>OpenCV: {isOpenCVReady ? 'Listo' : 'No inicializado'}</span><br/>
           <span className={isTensorFlowReady ? 'text-green-600' : 'text-red-600'}>TensorFlow: {isTensorFlowReady ? 'Listo' : 'No inicializado'}</span>
         </p>
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4" />
-        <p className="text-sm text-muted-foreground">Por favor, espera a que ambos motores estén listos o recarga la página si el problema persiste.</p>
+        <p className="text-sm text-muted-foreground">Intento {engineRetryCount + 1} de {maxEngineRetries}...</p>
+      </div>
+    );
+  }
+
+  if (enginesError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center p-8">
+        <h2 className="text-2xl font-bold mb-4 text-red-600">Error al inicializar motores</h2>
+        <p className="mb-2 text-lg">{enginesError}</p>
+        <button
+          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+          onClick={retryEngines}
+        >
+          Reintentar
+        </button>
+        <p className="text-sm text-muted-foreground mt-4">Si el problema persiste, revisa la consola del navegador o contacta soporte.</p>
       </div>
     );
   }
