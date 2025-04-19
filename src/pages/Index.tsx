@@ -1,15 +1,17 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
-import { useSignalProcessor } from "@/hooks/useSignalProcessor";
+import { useAdvancedSignalProcessor } from "@/hooks/useAdvancedSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
-import { Droplet } from "lucide-react";
+import { Droplet, ActivitySquare, Zap } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
+import { toast } from "@/hooks/use-toast";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -30,9 +32,24 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
+  const [processingStats, setProcessingStats] = useState({ fps: 0 });
   const measurementTimerRef = useRef<number | null>(null);
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  // Usar el nuevo procesador avanzado
+  const { 
+    startProcessing, 
+    stopProcessing, 
+    lastSignal, 
+    processFrame,
+    processingStats: signalStats,
+    isInitializing
+  } = useAdvancedSignalProcessor({
+    enableOpenCV: true,
+    enableTensorFlow: true,
+    fingerDetectionThreshold: 0.65,
+    qualityThreshold: 40
+  });
+  
   const { 
     processSignal: processHeartBeat, 
     isArrhythmia,
@@ -61,11 +78,25 @@ const Index = () => {
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
 
+    // Notificar al usuario sobre la inicialización
+    if (isInitializing) {
+      toast({
+        title: "Inicializando",
+        description: "Cargando bibliotecas de procesamiento avanzado...",
+        duration: 5000,
+      });
+    }
+
     return () => {
       document.body.removeEventListener('touchmove', preventScroll);
       document.body.removeEventListener('scroll', preventScroll);
+      
+      // Limpiar temporizador al desmontar
+      if (measurementTimerRef.current) {
+        clearInterval(measurementTimerRef.current);
+      }
     };
-  }, []);
+  }, [isInitializing]);
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
@@ -95,17 +126,29 @@ const Index = () => {
         }
         
         setSignalQuality(lastSignal.quality);
+        
+        // Actualizar estadísticas de procesamiento
+        if (signalStats) {
+          setProcessingStats({
+            fps: signalStats.fps
+          });
+        }
       } else {
         setSignalQuality(lastSignal.quality);
         
         if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
+          // No reiniciar el ritmo cardíaco inmediatamente para evitar parpadeo
+          if (signalQuality > 0) {
+            setSignalQuality(prev => Math.max(0, prev - 5));
+          } else {
+            setHeartRate(0);
+          }
         }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, signalQuality, signalStats]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -132,7 +175,6 @@ const Index = () => {
       measurementTimerRef.current = window.setInterval(() => {
         setElapsedTime(prev => {
           const newTime = prev + 1;
-          console.log(`Tiempo transcurrido: ${newTime}s`);
           
           if (newTime >= 30) {
             finalizeMeasurement();
@@ -141,6 +183,12 @@ const Index = () => {
           return newTime;
         });
       }, 1000);
+      
+      toast({
+        title: "Medición iniciada",
+        description: "Coloque su dedo sobre la cámara con la linterna encendida",
+        duration: 3000,
+      });
     }
   };
 
@@ -228,9 +276,6 @@ const Index = () => {
     
     let lastProcessTime = 0;
     const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
     
     const processImage = async () => {
       if (!isMonitoring) return;
@@ -257,15 +302,7 @@ const Index = () => {
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
           processFrame(imageData);
           
-          frameCount++;
           lastProcessTime = now;
-          
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
-          }
         } catch (error) {
           console.error("Error capturando frame:", error);
         }
@@ -323,6 +360,9 @@ const Index = () => {
             <div className="text-white text-sm">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
+            <div className="text-white text-sm">
+              FPS: {processingStats.fps.toFixed(1)}
+            </div>
           </div>
 
           <div className="flex-1">
@@ -349,6 +389,7 @@ const Index = () => {
                   unit="BPM"
                   highlighted={showResults}
                   compact={false}
+                  icon={<ActivitySquare className="h-4 w-4 text-red-500" />}
                 />
                 <VitalSign 
                   label="SPO2"
@@ -365,6 +406,7 @@ const Index = () => {
                   unit="mmHg"
                   highlighted={showResults}
                   compact={false}
+                  icon={<Zap className="h-4 w-4 text-yellow-500" />}
                 />
                 <VitalSign 
                   label="HIDRATACIÓN"
@@ -405,6 +447,14 @@ const Index = () => {
               />
             </div>
           </div>
+
+          {isMonitoring && (
+            <div className="absolute bottom-24 left-0 right-0 text-center">
+              <span className="text-xl font-bold text-white bg-black/40 px-4 py-1 rounded-full">
+                {elapsedTime}s / 30s
+              </span>
+            </div>
+          )}
 
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
             <div className="w-1/2">

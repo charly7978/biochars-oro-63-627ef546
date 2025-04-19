@@ -24,6 +24,11 @@ export interface ProcessedSignal {
   };
   value?: number;           // Compatibilidad con código existente
   hydrationIndex?: number;  // Índice de hidratación
+  // Nuevos campos para análisis avanzado
+  acComponent?: number;     // Componente AC de la señal
+  dcComponent?: number;     // Componente DC de la señal
+  signalToNoise?: number;   // Relación señal-ruido
+  heartRateConfidence?: number; // Confianza en la detección de FC
 }
 
 /**
@@ -42,9 +47,10 @@ export interface SignalProcessor {
   initialize: () => Promise<void>;                      // Inicialización
   start: () => void;                                    // Iniciar procesamiento
   stop: () => void;                                     // Detener procesamiento
-  calibrate: () => Promise<boolean>;                    // Calibrar el procesador
+  calibrate?: () => Promise<boolean>;                   // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
+  processFrame?: (imageData: ImageData) => void;        // Procesar frame de cámara
 }
 
 /**
@@ -53,5 +59,8 @@ export interface SignalProcessor {
 declare global {
   interface Window {
     heartBeatProcessor: HeartBeatProcessor;
+    
+    // Para OpenCV.js
+    cv: any;
   }
 }
