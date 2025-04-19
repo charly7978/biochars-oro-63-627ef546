@@ -20,7 +20,11 @@ export function useFingerDetection() {
   // Exponer función para procesar nuevas señales
   const processNewSignal = useCallback((rawValue: number) => {
     const result = service.processSignal(rawValue);
-    setDetectionResult(result);
+    // Asegurarse que feedback no sea undefined (cumple con estado esperado)
+    setDetectionResult({
+      ...result,
+      feedback: result.feedback ?? "Esperando señal..."
+    });
     return result;
   }, []);
 
