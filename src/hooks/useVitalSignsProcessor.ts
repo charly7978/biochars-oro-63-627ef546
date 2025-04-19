@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -87,7 +86,7 @@ export const useVitalSignsProcessor = () => {
    * Llama a VitalSignsProcessor con los valores optimizados.
    * Aplica feedback al SignalOptimizerManager.
    */
-  const processSignal = useCallback((processedSignal: ProcessedSignal, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
+  const processSignal = useCallback(async (processedSignal: ProcessedSignal, rrData?: { intervals: number[], lastPeakTime: number | null }): Promise<VitalSignsResult> => {
     if (!processorRef.current || !processingEnabledRef.current) {
       console.error("VitalSignsProcessor no inicializado o procesamiento desactivado.");
       return ResultFactory.createEmptyResults();
@@ -235,7 +234,6 @@ export const useVitalSignsProcessor = () => {
     optimizerManager.resetAll();
     console.log("VitalSignsProcessor Hook: Full Reset completado.");
   }, [clearArrhythmiaWindows, clearLog, optimizerManager]);
-
 
   return {
     processSignal,

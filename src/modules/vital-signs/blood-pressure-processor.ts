@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAmplitude, findPeaksAndValleys, calculateAC, calculateDC } from '../vital-signs/shared-signal-utils';
 import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
+import { calculateAmplitude, findPeaksAndValleys, calculateAC, calculateDC } from './shared-signal-utils';
 
 // Registrar el archivo y la tarea única globalmente (fuera de la clase)
 antiRedundancyGuard.registerFile('src/modules/vital-signs/blood-pressure-processor.ts');
@@ -29,7 +28,7 @@ export class BloodPressureProcessor {
    * Calibra el modelo de presión arterial con valores de referencia
    * Requisito para generar estimaciones personalizadas precisas
    */
-  public calibrate(systolic: number, diastolic: number): void {
+  public updateCalibration(systolic: number, diastolic: number): void {
     if (systolic < 70 || systolic > 200 || diastolic < 40 || diastolic > 120 || systolic <= diastolic) {
       console.error("BloodPressureProcessor: Valores de calibración inválidos");
       return;
@@ -47,22 +46,22 @@ export class BloodPressureProcessor {
    * Estima la presión arterial a partir de señales PPG reales
    * No utiliza simulación ni valores de referencia sintéticos
    */
-  public estimateBloodPressure(value: number, optimizedValues?: Record<string, number>): { systolic: number, diastolic: number } | null {
-    // Agregar valor al buffer
-    this.ppgBuffer.push(value);
+  public calculateBloodPressure(ppgValues: number[]): { systolic: number, diastolic: number } {
+    // Actualizar el buffer con nuevos valores
+    this.ppgBuffer = [...ppgValues];
     if (this.ppgBuffer.length > this.BUFFER_SIZE) {
-      this.ppgBuffer.shift();
+      this.ppgBuffer = this.ppgBuffer.slice(-this.BUFFER_SIZE);
     }
     
     // Verificar si hay suficientes datos para estimar
     if (this.ppgBuffer.length < this.MIN_VALID_DATA_POINTS) {
-      return this.getLastValidBP();
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
     
     // Controlar frecuencia de cálculo para evitar sobrecarga
     const now = Date.now();
     if (now - this.lastCalculationTime < this.BP_UPDATE_INTERVAL) {
-      return this.getLastValidBP();
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
     this.lastCalculationTime = now;
     
@@ -70,7 +69,7 @@ export class BloodPressureProcessor {
     if (!this.userCalibration) {
       console.log("BloodPressureProcessor: Sin calibración de usuario, usando modelo general");
       // Sin calibración, podemos usar un modelo general menos preciso
-      return this.estimateWithGeneralModel();
+      return this.estimateWithGeneralModel() || { systolic: 120, diastolic: 80 };
     }
     
     try {
@@ -79,7 +78,7 @@ export class BloodPressureProcessor {
       
       if (peakIndices.length < 3 || valleyIndices.length < 3) {
         console.log("BloodPressureProcessor: Detección insuficiente de picos/valles");
-        return this.getLastValidBP();
+        return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
       }
       
       // Extracción de características de la señal PPG real
@@ -99,8 +98,8 @@ export class BloodPressureProcessor {
       const stiffnessIndex = (ac / dc) * Math.sqrt(avgPeakToPeakInterval);
       
       // Usar calibración para personalizar predicción - modelo basado en características reales
-      const systolic = this.calculateSystolic(amplitude, stiffnessIndex, optimizedValues?.bp);
-      const diastolic = this.calculateDiastolic(amplitude, stiffnessIndex, optimizedValues?.bp);
+      const systolic = this.calculateSystolic(amplitude, stiffnessIndex);
+      const diastolic = this.calculateDiastolic(amplitude, stiffnessIndex);
       
       // Validación fisiológica - desconfiar de cambios bruscos o valores fuera de rango normal
       if (this.lastSystolic > 0 && Math.abs(systolic - this.lastSystolic) > 25) {
@@ -124,7 +123,7 @@ export class BloodPressureProcessor {
       };
     } catch (error) {
       console.error("BloodPressureProcessor: Error estimando presión arterial:", error);
-      return this.getLastValidBP();
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
   }
   
@@ -132,7 +131,7 @@ export class BloodPressureProcessor {
    * Calcula presión sistólica basada en características de la señal real
    * Utiliza calibración del usuario para personalizar el modelo
    */
-  private calculateSystolic(amplitude: number, stiffnessIndex: number, optimizedBp?: number): number {
+  private calculateSystolic(amplitude: number, stiffnessIndex: number): number {
     if (!this.userCalibration) return 120; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
@@ -146,12 +145,6 @@ export class BloodPressureProcessor {
     systolic += (amplitude - 0.5) * (amplitudeNormalizer * systolic);
     systolic += (stiffnessIndex - 1.0) * (stiffnessNormalizer * systolic);
     
-    // Incorporar valor optimizado si está disponible
-    if (optimizedBp && optimizedBp > 0) {
-      // Mezcla ponderada con valor optimizado
-      systolic = systolic * 0.7 + (optimizedBp * 1.55) * 0.3;
-    }
-    
     // Limitar a rangos fisiológicos
     return Math.max(90, Math.min(200, systolic));
   }
@@ -160,7 +153,7 @@ export class BloodPressureProcessor {
    * Calcula presión diastólica basada en características de la señal real
    * Utiliza calibración del usuario para personalizar el modelo
    */
-  private calculateDiastolic(amplitude: number, stiffnessIndex: number, optimizedBp?: number): number {
+  private calculateDiastolic(amplitude: number, stiffnessIndex: number): number {
     if (!this.userCalibration) return 80; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
@@ -173,12 +166,6 @@ export class BloodPressureProcessor {
     // Ajustar según características de la onda ppg
     diastolic += (amplitude - 0.5) * (amplitudeNormalizer * diastolic);
     diastolic += (stiffnessIndex - 1.0) * (stiffnessNormalizer * diastolic);
-    
-    // Incorporar valor optimizado si está disponible
-    if (optimizedBp && optimizedBp > 0) {
-      // Mezcla ponderada con valor optimizado
-      diastolic = diastolic * 0.7 + (optimizedBp * 0.65) * 0.3;
-    }
     
     // Limitar a rangos fisiológicos
     return Math.max(40, Math.min(120, diastolic));

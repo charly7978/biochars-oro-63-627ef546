@@ -41,8 +41,8 @@ const Index = () => {
     processSignal: processHeartBeat, 
     heartBeatResult,
     isArrhythmia,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
+    startProcessing: startHeartBeatMonitoring,
+    stopProcessing: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
@@ -115,14 +115,18 @@ const Index = () => {
           
           // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
-            const vitals = processVitalSigns(lastSignal, heartBeatResult.rrData);
-            if (vitals) {
-              // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
-              if (elapsedTime >= minimumMeasurementTime) {
-                console.log("Actualizando signos vitales:", vitals);
-                setVitalSigns(vitals);
-              }
-            }
+            // Utilizar el procesamiento asíncrono
+            processVitalSigns(lastSignal, heartBeatResult.rrData)
+              .then(vitals => {
+                // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
+                if (elapsedTime >= minimumMeasurementTime) {
+                  console.log("Actualizando signos vitales:", vitals);
+                  setVitalSigns(vitals);
+                }
+              })
+              .catch(error => {
+                console.error("Error procesando signos vitales:", error);
+              });
           } catch (error) {
             console.error("Error procesando signos vitales:", error);
           }

@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
@@ -111,7 +110,7 @@ export const useHeartBeatProcessor = () => {
         confidence: 0,
         isPeak: false,
         filteredValue: value,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        arrhythmiaCount: processorRef.current ? (processorRef.current.reset ? 0 : 0) : 0, // Safe fallback if no getArrhythmiaCounter
         rrData: { intervals: [], lastPeakTime: null }
       };
     }
