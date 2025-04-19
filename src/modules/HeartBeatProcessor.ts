@@ -55,7 +55,6 @@ export class HeartBeatProcessor {
   rrIntervals: number[] = [];
 
   constructor() {
-    this.initAudio();
     this.startTime = Date.now();
   }
 
@@ -66,13 +65,6 @@ export class HeartBeatProcessor {
   setMonitoring(monitoring: boolean): void {
     this.isMonitoring = monitoring;
     console.log(`HeartBeatProcessor: Monitoring set to ${monitoring}`);
-    
-    // Si se activa el monitoreo, asegurarse que el audio esté iniciado
-    if (monitoring && this.audioContext && this.audioContext.state !== 'running') {
-      this.audioContext.resume().catch(err => {
-        console.error("HeartBeatProcessor: Error resuming audio context", err);
-      });
-    }
   }
 
   /**
@@ -84,23 +76,8 @@ export class HeartBeatProcessor {
   }
 
   async initAudio() {
-    try {
-      // Inicializa o recupera el contexto de audio con baja latencia
-      if (!this.audioContext && typeof AudioContext !== 'undefined') {
-        this.audioContext = new AudioContext({ latencyHint: 'interactive' });
-        
-        // Siempre asegúrate de que el contexto esté en estado "running"
-        if (this.audioContext.state !== 'running') {
-          await this.audioContext.resume();
-        }
-        
-        // Prepara el sistema de audio con un beep silencioso
-        await this.playBeep(0.01);
-        console.log("HeartBeatProcessor: Audio Context Initialized with low latency");
-      }
-    } catch (err) {
-      console.error("HeartBeatProcessor: Error initializing audio", err);
-    }
+    // ELIMINADO: No inicializar audio aquí. El feedback se maneja en la UI.
+    return;
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
@@ -431,13 +408,6 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.rrIntervals = [];
-    
-    // Intentar asegurar que el contexto de audio esté activo
-    if (this.audioContext && this.audioContext.state !== 'running') {
-      this.audioContext.resume().catch(err => {
-        console.error("HeartBeatProcessor: Error resuming audio context during reset", err);
-      });
-    }
   }
 
   getRRIntervals() {
