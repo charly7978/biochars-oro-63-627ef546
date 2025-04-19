@@ -112,17 +112,21 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // Calcular calidad de señal real (0-100)
+    const quality = this.signalProcessor['quality'].calculateSignalQuality(ppgValues) * 100;
+    
     // Calculate SpO2 usando ambos canales (red, ir)
     const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
-    // Feedback de confianza/calidad para ambos canales tras cálculo de SpO2
+    // No existe getConfidence en SpO2Processor, usamos calidad real
+    const spo2Confidence = quality / 100;
     optimizerManager.applyFeedback('red', {
-      confidence: 0.8, // Reemplaza por this.spo2Processor.getConfidence?.() si existe
-      quality: 100, // Ajusta según tu métrica real
+      confidence: spo2Confidence,
+      quality: quality,
       metricType: 'SpO2'
     });
     optimizerManager.applyFeedback('ir', {
-      confidence: 0.8, // Igual que arriba
-      quality: 100, // Ajusta según tu métrica real
+      confidence: spo2Confidence,
+      quality: quality,
       metricType: 'SpO2'
     });
     
@@ -131,92 +135,94 @@ export class VitalSignsProcessor {
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
+    // No existe getConfidence en BloodPressureProcessor, usamos calidad real
+    const bpConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
-      confidence: 0.8, // Ajusta según tu métrica real
-      quality: 100,
+      confidence: bpConfidence,
+      quality: quality,
       metricType: 'BloodPressure'
     });
     
     // Calculate glucose
     const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    // No existe getConfidence en GlucoseProcessor, usamos calidad real
+    const glucoseConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
       confidence: glucoseConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'Glucose'
     });
     optimizerManager.applyFeedback('green', {
       confidence: glucoseConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'Glucose'
     });
     
     // Calculate lipids
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    // LipidProcessor sí tiene getConfidence
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     optimizerManager.applyFeedback('red', {
       confidence: lipidsConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'Lipids'
     });
     optimizerManager.applyFeedback('green', {
       confidence: lipidsConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'Lipids'
     });
     
     // Calculate hydration
     const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    // No existe getConfidence en HydrationEstimator, usamos calidad real
+    const hydrationConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
-      confidence: 0.8,
-      quality: 100,
+      confidence: hydrationConfidence,
+      quality: quality,
       metricType: 'Hydration'
     });
     optimizerManager.applyFeedback('green', {
-      confidence: 0.8,
-      quality: 100,
+      confidence: hydrationConfidence,
+      quality: quality,
       metricType: 'Hydration'
     });
     
     // Calculate HR (frecuencia cardíaca)
-    // Suponiendo que tienes un método para calcular HR y su confianza
-    const heartRate = 75; // Reemplaza por tu cálculo real
-    const hrConfidence = 0.85; // Reemplaza por tu cálculo real
+    const heartRate = this.signalProcessor.calculateHeartRate();
+    // No existe getConfidence en SignalProcessor, usamos calidad real
+    const hrConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
       confidence: hrConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'HeartRate'
     });
     optimizerManager.applyFeedback('ir', {
       confidence: hrConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'HeartRate'
     });
 
     // Calculate hemoglobina
     const hemoglobin = Math.round(this.calculateDefaultHemoglobin(spo2));
+    const hemoglobinConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
-      confidence: 0.8,
-      quality: 100,
+      confidence: hemoglobinConfidence,
+      quality: quality,
       metricType: 'Hemoglobin'
     });
     optimizerManager.applyFeedback('green', {
-      confidence: 0.8,
-      quality: 100,
+      confidence: hemoglobinConfidence,
+      quality: quality,
       metricType: 'Hemoglobin'
     });
 
     // Calculate arrhythmia
-    // Suponiendo que tienes un resultado de arrhythmia y su confianza
-    const arrhythmiaConfidence = 0.8; // Reemplaza por tu cálculo real
+    // No existe getConfidence en ArrhythmiaProcessor, usamos calidad real
+    const arrhythmiaConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
       confidence: arrhythmiaConfidence,
-      quality: 100,
-      metricType: 'Arrhythmia'
-    });
-    optimizerManager.applyFeedback('ir', {
-      confidence: arrhythmiaConfidence,
-      quality: 100,
+      quality: quality,
       metricType: 'Arrhythmia'
     });
     

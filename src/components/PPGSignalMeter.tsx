@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle, Settings2 } from 'lucide-react';
+import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { SignalOptimizerControl } from './SignalOptimizerControl';
 import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
 
 interface ArrhythmiaSegment {
@@ -32,7 +31,7 @@ interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
 }
 
-// Instancia global (o importar la que uses en tu app)
+// Instancia global del optimizador (solo lógica interna, sin UI manual)
 const optimizerManager = new SignalOptimizerManager({
   red: { filterType: 'kalman', gain: 1.0 },
   ir: { filterType: 'sma', gain: 1.0 },
@@ -72,7 +71,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const [showOptimizer, setShowOptimizer] = useState(false);
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -705,50 +703,6 @@ const PPGSignalMeter = memo(({
           </button>
         </div>
       </div>
-
-      {/* Botón flotante para mostrar el optimizador */}
-      <button
-        type="button"
-        aria-label="Ajustes de optimización de señal"
-        onClick={() => setShowOptimizer((v) => !v)}
-        style={{
-          position: 'absolute',
-          bottom: 18,
-          right: 18,
-          zIndex: 30,
-          background: 'rgba(30,30,40,0.7)',
-          border: 'none',
-          borderRadius: '50%',
-          width: 36,
-          height: 36,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-          cursor: 'pointer',
-        }}
-      >
-        <Settings2 size={20} color="#fff" />
-      </button>
-      {/* Panel discreto, pequeño y flotante */}
-      {showOptimizer && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 60,
-            right: 18,
-            zIndex: 40,
-            background: 'rgba(24,24,32,0.97)',
-            borderRadius: 10,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-            padding: 8,
-            minWidth: 220,
-            maxWidth: 260,
-          }}
-        >
-          <SignalOptimizerControl optimizerManager={optimizerManager} />
-        </div>
-      )}
     </div>
   );
 });
