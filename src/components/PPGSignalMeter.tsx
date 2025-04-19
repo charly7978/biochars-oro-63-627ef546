@@ -140,21 +140,23 @@ const PPGSignalMeter = memo(({
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
-        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
-          timeSinceLastBeep: now - lastBeepTimeRef.current,
-          minInterval: MIN_BEEP_INTERVAL_MS
-        });
         return false;
       }
-      
+
+      // Vibración sincronizada con el beep
+      if ('vibrate' in navigator) {
+        navigator.vibrate(isArrhythmia ? [50, 100, 100] : 50);
+      }
+
+      // Beep sonoro (mantén triggerHeartbeatFeedback SOLO para beep)
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
-      
+
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
-      
+
       return true;
     } catch (err) {
-      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
+      console.error("PPGSignalMeter: Error reproduciendo beep/vibración:", err);
       return false;
     }
   }, [triggerHeartbeatFeedback]);
