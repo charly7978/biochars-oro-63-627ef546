@@ -1,3 +1,4 @@
+
 import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
@@ -24,6 +25,10 @@ export class BloodPressureProcessor {
   
   private lastCalculationTime: number = 0;
   private forceRecalculationInterval: number = 1200; // Reducido para actualización más frecuente
+  
+  // Calibration factors
+  private systolicCalibrationFactor: number = 1.0;
+  private diastolicCalibrationFactor: number = 1.0;
 
   /**
    * Calculates blood pressure using PPG signal features directly
@@ -63,16 +68,59 @@ export class BloodPressureProcessor {
 
       // Calcular valores finales con ponderación optimizada
       const result = this.calculateFinalValues();
+      
+      // Apply calibration factors
+      const calibratedSystolic = Math.round(result.finalSystolic * this.systolicCalibrationFactor);
+      const calibratedDiastolic = Math.round(result.finalDiastolic * this.diastolicCalibrationFactor);
 
       this.lastCalculationTime = currentTime;
       
       return {
-        systolic: Math.round(result.finalSystolic),
-        diastolic: Math.round(result.finalDiastolic)
+        systolic: calibratedSystolic,
+        diastolic: calibratedDiastolic
       };
     } catch (error) {
       console.error('Error en cálculo de presión arterial:', error);
       return this.getLastValidOrDefault();
+    }
+  }
+
+  /**
+   * Updates calibration factors based on reference measurements
+   * @param systolic Reference systolic pressure from calibration device
+   * @param diastolic Reference diastolic pressure from calibration device
+   */
+  public updateCalibration(systolic: number, diastolic: number): void {
+    // Ensure we have valid reference values
+    if (systolic <= 0 || diastolic <= 0 || systolic <= diastolic) {
+      console.error('BloodPressureProcessor: Invalid calibration values', { systolic, diastolic });
+      return;
+    }
+    
+    // Get our current estimated values to calculate calibration factors
+    if (this.systolicBuffer.length > 0 && this.diastolicBuffer.length > 0) {
+      const currentEstimate = this.calculateFinalValues();
+      
+      // Calculate calibration factors if estimated values are reasonable
+      if (currentEstimate.finalSystolic > 0 && currentEstimate.finalDiastolic > 0) {
+        this.systolicCalibrationFactor = systolic / currentEstimate.finalSystolic;
+        this.diastolicCalibrationFactor = diastolic / currentEstimate.finalDiastolic;
+        
+        // Limit calibration factors to reasonable ranges (0.5-2.0)
+        this.systolicCalibrationFactor = Math.max(0.5, Math.min(2.0, this.systolicCalibrationFactor));
+        this.diastolicCalibrationFactor = Math.max(0.5, Math.min(2.0, this.diastolicCalibrationFactor));
+        
+        console.log('BloodPressureProcessor: Calibration applied', {
+          systolicFactor: this.systolicCalibrationFactor,
+          diastolicFactor: this.diastolicCalibrationFactor,
+          referenceValues: { systolic, diastolic },
+          estimatedValues: currentEstimate
+        });
+      } else {
+        console.error('BloodPressureProcessor: Cannot calibrate with zero estimated values');
+      }
+    } else {
+      console.error('BloodPressureProcessor: Cannot calibrate without baseline measurements');
     }
   }
 
@@ -255,6 +303,9 @@ export class BloodPressureProcessor {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
     this.lastCalculationTime = 0;
+    // Reset calibration factors to default
+    this.systolicCalibrationFactor = 1.0;
+    this.diastolicCalibrationFactor = 1.0;
     console.log("BloodPressureProcessor: Reset completed");
   }
 

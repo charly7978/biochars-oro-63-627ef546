@@ -173,7 +173,8 @@ export class VitalSignsProcessor {
    * Apply blood pressure calibration to the processor
    */
   public applyBloodPressureCalibration(systolic: number, diastolic: number): void {
-    this.bpProcessor.applyCalibration(systolic, diastolic);
+    // Fix: Change from applyCalibration to updateCalibration which is the correct method name
+    this.bpProcessor.updateCalibration(systolic, diastolic);
   }
 
   /**
