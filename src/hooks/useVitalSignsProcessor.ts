@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -49,6 +48,29 @@ export const useVitalSignsProcessor = () => {
     error: tfError
   } = useTensorFlowModel('vital-signs-ppg', true);
   
+  // Añadir estado de OpenCV
+  const [cvReady, setCvReady] = useState(false);
+
+  // Hook para inicializar y monitorear OpenCV
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    function checkOpenCV() {
+      if (typeof window !== 'undefined' && window.cv && window.cv.Mat) {
+        setCvReady(true);
+        clearInterval(interval);
+        console.log('✅ OpenCV inicializado correctamente');
+      } else {
+        setCvReady(false);
+        console.warn('⏳ Esperando inicialización de OpenCV...');
+      }
+    }
+    checkOpenCV();
+    if (!cvReady) {
+      interval = setInterval(checkOpenCV, 1000);
+    }
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (tfError) {
       console.error("Error en modelo TensorFlow:", tfError);
@@ -266,6 +288,7 @@ export const useVitalSignsProcessor = () => {
     resumeProcessing,
     isProcessingEnabled: processingEnabled,
     isTensorFlowReady: tfModelReady,
+    isOpenCVReady: cvReady,
     arrhythmiaCounter: processorRef.current?.getArrhythmiaCounter() ?? 0,
     lastValidResults,
     arrhythmiaWindows,

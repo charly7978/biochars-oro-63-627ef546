@@ -85,11 +85,21 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
    * @param input Señal PPG (valores en el tiempo)
    * @returns Frecuencia cardíaca estimada (BPM)
    */
-  predict(input: Tensor1D): Tensor1D {
+  predict(input: Tensor1D): Tensor1D | null {
+    // Chequeo de inicialización de TensorFlow y OpenCV
+    if (typeof window !== 'undefined') {
+      if (!window.cv) {
+        console.error('[HeartRateNeuralModel] OpenCV no está inicializado.');
+        throw new Error('OpenCV debe estar inicializado para medir.');
+      }
+    }
+    if (!tf || !tf.ready) {
+      console.error('[HeartRateNeuralModel] TensorFlow no está inicializado.');
+      throw new Error('TensorFlow debe estar inicializado para medir.');
+    }
     const startTime = Date.now();
-    
     try {
-      // Preparar entrada
+      console.log('[HeartRateNeuralModel] Preprocesando entrada...');
       let processedInput = this.preprocessInput(input);
       
       // Forward pass por la red
@@ -134,11 +144,12 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
       // Actualizar tiempo de predicción
       this.updatePredictionTime(startTime);
       
+      console.log('[HeartRateNeuralModel] Predicción final:', heartRate);
       return [Math.round(heartRate)];
     } catch (error) {
-      console.error('Error en HeartRateNeuralModel.predict:', error);
+      console.error('[HeartRateNeuralModel] Error en predict:', error);
       this.updatePredictionTime(startTime);
-      return [75]; // valor por defecto fisiológicamente plausible
+      return null;
     }
   }
   

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -51,7 +50,8 @@ const Index = () => {
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
     lastValidResults,
-    isTensorFlowReady
+    isTensorFlowReady,
+    isOpenCVReady
   } = useVitalSignsProcessor();
 
   // Si tensorflow está listo, mostrar mensaje
@@ -333,6 +333,23 @@ const Index = () => {
     if (hydration >= 50) return 'text-yellow-500';
     return 'text-red-500';
   };
+
+  // Mostrar mensaje y bloquear medición si falta algún motor
+  if (!isTensorFlowReady || !isOpenCVReady) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center p-8">
+        <h2 className="text-2xl font-bold mb-4 text-red-600">No es posible medir</h2>
+        <p className="mb-2 text-lg">OpenCV y TensorFlow deben estar activos y listos para realizar mediciones reales.</p>
+        <p className="mb-4 text-sm text-muted-foreground">
+          Estado actual:<br/>
+          <span className={isOpenCVReady ? 'text-green-600' : 'text-red-600'}>OpenCV: {isOpenCVReady ? 'Listo' : 'No inicializado'}</span><br/>
+          <span className={isTensorFlowReady ? 'text-green-600' : 'text-red-600'}>TensorFlow: {isTensorFlowReady ? 'Listo' : 'No inicializado'}</span>
+        </p>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 mx-auto mb-4" />
+        <p className="text-sm text-muted-foreground">Por favor, espera a que ambos motores estén listos o recarga la página si el problema persiste.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 flex flex-col" style={{ 

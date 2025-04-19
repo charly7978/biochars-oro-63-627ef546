@@ -1,4 +1,3 @@
-
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -9,6 +8,7 @@ import {
   TensorUtils,
   Tensor1D 
 } from './NeuralNetworkBase';
+import * as tf from '@tensorflow/tfjs'; // Asegúrate de tener @tensorflow/tfjs instalado
 
 /**
  * Modelo neuronal para estimación de glucosa en sangre
@@ -69,13 +69,23 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
   /**
    * Predice el nivel de glucosa basado en la señal PPG
    * @param input Señal PPG
-   * @returns Nivel de glucosa (mg/dL)
+   * @returns Nivel de glucosa (mg/dL) o null si ocurre un error
    */
-  predict(input: Tensor1D): Tensor1D {
+  predict(input: Tensor1D): Tensor1D | null {
+    // Chequeo de inicialización de TensorFlow y OpenCV
+    if (typeof window !== 'undefined') {
+      if (!window.cv) {
+        console.error('[GlucoseNeuralModel] OpenCV no está inicializado.');
+        throw new Error('OpenCV debe estar inicializado para medir.');
+      }
+    }
+    if (!tf || !tf.ready) {
+      console.error('[GlucoseNeuralModel] TensorFlow no está inicializado.');
+      throw new Error('TensorFlow debe estar inicializado para medir.');
+    }
     const startTime = Date.now();
-    
     try {
-      // Preprocesamiento específico para glucosa
+      console.log('[GlucoseNeuralModel] Preprocesando entrada...');
       const processedInput = this.preprocessInput(input);
       
       // Forward pass - extracción de características
@@ -125,11 +135,12 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
       glucose = Math.max(70, Math.min(180, glucose));
       
       this.updatePredictionTime(startTime);
+      console.log('[GlucoseNeuralModel] Predicción final:', glucose);
       return [Math.round(glucose)];
     } catch (error) {
-      console.error('Error en GlucoseNeuralModel.predict:', error);
+      console.error('[GlucoseNeuralModel] Error en predict:', error);
       this.updatePredictionTime(startTime);
-      return [95]; // Valor normal por defecto
+      return null;
     }
   }
   

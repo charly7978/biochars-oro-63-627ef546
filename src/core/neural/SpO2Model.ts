@@ -1,4 +1,3 @@
-
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -8,6 +7,7 @@ import {
   TensorUtils,
   Tensor1D 
 } from './NeuralNetworkBase';
+import * as tf from '@tensorflow/tfjs'; // Asegúrate de tener @tensorflow/tfjs instalado
 
 /**
  * Modelo neuronal especializado en la estimación precisa de saturación de oxígeno
@@ -60,11 +60,21 @@ export class SpO2NeuralModel extends BaseNeuralModel {
    * @param input Señal PPG
    * @returns Valor de SpO2 (porcentaje)
    */
-  predict(input: Tensor1D): Tensor1D {
+  predict(input: Tensor1D): Tensor1D | null {
+    // Chequeo de inicialización de TensorFlow y OpenCV
+    if (typeof window !== 'undefined') {
+      if (!window.cv) {
+        console.error('[SpO2NeuralModel] OpenCV no está inicializado.');
+        throw new Error('OpenCV debe estar inicializado para medir.');
+      }
+    }
+    if (!tf || !tf.ready) {
+      console.error('[SpO2NeuralModel] TensorFlow no está inicializado.');
+      throw new Error('TensorFlow debe estar inicializado para medir.');
+    }
     const startTime = Date.now();
-    
     try {
-      // Preprocesamiento
+      console.log('[SpO2NeuralModel] Preprocesando entrada...');
       const processedInput = this.preprocessInput(input);
       
       // Forward pass
@@ -83,14 +93,15 @@ export class SpO2NeuralModel extends BaseNeuralModel {
       output = this.outputLayer.forward(output);
       
       // Escalar salida de sigmoid (0-1) al rango de SpO2 (85-100%)
-      const spo2 = 85 + (output[0] * 15);
+      const spo2 = Math.max(85, Math.min(100, output[0]));
       
       this.updatePredictionTime(startTime);
-      return [Math.round(spo2 * 10) / 10]; // Redondear a 1 decimal
+      console.log('[SpO2NeuralModel] Predicción final:', spo2);
+      return [Math.round(spo2)];
     } catch (error) {
-      console.error('Error en SpO2NeuralModel.predict:', error);
+      console.error('[SpO2NeuralModel] Error en predict:', error);
       this.updatePredictionTime(startTime);
-      return [97]; // Valor por defecto fisiológicamente normal
+      return null;
     }
   }
   

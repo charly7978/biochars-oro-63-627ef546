@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +16,7 @@ interface NeuralNetworkStatusProps {
   lastProcessingTime?: number;
   modelsUsed?: string[];
   confidence?: number;
+  isOpenCVReady?: boolean;
 }
 
 export function NeuralNetworkStatus({
@@ -25,7 +25,8 @@ export function NeuralNetworkStatus({
   models,
   lastProcessingTime = 0,
   modelsUsed = [],
-  confidence = 0
+  confidence = 0,
+  isOpenCVReady = true
 }: NeuralNetworkStatusProps) {
   return (
     <Card className="shadow-sm">
@@ -44,6 +45,15 @@ export function NeuralNetworkStatus({
             ? "Modelos TensorFlow.js listos para procesamiento" 
             : "Inicializando modelos..."}
         </CardDescription>
+        <div className="mt-2 text-sm">
+          <span className={isOpenCVReady ? 'text-green-600' : 'text-red-600'}>
+            OpenCV: {isOpenCVReady ? 'Listo' : 'No inicializado'}
+          </span>
+          <span className="mx-2">|</span>
+          <span className={ready ? 'text-green-600' : 'text-red-600'}>
+            TensorFlow: {ready ? 'Listo' : 'No inicializado'}
+          </span>
+        </div>
       </CardHeader>
       <CardContent>
         {/* Estado de procesamiento */}
