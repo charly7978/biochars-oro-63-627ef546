@@ -1,9 +1,8 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
@@ -38,11 +37,12 @@ const Index = () => {
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
+    currentBPM,
+    confidence,
     processSignal: processHeartBeat, 
-    heartBeatResult,
     isArrhythmia,
-    startProcessing: startHeartBeatMonitoring,
-    stopProcessing: stopHeartBeatMonitoring,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
@@ -116,17 +116,19 @@ const Index = () => {
           // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
             // Utilizar el procesamiento asíncrono
-            processVitalSigns(lastSignal, heartBeatResult.rrData)
-              .then(vitals => {
-                // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
-                if (elapsedTime >= minimumMeasurementTime) {
-                  console.log("Actualizando signos vitales:", vitals);
-                  setVitalSigns(vitals);
-                }
-              })
-              .catch(error => {
-                console.error("Error procesando signos vitales:", error);
-              });
+            if (heartBeatResult.rrData) {
+              processVitalSigns(lastSignal, heartBeatResult.rrData)
+                .then(vitals => {
+                  // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
+                  if (elapsedTime >= minimumMeasurementTime) {
+                    console.log("Actualizando signos vitales:", vitals);
+                    setVitalSigns(vitals);
+                  }
+                })
+                .catch(error => {
+                  console.error("Error procesando signos vitales:", error);
+                });
+            }
           } catch (error) {
             console.error("Error procesando signos vitales:", error);
           }
