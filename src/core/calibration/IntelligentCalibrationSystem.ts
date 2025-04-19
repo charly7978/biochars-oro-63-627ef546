@@ -210,11 +210,19 @@ export class IntelligentCalibrationSystem {
   }
   
   /**
-   * Valores de referencia por defecto
+   * Valores de referencia por defecto - Todos inicializados a null
    */
   private getDefaultReferences(): ReferenceValues {
-    // Prohibido: No se permiten valores de referencia por defecto. Use solo datos reales.
-    throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
+    // No default reference values allowed, initialize all to null.
+    // Actual values must be loaded from storage or provided by the user.
+    return {
+      heartRate: null,
+      spo2: null,
+      systolic: null,
+      diastolic: null,
+      glucose: null
+    };
+    // throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
   }
   
   /**
