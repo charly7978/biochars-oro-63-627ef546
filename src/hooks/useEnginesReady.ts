@@ -1,72 +1,52 @@
-
-import { useEffect, useState, useCallback } from 'react';
-import { useMultipleTensorFlowModels } from '@/hooks/useTensorFlowModel';
-
-const REQUIRED_MODELS = [
-  'heartRate',
-  'spo2',
-  'bloodPressure',
-  'arrhythmia',
-  'glucose',
-  // Asegurar incluir todos los modelos usados globalmente
-];
+import { useEffect, useState } from 'react';
+import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 
 export function useEnginesReady() {
   const [isOpenCVReady, setIsOpenCVReady] = useState(false);
   const [cvError, setCvError] = useState<string | null>(null);
   const [cvTries, setCvTries] = useState(0);
-  const maxCvTries = 15;
+  const maxWaitMs = 10000; // 10 segundos
 
-  // TensorFlow loading of all relevant models
+  // TensorFlow
   const {
-    modelsReady: isTensorFlowReady,
-    isLoading: isTensorFlowLoading,
-    error: tfError,
-    reloadAllModels
-  } = useMultipleTensorFlowModels(REQUIRED_MODELS);
+    isReady: isTensorFlowReady,
+    error: tfError
+  } = useTensorFlowModel('vital-signs-ppg', true);
 
-  // Polling for OpenCV readiness
+  // OpenCV polling robusto
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    let tries = 0;
-
+    let timeout: NodeJS.Timeout;
     function checkOpenCV() {
-      tries++;
       if (window.cv && (window as any).cvReady) {
         setIsOpenCVReady(true);
         setCvError(null);
         clearInterval(interval);
-      } else if (tries >= maxCvTries) {
-        setIsOpenCVReady(false);
-        setCvError('No se pudo inicializar OpenCV tras varios intentos.');
-        clearInterval(interval);
+        clearTimeout(timeout);
       }
     }
-
     checkOpenCV();
     if (!isOpenCVReady) {
-      interval = setInterval(checkOpenCV, 1000);
+      interval = setInterval(checkOpenCV, 300);
+      timeout = setTimeout(() => {
+        setIsOpenCVReady(false);
+        setCvError('OpenCV no se cargó correctamente tras 10 segundos. Verifica tu conexión o la ruta del script.');
+        clearInterval(interval);
+      }, maxWaitMs);
     }
-
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
   }, [isOpenCVReady, cvTries]);
 
-  // Retry for OpenCV forcing
-  const retryOpenCV = useCallback(() => {
-    setCvTries(t => t + 1);
-  }, []);
-
-  // Retry for TensorFlow models reloading
-  const retryTensorFlowModels = useCallback(() => {
-    reloadAllModels();
-  }, [reloadAllModels]);
+  let error: string | null = null;
+  if (cvError) error = cvError;
+  else if (tfError) error = `TensorFlow: ${tfError}`;
 
   return {
     isOpenCVReady,
     isTensorFlowReady,
-    isTensorFlowLoading,
-    error: cvError || tfError,
-    retryOpenCV,
-    retryTensorFlowModels,
+    error
   };
 }
