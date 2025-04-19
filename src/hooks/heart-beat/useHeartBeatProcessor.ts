@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
@@ -58,7 +59,8 @@ export const useHeartBeatProcessor = () => {
         isPeak: false,
         filteredValue: value,
         arrhythmiaCount: 0,
-        rrData: { intervals: [], lastPeakTime: null }
+        rrData: { intervals: [], lastPeakTime: null },
+        isArrhythmia: false
       };
     }
   
@@ -71,7 +73,8 @@ export const useHeartBeatProcessor = () => {
     });
 
     try {
-      // Process the signal with a single argument as expected by HeartBeatProcessor
+      // Process the signal properly with correct function signature
+      // processSignal only accepts 1 argument: value
       const result = processorRef.current.processSignal(value);
 
       // Get RR intervals from processor
@@ -91,9 +94,11 @@ export const useHeartBeatProcessor = () => {
       setIsArrhythmia(arrhythmiaDetection.isArrhythmia);
 
       // Añadir contador de arritmias al resultado para visibilidad externa
-      const updatedResult = {
+      const updatedArrhythmiaCount = arrhythmiaDetection.isArrhythmia ? (heartBeatResult.arrhythmiaCount + 1) : heartBeatResult.arrhythmiaCount;
+
+      const updatedResult: HeartBeatResult = {
         ...result,
-        arrhythmiaCount: arrhythmiaDetection.isArrhythmia ? (heartBeatResult.arrhythmiaCount +1) : heartBeatResult.arrhythmiaCount,
+        arrhythmiaCount: updatedArrhythmiaCount,
         isArrhythmia: arrhythmiaDetection.isArrhythmia,
         rrData: {
           intervals: rrData.intervals,
@@ -116,7 +121,7 @@ export const useHeartBeatProcessor = () => {
       console.error("useHeartBeatProcessor: Error procesando señal", e);
 
       return {
-        bpm: null,
+        bpm: 0,
         confidence: 0,
         isPeak: false,
         filteredValue: value,
@@ -189,6 +194,7 @@ export const useHeartBeatProcessor = () => {
     setIsArrhythmia(false);
   }, [resetArrhythmiaDetector]);
 
+
   /**
    * Función de retroalimentación para pulsos cardíacos
    * Utiliza AudioService para señales auditivas
@@ -224,3 +230,4 @@ export const useHeartBeatProcessor = () => {
     ppgData
   };
 };
+
