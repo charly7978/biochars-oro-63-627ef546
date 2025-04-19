@@ -114,7 +114,7 @@ export const useSignalProcessing = () => {
     console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
     return null;
   }, []);
-  
+
   /**
    * Perform full reset - clear all data
    * No simulations or reference values

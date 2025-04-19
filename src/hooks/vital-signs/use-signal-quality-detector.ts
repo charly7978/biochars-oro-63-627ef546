@@ -1,40 +1,37 @@
 
-// Mejoras en la detección de dedo para robustez y evitar falsos positivos
+// Reforzar la detección confiable de dedo real y evitar falsas detecciones
 
 import { useRef, useCallback } from 'react';
 
 /**
  * Hook reforzado para detección activa y precisa de dedo humano en cámara
- * Combina análisis de forma de onda PPG, periodicidad, estabilidad y ruido
- * Evita total falsos positivos y mejora calidad general de captura
+ * Algoritmo mejorado con análisis de estabilidad, periodicidad, amplitud y ruido
  */
 export const useSignalQualityDetector = () => {
   const signalBufferRef = useRef<number[]>([]);
   const fingerDetectedRef = useRef(false);
-  const fingerConfirmationCountRef = useRef(0);
+  const lastFingerDetectedTimeRef = useRef<number>(0);
+  const confirmationCountRef = useRef(0);
 
-  // Parámetros afinados
   const SAMPLE_RATE = 30;
   const BUFFER_SECONDS = 8;
   const BUFFER_SIZE = SAMPLE_RATE * BUFFER_SECONDS;
 
-  // Thresholds fisiológicos directos para pulso
-  const MIN_AMPLITUDE = 0.05;
+  const MIN_AMPLITUDE = 0.06;
   const MAX_AMPLITUDE = 0.45;
-  const MIN_AUTOCORR = 0.58;
-  const MAX_COV = 0.10;
-  const MAX_NOISE = 0.018;
-  const MIN_CONFIRMATION_FRAMES = SAMPLE_RATE * 3; // 3 seg robustos para confirmar dedo
+  const MIN_AUTOCORR = 0.60;
+  const MAX_NOISE = 0.015;
+  const MIN_CONFIRMATION_TIME_MS = SAMPLE_RATE * 4; // 4 segundos de confirmación
 
-  // Calcula autocorrelación normalizada simple
-  const autocorrelation = (signal: number[], lag: number) => {
+  // Cálculo autocorrelación normalizada simple
+  const autocorrelation = (signal: number[], lag: number): number => {
     const n = signal.length;
     if (lag >= n) return 0;
-    const mean = signal.reduce((a,b) => a+b, 0) / n;
-    let numerator = 0, denomLeft=0, denomRight=0;
-    for (let i=0; i<n-lag; i++) {
+    const mean = signal.reduce((acc, v) => acc + v, 0) / n;
+    let numerator = 0, denomLeft = 0, denomRight = 0;
+    for (let i = 0; i < n - lag; i++) {
       const left = signal[i] - mean;
-      const right = signal[i+lag] - mean;
+      const right = signal[i + lag] - mean;
       numerator += left * right;
       denomLeft += left * left;
       denomRight += right * right;
@@ -43,31 +40,22 @@ export const useSignalQualityDetector = () => {
     return denom === 0 ? 0 : numerator / denom;
   };
 
-  // Coeficiente de variación absoluto (std / mean abs)
-  const coefficientOfVariation = (values: number[]) => {
-    if (values.length === 0) return 1;
-    const meanAbs = values.reduce((a,b) => a + Math.abs(b), 0) / values.length;
-    if (meanAbs === 0) return 1;
-    const variance = values.reduce((a,b) => a + Math.pow(b - meanAbs, 2), 0) / values.length;
-    return Math.sqrt(variance) / meanAbs;
-  };
-
-  // Ruido RMS diferencia entre muestras consecutivas (derivada rms)
+  // Ruido RMS basado en derivada de la señal
   const rmsNoise = (values: number[]) => {
     if (values.length < 2) return 0;
     let sumSqDiff = 0;
-    for (let i=1; i<values.length; i++) {
-      const diff = values[i] - values[i-1];
-      sumSqDiff += diff*diff;
+    for (let i = 1; i < values.length; i++) {
+      const diff = values[i] - values[i - 1];
+      sumSqDiff += diff * diff;
     }
-    return Math.sqrt(sumSqDiff / (values.length -1));
+    return Math.sqrt(sumSqDiff / (values.length - 1));
   };
 
-  // Función principal para detectar dedo con criterios estrictos
+  // Función para detección robusta de dedo
   const detectFinger = useCallback((value: number) => {
     if (value == null || isNaN(value)) {
       fingerDetectedRef.current = false;
-      fingerConfirmationCountRef.current = 0;
+      confirmationCountRef.current = 0;
       signalBufferRef.current = [];
       return false;
     }
@@ -78,7 +66,7 @@ export const useSignalQualityDetector = () => {
 
     if (buf.length < BUFFER_SIZE) {
       fingerDetectedRef.current = false;
-      fingerConfirmationCountRef.current = 0;
+      confirmationCountRef.current = 0;
       return false;
     }
 
@@ -86,47 +74,38 @@ export const useSignalQualityDetector = () => {
     const maxVal = Math.max(...buf);
     const amplitude = maxVal - minVal;
 
-    // Rechazar si amplitud fuera de rango fisiológico
     if (amplitude < MIN_AMPLITUDE || amplitude > MAX_AMPLITUDE) {
-      fingerConfirmationCountRef.current = 0;
+      confirmationCountRef.current = 0;
       fingerDetectedRef.current = false;
       return false;
     }
 
-    // Buscar periodicidad máxima en rango 12-40 (0.4 a 1.3 seg) en autocorrelación
+    // Evaluar periodicidad autocorrelada en rango fisiológico
     let maxAutocorr = -Infinity;
-    for (let lag=12; lag<=40; lag++) {
+    for (let lag = 12; lag <= 40; lag++) {
       const ac = autocorrelation(buf, lag);
       if (ac > maxAutocorr) maxAutocorr = ac;
     }
 
     if (maxAutocorr < MIN_AUTOCORR) {
-      fingerConfirmationCountRef.current = 0;
+      confirmationCountRef.current = 0;
       fingerDetectedRef.current = false;
       return false;
     }
 
-    // Calcular coeficiente de variación para estabilidad
-    const cov = coefficientOfVariation(buf);
-    if (cov > MAX_COV) {
-      fingerConfirmationCountRef.current = 0;
-      fingerDetectedRef.current = false;
-      return false;
-    }
-
-    // Ruido de derivada rms bajo límite
+    // Calcular ruido en derivada
     const noise = rmsNoise(buf);
     if (noise > MAX_NOISE) {
-      fingerConfirmationCountRef.current = 0;
+      confirmationCountRef.current = 0;
       fingerDetectedRef.current = false;
       return false;
     }
 
-    // Acumular sólo si señal cumple todos los criterios anteriores
-    fingerConfirmationCountRef.current++;
-
-    if (fingerConfirmationCountRef.current >= MIN_CONFIRMATION_FRAMES) {
+    // Confirmar detección estable durante el tiempo mínimo
+    confirmationCountRef.current++;
+    if (confirmationCountRef.current >= MIN_CONFIRMATION_TIME_MS) {
       fingerDetectedRef.current = true;
+      lastFingerDetectedTimeRef.current = Date.now();
     } else {
       fingerDetectedRef.current = false;
     }
@@ -134,20 +113,18 @@ export const useSignalQualityDetector = () => {
     if (process.env.NODE_ENV !== 'production') {
       console.debug("[useSignalQualityDetector] Amplitude:", amplitude.toFixed(3),
         "MaxAutoCorr:", maxAutocorr.toFixed(3),
-        "CoV:", cov.toFixed(3),
         "Noise:", noise.toFixed(3),
-        "ConfirmationCount:", fingerConfirmationCountRef.current,
+        "ConfirmCount:", confirmationCountRef.current,
         "FingerDetected:", fingerDetectedRef.current);
     }
 
     return fingerDetectedRef.current;
   }, []);
 
-  // Reset completo del detector
   const reset = useCallback(() => {
     signalBufferRef.current = [];
     fingerDetectedRef.current = false;
-    fingerConfirmationCountRef.current = 0;
+    confirmationCountRef.current = 0;
   }, []);
 
   return {
@@ -156,4 +133,5 @@ export const useSignalQualityDetector = () => {
     reset
   };
 };
+
 
