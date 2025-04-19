@@ -1,4 +1,3 @@
-
 /**
  * Configuración y opciones para TensorFlow.js
  * Proporciona ajustes de rendimiento y optimización
@@ -73,41 +72,41 @@ export interface TensorFlowConfig {
 }
 
 /**
- * Configuración por defecto optimizada para rendimiento
+ * Configuración por defecto de TensorFlow.js
  */
 export const DEFAULT_TENSORFLOW_CONFIG: TensorFlowConfig = {
-  backend: 'webgl',
+  backend: 'webgl', // El worker intentará WASM si WebGL falla o no está disponible
   memoryOptions: {
-    useFloat16: true,
+    useFloat16: true, // Habilitar float16 por defecto
     enableTensorPacking: true,
     gpuMemoryLimitMB: 0,
-    enableAutoGarbageCollection: true
+    enableAutoGarbageCollection: true, // Habilitar GC por defecto
   },
   cacheOptions: {
     enableModelCaching: true,
-    modelCachePrefix: 'vital-signs-model-',
-    cacheExpirationDays: 30,
-    cacheVersion: '1.0.0'
+    modelCachePrefix: 'tfjs-model-cache',
+    cacheExpirationDays: 7,
+    cacheVersion: 'v1.1', // Incrementar versión si cambian los modelos
   },
   loadOptions: {
     progressiveLoading: true,
-    useWebWorkers: true,
+    useWebWorkers: true, // Asumiendo que la estructura actual ya usa workers
     modelLoadTimeoutMs: 30000,
     maxLoadAttempts: 3,
-    modelPriority: 5
+    modelPriority: 5, // Prioridad media por defecto
   },
   calibrationOptions: {
-    enableAutoCalibration: true,
-    calibrationDuration: 8000,
-    minCalibrationSamples: 50,
+    enableAutoCalibration: false, // Mantener desactivado por defecto, requiere lógica específica
+    calibrationDuration: 10000,
+    minCalibrationSamples: 100,
     maxCorrectionFactor: 1.5,
-    autoRecalibrationIntervalMs: 0
+    autoRecalibrationIntervalMs: 0, // Desactivado por defecto
   },
   advancedOptions: {
     enablePlatformOptimizations: true,
-    parallelismLevel: 0,
+    parallelismLevel: 0, // Automático
     enableDebugMode: false,
-    preferWebGPU: false
+    preferWebGPU: false, // WebGPU aún es experimental en muchos navegadores
   }
 };
 
