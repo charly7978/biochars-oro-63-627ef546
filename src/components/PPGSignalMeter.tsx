@@ -602,6 +602,23 @@ const PPGSignalMeter = memo(({
         (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
     }
     
+    // --- NUEVO: Marcar puntos recientes como arritmia si hay arritmia activa ---
+    if (
+      arrhythmiaStatus && arrhythmiaStatus.includes("ARRHYTHMIA") &&
+      rawArrhythmiaData && now - rawArrhythmiaData.timestamp < 2000 &&
+      dataBufferRef.current
+    ) {
+      const points = dataBufferRef.current.getPoints();
+      for (let i = points.length - 1; i >= 0; i--) {
+        if (now - points[i].time <= 2000) {
+          points[i].isArrhythmia = true;
+        } else {
+          break;
+        }
+      }
+    }
+    // --- FIN NUEVO ---
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
