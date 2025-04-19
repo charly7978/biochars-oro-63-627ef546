@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -98,8 +97,7 @@ export const useVitalSignsProcessor = () => {
     }
     
     const now = Date.now();
-    // Evitar cálculos excesivos que pueden sobrecargar el sistema
-    if (now - lastProcessingTime.current < 30) { // 30ms mínimo entre procesados
+    if (now - lastProcessingTime.current < 30) {
       if (lastValidResults) {
         console.log("Skipping processing: Minimal interval not met");
         return lastValidResults;
@@ -107,93 +105,85 @@ export const useVitalSignsProcessor = () => {
     }
     lastProcessingTime.current = now;
     
-    // Casting a tipo extendido para uso interno si es necesario
     const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
 
     processedSignals.current += 1;
 
-    console.log(`Processing signal #${processedSignals.current}`, {
+    // Log inicial de señal recibida en procesamiento
+    console.log(`[useVitalSignsProcessor] Procesando señal #${processedSignals.current}`, {
+      timestampISO: new Date(extendedSignal.timestamp).toISOString(),
       rawValue: extendedSignal.rawValue,
       filteredValue: extendedSignal.filteredValue,
       quality: extendedSignal.quality,
       fingerDetected: extendedSignal.fingerDetected,
-      timestamp: new Date(extendedSignal.timestamp).toISOString(),
+      windowValuesCount: extendedSignal.windowValues?.length ?? 0,
+      minValue: extendedSignal.minValue,
+      maxValue: extendedSignal.maxValue,
       rrDataAvailable: rrData !== undefined,
-      rrIntervalsCount: rrData?.intervals.length ?? 0,
+      rrIntervalsLength: rrData?.intervals.length ?? 0,
     });
 
-    // --- Procesamiento con SignalOptimizerManager --- 
+    // Optimización por canal
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
       optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
-      console.log(`Optimized value for channel ${channel}: ${optimizedValues[channel].toFixed(4)}`);
+      console.log(`[useVitalSignsProcessor] Valor optimizado para canal "${channel}":`, optimizedValues[channel].toFixed(4));
     }
     const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
-    console.log(`Primary optimized value used for processing: ${primaryOptimizedValue.toFixed(4)}`);
+    console.log(`[useVitalSignsProcessor] Valor primario optimizado para procesamiento:`, primaryOptimizedValue.toFixed(4));
 
-    // --- Opcional: Procesamiento TensorFlow si está disponible ---
+    // Inferencia TensorFlow, si está lista y cada 5 señales
     let tfEnhancedValue = primaryOptimizedValue;
-    
-    if (tfModelReady && processedSignals.current % 5 === 0) { // Reducir frecuencia de inferencia
+    if (tfModelReady && processedSignals.current % 5 === 0) {
       try {
-        // Crear ventana de datos para TensorFlow
         const signalWindow = extendedSignal.windowValues || [primaryOptimizedValue];
-        
-        // Normalizar datos para entrada del modelo
         const normalizedInput = signalWindow.slice(-64).map(val => {
           const minVal = extendedSignal.minValue !== undefined ? extendedSignal.minValue : 0;
           const maxVal = extendedSignal.maxValue !== undefined ? extendedSignal.maxValue : 1;
           return (val - minVal) / ((maxVal - minVal) || 1);
         });
-        
-        // Rellenar array si es necesario
         while (normalizedInput.length < 64) {
           normalizedInput.unshift(0);
         }
-        
-        console.log("Starting TensorFlow inference with normalizedInput", normalizedInput.slice(-10));
-        
-        // Inferencia del modelo y manejo adecuado del resultado
+        console.log("[useVitalSignsProcessor] Inicio inferencia TensorFlow con entrada normalizada últimos 10 valores:", normalizedInput.slice(-10));
+
         const predictionPromise = tfPredict(normalizedInput);
         if (predictionPromise) {
           try {
             const prediction = await Promise.resolve(predictionPromise);
-            
             if (prediction && prediction.length > 0) {
-              // Usar resultado para mejorar el valor optimizado
               const enhancementFactor = prediction[0];
               tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
-              console.log("TF enhancement applied:", enhancementFactor.toFixed(4), "Enhanced value:", tfEnhancedValue.toFixed(4));
+              console.log(`[useVitalSignsProcessor] TF mejoró valor: factor ${enhancementFactor.toFixed(4)}, valor mejorado: ${tfEnhancedValue.toFixed(4)}`);
             }
           } catch (e) {
-            console.error("Error procesando predicción TensorFlow:", e);
+            console.error("[useVitalSignsProcessor] Error al procesar predicción TF:", e);
           }
         }
       } catch (err) {
-        console.error("Error en procesamiento TensorFlow:", err);
+        console.error("[useVitalSignsProcessor] Error en procesamiento TensorFlow:", err);
       }
     }
 
-    // --- DEBUG: Verificar si llegan datos RR para arrhythmia --- 
+    // Log para datos RR usados en detección de arritmia, cada 30 señales
     if (rrData && rrData.intervals.length > 0 && processedSignals.current % 30 === 0) {
-      console.log("RR data available for arrhythmia detection:", {
-        intervalCount: rrData.intervals.length,
-        lastIntervals: rrData.intervals.slice(-3),
-        lastPeakTime: rrData.lastPeakTime
+      console.log("[useVitalSignsProcessor] Datos RR disponibles para detección de arritmia:", {
+        totalIntervalos: rrData.intervals.length,
+        últimosIntervalos: rrData.intervals.slice(-3),
+        últimoTiempoPico: rrData.lastPeakTime
       });
     }
 
-    // --- Llamada a VitalSignsProcessor (Con la firma CORRECTA según VitalSignsProcessor.ts) --- 
+    // Llamada a procesador de signos vitales con valores optimizados y TF reforzado si disponible
     const result = processorRef.current.processSignal(
-      tfEnhancedValue || primaryOptimizedValue,  // Usar valor mejorado por TF si disponible
+      tfEnhancedValue || primaryOptimizedValue,
       extendedSignal,
       rrData,
       optimizedValues
     );
 
-    // Ajuste: VitalSignsResult no tiene heartRate. Si quieres debug, muestra "arrhythmiaStatus" u otro disponible.
-    console.log("VitalSignsProcessor results:", {
-      // Removido heartRate por no existir en VitalSignsResult
+    // Mostrar resultado detallado en consola (sin heartRate que no existe en VitalSignsResult)
+    console.log("[useVitalSignsProcessor] Resultados VitalSignsProcessor:", {
       spo2: result.spo2,
       pressure: result.pressure,
       arrhythmiaStatus: result.arrhythmiaStatus,
@@ -203,10 +193,9 @@ export const useVitalSignsProcessor = () => {
       hemoglobin: result.hemoglobin,
     });
 
-    // Actualizar siempre el estado 
     setLastValidResults(result);
 
-    // --- Aplicar Feedback al Optimizador --- 
+    // Aplicar feedback a optimizador basado en calidad y confianza del resultado
     const feedback: Record<string, ChannelFeedback> = {};
     const baseQuality = extendedSignal.quality;
     const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
@@ -222,22 +211,21 @@ export const useVitalSignsProcessor = () => {
     for (const channel of OPTIMIZER_CHANNELS) {
       if (feedback[channel]) {
         optimizerManager.applyFeedback(channel, feedback[channel]);
-        console.log(`Feedback applied to channel ${channel}:`, feedback[channel]);
+        console.log(`[useVitalSignsProcessor] Feedback aplicado al canal "${channel}":`, feedback[channel]);
       }
     }
 
-    // --- Debug: Resultados de signos vitales --- 
     if (processedSignals.current % 30 === 0) {
-      console.log("Processed signals count: ", processedSignals.current);
-      console.log("Current signal log size: ", signalLog.current.length);
-      console.log("Results Snapshot:", result);
+      console.log("[useVitalSignsProcessor] Conteo señales procesadas:", processedSignals.current);
+      console.log("[useVitalSignsProcessor] Tamaño actual de signalLog:", signalLog.current.length);
+      console.log("[useVitalSignsProcessor] Snapshot de resultados:", result);
     }
 
-    // --- Log y visualización --- 
-    logSignalData(primaryOptimizedValue, result, processedSignals.current); 
+    // Logueo final y visualización
+    logSignalData(primaryOptimizedValue, result, processedSignals.current);
     if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);
-      console.log("Arrhythmia window added from", result.lastArrhythmiaData.timestamp - 500, "to", result.lastArrhythmiaData.timestamp + 500);
+      console.log(`[useVitalSignsProcessor] Ventana de arritmia añadida de ${result.lastArrhythmiaData.timestamp - 500} a ${result.lastArrhythmiaData.timestamp + 500}`);
     }
 
     return result;
@@ -309,4 +297,3 @@ export const useVitalSignsProcessor = () => {
     }
   };
 };
-
