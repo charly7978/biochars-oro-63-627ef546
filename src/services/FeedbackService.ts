@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -23,31 +24,58 @@ const loadSound = (url: string): HTMLAudioElement => {
   return soundCache[url];
 };
 
+// Asegurar que la vibración esté disponible
+const isVibrationSupported = (): boolean => {
+  return 'vibrate' in navigator;
+};
+
+// Verificar si estamos en un entorno de desarrollo o producción
+const isDevelopmentMode = (): boolean => {
+  return process.env.NODE_ENV === 'development' || window.location.hostname.includes('localhost');
+};
+
+// Instancia de servicio para evitar duplicidad
+let instance: typeof FeedbackService | null = null;
+
 export const FeedbackService = {
   // Retroalimentación háptica
-  vibrate: (pattern: number | number[] = 200) => {
-    if ('vibrate' in navigator) {
-      try {
-        navigator.vibrate(pattern);
-      } catch (error) {
-        console.error('Error al activar vibración:', error);
+  vibrate: (pattern: number | number[] = 200): boolean => {
+    if (!isVibrationSupported()) {
+      console.warn('Vibración no soportada en este dispositivo');
+      return false;
+    }
+    
+    try {
+      // En desarrollo, solo simulamos la vibración
+      if (isDevelopmentMode()) {
+        console.log('Simulando vibración:', pattern);
+        return true;
       }
+      
+      navigator.vibrate(pattern);
+      return true;
+    } catch (error) {
+      console.error('Error al activar vibración:', error);
+      return false;
+    }
+  },
+
+  // Retroalimentación háptica específica para latidos
+  vibrateHeartbeat: (isArrhythmia: boolean = false): boolean => {
+    if (isArrhythmia) {
+      return FeedbackService.vibrate([50, 100, 50, 100]);
+    } else {
+      return FeedbackService.vibrate(50);
     }
   },
 
   // Retroalimentación háptica específica para arritmias (NO USAR para latido, solo para alertas globales)
-  vibrateArrhythmia: () => {
-    if ('vibrate' in navigator) {
-      try {
-        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
-      } catch (error) {
-        console.error('Error al activar vibración de arritmia:', error);
-      }
-    }
+  vibrateArrhythmia: (): boolean => {
+    return FeedbackService.vibrate([100, 50, 100, 50, 100, 300, 100]);
   },
 
   // Retroalimentación sonora
-  playSound: (type: 'success' | 'error' | 'notification' | 'heartbeat' = 'notification') => {
+  playSound: (type: 'success' | 'error' | 'notification' | 'heartbeat' = 'notification'): void => {
     let soundUrl;
     
     switch (type) {
@@ -86,7 +114,7 @@ export const FeedbackService = {
     message: string, 
     type: 'default' | 'success' | 'error' | 'warning' = 'default',
     duration: number = 5000
-  ) => {
+  ): void => {
     toast({
       title,
       description: message,
@@ -96,22 +124,21 @@ export const FeedbackService = {
   },
 
   // Retroalimentación combinada para acciones exitosas
-  signalSuccess: (message: string) => {
-    // NO vibrar aquí para latido, solo para éxito general
+  signalSuccess: (message: string): void => {
     FeedbackService.vibrate([100, 50, 100]);
     FeedbackService.playSound('success');
     FeedbackService.showToast('¡Éxito!', message, 'success');
   },
 
   // Retroalimentación combinada para errores
-  signalError: (message: string) => {
+  signalError: (message: string): void => {
     FeedbackService.vibrate(500);
     FeedbackService.playSound('error');
     FeedbackService.showToast('Error', message, 'error');
   },
 
   // Retroalimentación para arritmia detectada (NO para latido normal)
-  signalArrhythmia: (count: number) => {
+  signalArrhythmia: (count: number): void => {
     FeedbackService.vibrateArrhythmia();
     FeedbackService.playSound('heartbeat');
     if (count === 1) {
@@ -131,8 +158,8 @@ export const FeedbackService = {
     }
   },
 
-  // Retroalimentación para medición completada (NO vibrar para cada latido)
-  signalMeasurementComplete: (hasGoodQuality: boolean) => {
+  // Retroalimentación para medición completada
+  signalMeasurementComplete: (hasGoodQuality: boolean): void => {
     if (hasGoodQuality) {
       FeedbackService.vibrate([100, 30, 100, 30, 100]);
       FeedbackService.playSound('success');
@@ -150,6 +177,14 @@ export const FeedbackService = {
         'warning'
       );
     }
+  },
+
+  // Obtener una instancia única del servicio
+  getInstance: () => {
+    if (!instance) {
+      instance = FeedbackService;
+    }
+    return instance;
   }
 };
 

@@ -1,4 +1,6 @@
+
 import { useEffect, useRef } from 'react';
+import FeedbackService from '@/services/FeedbackService';
 
 /**
  * Tipos de retroalimentación para latidos
@@ -60,6 +62,9 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     osc.start();
     // Mayor duración para arritmias
     osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+    
+    // Agregar vibración sincronizada
+    FeedbackService.vibrateHeartbeat(type === 'arrhythmia');
   };
 
   return trigger;

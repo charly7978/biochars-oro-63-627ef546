@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -10,6 +9,7 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
+import FeedbackService from "@/services/FeedbackService";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -117,6 +117,9 @@ const Index = () => {
       setShowResults(false);
       setHeartRate(0);
       
+      FeedbackService.vibrate(100);
+      FeedbackService.playSound('notification');
+      
       startProcessing();
       startHeartBeatMonitoring();
       
@@ -149,6 +152,8 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     
+    FeedbackService.signalMeasurementComplete(signalQuality >= 70);
+    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
@@ -173,6 +178,8 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
+    
+    FeedbackService.vibrate([50, 30, 50]);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);

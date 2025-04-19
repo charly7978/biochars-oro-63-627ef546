@@ -4,6 +4,7 @@ import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
+import FeedbackService from '@/services/FeedbackService';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -116,8 +117,6 @@ const PPGSignalMeter = memo(({
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
           }
-          
-          await playBeep(0.01);
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
@@ -143,12 +142,6 @@ const PPGSignalMeter = memo(({
         return false;
       }
 
-      // Vibración sincronizada con el beep
-      if ('vibrate' in navigator) {
-        navigator.vibrate(isArrhythmia ? [50, 100, 100] : 50);
-      }
-
-      // Beep sonoro (mantén triggerHeartbeatFeedback SOLO para beep)
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
 
       lastBeepTimeRef.current = now;
