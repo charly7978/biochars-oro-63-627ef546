@@ -29,11 +29,6 @@ const optimizerManager = new SignalOptimizerManager({
 antiRedundancyGuard.registerFile('src/modules/vital-signs/VitalSignsProcessor.ts');
 antiRedundancyGuard.registerTask('VitalSignsProcessorSingleton');
 
-// Definición local temporal si no está en el archivo importado
-interface ExtendedProcessedSignalForInput extends ProcessedSignal {
-  preBandpassValue?: number; // Hacer opcional por si acaso
-}
-
 /**
  * Main vital signs processor
  * Integrates different specialized processors to calculate health metrics
@@ -56,7 +51,6 @@ export class VitalSignsProcessor {
   // Estado interno
   private lastValidResult: VitalSignsResult | null = null;
   private ppgBuffer: number[] = []; // Buffer para el valor OPTIMIZADO principal
-  private ppgBufferPreBandpass: number[] = []; // Nuevo buffer
   private readonly BUFFER_SIZE = 150; // Tamaño de buffer para cálculos
 
   /**
@@ -81,69 +75,71 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Procesa la señal PRE-OPTIMIZADA para calcular todos los signos vitales.
+   * Procesa la señal optimizada para calcular todos los signos vitales.
    *
-   * @param processedSignal El objeto ProcessedSignal original (post-OpenCV/filtros base).
+   * @param primaryOptimizedValue El valor de la señal PPG principal, optimizado (ej. del canal 'general').
+   * @param contextSignal El objeto ProcessedSignal original (post-OpenCV/filtros base) para contexto.
    * @param rrData Datos de intervalo RR para análisis de arritmia.
+   * @param allOptimizedValues (Opcional) Todos los valores optimizados por canal.
    * @returns Resultados de los signos vitales.
    */
   public processSignal(
-    processedSignal: ExtendedProcessedSignalForInput, // Usar tipo extendido
-    rrData?: RRData
+    primaryOptimizedValue: number, // Volver a usar este
+    contextSignal: ProcessedSignal,
+    rrData?: RRData,
+    allOptimizedValues?: Record<string, number> // Mantener por si se usa para feedback
   ): VitalSignsResult {
-    if (!processedSignal || typeof processedSignal.filteredValue !== 'number' || typeof processedSignal.preBandpassValue !== 'number') {
-        console.warn("VitalSignsProcessor: Entrada inválida (falta filteredValue o preBandpassValue)");
+    if (!contextSignal || typeof primaryOptimizedValue !== 'number') {
+        console.warn("VitalSignsProcessor: Entrada inválida para processSignal");
         return this.lastValidResult ?? ResultFactory.createEmptyResults();
     }
 
-    const { quality, fingerDetected, filteredValue, preBandpassValue } = processedSignal;
+    const { quality, fingerDetected } = contextSignal;
 
     if (!fingerDetected || quality < 15) {
       return ResultFactory.createEmptyResults();
     }
 
-    // --- Buffering de AMBAS señales --- 
-    // Buffer para cálculos que necesitan pre-bandpass (SpO2, BP, Glucosa, etc.)
-    this.ppgBufferPreBandpass.push(preBandpassValue);
-    if (this.ppgBufferPreBandpass.length > this.BUFFER_SIZE) {
-      this.ppgBufferPreBandpass.shift();
+    // --- Buffering del valor OPTIMIZADO principal --- 
+    this.ppgBuffer.push(primaryOptimizedValue);
+    if (this.ppgBuffer.length > this.BUFFER_SIZE) {
+      this.ppgBuffer.shift();
     }
-    // Buffer original ahora puede usarse para post-bandpass si es necesario (ej. HR)
-    // this.ppgBuffer.push(filteredValue);
-    // if (this.ppgBuffer.length > this.BUFFER_SIZE) this.ppgBuffer.shift();
 
-    // No procesar si el buffer pre-bandpass no está lleno
-    if (this.ppgBufferPreBandpass.length < this.BUFFER_SIZE * 0.5) {
+    // No procesar si el buffer no está lleno
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.5) {
         return ResultFactory.createEmptyResults();
     }
 
-    // --- Cálculos específicos usando el buffer PRE-BANDPASS --- 
+    // --- Cálculos específicos usando el buffer OPTIMIZADO --- 
     let spo2 = 0;
     let pressure = { systolic: 0, diastolic: 0 };
     let glucose = 0;
     let lipids = { totalCholesterol: 0, triglycerides: 0 };
     let hemoglobin = 0;
     let hydration = 0;
-    // Arritmia sigue usando rrData, que implícitamente usa la señal post-bandpass (filtrada) para detección de picos
     let arrhythmiaResult: { arrhythmiaStatus: string; lastArrhythmiaData: any | null } = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
 
     try {
-      // Usar this.ppgBufferPreBandpass para estos cálculos
-      spo2 = this.spo2Processor.calculateSpO2(this.ppgBufferPreBandpass);
-      pressure = this.bpProcessor.calculateBloodPressure(this.ppgBufferPreBandpass);
-      // Arritmia: se asume que rrData se genera a partir de picos detectados en la señal filtrada (post-bandpass)
+      // *** LOG ANTES de SpO2 ***
+      // console.log(`VSProcessor: Calculando SpO2. Tamaño Buffer: ${this.ppgBuffer.length}. Primeros 5 valores: ${this.ppgBuffer.slice(0,5).map(v => v.toFixed(4)).join(', ')}`);
+      spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
+      // *** LOG DESPUÉS de SpO2 ***
+      // console.log(`VSProcessor: SpO2 calculado: ${spo2}`);
+      
+      pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-      glucose = this.glucoseProcessor.calculateGlucose(this.ppgBufferPreBandpass);
-      lipids = this.lipidProcessor.calculateLipids(this.ppgBufferPreBandpass);
+      glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
+      lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
       hemoglobin = this.calculateDefaultHemoglobin(spo2);
-      hydration = this.hydrationEstimator.analyze(this.ppgBufferPreBandpass);
+      hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
 
     } catch (error) {
       console.error("Error during vital sign calculation:", error);
       return this.lastValidResult ?? ResultFactory.createEmptyResults();
     }
 
-    // --- Confianza y Ensamblaje Final (sin cambios) --- 
+    // --- Confianza y Ensamblaje Final --- 
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -209,8 +205,7 @@ export class VitalSignsProcessor {
     this.hemoglobinEstimator.reset();
     this.hydrationEstimator.reset();
     this.signalValidator.resetFingerDetection();
-    this.ppgBufferPreBandpass = []; // Limpiar nuevo buffer
-    this.ppgBuffer = []; // Limpiar buffer original también (aunque no se use activamente)
+    this.ppgBuffer = []; // Limpiar buffer principal
     this.lastValidResult = null;
     return null;
   }

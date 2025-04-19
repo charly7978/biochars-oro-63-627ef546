@@ -71,25 +71,27 @@ export const useVitalSignsProcessor = () => {
 
     processedSignals.current += 1;
 
-    // --- Procesamiento con SignalOptimizerManager (Sigue usando rawValue) --- 
+    // --- Procesamiento con SignalOptimizerManager --- 
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
       optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
     }
     const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
 
-    // --- Llamada a VitalSignsProcessor (Pasando el objeto recibido) --- 
+    // --- Llamada a VitalSignsProcessor (Con la firma CORRECTA según VitalSignsProcessor.ts) --- 
     const result = processorRef.current.processSignal(
-      extendedSignal, // Pasar el objeto completo que contiene preBandpassValue
-      rrData
+      primaryOptimizedValue,
+      extendedSignal,
+      rrData,
+      optimizedValues
     );
 
     // Actualizar siempre el estado 
     setLastValidResults(result);
 
-    // --- Aplicar Feedback al Optimizador (Usa calidad del objeto base) --- 
+    // --- Aplicar Feedback al Optimizador --- 
     const feedback: Record<string, ChannelFeedback> = {};
-    const baseQuality = extendedSignal.quality; // Calidad del objeto base
+    const baseQuality = extendedSignal.quality;
     const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
     OPTIMIZER_CHANNELS.forEach(channel => {
       feedback[channel] = { metricType: channel, quality: baseQuality, confidence: baseConfidence };

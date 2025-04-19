@@ -18,50 +18,74 @@ export class SpO2Processor {
    * No simulation or reference values are used
    */
   public calculateSpO2(values: number[]): number {
+    // *** LOG: Entrada a calculateSpO2 ***
+    // console.log(`SpO2Processor: calculateSpO2 llamado. Tamaño entrada: ${values.length}`);
     if (values.length < 30) {
+      // console.log("SpO2Processor: Datos insuficientes");
       return this.getLastValidSpo2(1);
     }
 
     const dc = calculateDC(values);
-    if (dc === 0) {
+    // *** LOG: DC Calculado ***
+    // console.log(`  DC: ${dc.toFixed(4)}`);
+    if (dc === 0 || isNaN(dc)) {
+      // console.log("SpO2Processor: DC es cero o NaN");
       return this.getLastValidSpo2(1);
     }
 
     const ac = calculateAC(values);
+    // *** LOG: AC Calculado ***
+    // console.log(`  AC: ${ac.toFixed(4)}`);
+    if (isNaN(ac)) {
+        // console.log("SpO2Processor: AC es NaN");
+        return this.getLastValidSpo2(1);
+    }
     
     const perfusionIndex = ac / dc;
+    // *** LOG: Índice de Perfusión ***
+    // console.log(`  Perfusion Index: ${perfusionIndex.toFixed(4)}`);
     
-    if (perfusionIndex < 0.06) {
+    if (perfusionIndex < 0.02) { // Umbral más bajo para permitir cálculo
+      // console.log("SpO2Processor: Índice de perfusión bajo");
       return this.getLastValidSpo2(2);
     }
 
-    // Direct calculation from real signal characteristics
-    const R = (ac / dc);
+    const R = (ac / dc); // Mismo que perfusionIndex en esta implementación
+    // *** LOG: Ratio R ***
+    // console.log(`  Ratio (R): ${R.toFixed(4)}`);
     
-    let spO2 = Math.round(98 - (15 * R));
-    
-    // Adjust based on real perfusion quality
-    if (perfusionIndex > 0.15) {
-      spO2 = Math.min(98, spO2 + 1);
-    } else if (perfusionIndex < 0.08) {
-      spO2 = Math.max(0, spO2 - 1);
+    // Fórmula base (Asegurar que no genere NaN)
+    let spO2_raw = 105 - (25 * R); // Ejemplo de fórmula común (ajustar coeficientes)
+    if (isNaN(spO2_raw)) {
+        // console.log("SpO2Processor: spO2_raw es NaN");
+        return this.getLastValidSpo2(1);
     }
+    
+    // Limitar a rango fisiológico posible durante el cálculo
+    let spO2 = Math.max(70, Math.min(100, spO2_raw));
+    // console.log(`  SpO2 inicial (70-100): ${spO2.toFixed(1)}`);
 
-    spO2 = Math.min(98, spO2);
+    // Ajuste basado en perfusión (Mantener simple)
+    // spO2 = spO2 + (perfusionIndex - 0.1) * 10; // Ejemplo de ajuste
 
-    // Update buffer with real measurement
+    // Limitar nuevamente y redondear
+    spO2 = Math.round(Math.max(70, Math.min(100, spO2)));
+    // console.log(`  SpO2 después ajuste/redondeo: ${spO2}`);
+
     this.spo2Buffer.push(spO2);
     if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
       this.spo2Buffer.shift();
     }
 
-    // Calculate average for stability from real measurements
-    if (this.spo2Buffer.length > 0) {
+    let finalSpO2 = spO2; // Usar valor actual si el buffer es pequeño
+    if (this.spo2Buffer.length >= 3) { // Calcular promedio solo si hay suficientes valores
       const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      spO2 = Math.round(sum / this.spo2Buffer.length);
+      finalSpO2 = Math.round(sum / this.spo2Buffer.length);
     }
-
-    return spO2;
+    
+    // *** LOG: SpO2 Final ***
+    // console.log(`SpO2Processor: Devolviendo SpO2 final: ${finalSpO2}`);
+    return finalSpO2;
   }
   
   /**
@@ -71,9 +95,11 @@ export class SpO2Processor {
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
       const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      return Math.max(0, lastValid - decayAmount);
+      // console.log(`SpO2Processor: Devolviendo último válido con decay: ${Math.max(0, lastValid - decayAmount)} (desde ${lastValid})`);
+      return Math.max(70, lastValid - decayAmount); // Aplicar mínimo fisiológico aquí también
     }
-    return 0;
+    // console.log("SpO2Processor: Devolviendo 0 (sin valor válido previo)");
+    return 0; // Devolver 0 si no hay historial
   }
 
   /**
@@ -81,6 +107,7 @@ export class SpO2Processor {
    * Ensures all measurements start from zero
    */
   public reset(): void {
+    // console.log("SpO2Processor: Resetting buffer");
     this.spo2Buffer = [];
   }
 }
