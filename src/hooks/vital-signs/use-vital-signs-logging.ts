@@ -1,72 +1,53 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
-import { useRef } from 'react';
-import { updateSignalLog } from '../../utils/signalLogUtils';
+import { useCallback, useRef } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 
-export interface SignalLogEntry {
+interface SignalLog {
   timestamp: number;
   value: number;
   result: any;
 }
 
 /**
- * Hook for logging vital signs data
- * Used with real data only
+ * Hook para registro de señales vitales y depuración
  */
-export const useVitalSignsLogging = () => {
-  const signalLog = useRef<SignalLogEntry[]>([]);
+export const useSignalLogging = () => {
+  const signalLog = useRef<SignalLog[]>([]);
+  const MAX_LOG_LENGTH = 100;
   
   /**
-   * Update the signal log with new data
+   * Registrar una señal y su resultado
    */
-  const logSignalData = (
-    value: number, 
-    result: VitalSignsResult, 
-    processedSignalCount: number
-  ) => {
-    const currentTime = Date.now();
-    signalLog.current = updateSignalLog(
-      signalLog.current, 
-      currentTime, 
-      value, 
-      result, 
-      processedSignalCount
-    );
+  const logSignal = useCallback((value: number, result: VitalSignsResult): void => {
+    signalLog.current.push({
+      timestamp: Date.now(),
+      value,
+      result
+    });
     
-    // Log processed signals periodically
-    if (processedSignalCount % 100 === 0) {
-      console.log("useVitalSignsProcessor: Processing status with real data", {
-        processed: processedSignalCount,
-        pressure: result.pressure,
-        spo2: result.spo2,
-        glucose: result.glucose,
-        hasValidBP: result.pressure !== "--/--"
-      });
+    // Mantener el registro a un tamaño manejable
+    if (signalLog.current.length > MAX_LOG_LENGTH) {
+      signalLog.current.shift();
     }
-  };
+  }, []);
   
   /**
-   * Clear the signal log
+   * Obtener el registro de señales
    */
-  const clearLog = () => {
+  const getSignalLog = useCallback((): SignalLog[] => {
+    return [...signalLog.current];
+  }, []);
+  
+  /**
+   * Limpiar el registro
+   */
+  const clearLog = useCallback((): void => {
     signalLog.current = [];
-  };
-  
-  /**
-   * Get the current signal log
-   */
-  const getSignalLog = () => {
-    return signalLog.current.slice(-10);
-  };
+  }, []);
   
   return {
-    logSignalData,
-    clearLog,
+    logSignal,
     getSignalLog,
-    signalLog
+    clearLog
   };
 };
