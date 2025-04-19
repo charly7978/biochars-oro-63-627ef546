@@ -14,7 +14,7 @@ import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimi
 
 // Define the interface locally since it's not exported from the module
 interface SignalChannelOptimizerParams {
-  filterType: string;
+  filterType: 'sma' | 'ema' | 'kalman' | 'none';
   gain: number;
   filterWindow: number;
   emaAlpha: number;
