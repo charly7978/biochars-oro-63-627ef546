@@ -1,26 +1,9 @@
-
 import React, { useState } from 'react';
-import { Slider } from '@/components/ui/slider';
-import { 
-  Select,
-  SelectContent,
-  SelectItem, 
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
-
-// Define the interface locally since it's not exported from the module
-interface SignalChannelOptimizerParams {
-  filterType: 'sma' | 'ema' | 'kalman' | 'none';
-  gain: number;
-  filterWindow: number;
-  emaAlpha: number;
-  kalmanQ: number;
-  kalmanR: number;
-}
+import { Slider } from './ui/slider';
+import { Select } from './ui/select';
+import { Input } from './ui/input';
+import { Button } from './ui/button';
+import { SignalOptimizerManager, SignalChannelOptimizerParams } from '../modules/signal-optimizer/SignalOptimizerManager';
 
 interface SignalOptimizerControlProps {
   optimizerManager: SignalOptimizerManager;
@@ -73,14 +56,9 @@ export const SignalOptimizerControl: React.FC<SignalOptimizerControlProps> = ({ 
       <div className="mb-2">
         <label className="block mb-1">Tipo de Filtro:</label>
         <Select value={params.filterType} onValueChange={(v) => handleParamChange('filterType', v)}>
-          <SelectTrigger className="w-full">
-            <SelectValue placeholder="Seleccionar filtro" />
-          </SelectTrigger>
-          <SelectContent>
-            {filterTypes.map((ft) => (
-              <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>
-            ))}
-          </SelectContent>
+          {filterTypes.map((ft) => (
+            <Select.Item key={ft.value} value={ft.value}>{ft.label}</Select.Item>
+          ))}
         </Select>
       </div>
       <div className="mb-2">
@@ -114,4 +92,4 @@ export const SignalOptimizerControl: React.FC<SignalOptimizerControlProps> = ({ 
       <Button className="mt-2 w-full" onClick={handleApply}>Aplicar Cambios</Button>
     </div>
   );
-};
+}; 

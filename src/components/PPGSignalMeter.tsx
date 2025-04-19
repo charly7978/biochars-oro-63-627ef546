@@ -1,10 +1,8 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
-import { Fingerprint, AlertCircle, Settings2 } from 'lucide-react';
+import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { SignalOptimizerControl } from './SignalOptimizerControl';
-import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -31,13 +29,6 @@ interface PPGSignalMeterProps {
 interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
 }
-
-// Instancia global (o importar la que uses en tu app)
-const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
-});
 
 const PPGSignalMeter = memo(({ 
   value, 
@@ -72,7 +63,6 @@ const PPGSignalMeter = memo(({
   const lastBeepTimeRef = useRef<number>(0);
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const [showOptimizer, setShowOptimizer] = useState(false);
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -642,113 +632,67 @@ const PPGSignalMeter = memo(({
   const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
-          style={{
-            transform: 'translate3d(0,0,0)',
-            backfaceVisibility: 'hidden',
-            contain: 'paint layout size',
-            imageRendering: 'crisp-edges'
-          }}
-        />
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
+        style={{
+          transform: 'translate3d(0,0,0)',
+          backfaceVisibility: 'hidden',
+          contain: 'paint layout size',
+          imageRendering: 'crisp-edges'
+        }}
+      />
 
-        <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
-          <div className="flex items-center gap-2 ml-2">
-            <span className="text-lg font-bold text-black/80">PPG</span>
-            <div className="w-[180px]">
-              <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
-                <div
-                  className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                  style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
-                />
-              </div>
-              <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                    style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
-                {getQualityText(quality)}
-              </span>
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
+        <div className="flex items-center gap-2 ml-2">
+          <span className="text-lg font-bold text-black/80">PPG</span>
+          <div className="w-[180px]">
+            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+              <div
+                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
+                style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
+              />
             </div>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <Fingerprint
-              className={`h-8 w-8 transition-colors duration-300 ${
-                !displayFingerDetected ? 'text-gray-400' :
-                displayQuality > 65 ? 'text-green-500' :
-                displayQuality > 40 ? 'text-yellow-500' :
-                'text-red-500'
-              }`}
-              strokeWidth={1.5}
-            />
-            <span className="text-[8px] text-center font-medium text-black/80">
-              {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+              {getQualityText(quality)}
             </span>
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
-          <button 
-            onClick={onStartMeasurement}
-            className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-          >
-            INICIAR
-          </button>
-          <button 
-            onClick={handleReset}
-            className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-          >
-            RESET
-          </button>
+        <div className="flex flex-col items-center">
+          <Fingerprint
+            className={`h-8 w-8 transition-colors duration-300 ${
+              !displayFingerDetected ? 'text-gray-400' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
+              'text-red-500'
+            }`}
+            strokeWidth={1.5}
+          />
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+          </span>
         </div>
       </div>
 
-      {/* Botón flotante para mostrar el optimizador */}
-      <button
-        type="button"
-        aria-label="Ajustes de optimización de señal"
-        onClick={() => setShowOptimizer((v) => !v)}
-        style={{
-          position: 'absolute',
-          bottom: 18,
-          right: 18,
-          zIndex: 30,
-          background: 'rgba(30,30,40,0.7)',
-          border: 'none',
-          borderRadius: '50%',
-          width: 36,
-          height: 36,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
-          cursor: 'pointer',
-        }}
-      >
-        <Settings2 size={20} color="#fff" />
-      </button>
-      {/* Panel discreto, pequeño y flotante */}
-      {showOptimizer && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 60,
-            right: 18,
-            zIndex: 40,
-            background: 'rgba(24,24,32,0.97)',
-            borderRadius: 10,
-            boxShadow: '0 4px 24px rgba(0,0,0,0.22)',
-            padding: 8,
-            minWidth: 220,
-            maxWidth: 260,
-          }}
+      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
+        <button 
+          onClick={onStartMeasurement}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
-          <SignalOptimizerControl optimizerManager={optimizerManager} />
-        </div>
-      )}
+          INICIAR
+        </button>
+        <button 
+          onClick={handleReset}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          RESET
+        </button>
+      </div>
     </div>
   );
 });
