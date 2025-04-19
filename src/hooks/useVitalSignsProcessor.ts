@@ -63,27 +63,25 @@ export const useVitalSignsProcessor = () => {
 
     processedSignals.current += 1;
 
-    // --- Procesamiento con SignalOptimizerManager --- 
+    // --- Procesamiento con SignalOptimizerManager (Sigue corriendo en background) --- 
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
       optimizedValues[channel] = optimizerManager.process(channel, processedSignal.rawValue);
     }
     const primaryOptimizedValue = optimizedValues['general'] ?? processedSignal.filteredValue;
 
-    // --- Llamada a VitalSignsProcessor --- 
+    // --- Llamada a VitalSignsProcessor (Con la firma CORREGIDA) --- 
+    // Ahora solo pasamos la señal pre-optimizada y rrData
     const result = processorRef.current.processSignal(
-      primaryOptimizedValue,
-      processedSignal,
-      rrData,
-      optimizedValues
+      processedSignal, // Pasar el objeto completo con filteredValue
+      rrData
+      // No pasar primaryOptimizedValue ni allOptimizedValues
     );
 
-    // *** CORRECCIÓN: Actualizar siempre el estado ***
-    // Actualizar el estado SIEMPRE con el último resultado obtenido del procesador,
-    // sea válido, vacío o intermedio. La UI se encargará de mostrar "--" o 0 si es necesario.
+    // Actualizar siempre el estado 
     setLastValidResults(result);
 
-    // --- Aplicar Feedback al Optimizador (sin cambios) --- 
+    // --- Aplicar Feedback al Optimizador (Usa los resultados calculados y la calidad original) --- 
     const feedback: Record<string, ChannelFeedback> = {};
     const baseQuality = processedSignal.quality;
     const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
@@ -103,7 +101,8 @@ export const useVitalSignsProcessor = () => {
     }
 
     // --- Log y visualización (sin cambios) --- 
-    logSignalData(primaryOptimizedValue, result, processedSignals.current);
+    // Usamos primaryOptimizedValue para el log, ya que representa la salida del optimizador
+    logSignalData(primaryOptimizedValue, result, processedSignals.current); 
     if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);
     }

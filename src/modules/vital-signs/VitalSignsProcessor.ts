@@ -75,40 +75,42 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Procesa la señal PRE-OPTIMIZADA para calcular todos los signos vitales.
+   *
+   * @param processedSignal El objeto ProcessedSignal original (post-OpenCV/filtros base).
+   * @param rrData Datos de intervalo RR para análisis de arritmia.
+   * @returns Resultados de los signos vitales.
    */
   public processSignal(
-    primaryOptimizedValue: number,
-    contextSignal: ProcessedSignal,
-    rrData?: RRData,
-    allOptimizedValues?: Record<string, number>
+    processedSignal: ProcessedSignal,
+    rrData?: RRData
   ): VitalSignsResult {
-    if (!contextSignal || typeof primaryOptimizedValue !== 'number') {
-        console.warn("VitalSignsProcessor: Entrada inválida para processSignal");
+    // Validar entrada básica
+    if (!processedSignal || typeof processedSignal.filteredValue !== 'number') {
+        console.warn("VitalSignsProcessor: Entrada inválida para processSignal (processedSignal o filteredValue)");
         return this.lastValidResult ?? ResultFactory.createEmptyResults();
     }
 
-    const { quality, fingerDetected } = contextSignal;
+    // Usar calidad y detección de dedo del contexto
+    const { quality, fingerDetected, filteredValue } = processedSignal;
 
-    // Si no hay dedo o la calidad es muy baja, devolver último válido o vacío
-    if (!fingerDetected || quality < 15) { // ANTES: 20
-      // Devolver vacío en lugar del último válido para forzar reseteo visual si se pierde dedo/calidad
-      return ResultFactory.createEmptyResults(); 
+    // Si no hay dedo o la calidad es muy baja, devolver vacío
+    if (!fingerDetected || quality < 15) {
+      return ResultFactory.createEmptyResults();
     }
 
-    this.ppgBuffer.push(primaryOptimizedValue);
+    // --- Buffering del valor FILTRADO (NO OPTIMIZADO) --- 
+    this.ppgBuffer.push(filteredValue); // Usar filteredValue del input
     if (this.ppgBuffer.length > this.BUFFER_SIZE) {
       this.ppgBuffer.shift();
     }
 
     // No procesar si el buffer no está lleno
-    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.5) { // ANTES: 0.8
-        // Devolver vacío si el buffer no está suficientemente lleno
-        return ResultFactory.createEmptyResults(); 
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.5) {
+        return ResultFactory.createEmptyResults();
     }
 
-    // --- Cálculos específicos usando el buffer optimizado --- 
+    // --- Cálculos específicos usando el buffer con filteredValue --- 
     let spo2 = 0;
     let pressure = { systolic: 0, diastolic: 0 };
     let glucose = 0;
@@ -118,34 +120,21 @@ export class VitalSignsProcessor {
     let arrhythmiaResult: { arrhythmiaStatus: string; lastArrhythmiaData: any | null } = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
 
     try {
-      // SpO2 (Usa el buffer optimizado)
+      // Llamar a los sub-procesadores con this.ppgBuffer (que ahora contiene filteredValue)
       spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
-
-      // Blood Pressure (Usa el buffer optimizado)
       pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
-
-      // Arrhythmia (Usa rrData si está disponible)
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-
-      // Glucose (Usa el buffer optimizado)
       glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
-
-      // Lipids (Usa el buffer optimizado)
       lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
-
-      // Hemoglobin (Estimado a partir de SpO2)
       hemoglobin = this.calculateDefaultHemoglobin(spo2);
-
-      // Hydration (Usa el buffer optimizado)
       hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
 
     } catch (error) {
       console.error("Error during vital sign calculation:", error);
-      // Devolver último válido en caso de error en cálculos
       return this.lastValidResult ?? ResultFactory.createEmptyResults();
     }
 
-    // --- Confianza y Ensamblaje Final --- 
+    // --- Confianza y Ensamblaje Final (sin cambios en esta parte) --- 
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -153,24 +142,24 @@ export class VitalSignsProcessor {
       lipidsConfidence
     );
 
-    // Ensamblar resultado
     const finalResult = ResultFactory.createResult(
-      spo2,
-      `${pressure.systolic}/${pressure.diastolic}`,
+      Math.round(spo2),
+      `${Math.round(pressure.systolic)}/${Math.round(pressure.diastolic)}`,
       arrhythmiaResult.arrhythmiaStatus,
-      glucose,
-      lipids,
+      Math.round(glucose),
+      { 
+        totalCholesterol: Math.round(lipids.totalCholesterol),
+        triglycerides: Math.round(lipids.triglycerides)
+      },
       hemoglobin,
-      hydration,
+      Math.round(hydration),
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,
       arrhythmiaResult.lastArrhythmiaData
     );
 
-    // Actualizar último resultado válido
     this.lastValidResult = finalResult;
-
     return finalResult;
   }
 
