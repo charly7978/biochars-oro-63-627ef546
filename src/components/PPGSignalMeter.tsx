@@ -638,6 +638,18 @@ const PPGSignalMeter = memo(({
   useEffect(() => {
     if (isArrhythmia) {
       setShowArrhythmiaAlert(true);
+      // Marcar los últimos 2 segundos de puntos como arritmia
+      if (dataBufferRef.current) {
+        const now = Date.now();
+        const points = dataBufferRef.current.getPoints();
+        for (let i = points.length - 1; i >= 0; i--) {
+          if (now - points[i].time <= 2000) {
+            points[i].isArrhythmia = true;
+          } else {
+            break;
+          }
+        }
+      }
       const timeout = setTimeout(() => setShowArrhythmiaAlert(false), 2000);
       return () => clearTimeout(timeout);
     }
