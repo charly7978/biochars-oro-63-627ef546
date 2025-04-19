@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
-import { Slider } from './ui/slider';
-import { Select } from './ui/select';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Select, SelectItem } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { SignalOptimizerManager, SignalChannelOptimizerParams } from '../modules/signal-optimizer/SignalOptimizerManager';
 
 interface SignalOptimizerControlProps {
@@ -57,7 +58,7 @@ export const SignalOptimizerControl: React.FC<SignalOptimizerControlProps> = ({ 
         <label className="block mb-1">Tipo de Filtro:</label>
         <Select value={params.filterType} onValueChange={(v) => handleParamChange('filterType', v)}>
           {filterTypes.map((ft) => (
-            <Select.Item key={ft.value} value={ft.value}>{ft.label}</Select.Item>
+            <SelectItem key={ft.value} value={ft.value}>{ft.label}</SelectItem>
           ))}
         </Select>
       </div>
@@ -92,4 +93,4 @@ export const SignalOptimizerControl: React.FC<SignalOptimizerControlProps> = ({ 
       <Button className="mt-2 w-full" onClick={handleApply}>Aplicar Cambios</Button>
     </div>
   );
-}; 
+};
