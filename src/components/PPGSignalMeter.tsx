@@ -85,7 +85,7 @@ const PPGSignalMeter = memo(({
   const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 300;
+  const MIN_PEAK_DISTANCE_MS = 400;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
@@ -96,7 +96,7 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 300;
+  const MIN_BEEP_INTERVAL_MS = 400;
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
