@@ -213,8 +213,8 @@ export class IntelligentCalibrationSystem {
    * Valores de referencia por defecto - Todos inicializados a null
    */
   private getDefaultReferences(): ReferenceValues {
-    // No default reference values allowed, initialize all to null.
-    // Actual values must be loaded from storage or provided by the user.
+    // Return null for all reference values initially.
+    // They should be populated by loading the profile or user input.
     return {
       heartRate: null,
       spo2: null,
@@ -222,6 +222,7 @@ export class IntelligentCalibrationSystem {
       diastolic: null,
       glucose: null
     };
+    // Ensure the throw new Error line below is commented out or removed.
     // throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
   }
   
