@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,22 +11,23 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
  * Uses physiological characteristics of human finger (heartbeat patterns)
  */
 export const useSignalQualityDetector = () => {
-  // Buffer de señal para análisis (últimos 2-3 segundos)
+  // Buffer de señal para análisis (últimos 3 segundos)
   const signalBufferRef = useRef<number[]>([]);
   const lastQualityRef = useRef<number>(0);
   const fingerDetectionWindowRef = useRef<number>(0);
   const fingerDetectedRef = useRef<boolean>(false);
 
-  // Parámetros fisiológicos
+  // Parámetros fisiológicos ajustados para máxima robustez
   const SAMPLE_RATE = 30; // Hz
   const BUFFER_SIZE = SAMPLE_RATE * 3; // 3 segundos
-  const AMP_MIN = 0.01, AMP_MAX = 0.2;
-  const PERIODICITY_MIN = 0.2;
-  const STABILITY_MIN = 0.2;
-  const NOISE_MAX = 0.05;
-  const FLATLINE_STDDEV = 0.002;
-  const SATURATION_THRESH = 0.95;
-  const FINGER_CONFIRM_WINDOW = SAMPLE_RATE * 1.5; // 1.5 segundos
+  const AMP_MIN = 0.03; // Incrementado para evitar ruidos
+  const AMP_MAX = 0.25; // Límite superior razonable incrementado ligeramente
+  const PERIODICITY_MIN = 0.4; // Mayor umbral para periodicidad
+  const STABILITY_MIN = 0.4; // Mejor estabilidad mínima requerida
+  const NOISE_MAX = 0.03; // Umbral más estricto para ruido aceptable
+  const FLATLINE_STDDEV = 0.0015; // Más estricto para descartar aplanamiento
+  const SATURATION_THRESH = 0.92; // Menor saturación permitida
+  const FINGER_CONFIRM_WINDOW = SAMPLE_RATE * 2; // Confirmar en 2 segundos
 
   // API: detectWeakSignal
   const detectWeakSignal = (value: number): boolean => {
@@ -35,14 +37,14 @@ export const useSignalQualityDetector = () => {
     const buf = signalBufferRef.current;
     if (buf.length < SAMPLE_RATE) return true; // No hay suficiente señal
 
-    // Cálculos fisiológicos
+    // Cálculos fisiológicos rigurosos
     const amp = Math.max(...buf) - Math.min(...buf);
     const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
     const variance = buf.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buf.length;
     const stdDev = Math.sqrt(variance);
     const isFlat = stdDev < FLATLINE_STDDEV;
-    const isSaturated = buf.filter(v => Math.abs(v) > SATURATION_THRESH).length > buf.length * 0.2;
-    // Periodicidad (autocorrelación máxima en ventana fisiológica)
+    const isSaturated = buf.filter(v => Math.abs(v) > SATURATION_THRESH).length > buf.length * 0.15;
+    // Periodicidad (autocorrelación máxima en ventana fisiológica elevada)
     function autocorr(sig: number[], lag: number) {
       let sum = 0;
       for (let i = 0; i < sig.length - lag; i++) {
@@ -51,44 +53,44 @@ export const useSignalQualityDetector = () => {
       return sum / (sig.length - lag);
     }
     let periodicityScore = 0;
-    for (let lag = 8; lag <= 45; lag++) {
+    for (let lag = 10; lag <= 40; lag++) { // limitar lag a rango fisiológico habitual 0.75-3s aprox
       const ac = autocorr(buf, lag);
       if (ac > periodicityScore) periodicityScore = ac;
     }
     periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-    // Ruido: varianza de la derivada
+    // Ruido: varianza de la derivada, umbral más estricto
     const diffs = buf.slice(1).map((v, i) => v - buf[i]);
     const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
     const noiseScore = 1 - Math.min(1, noise / NOISE_MAX);
-    // Amplitud normalizada
+    // Amplitud normalizada estricta
     const ampScore = Math.max(0, Math.min(1, (amp - AMP_MIN) / (AMP_MAX - AMP_MIN)));
-    // Estabilidad (1 - coeficiente de variación)
+    // Estabilidad (1 - coeficiente de variación) más severo
     const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
-    // Penalizaciones
+    // Penalizaciones ajustadas para aplanado y saturación
     const flatPenalty = isFlat ? 0 : 1;
     const satPenalty = isSaturated ? 0 : 1;
-    // Calidad compuesta
+    // Calidad compuesta muy estricta
     let quality = (
-      0.3 * ampScore +
-      0.3 * periodicityScore +
-      0.2 * stabilityScore +
-      0.2 * noiseScore
+      0.35 * ampScore +
+      0.35 * periodicityScore +
+      0.15 * stabilityScore +
+      0.15 * noiseScore
     ) * flatPenalty * satPenalty;
-    // Suavizado temporal (EMA)
+    // Suavizado temporal EMA más fuerte
     if (!lastQualityRef.current) lastQualityRef.current = quality;
-    quality = 0.2 * quality + 0.8 * lastQualityRef.current;
+    quality = 0.1 * quality + 0.9 * lastQualityRef.current;
     lastQualityRef.current = quality;
     quality = Math.round(quality * 100);
 
-    // Finger detection robusta
+    // Detectar dedo robusto: umbrales seguros y ventana confirmación prolongada
     const fingerDetected = (
-      ampScore > 0.2 &&
+      ampScore > AMP_MIN &&
       periodicityScore > PERIODICITY_MIN &&
       stabilityScore > STABILITY_MIN &&
       !isFlat &&
       !isSaturated
     );
-    // Ventana de confirmación
+    // Ventana prolongada para evitar falsos positivos
     if (fingerDetected) {
       fingerDetectionWindowRef.current++;
       if (fingerDetectionWindowRef.current > FINGER_CONFIRM_WINDOW) fingerDetectedRef.current = true;
@@ -97,13 +99,13 @@ export const useSignalQualityDetector = () => {
       fingerDetectedRef.current = false;
     }
 
-    // Logs para depuración
+    // Logs para depuración aún más claros
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[SignalQualityDetector] amp:', ampScore.toFixed(2), 'per:', periodicityScore.toFixed(2), 'stab:', stabilityScore.toFixed(2), 'noise:', noiseScore.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'qual:', quality, 'finger:', fingerDetectedRef.current);
+      console.log('[SignalQualityDetector] amp:', ampScore.toFixed(3), 'per:', periodicityScore.toFixed(3), 'stab:', stabilityScore.toFixed(3), 'noise:', noiseScore.toFixed(3), 'flat:', isFlat, 'sat:', isSaturated, 'qual:', quality, 'finger:', fingerDetectedRef.current);
     }
 
     // Considerar señal débil si no hay dedo detectado o calidad baja
-    return !fingerDetectedRef.current || quality < 30;
+    return !fingerDetectedRef.current || quality < 40;
   };
 
   // API: isFingerDetected
