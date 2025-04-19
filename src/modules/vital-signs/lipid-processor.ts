@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -19,15 +18,15 @@ export class LipidProcessor {
    * Sin simulación, basado en características de la forma de onda PPG
    */
   public calculateLipids(ppgValues: number[]): { 
-    totalCholesterol: number; 
-    triglycerides: number;
+    totalCholesterol: number | null; 
+    triglycerides: number | null;
   } {
     // Verificar que haya suficientes datos para el análisis
     if (ppgValues.length < this.DEFAULT_BUFFER_SIZE * 0.5) {
       console.log("LipidProcessor: Datos insuficientes para análisis de lípidos");
       return {
-        totalCholesterol: this.lastTotalCholesterol,
-        triglycerides: this.lastTriglycerides
+        totalCholesterol: null,
+        triglycerides: null
       };
     }
     

@@ -84,8 +84,7 @@ class FingerDetectionService {
     this.validator.trackSignalForPatternDetection(filteredValue);
 
     // Ampliar el buffer de análisis a 120 muestras (~4 segundos)
-    const ANALYSIS_BUFFER_SIZE = 120;
-    const CONFIRM_WINDOW = 90; // 3 segundos a 30Hz
+    const ANALYSIS_BUFFER_SIZE = 120; // 4 segundos a 30Hz
     const recentSignals = this.signalHistory.slice(-ANALYSIS_BUFFER_SIZE);
     const amplitude = Math.max(...recentSignals) - Math.min(...recentSignals);
     const mean = recentSignals.reduce((sum, val) => sum + val, 0) / recentSignals.length;
@@ -96,8 +95,34 @@ class FingerDetectionService {
     const signalPower = mean * mean;
     const noisePower = variance;
     const snr = noisePower > 0 ? 10 * Math.log10(signalPower / noisePower) : 0;
-    const snrLow = snr < 7; // Más estricto: 7 dB mínimo
-    function autocorr(sig: number[], lag: number) {
+    const snrLow = snr < 10; // SNR mínimo 10dB
+    // Detección de picos fisiológicos
+    const peaks = [];
+    for (let i = 2; i < recentSignals.length - 2; i++) {
+      if (
+        recentSignals[i] > recentSignals[i-1] && recentSignals[i] > recentSignals[i-2] &&
+        recentSignals[i] > recentSignals[i+1] && recentSignals[i] > recentSignals[i+2] &&
+        recentSignals[i] - mean > 0.01
+      ) {
+        if (peaks.length === 0 || i - peaks[peaks.length-1] > 8) {
+          peaks.push(i);
+        }
+      }
+    }
+    // Intervalos entre picos
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i-1]);
+    }
+    const validIntervals = intervals.filter(iv => iv >= 8 && iv <= 45);
+    let cv = 1;
+    if (validIntervals.length >= 2) {
+      const avgIv = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+      const varIv = validIntervals.reduce((a, b) => a + Math.pow(b - avgIv, 2), 0) / validIntervals.length;
+      cv = Math.sqrt(varIv) / avgIv;
+    }
+    // Periodicidad (autocorrelación máxima en ventana fisiológica)
+    function autocorr(sig, lag) {
       let sum = 0;
       for (let i = 0; i < sig.length - lag; i++) {
         sum += (sig[i] - mean) * (sig[i + lag] - mean);
@@ -110,73 +135,64 @@ class FingerDetectionService {
       if (ac > periodicityScore) periodicityScore = ac;
     }
     periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-    const diffs = recentSignals.slice(1).map((v, i) => v - recentSignals[i]);
-    const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
-    const noiseScore = 1 - Math.min(1, noise / 0.04); // Más estricto
-    const ampScore = Math.max(0, Math.min(1, (amplitude - 0.015) / 0.18)); // Más estricto
-    const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
+    // Forma de onda fisiológica: subida/bajada
     let upTime = 0, downTime = 0;
     for (let i = 1; i < recentSignals.length; i++) {
       if (recentSignals[i] > recentSignals[i-1]) upTime++;
       else if (recentSignals[i] < recentSignals[i-1]) downTime++;
     }
     const upDownRatio = downTime > 0 ? upTime / downTime : 0;
-    const physiologicalShape = upDownRatio > 0.8 && upDownRatio < 1.2; // Más estricto
-    const flatPenalty = isFlat ? 0 : 1;
-    const satPenalty = isSaturated ? 0 : 1;
-    let quality = (
-      0.3 * ampScore +
-      0.3 * periodicityScore +
-      0.2 * stabilityScore +
-      0.2 * noiseScore
-    ) * flatPenalty * satPenalty;
-    if (typeof (this as any)._lastQuality === 'undefined') (this as any)._lastQuality = quality;
-    quality = 0.2 * quality + 0.8 * (this as any)._lastQuality;
-    (this as any)._lastQuality = quality;
-    quality = Math.round(quality * 100);
-    // Criterios fisiológicos robustos
+    const physiologicalShape = upDownRatio > 0.9 && upDownRatio < 1.1;
+    // Chequeo de saltos grandes
+    let hasJump = false;
+    for (let i = 1; i < recentSignals.length; i++) {
+      if (Math.abs(recentSignals[i] - recentSignals[i-1]) > 0.2) {
+        hasJump = true;
+        break;
+      }
+    }
+    // Criterios fisiológicos estrictos
     const allCriteria = (
-      ampScore > 0.45 &&
-      periodicityScore > 0.45 &&
-      stabilityScore > 0.45 &&
+      amplitude > 0.02 &&
       !isFlat &&
       !isSaturated &&
-      noiseScore > 0.8 &&
       !snrLow &&
+      periodicityScore > 0.5 &&
+      validIntervals.length >= 3 &&
+      cv < 0.15 &&
+      !hasJump &&
       physiologicalShape &&
       this.validator.isFingerDetected()
     );
-    // Ventana de confirmación continua: si falla cualquier criterio, reiniciar
     if (allCriteria) {
       this.fingerDetectionWindow++;
-      if (this.fingerDetectionWindow >= CONFIRM_WINDOW) {
+      if (this.fingerDetectionWindow >= ANALYSIS_BUFFER_SIZE) {
         this.fingerDetected = true;
       }
     } else {
       this.fingerDetectionWindow = 0;
       this.fingerDetected = false;
     }
-    // Chequeo de saltos grandes
-    if (recentSignals.length > 1 && Math.abs(recentSignals[recentSignals.length-2] - recentSignals[recentSignals.length-1]) > 0.2) {
-      this.fingerDetectionWindow = 0;
-      this.fingerDetected = false;
-    }
     // Guardar último resultado
     this._lastResult = {
       isFingerDetected: this.fingerDetected,
-      quality,
-      confidence: (ampScore * 0.3 + periodicityScore * 0.3 + stabilityScore * 0.2 + noiseScore * 0.2) * flatPenalty * satPenalty,
+      quality: 0,
+      confidence: 0,
       rhythmDetected: this.validator.isFingerDetected(),
       signalStrength: amplitude,
       lastUpdate: Date.now(),
       feedback: this.generateFeedback(
         allCriteria,
-        quality,
+        0,
         amplitude,
         this.validator.isFingerDetected(),
         snr,
         physiologicalShape,
-        noiseScore
+        periodicityScore,
+        cv,
+        hasJump,
+        isFlat,
+        isSaturated
       )
     };
     return this._lastResult;
@@ -213,28 +229,19 @@ class FingerDetectionService {
     );
   }
 
-  private generateFeedback(isFingerDetected: boolean, quality: number, signalStrength: number, rhythmDetected: boolean, snr?: number, physiologicalShape?: boolean, noiseScore?: number): string {
+  private generateFeedback(isFingerDetected: boolean, quality: number, signalStrength: number, rhythmDetected: boolean, snr?: number, physiologicalShape?: boolean, periodicityScore?: number, cv?: number, hasJump?: boolean, isFlat?: boolean, isSaturated?: boolean): string {
     if (!isFingerDetected) {
-      if (signalStrength < this.config.minSignalAmplitude) {
-        return "Señal muy débil - Asegure que su dedo cubra completamente la cámara";
-      }
-      if (!rhythmDetected) {
-        return "No se detecta ritmo cardíaco - Mantenga el dedo quieto";
-      }
-      if (quality < this.config.minQualityThreshold) {
-        return "Calidad de señal baja - Ajuste la posición del dedo";
-      }
-      if (snr !== undefined && snr < 7) {
-        return "Relación señal/ruido insuficiente - Evite movimiento y luz ambiental excesiva";
-      }
-      if (physiologicalShape === false) {
-        return "Forma de onda no fisiológica - Ajuste el dedo para mejor contacto";
-      }
-      if (noiseScore !== undefined && noiseScore < 0.8) {
-        return "Ruido excesivo en la señal - Mantenga el dedo firme y evite vibraciones";
-      }
+      if (signalStrength < 0.02) return "Amplitud insuficiente: coloque el dedo correctamente";
+      if (isFlat) return "Señal plana: sin variación fisiológica";
+      if (isSaturated) return "Saturación: ajuste la presión del dedo";
+      if (snr < 10) return "Relación señal/ruido insuficiente (SNR < 10dB)";
+      if (periodicityScore <= 0.5) return "No hay periodicidad fisiológica (no hay pulso claro)";
+      if (cv >= 0.15) return "Intervalos irregulares: ritmo no fisiológico";
+      if (hasJump) return "Saltos o artefactos detectados: mantenga el dedo firme";
+      if (!physiologicalShape) return "Forma de onda no fisiológica";
+      if (!rhythmDetected) return "No se detecta patrón rítmico consistente";
     }
-    return "Señal OK";
+    return "Señal fisiológica detectada";
   }
 
   private handleUserFeedback(isFingerDetected: boolean, quality: number, rhythmDetected: boolean): void {

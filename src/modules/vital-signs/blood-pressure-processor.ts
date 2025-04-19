@@ -131,8 +131,8 @@ export class BloodPressureProcessor {
    * Calcula presión sistólica basada en características de la señal real
    * Utiliza calibración del usuario para personalizar el modelo
    */
-  private calculateSystolic(amplitude: number, stiffnessIndex: number): number {
-    if (!this.userCalibration) return 120; // Valor por defecto solo si no hay calibración
+  private calculateSystolic(amplitude: number, stiffnessIndex: number): number | null {
+    if (!this.userCalibration) return null; // No hay calibración, no se puede calcular
     
     // Normalizadores para evitar efectos de escala
     const amplitudeNormalizer = 0.2;
