@@ -7,12 +7,18 @@ import { useRef } from 'react';
 import { updateSignalLog } from '../../utils/signalLogUtils';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 
+export interface SignalLogEntry {
+  timestamp: number;
+  value: number;
+  result: any;
+}
+
 /**
  * Hook for logging vital signs data
  * Used with real data only
  */
 export const useVitalSignsLogging = () => {
-  const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
+  const signalLog = useRef<SignalLogEntry[]>([]);
   
   /**
    * Update the signal log with new data

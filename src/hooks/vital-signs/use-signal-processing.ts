@@ -202,7 +202,8 @@ export const useSignalProcessing = () => {
       processedSignals: processedSignals.current,
       ppgBufferLength: ppgBuffer.current.length,
       arrhythmiaCounter,
-      processorActive: !!vitalSignsProcessor.current
+      processorActive: !!vitalSignsProcessor.current,
+      signalLog: [] // Añadimos signalLog vacío para cumplir con el tipo esperado
     };
   }, [arrhythmiaCounter]);
 
