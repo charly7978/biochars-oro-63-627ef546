@@ -15,6 +15,11 @@ import { ChannelFeedback, SignalChannelOptimizerParams } from '@/modules/signal-
 // Definir los canales que usará el optimizador
 const OPTIMIZER_CHANNELS = ['hr', 'spo2', 'bp', 'glucose', 'lipids', 'hydration', 'general'];
 
+// Definición local si no está en archivo importado
+interface ExtendedProcessedSignalForHook extends ProcessedSignal {
+  preBandpassValue?: number;
+}
+
 /**
  * Hook principal para el procesamiento de signos vitales.
  * Orquesta SignalOptimizerManager y VitalSignsProcessor.
@@ -60,30 +65,31 @@ export const useVitalSignsProcessor = () => {
       console.error("VitalSignsProcessor no inicializado.");
       return ResultFactory.createEmptyResults();
     }
+    
+    // Casting a tipo extendido para uso interno si es necesario
+    const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
 
     processedSignals.current += 1;
 
-    // --- Procesamiento con SignalOptimizerManager (Sigue corriendo en background) --- 
+    // --- Procesamiento con SignalOptimizerManager (Sigue usando rawValue) --- 
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
-      optimizedValues[channel] = optimizerManager.process(channel, processedSignal.rawValue);
+      optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
     }
-    const primaryOptimizedValue = optimizedValues['general'] ?? processedSignal.filteredValue;
+    const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
 
-    // --- Llamada a VitalSignsProcessor (Con la firma CORREGIDA) --- 
-    // Ahora solo pasamos la señal pre-optimizada y rrData
+    // --- Llamada a VitalSignsProcessor (Pasando el objeto recibido) --- 
     const result = processorRef.current.processSignal(
-      processedSignal, // Pasar el objeto completo con filteredValue
+      extendedSignal, // Pasar el objeto completo que contiene preBandpassValue
       rrData
-      // No pasar primaryOptimizedValue ni allOptimizedValues
     );
 
     // Actualizar siempre el estado 
     setLastValidResults(result);
 
-    // --- Aplicar Feedback al Optimizador (Usa los resultados calculados y la calidad original) --- 
+    // --- Aplicar Feedback al Optimizador (Usa calidad del objeto base) --- 
     const feedback: Record<string, ChannelFeedback> = {};
-    const baseQuality = processedSignal.quality;
+    const baseQuality = extendedSignal.quality; // Calidad del objeto base
     const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
     OPTIMIZER_CHANNELS.forEach(channel => {
       feedback[channel] = { metricType: channel, quality: baseQuality, confidence: baseConfidence };
@@ -100,8 +106,7 @@ export const useVitalSignsProcessor = () => {
         }
     }
 
-    // --- Log y visualización (sin cambios) --- 
-    // Usamos primaryOptimizedValue para el log, ya que representa la salida del optimizador
+    // --- Log y visualización --- 
     logSignalData(primaryOptimizedValue, result, processedSignals.current); 
     if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);

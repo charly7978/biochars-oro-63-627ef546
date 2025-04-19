@@ -14,6 +14,12 @@ import cv from '@techstark/opencv-js'; // Import OpenCV
 // Tipos para claridad, ajusta según tu definición exacta
 import { ProcessedSignal, ProcessingError } from '@/types/signal';
 
+// Ajustar la interfaz ProcessedSignal (idealmente en su propio archivo @/types/signal.d.ts)
+// pero lo añadimos aquí para referencia rápida del cambio necesario.
+interface ExtendedProcessedSignal extends ProcessedSignal {
+  preBandpassValue: number;
+}
+
 /**
  * Signal processor for real PPG signals
  * Implements filtering and analysis techniques on real data only
@@ -48,7 +54,7 @@ export class SignalProcessor extends BaseProcessor {
   private cvInitializing: boolean = false;
   
   constructor(
-    public onSignalReady?: (signal: ProcessedSignal) => void,
+    public onSignalReady?: (signal: ExtendedProcessedSignal) => void,
     public onError?: (error: ProcessingError | { code: string; message: string; timestamp: number; }) => void
   ) {
     super();
@@ -211,7 +217,8 @@ export class SignalProcessor extends BaseProcessor {
       return;
     }
 
-    let src: any = null; // Usar 'any' temporalmente por tipos OpenCV
+    let src: any = null;
+    let rgb: any = null; // Matriz intermedia para RGB
     let hsv: any = null;
     let mask: any = null;
     let contours: any = null;
@@ -220,20 +227,21 @@ export class SignalProcessor extends BaseProcessor {
     let maskedSrc: any = null;
     let rawValue = 0;
     let roiFound = false;
-    let roiRect = { x: 0, y: 0, width: imageData.width, height: imageData.height }; // Default a full frame
+    let roiRect = { x: 0, y: 0, width: imageData.width, height: imageData.height };
 
     try {
-      // Convertir ImageData a cv.Mat (RGBA)
       src = cv.matFromImageData(imageData);
+      rgb = new cv.Mat(); // Crear Mat para RGB
 
-      // Convertir a HSV
+      // Convertir RGBA a RGB y luego a HSV
+      cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB); // RGBA -> RGB
       hsv = new cv.Mat();
-      cv.cvtColor(src, hsv, cv.COLOR_RGBA2HSV);
+      cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV); // RGB -> HSV (CORREGIDO)
 
       // Crear máscara para tono de piel
       mask = new cv.Mat();
-      const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_LOWER.concat(0)); // Añadir alpha si es necesario
-      const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_UPPER.concat(255));
+      const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_LOWER);
+      const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_UPPER);
       cv.inRange(hsv, lower, upper, mask);
       lower.delete();
       upper.delete();
@@ -301,23 +309,26 @@ export class SignalProcessor extends BaseProcessor {
 
       // 1. Filtro Kalman (puede ayudar incluso con señal de ROI)
       const kalmanFiltered = this.kalmanFilter.filter(rawValue);
+      const preBandpassValue = kalmanFiltered;
 
       // 2. Filtro Pasa-Banda
       const bandpassFiltered = this.bandpassFilter.filter(kalmanFiltered);
+      const finalFilteredValue = bandpassFiltered;
 
       // 3. Calcular calidad (ahora basado en la señal del ROI procesada)
       // Se podría mejorar la calidad usando el área del ROI, estabilidad, etc.
-      this.quality.updateNoiseLevel(rawValue, bandpassFiltered); // Comparar raw (ROI) con filtrado
+      this.quality.updateNoiseLevel(rawValue, finalFilteredValue); // Comparar raw (ROI) con filtrado
       const currentQuality = roiFound ? this.quality.calculateSignalQuality(this.ppgValues) : 0; // Calidad 0 si no hay ROI
 
       // 4. Detectar dedo (basado en patrón y calidad)
       const fingerDetected = this.isFingerDetected() && roiFound; // Requiere ROI y patrón/calidad
 
       // 5. Preparar señal procesada para emitir
-      const processedSignal: ProcessedSignal = {
+      const processedSignal: ExtendedProcessedSignal = {
         timestamp: Date.now(),
         rawValue: rawValue,
-        filteredValue: bandpassFiltered,
+        preBandpassValue: preBandpassValue,
+        filteredValue: finalFilteredValue,
         quality: currentQuality,
         fingerDetected: fingerDetected,
         roi: roiRect, // Incluir la info del ROI
@@ -335,6 +346,7 @@ export class SignalProcessor extends BaseProcessor {
     } finally {
       // **MUY IMPORTANTE: Liberar todas las Mats creadas**
       src?.delete();
+      rgb?.delete();
       hsv?.delete();
       mask?.delete();
       contours?.delete();
