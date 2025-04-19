@@ -109,6 +109,19 @@ export const useSignalProcessing = () => {
   }, []);
 
   /**
+   * Apply blood pressure calibration to the processor
+   */
+  const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number) => {
+    if (!processorRef.current) {
+      console.error("useVitalSignsProcessor: Cannot calibrate - processor not initialized");
+      return;
+    }
+    
+    processorRef.current.applyBloodPressureCalibration(systolic, diastolic);
+    console.log("useVitalSignsProcessor: Blood pressure calibration applied", { systolic, diastolic });
+  }, []);
+
+  /**
    * Reset the processor
    * No simulations or reference values
    */
@@ -161,6 +174,7 @@ export const useSignalProcessing = () => {
     initializeProcessor,
     reset,
     fullReset,
+    applyBloodPressureCalibration,
     getArrhythmiaCounter,
     getDebugInfo,
     processorRef,

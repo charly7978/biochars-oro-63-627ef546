@@ -5,49 +5,80 @@
 
 /**
  * Encuentra picos y valles en una señal real
- * Modificado para representar correctamente los picos en la gráfica PPG
+ * Algoritmo mejorado para detectar correctamente los picos en la señal PPG
  */
 export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
   const peakIndices: number[] = [];
   const valleyIndices: number[] = [];
 
-  // Algoritmo para detección de picos y valles en datos reales
-  // Busca picos correctamente orientados (hacia arriba)
-  for (let i = 1; i < values.length - 1; i++) {
+  // Necesitamos al menos 3 puntos para detectar picos y valles
+  if (values.length < 3) {
+    return { peakIndices, valleyIndices };
+  }
+
+  // Calcular umbral adaptativo basado en la amplitud de la señal
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const amplitude = max - min;
+  const threshold = Math.max(0.01, amplitude * 0.05); // Mínimo 1% o 5% de la amplitud
+
+  // Algoritmo mejorado para detección de picos y valles en datos reales
+  for (let i = 2; i < values.length - 2; i++) {
     const v = values[i];
-    // Detección de picos (orientados hacia arriba)
-    if (
-      v >= values[i - 1] * 0.95 &&
-      v >= values[i + 1] * 0.95
-    ) {
-      const localMin = Math.min(values[i - 1], values[i + 1]);
-      if (v - localMin > 0.02) {
+    const prev1 = values[i - 1];
+    const prev2 = values[i - 2];
+    const next1 = values[i + 1];
+    const next2 = values[i + 2];
+    
+    // Detección de picos (mejorada)
+    if (v > prev1 && v > prev2 && v > next1 && v > next2) {
+      // Verificar que el pico sea significativo respecto a sus vecinos
+      const localMin = Math.min(prev1, prev2, next1, next2);
+      if (v - localMin > threshold) {
         peakIndices.push(i);
+        
+        // Registro detallado del pico detectado
+        console.log("Peak detected at index", i, "value:", v, "diff:", v - localMin);
       }
     }
-    // Detección de valles (orientados hacia abajo)
-    if (
-      v <= values[i - 1] * 1.05 &&
-      v <= values[i + 1] * 1.05
-    ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
-      if (localMax - v > 0.02) {
+    
+    // Detección de valles (mejorada)
+    if (v < prev1 && v < prev2 && v < next1 && v < next2) {
+      // Verificar que el valle sea significativo respecto a sus vecinos
+      const localMax = Math.max(prev1, prev2, next1, next2);
+      if (localMax - v > threshold) {
         valleyIndices.push(i);
       }
     }
   }
+  
+  // Registrar resultados de la detección
+  if (peakIndices.length > 0 || valleyIndices.length > 0) {
+    console.log("Peak/Valley detection results:", {
+      totalPeaks: peakIndices.length,
+      totalValleys: valleyIndices.length,
+      signalLength: values.length,
+      threshold
+    });
+  }
+  
   return { peakIndices, valleyIndices };
 }
 
 /**
  * Calcula la amplitud entre picos y valles de señales reales
+ * Implementación mejorada para detectar amplitud en señales de baja calidad
  */
 export function calculateAmplitude(
   values: number[],
-  peakIndices: number[],
-  valleyIndices: number[]
+  peakIndices: number[] = [],
+  valleyIndices: number[] = []
 ): number {
-  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
+  // Si no se proporcionan índices, calcular la amplitud general
+  if (peakIndices.length === 0 || valleyIndices.length === 0) {
+    if (values.length === 0) return 0;
+    return Math.max(...values) - Math.min(...values);
+  }
 
   const amps: number[] = [];
   
@@ -64,7 +95,7 @@ export function calculateAmplitude(
       }
     }
     
-    if (closestValleyIdx !== -1 && minDistance < 10) {
+    if (closestValleyIdx !== -1 && minDistance < 20) { // Aumentado de 10 a 20 para mayor sensibilidad
       const amp = values[peakIdx] - values[closestValleyIdx];
       if (amp > 0) {
         amps.push(amp);
@@ -72,8 +103,25 @@ export function calculateAmplitude(
     }
   }
   
-  if (amps.length === 0) return 0;
+  if (amps.length === 0) {
+    // Si no se encontraron amplitudes válidas, usar método alternativo
+    if (values.length > 0) {
+      // Ordenar valores y tomar diferencia entre percentiles
+      const sortedValues = [...values].sort((a, b) => a - b);
+      const p95Index = Math.floor(sortedValues.length * 0.95);
+      const p5Index = Math.floor(sortedValues.length * 0.05);
+      return sortedValues[p95Index] - sortedValues[p5Index];
+    }
+    return 0;
+  }
 
-  // Calcular la media con datos reales
-  return amps.reduce((a, b) => a + b, 0) / amps.length;
+  // Calcular la media con datos reales, excluyendo outliers
+  const sortedAmps = [...amps].sort((a, b) => a - b);
+  const validAmps = sortedAmps.slice(
+    Math.floor(sortedAmps.length * 0.1),
+    Math.ceil(sortedAmps.length * 0.9)
+  );
+  
+  if (validAmps.length === 0) return sortedAmps[Math.floor(sortedAmps.length / 2)] || 0;
+  return validAmps.reduce((a, b) => a + b, 0) / validAmps.length;
 }

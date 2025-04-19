@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -62,22 +63,14 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal
-    if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // Apply filtering to the real PPG signal
+    // Apply filtering to the real PPG signal first to maximize signal quality
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
-    // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+    // Check for near-zero signal
+    if (!this.signalValidator.isValidSignal(filtered)) {
+      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: filtered });
+      return ResultFactory.createEmptyResults();
+    }
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
@@ -90,10 +83,19 @@ export class VitalSignsProcessor {
     
     // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(ppgValues)) {
+      console.log("VitalSignsProcessor: Not enough data points yet", { count: ppgValues.length });
       return ResultFactory.createEmptyResults();
     }
     
-    // Verify real signal amplitude is sufficient
+    // Process arrhythmia data if available and valid
+    const arrhythmiaResult = rrData && 
+                           rrData.intervals && 
+                           rrData.intervals.length >= 3 && 
+                           rrData.intervals.every(i => i > 300 && i < 2000) ?
+                           this.arrhythmiaProcessor.processRRData(rrData) :
+                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+    
+    // Verify real signal amplitude is sufficient - reduced threshold for better sensitivity
     const signalMin = Math.min(...ppgValues.slice(-15));
     const signalMax = Math.max(...ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
@@ -165,6 +167,13 @@ export class VitalSignsProcessor {
       overallConfidence,
       arrhythmiaResult.lastArrhythmiaData
     );
+  }
+
+  /**
+   * Apply blood pressure calibration to the processor
+   */
+  public applyBloodPressureCalibration(systolic: number, diastolic: number): void {
+    this.bpProcessor.applyCalibration(systolic, diastolic);
   }
 
   /**

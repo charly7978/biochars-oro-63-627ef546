@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -39,7 +40,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullReset: fullResetProcessor,
     getArrhythmiaCounter,
     getDebugInfo,
-    processedSignals
+    processedSignals,
+    applyBloodPressureCalibration: applyBPCalibration
   } = useSignalProcessing();
   
   const { 
@@ -110,6 +112,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
       
+      // Store last valid result if this one has good data
+      if (result.pressure !== "--/--" && parseInt(result.pressure.split('/')[0]) > 0) {
+        setLastValidResults(result);
+      }
+      
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
@@ -131,6 +138,18 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         hemoglobin: 0,
         hydration: 0
       };
+    }
+  };
+
+  /**
+   * Apply calibration to blood pressure from user-provided values
+   */
+  const applyBloodPressureCalibration = (systolic: number, diastolic: number): void => {
+    if (systolic > 0 && diastolic > 0) {
+      console.log("useVitalSignsProcessor: Applying BP calibration", { systolic, diastolic });
+      applyBPCalibration(systolic, diastolic);
+    } else {
+      console.error("useVitalSignsProcessor: Invalid calibration values", { systolic, diastolic });
     }
   };
 
@@ -163,8 +182,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     processSignal,
     reset,
     fullReset,
+    applyBloodPressureCalibration,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    lastValidResults,
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
