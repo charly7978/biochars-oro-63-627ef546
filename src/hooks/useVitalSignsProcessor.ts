@@ -191,15 +191,16 @@ export const useVitalSignsProcessor = () => {
       optimizedValues
     );
 
+    // Ajuste: VitalSignsResult no tiene heartRate. Si quieres debug, muestra "arrhythmiaStatus" u otro disponible.
     console.log("VitalSignsProcessor results:", {
-      heartRate: result.heartRate,
+      // Removido heartRate por no existir en VitalSignsResult
       spo2: result.spo2,
       pressure: result.pressure,
+      arrhythmiaStatus: result.arrhythmiaStatus,
       glucose: result.glucose,
       lipids: result.lipids,
       hydration: result.hydration,
       hemoglobin: result.hemoglobin,
-      arrhythmiaStatus: result.arrhythmiaStatus,
     });
 
     // Actualizar siempre el estado 
@@ -228,7 +229,7 @@ export const useVitalSignsProcessor = () => {
     // --- Debug: Resultados de signos vitales --- 
     if (processedSignals.current % 30 === 0) {
       console.log("Processed signals count: ", processedSignals.current);
-      console.log("Current signal log size: ", signalLog.length);
+      console.log("Current signal log size: ", signalLog.current.length);
       console.log("Results Snapshot:", result);
     }
 
