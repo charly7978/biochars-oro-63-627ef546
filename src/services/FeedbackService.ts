@@ -35,11 +35,10 @@ export const FeedbackService = {
     }
   },
 
-  // Retroalimentación háptica específica para arritmias
+  // Retroalimentación háptica específica para arritmias (NO USAR para latido, solo para alertas globales)
   vibrateArrhythmia: () => {
     if ('vibrate' in navigator) {
       try {
-        // Patrón más distintivo para arritmias (triple pulso con pausa)
         navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
@@ -98,6 +97,7 @@ export const FeedbackService = {
 
   // Retroalimentación combinada para acciones exitosas
   signalSuccess: (message: string) => {
+    // NO vibrar aquí para latido, solo para éxito general
     FeedbackService.vibrate([100, 50, 100]);
     FeedbackService.playSound('success');
     FeedbackService.showToast('¡Éxito!', message, 'success');
@@ -110,7 +110,7 @@ export const FeedbackService = {
     FeedbackService.showToast('Error', message, 'error');
   },
 
-  // Retroalimentación para arritmia detectada
+  // Retroalimentación para arritmia detectada (NO para latido normal)
   signalArrhythmia: (count: number) => {
     FeedbackService.vibrateArrhythmia();
     FeedbackService.playSound('heartbeat');
@@ -131,7 +131,7 @@ export const FeedbackService = {
     }
   },
 
-  // Retroalimentación para medición completada
+  // Retroalimentación para medición completada (NO vibrar para cada latido)
   signalMeasurementComplete: (hasGoodQuality: boolean) => {
     if (hasGoodQuality) {
       FeedbackService.vibrate([100, 30, 100, 30, 100]);

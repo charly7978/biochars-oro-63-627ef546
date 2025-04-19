@@ -1,4 +1,3 @@
-
 import { useEffect, useRef } from 'react';
 
 /**
@@ -37,17 +36,6 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
    */
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
-
-    // Patrones de vibración
-    if ('vibrate' in navigator) {
-      if (type === 'normal') {
-        // Vibración simple para latido normal
-        navigator.vibrate(50);
-      } else if (type === 'arrhythmia') {
-        // Patrón de vibración distintivo para arritmia (pulso doble)
-        navigator.vibrate([50, 100, 100]);
-      }
-    }
 
     // Generar un bip con características según el tipo
     const ctx = audioCtxRef.current;
