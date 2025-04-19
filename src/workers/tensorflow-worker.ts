@@ -1,4 +1,3 @@
-
 /**
  * Web Worker para procesamiento con TensorFlow.js
  * Ejecuta inferencia de modelos en segundo plano
@@ -69,79 +68,14 @@ async function loadModel(modelType: string): Promise<tf.LayersModel> {
       return model;
     }
     
-    // Si no está en IndexedDB, crear modelo básico como fallback
-    console.log(`TensorFlow Worker: Creando modelo fallback para ${modelType}`);
-    const fallbackModel = createFallbackModel(modelType);
-    modelCache.set(modelType, fallbackModel);
-    return fallbackModel;
+    // Si no se encontró el modelo en IndexedDB, lanzar un error.
+    throw new Error(`Modelo ${modelType} no encontrado en IndexedDB y no se creará un fallback.`);
+
   } catch (error) {
     console.error(`TensorFlow Worker: Error cargando modelo ${modelType}:`, error);
+    // Re-throw the error to signal failure without fallback
     throw error;
   }
-}
-
-// Crear modelo fallback básico
-function createFallbackModel(modelType: string): tf.LayersModel {
-  let inputShape: [number, number] = [300, 1];
-  let outputUnits: number = 1;
-  
-  // Ajustar según tipo de modelo
-  switch (modelType) {
-    case 'heartRate':
-      inputShape = [300, 1];
-      outputUnits = 1;
-      break;
-    case 'spo2':
-      inputShape = [200, 1];
-      outputUnits = 1;
-      break;
-    case 'arrhythmia':
-      inputShape = [500, 1];
-      outputUnits = 2;
-      break;
-    default:
-      inputShape = [300, 1];
-      outputUnits = 1;
-  }
-  
-  // Crear modelo simple
-  const input = tf.input({shape: inputShape});
-  
-  let x = tf.layers.conv1d({
-    filters: 16, 
-    kernelSize: 5,
-    padding: 'same',
-    activation: 'relu'
-  }).apply(input);
-  
-  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
-  
-  x = tf.layers.conv1d({
-    filters: 32, 
-    kernelSize: 3,
-    padding: 'same',
-    activation: 'relu'
-  }).apply(x);
-  
-  x = tf.layers.maxPooling1d({poolSize: 2}).apply(x);
-  
-  x = tf.layers.flatten().apply(x);
-  x = tf.layers.dense({units: 64, activation: 'relu'}).apply(x);
-  x = tf.layers.dropout({rate: 0.3}).apply(x);
-  
-  const output = tf.layers.dense({
-    units: outputUnits,
-    activation: outputUnits > 1 ? 'softmax' : 'linear'
-  }).apply(x);
-  
-  const model = tf.model({inputs: input, outputs: output as tf.SymbolicTensor});
-  
-  model.compile({
-    optimizer: 'adam',
-    loss: outputUnits > 1 ? 'categoricalCrossentropy' : 'meanSquaredError'
-  });
-  
-  return model;
 }
 
 // Realizar predicción
