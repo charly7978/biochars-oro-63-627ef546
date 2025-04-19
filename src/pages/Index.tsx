@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -368,7 +367,7 @@ const Index = () => {
           <div className="flex-1">
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
-              quality={lastSignal?.quality || 0}
+              quality={signalQuality}
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
@@ -385,15 +384,16 @@ const Index = () => {
               <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
+                  value={String(heartRate) || "--"}
                   unit="BPM"
                   highlighted={showResults}
                   compact={false}
                   icon={<ActivitySquare className="h-4 w-4 text-red-500" />}
                 />
+                
                 <VitalSign 
                   label="SPO2"
-                  value={vitalSigns.spo2 || "--"}
+                  value={String(vitalSigns.spo2) || "--"}
                   unit="%"
                   highlighted={showResults}
                   compact={false}
@@ -408,13 +408,14 @@ const Index = () => {
                   compact={false}
                   icon={<Zap className="h-4 w-4 text-yellow-500" />}
                 />
+                
                 <VitalSign 
                   label="HIDRATACIÓN"
-                  value={vitalSigns.hydration || "--"}
+                  value={String(vitalSigns.hydration) || "--"}
                   unit="%"
                   highlighted={showResults}
-                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
                   compact={false}
+                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
                 />
               </div>
               <VitalSign 
@@ -460,14 +461,14 @@ const Index = () => {
             <div className="w-1/2">
               <MonitorButton 
                 isMonitoring={isMonitoring} 
-                onToggle={handleToggleMonitoring} 
+                onToggle={handleToggleMonitoring}
                 variant="monitor"
               />
             </div>
             <div className="w-1/2">
               <MonitorButton 
-                isMonitoring={isMonitoring} 
-                onToggle={handleReset} 
+                isMonitoring={isMonitoring}
+                onToggle={handleReset}
                 variant="reset"
               />
             </div>
