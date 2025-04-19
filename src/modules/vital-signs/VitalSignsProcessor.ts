@@ -94,6 +94,24 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // LIMPIEZA DE ARTEFACTOS Y OUTLIERS ANTES DE CUALQUIER MÉTRICA
+    function cleanSignal(values: number[]): number[] {
+      if (values.length < 10) return values;
+      // Filtro de mediana
+      const median = (arr: number[]) => {
+        const sorted = [...arr].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      };
+      const med = median(values);
+      // Desviación estándar
+      const std = Math.sqrt(values.reduce((sum, v) => sum + Math.pow(v - med, 2), 0) / values.length);
+      // Eliminar valores fuera de 3*std
+      return values.filter(v => Math.abs(v - med) <= 3 * std);
+    }
+    // Limpiar ppgValues ANTES de cada cálculo
+    const cleanedPPG = cleanSignal(ppgValues);
+    
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
@@ -103,20 +121,20 @@ export class VitalSignsProcessor {
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Verify real signal amplitude is sufficient - reduced threshold for better sensitivity
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
+    const signalMin = Math.min(...cleanedPPG.slice(-15));
+    const signalMax = Math.max(...cleanedPPG.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+    if (!this.signalValidator.hasValidAmplitude(cleanedPPG)) {
+      this.signalValidator.logValidationResults(false, amplitude, cleanedPPG);
       return ResultFactory.createEmptyResults();
     }
     
     // Calcular calidad de señal real (0-100)
-    const quality = this.signalProcessor['quality'].calculateSignalQuality(ppgValues) * 100;
+    const quality = this.signalProcessor['quality'].calculateSignalQuality(cleanedPPG) * 100;
     
     // Calculate SpO2 usando ambos canales (red, ir)
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
+    const spo2 = Math.round(this.spo2Processor.calculateSpO2(cleanedPPG.slice(-45)));
     // No existe getConfidence en SpO2Processor, usamos calidad real
     const spo2Confidence = quality / 100;
     optimizerManager.applyFeedback('red', {
@@ -131,7 +149,7 @@ export class VitalSignsProcessor {
     });
     
     // Calculate blood pressure usando canal relevante (ej: red)
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    const bp = this.bpProcessor.calculateBloodPressure(cleanedPPG.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : "--/--";
@@ -144,7 +162,7 @@ export class VitalSignsProcessor {
     });
     
     // Calculate glucose
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
+    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(cleanedPPG));
     // No existe getConfidence en GlucoseProcessor, usamos calidad real
     const glucoseConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {
@@ -159,7 +177,7 @@ export class VitalSignsProcessor {
     });
     
     // Calculate lipids
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    const lipids = this.lipidProcessor.calculateLipids(cleanedPPG);
     // LipidProcessor sí tiene getConfidence
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     optimizerManager.applyFeedback('red', {
@@ -174,7 +192,7 @@ export class VitalSignsProcessor {
     });
     
     // Calculate hydration
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    const hydration = Math.round(this.hydrationEstimator.analyze(cleanedPPG));
     // No existe getConfidence en HydrationEstimator, usamos calidad real
     const hydrationConfidence = quality / 100;
     optimizerManager.applyFeedback('red', {

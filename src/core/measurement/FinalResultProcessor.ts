@@ -1,4 +1,3 @@
-
 /**
  * Procesador de resultados finales para mediciones vitales
  * 
@@ -191,20 +190,18 @@ export class FinalResultProcessor {
   ): { value: number, confidence: number, method: string } {
     // Coeficiente de variación (normalizado)
     const cv = stats.stdDev / (stats.mean || 1);
-    
     // Si hay alta variabilidad, preferir la mediana (más robusta a outliers)
     if (cv > 0.15) {
       return {
         value: this.applyRangeConstraints(type, stats.median),
-        confidence: 0.7 + (0.2 * (1 - Math.min(1, cv))),
+        confidence: Math.max(0.5, 1 - cv), // Solo basado en variabilidad real
         method: "median"
       };
     }
-    
     // Si hay baja variabilidad, preferir promedio ponderado (más precisión)
     return {
       value: this.applyRangeConstraints(type, stats.weightedMean),
-      confidence: 0.8 + (0.15 * (1 - Math.min(1, cv))),
+      confidence: Math.max(0.5, 1 - cv), // Solo basado en variabilidad real
       method: "weighted_mean"
     };
   }
@@ -235,15 +232,8 @@ export class FinalResultProcessor {
    * Obtiene un valor por defecto para cada tipo de medición
    */
   private getDefaultValue(type: string): number {
-    switch (type) {
-      case 'heartRate': return 75;
-      case 'spo2': return 97;
-      case 'systolic': return 120;
-      case 'diastolic': return 80;
-      case 'glucose': return 100;
-      case 'hemoglobin': return 14;
-      default: return 0;
-    }
+    // Prohibido: No se permiten valores por defecto ni simulados
+    return 0;
   }
   
   /**

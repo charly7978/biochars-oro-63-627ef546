@@ -25,7 +25,25 @@ export class SignalOptimizerManager {
   /** Aplica feedback a un canal específico */
   public applyFeedback(channel: string, feedback: ChannelFeedback): void {
     if (!this.channelOptimizers.has(channel)) return;
-    this.channelOptimizers.get(channel)!.applyFeedback(feedback);
+    // Ajuste automático de parámetros según confianza
+    const optimizer = this.channelOptimizers.get(channel)!;
+    const currentParams = optimizer.getParams();
+    if (feedback.confidence < 0.6) {
+      // Ganancia máxima 4.0
+      optimizer.setParams({ gain: Math.min(4.0, (currentParams.gain || 1.0) + 0.15) });
+      // Cambiar a filtro más robusto si no está en 'kalman'
+      if (currentParams.filterType !== 'kalman') {
+        optimizer.setParams({ filterType: 'kalman' });
+      }
+    } else if (feedback.confidence > 0.9) {
+      // Ganancia mínima 1.0
+      optimizer.setParams({ gain: Math.max(1.0, (currentParams.gain || 1.0) - 0.1) });
+      // Si la confianza es muy alta, se puede usar un filtro más rápido
+      if (currentParams.filterType !== 'sma') {
+        optimizer.setParams({ filterType: 'sma' });
+      }
+    }
+    optimizer.applyFeedback(feedback);
   }
 
   /** Permite exponer los parámetros actuales de un canal para UI/manual */
@@ -69,4 +87,6 @@ export class SignalOptimizerManager {
     if (!this.channelOptimizers.has(channel)) return;
     this.channelOptimizers.get(channel)!.reset();
   }
-} 
+}
+
+export type { SignalChannelOptimizerParams };

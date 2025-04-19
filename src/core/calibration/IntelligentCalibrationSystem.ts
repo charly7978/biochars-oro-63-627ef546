@@ -213,13 +213,8 @@ export class IntelligentCalibrationSystem {
    * Valores de referencia por defecto
    */
   private getDefaultReferences(): ReferenceValues {
-    return {
-      heartRate: 75, // BPM
-      spo2: 97,     // %
-      systolic: 120, // mmHg
-      diastolic: 80, // mmHg
-      glucose: 100   // mg/dL
-    };
+    // Prohibido: No se permiten valores de referencia por defecto. Use solo datos reales.
+    throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
   }
   
   /**
@@ -499,8 +494,7 @@ export class IntelligentCalibrationSystem {
     this.progress.glucose = 0.1;
     
     console.log('Fase de línea base iniciada');
-    // El avance de la fase debe realizarse solo con datos reales, no simulación
-    // El usuario debe llamar explícitamente a la siguiente fase cuando corresponda
+    // El avance de la fase debe realizarse solo con datos reales
   }
   
   /**
@@ -514,8 +508,7 @@ export class IntelligentCalibrationSystem {
     this.progress.glucose = 0.4;
     
     console.log('Fase de aprendizaje iniciada');
-    // El avance de la fase debe realizarse solo con datos reales, no simulación
-    // El usuario debe llamar explícitamente a la siguiente fase cuando corresponda
+    // El avance de la fase debe realizarse solo con datos reales
   }
   
   /**
@@ -529,8 +522,7 @@ export class IntelligentCalibrationSystem {
     this.progress.glucose = 0.7;
     
     console.log('Fase de validación iniciada');
-    // El avance de la fase debe realizarse solo con datos reales, no simulación
-    // El usuario debe llamar explícitamente a la siguiente fase cuando corresponda
+    // El avance de la fase debe realizarse solo con datos reales
   }
   
   /**

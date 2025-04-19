@@ -128,7 +128,8 @@ export class CrossValidationSystem {
     metric: string, 
     value: number, 
     signal: number[], 
-    quality: number
+    quality: number,
+    contextMetrics?: Record<string, number> // NUEVO: métricas adicionales para coherencia fisiológica
   ): ValidationResult {
     if (!this.config.enabled) {
       return {
@@ -154,9 +155,25 @@ export class CrossValidationSystem {
       this.calculateConsensus(metric, value, alternativeValues, forceAlternatives);
     
     // Generar recomendaciones
-    const recommendations = this.generateRecommendations(
+    let recommendations = this.generateRecommendations(
       metric, value, consensusValue, confidence, divergenceScore, quality
     );
+    
+    // SISTEMA DE VETO FISIOLÓGICO
+    let vetoed = false;
+    if (contextMetrics) {
+      // Ejemplo de reglas fisiológicas simples
+      const hr = contextMetrics['heartRate'];
+      const spo2 = contextMetrics['spo2'];
+      const sys = contextMetrics['systolic'] || contextMetrics['bloodPressure'];
+      if (
+        (typeof sys === 'number' && sys > 180 && typeof spo2 === 'number' && spo2 < 90 && typeof hr === 'number' && hr < 100) ||
+        (typeof spo2 === 'number' && spo2 < 85 && typeof hr === 'number' && hr < 60)
+      ) {
+        recommendations.push('VETO: Resultados fisiológicamente incoherentes. Medición descartada automáticamente.');
+        vetoed = true;
+      }
+    }
     
     // Determinar si se usó un valor alternativo
     const usedAlternativeModel = Math.abs(consensusValue - value) / value > 0.01;
@@ -167,7 +184,7 @@ export class CrossValidationSystem {
       primaryValue: value,
       alternativeValues: alternativeValues.map(v => v.value),
       confidence,
-      consensusValue,
+      consensusValue: vetoed ? 0 : consensusValue,
       divergenceScore,
       recommendations,
       usedAlternativeModel
@@ -569,3 +586,54 @@ export class CrossValidationSystem {
 export function getCrossValidation(): CrossValidationSystem {
   return CrossValidationSystem.getInstance();
 }
+
+/**
+ * Escudo protector global contra duplicidad y simulación
+ */
+class AntiRedundancyGuard {
+  private static instance: AntiRedundancyGuard;
+  private executedTasks: Set<string> = new Set();
+  private registeredFiles: Set<string> = new Set();
+
+  private constructor() {}
+
+  public static getInstance(): AntiRedundancyGuard {
+    if (!AntiRedundancyGuard.instance) {
+      AntiRedundancyGuard.instance = new AntiRedundancyGuard();
+    }
+    return AntiRedundancyGuard.instance;
+  }
+
+  /**
+   * Registra una tarea por ID única. Si ya existe, lanza error y bloquea ejecución.
+   */
+  public registerTask(taskId: string): void {
+    if (this.executedTasks.has(taskId)) {
+      throw new Error(`Tarea duplicada o redundante detectada: ${taskId}`);
+    }
+    this.executedTasks.add(taskId);
+  }
+
+  /**
+   * Registra un archivo por nombre/ruta. Si ya existe, lanza error y bloquea duplicidad.
+   */
+  public registerFile(filePath: string): void {
+    if (this.registeredFiles.has(filePath)) {
+      throw new Error(`Archivo duplicado detectado: ${filePath}`);
+    }
+    this.registeredFiles.add(filePath);
+  }
+
+  /**
+   * Limpia el registro (para pruebas o reinicio global)
+   */
+  public reset(): void {
+    this.executedTasks.clear();
+    this.registeredFiles.clear();
+  }
+}
+
+// Exportar el guard global para uso en todo el sistema
+export const antiRedundancyGuard = AntiRedundancyGuard.getInstance();
+// Ejemplo de registro de este archivo en el guard
+antiRedundancyGuard.registerFile('src/core/validation/CrossValidationSystem.ts');
