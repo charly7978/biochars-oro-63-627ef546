@@ -1,3 +1,4 @@
+
 /**
  * VitalSignIntegrator
  * 
@@ -103,21 +104,23 @@ export class VitalSignIntegrator {
     // Fix: getCalibrationState() before use, avoid testing void
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
 
-    // Defensive check to ensure calibrationState is an object with phase property
-    const hasPhase = calibrationState !== undefined && calibrationState !== null && typeof calibrationState === 'object' && 'phase' in calibrationState;
-
-    if (hasPhase && calibrationState.phase === 'active') {
-      Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
-        const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
-        if (calibrationFactor !== 1.0) {
-          this.signalProcessor.provideFeedback(channelName, {
-            source: 'calibration',
-            timestamp: currentTime,
-            calibrationFactor,
-            confidenceScore: 0.9
-          });
-        }
-      });
+    // Defensive check: ensure calibrationState is not null and has phase property
+    if (calibrationState !== null && typeof calibrationState === 'object' && 'phase' in calibrationState) {
+      // Typescript now knows calibrationState is object with property phase
+      const castedState = calibrationState as { phase: string };
+      if (castedState.phase === 'active') {
+        Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
+          const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
+          if (calibrationFactor !== 1.0) {
+            this.signalProcessor.provideFeedback(channelName, {
+              source: 'calibration',
+              timestamp: currentTime,
+              calibrationFactor,
+              confidenceScore: 0.9
+            });
+          }
+        });
+      }
     }
   }
   
@@ -241,3 +244,4 @@ export class VitalSignIntegrator {
     }
   }
 }
+
