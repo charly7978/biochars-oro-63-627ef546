@@ -871,3 +871,15 @@ export class IntelligentCalibrationSystem {
           diastolic_reference: this.userProfile.referenceValues.diastolic,
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
+        });
+        
+      if (error) {
+        console.error('Error al guardar perfil en Supabase:', error);
+      } else {
+        console.log('Perfil de calibración guardado correctamente en Supabase');
+      }
+    } catch (error) {
+      console.error('Error al guardar perfil de calibración:', error);
+    }
+  }
+}
