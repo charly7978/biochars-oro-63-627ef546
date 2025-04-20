@@ -16,7 +16,6 @@ export class ArrhythmiaProcessor {
   private readonly MIN_INTERVAL_MS = 500; // Reducido para detectar FC más altas
   private readonly MAX_INTERVAL_MS = 1500;
   private readonly MIN_VARIATION_PERCENT = 20; // Antes 60, ahora 20 para pruebas
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 15000; // Reducido para detectar más arritmias
   
   // State
   private rrIntervals: number[] = [];
@@ -127,20 +126,14 @@ export class ArrhythmiaProcessor {
     }
     
     // Check if arrhythmia is confirmed with real data
-    const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
-    const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
-    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
-    
-    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia) {
+    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD) {
       this.arrhythmiaCount++;
       this.arrhythmiaDetected = true;
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
-      
       console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA en datos reales", {
         contadorArritmias: this.arrhythmiaCount,
-        tiempoDesdeUltima: timeSinceLastArrhythmia,
         timestamp: currentTime
       });
     }
