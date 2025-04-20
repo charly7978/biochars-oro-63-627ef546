@@ -31,7 +31,7 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const measurementTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const measurementTimerRef = useRef<number | null>(null);
   const measurementStartTimeRef = useRef<number | null>(null);
   const lastDiagnosticLogTime = useRef<number>(0);
   const minimumMeasurementTime = 10; // Segundos mínimos antes de mostrar resultados
@@ -40,7 +40,7 @@ const Index = () => {
   const [lastArrhythmiaData, setLastArrhythmiaData] = useState<any>(null);
   const [lastArrhythmiaStatus, setLastArrhythmiaStatus] = useState<string>("--");
   
-  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  const { startProcessing, stopProcessing, lastSignal, processFrame, framesProcessed } = useSignalProcessor();
   const {
     heartBeatResult,
     isProcessing: isHeartProcessing,
@@ -95,44 +95,52 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      const minQualityThreshold = 35; // Umbral de calidad mínimo para procesar HR
       
       setSignalQuality(lastSignal.quality);
       
+      // Procesar HeartBeat solo si el dedo está detectado y la calidad es suficiente
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        // La señal ya se envió a HeartBeatProcessor dentro de useSignalProcessor
+        // Ahora leemos el resultado actualizado del hook useHeartBeatProcessor
+        const currentHeartRate = heartBeatResult.bpm;
+        const currentConfidence = heartBeatResult.confidence;
         
-        if (heartBeatResult && heartBeatResult.confidence > 0.4) {
-          if (heartBeatResult.bpm > 0) {
-            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence})`);
-            setHeartRate(heartBeatResult.bpm);
-          }
+        if (currentHeartRate > 0 && currentConfidence > 0.4) {
+          // Solo actualizar si el BPM es válido y la confianza es razonable
+          setHeartRate(currentHeartRate);
+          console.log(`[Index.tsx] HR Actualizado: ${currentHeartRate} BPM (Confianza: ${currentConfidence.toFixed(2)})`);
           
-          try {
+          // Intentar procesar otros signos vitales si tenemos datos de HR
+          if (heartBeatResult.rrData) {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
                 if (elapsedTime >= minimumMeasurementTime) {
-                  console.log("Actualizando signos vitales:", vitals);
+                  console.log("[Index.tsx] Actualizando signos vitales:", vitals);
                   setVitalSigns(vitals);
                 }
               })
               .catch(error => {
-                console.error("Error procesando signos vitales:", error);
+                console.error("[Index.tsx] Error procesando signos vitales:", error);
               });
-          } catch (error) {
-            console.error("Error procesando signos vitales:", error);
           }
+          
+        } else if (currentHeartRate === 0 && framesProcessed > 5) {
+            // Si después de unos frames no hay BPM, loguear
+            console.log(`[Index.tsx] Recibido BPM 0 de useHeartBeatProcessor (Confianza: ${currentConfidence.toFixed(2)})`);
         }
       } else {
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          console.log("Dedo no detectado, reseteando frecuencia cardíaca");
-          setHeartRate(0);
+        // Si no se detecta dedo o la calidad es baja, resetear HR si ya había uno
+        if (heartRate > 0) {
+            console.log(`[Index.tsx] Dedo no detectado o calidad baja (${lastSignal.quality}). Reseteando HR.`);
+            setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
+      // Resetear calidad si no se está monitoreando
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, elapsedTime]);
+  }, [lastSignal, isMonitoring, heartBeatResult, processVitalSigns, elapsedTime, heartRate, framesProcessed]);
 
   useEffect(() => {
     if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes("ARRITMIA DETECTADA")) {
@@ -149,38 +157,6 @@ const Index = () => {
       ...newValues
     }));
   }, []);
-
-  // Actualizar las métricas de ritmo cardíaco periódicamente
-  useEffect(() => {
-    // Solo actualizar cuando estamos monitoreando
-    if (!isMonitoring) return;
-    
-    // Crear un temporizador para actualizar el ritmo cardíaco cada 500ms
-    const heartRateUpdateTimer = setInterval(() => {
-      // Obtener el ritmo cardíaco actual del procesador
-      const currentHeartRate = getCurrentHeartRate();
-      
-      // Actualizar el estado solo si hay un valor válido
-      if (currentHeartRate > 0) {
-        setHeartRate(currentHeartRate);
-        
-        // Actualizar otras métricas vitales si es necesario
-        updateVitalSigns({
-          heartRate: currentHeartRate
-        });
-      }
-      
-      // Actualizar calidad de señal basada en el último valor
-      if (lastSignal) {
-        setSignalQuality(lastSignal.quality);
-      }
-    }, 500);
-    
-    // Limpiar el temporizador cuando el componente se desmonte o cambie el estado
-    return () => {
-      clearInterval(heartRateUpdateTimer);
-    };
-  }, [isMonitoring, getCurrentHeartRate, lastSignal, updateVitalSigns]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -337,7 +313,7 @@ const Index = () => {
     
     // Iniciar el temporizador de medición
     if (!measurementTimerRef.current) {
-      measurementTimerRef.current = setInterval(() => {
+      measurementTimerRef.current = window.setInterval(() => {
         if (measurementStartTimeRef.current) {
           const now = Date.now();
           const elapsed = Math.floor((now - measurementStartTimeRef.current) / 1000);

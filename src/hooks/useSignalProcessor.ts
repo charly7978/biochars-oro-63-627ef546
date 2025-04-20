@@ -72,12 +72,13 @@ export const useSignalProcessor = () => {
       // Procesar con el HeartBeatProcessor si hay dedo detectado y señal de calidad
       if (signal.fingerDetected && signal.quality > 30 && heartBeatProcessorRef.current) {
         try {
+          console.log(`[useSignalProcessor] Enviando señal a HeartBeatProcessor: valor=${signal.filteredValue.toFixed(2)}, calidad=${signal.quality}`);
           // Enviar la señal filtrada al procesador de frecuencia cardiaca
           const result = heartBeatProcessorRef.current.processSignal(signal.filteredValue);
           
           // Registrar resultados en consola para diagnóstico (cada 20 frames)
           if (framesProcessed % 20 === 0) {
-            console.log("HeartBeatProcessor resultado:", {
+            console.log("[useSignalProcessor] HeartBeatProcessor resultado:", {
               bpm: result.bpm,
               confidence: result.confidence,
               isPeak: result.isPeak,
@@ -85,8 +86,18 @@ export const useSignalProcessor = () => {
             });
           }
         } catch (error) {
-          console.error("Error procesando señal en HeartBeatProcessor:", error);
+          console.error("[useSignalProcessor] Error procesando señal en HeartBeatProcessor:", error);
         }
+      } else if (signal.fingerDetected && heartBeatProcessorRef.current) {
+        // Log si el dedo está detectado pero la calidad es baja
+        if (framesProcessed % 30 === 0) { // Loguear menos frecuentemente
+            console.log(`[useSignalProcessor] Dedo detectado, pero calidad baja (${signal.quality}), no enviando a HeartBeatProcessor.`);
+        }
+      } else if (heartBeatProcessorRef.current) {
+          // Log si no se detecta dedo
+           if (framesProcessed % 60 === 0) { // Loguear aún menos frecuentemente
+             console.log("[useSignalProcessor] No se detecta dedo, no enviando a HeartBeatProcessor.");
+           }
       }
     };
 
