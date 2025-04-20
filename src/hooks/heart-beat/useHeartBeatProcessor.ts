@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
@@ -42,7 +43,10 @@ export const useHeartBeatProcessor = () => {
       
       // Registrar a nivel global para debug si es necesario
       if (typeof window !== 'undefined') {
-        window.heartBeatProcessor = processorRef.current;
+        // Se evita sobreescribir si ya existe para no confundir debugging
+        if (!window.heartBeatProcessor) {
+          window.heartBeatProcessor = processorRef.current;
+        }
       }
     }
   }, []);
