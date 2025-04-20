@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -74,10 +75,12 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         }
       }
       
-      if (processorRef.current) {
+      if (processorRef.current && typeof processorRef.current.startMonitoring === 'function') {
         processorRef.current.startMonitoring();
         console.log('HeartBeatProcessor: Monitoring state set to true, audio centralizado en PPGSignalMeter');
         isMonitoringRef.current = true;
+      } else {
+        console.warn('useHeartBeatProcessor: startMonitoring method not found in processorRef.current');
       }
     } catch (error) {
       console.error('Error initializing HeartBeatProcessor:', error);
@@ -91,7 +94,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       });
       
       if (processorRef.current) {
-        processorRef.current.stopMonitoring();
+        if (typeof processorRef.current.stopMonitoring === 'function') {
+          processorRef.current.stopMonitoring();
+        } else {
+          console.warn('useHeartBeatProcessor: stopMonitoring method not found in processorRef.current');
+        }
         processorRef.current = null;
       }
       
@@ -186,14 +193,12 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       timestamp: new Date().toISOString()
     });
     
-    if (processorRef.current) {
-      processorRef.current.stopMonitoring();
-      isMonitoringRef.current = false;
-      
+    if (processorRef.current && typeof processorRef.current.reset === 'function') {
       processorRef.current.reset();
-      // No iniciamos audio aquí, está centralizado en PPGSignalMeter
     }
     
+    resetSignalProcessor();
+    lastValidBpmRef.current = 0;
     setCurrentBPM(0);
     setConfidence(0);
     setIsArrhythmia(false);
@@ -204,11 +209,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     cleanupBeepProcessor();
     resetArrhythmia();
-  }, [cleanupBeepProcessor, resetArrhythmia]);
+  }, [resetSignalProcessor, cleanupBeepProcessor, resetArrhythmia]);
 
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
-    if (processorRef.current) {
+    if (processorRef.current && typeof processorRef.current.startMonitoring === 'function') {
       isMonitoringRef.current = true;
       processorRef.current.startMonitoring();
       console.log('HeartBeatProcessor: Monitoring state set to true');
@@ -219,21 +224,23 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       pendingBeepsQueue.current = [];
       consecutiveWeakSignalsRef.current = 0;
       
-      // No iniciamos audio ni test beep aquí, está centralizado en PPGSignalMeter
-      
       if (beepProcessorTimeoutRef.current) {
         clearTimeout(beepProcessorTimeoutRef.current);
         beepProcessorTimeoutRef.current = null;
       }
+    } else {
+      console.warn('useHeartBeatProcessor: startMonitoring method not found in processorRef.current');
     }
-  }, []);
+  }, [beepProcessorTimeoutRef]);
 
   const stopMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Stopping monitoring');
-    if (processorRef.current) {
+    if (processorRef.current && typeof processorRef.current.stopMonitoring === 'function') {
       isMonitoringRef.current = false;
       processorRef.current.stopMonitoring();
       console.log('HeartBeatProcessor: Monitoring state set to false');
+    } else {
+      console.warn('useHeartBeatProcessor: stopMonitoring method not found in processorRef.current');
     }
     
     cleanupBeepProcessor();
