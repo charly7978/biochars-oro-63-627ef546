@@ -11,9 +11,7 @@ import { useVitalSignsLogging } from '@/hooks/vital-signs/use-vital-signs-loggin
 import { ProcessedSignal } from '@/types/signal';
 import { SignalOptimizerManager } from '@/modules/signal-optimizer/SignalOptimizerManager';
 import { ChannelFeedback, SignalChannelOptimizerParams } from '@/modules/signal-optimizer/SignalChannelOptimizer';
-import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
 import { toast } from 'sonner';
-import * as tf from '@tensorflow/tfjs';
 
 // Añadir canales específicos para facilitar mantenimiento
 const OPTIMIZER_CHANNELS = ['hr', 'spo2', 'bp', 'arrhythmia', 'glucose', 'lipids', 'hydration', 'hemoglobin', 'general'];
@@ -66,36 +64,6 @@ export const useVitalSignsProcessor = () => {
   // Mantener últimos resultados de TF para optimización
   const lastTfPrediction = useRef<number | null>(null);
 
-  const { 
-    isReady: tfModelReady,
-    predict: tfPredict,
-    error: tfError
-  } = useTensorFlowModel('vital-signs-ppg', true);
-
-  // Optimización de TensorFlow mediante estrategia de memoria
-  useEffect(() => {
-    if (tfModelReady) {
-      try {
-        tf.env().set('WEBGL_CPU_FORWARD', false);
-        tf.env().set('WEBGL_PACK', true);
-        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-        console.log("✅ TensorFlow memory optimizations applied");
-      } catch (err) {
-        console.warn("Could not apply TensorFlow memory optimizations:", err);
-      }
-    }
-  }, [tfModelReady]);
-
-  useEffect(() => {
-    if (tfError) {
-      console.error("Error in TensorFlow model:", tfError);
-      toast.error("Error cargando modelo de análisis PPG");
-    } else if (tfModelReady) {
-      console.log("✅ Modelo TensorFlow listo para inferencia");
-      toast.success("Modelo de análisis PPG cargado correctamente");
-    }
-  }, [tfModelReady, tfError]);
-
   const optimizerManager = useMemo(() => {
     console.log("Initializing SignalOptimizerManager with arrhythmia channel included...");
     const initialConfigs: Record<string, Partial<SignalChannelOptimizerParams>> = {
@@ -124,42 +92,6 @@ export const useVitalSignsProcessor = () => {
     return signalWindow.map(val => (val - min) / range);
   }, []);
 
-  // Función mejorada para predicción TensorFlow con caché
-  const predictWithTensorFlow = useCallback(async (
-    signalWindow: number[], 
-    minVal?: number, 
-    maxVal?: number
-  ): Promise<number | null> => {
-    if (!tfModelReady || !tfPredict) return null;
-    try {
-      const normalizedInput = normalizeSignal(
-        signalWindow.slice(-TF_INPUT_WINDOW_SIZE), 
-        minVal, 
-        maxVal
-      );
-      const paddedInput = Array(TF_INPUT_WINDOW_SIZE).fill(0);
-      normalizedInput.forEach((val, idx) => {
-        paddedInput[paddedInput.length - normalizedInput.length + idx] = val;
-      });
-      const startTime = performance.now();
-      // tfPredict espera un array de números y devuelve un array de números
-      const prediction = await tfPredict(paddedInput);
-      if (Array.isArray(prediction) && prediction.length > 0) {
-        const factor = prediction[0];
-        lastTfPrediction.current = factor;
-        const duration = performance.now() - startTime;
-        if (processedSignals.current % LOG_INTERVAL === 0) {
-          console.log(`TF inference completed in ${duration.toFixed(2)}ms, factor: ${factor.toFixed(4)}`);
-        }
-        return factor;
-      }
-      return lastTfPrediction.current;
-    } catch (err) {
-      console.error("Error during TensorFlow prediction:", err);
-      return lastTfPrediction.current;
-    }
-  }, [tfModelReady, tfPredict, normalizeSignal]);
-
   // Lógica principal de procesamiento, envuelta en throttle
   const processSignalInternal = async (
     processedSignal: ProcessedSignal,
@@ -177,10 +109,9 @@ export const useVitalSignsProcessor = () => {
     const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
     processedSignals.current += 1;
 
-    // Almacenar valores para TensorFlow
+    // Almacenar valores para TensorFlow (ya no se usa)
     if (extendedSignal.filteredValue !== undefined) {
       tfInputBuffer.current.push(extendedSignal.filteredValue);
-      // Mantener tamaño de buffer controlado
       if (tfInputBuffer.current.length > TF_INPUT_WINDOW_SIZE * 2) {
         tfInputBuffer.current = tfInputBuffer.current.slice(-TF_INPUT_WINDOW_SIZE * 2);
       }
@@ -190,13 +121,10 @@ export const useVitalSignsProcessor = () => {
     const optimizedValues: Record<string, number> = {};
     for (const channel of OPTIMIZER_CHANNELS) {
       if (channel === 'arrhythmia' && rrData && rrData.intervals.length > 0) {
-        // Usar datos RR para mejor detección de arritmias
         const lastRR = rrData.intervals[rrData.intervals.length - 1] || 0;
         const baseValue = extendedSignal.rawValue;
         const rrVariability = rrData.intervals.length > 2 ? 
           Math.abs(rrData.intervals[rrData.intervals.length - 1] - rrData.intervals[rrData.intervals.length - 2]) / lastRR : 0;
-        
-        // Ajustar valor en base a variabilidad RR para mejorar detección de arritmias
         const adjustedValue = baseValue * (1 + rrVariability);
         optimizedValues[channel] = optimizerManager.process(channel, adjustedValue);
       } else {
@@ -206,27 +134,8 @@ export const useVitalSignsProcessor = () => {
     
     const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
 
-    // TensorFlow con procesamiento condicional optimizado
+    // TensorFlow desactivado: usar solo el valor optimizado primario
     let tfEnhancedValue = primaryOptimizedValue;
-    if (tfModelReady && processedSignals.current % TF_PREDICTION_INTERVAL === 0) {
-      try {
-        // Usar buffer dedicado para mejor rendimiento
-        const tfInputData = tfInputBuffer.current.length >= TF_INPUT_WINDOW_SIZE ? 
-          tfInputBuffer.current : extendedSignal.windowValues || [primaryOptimizedValue];
-        
-        const minVal = extendedSignal.minValue !== undefined ? extendedSignal.minValue : 0;
-        const maxVal = extendedSignal.maxValue !== undefined ? extendedSignal.maxValue : 1;
-        
-        const factor = await predictWithTensorFlow(tfInputData, minVal, maxVal);
-        if (factor !== null) {
-          // Aplicar factor con limitación de valor para evitar cambios bruscos
-          const limitedFactor = Math.max(-0.15, Math.min(0.15, factor));
-          tfEnhancedValue = primaryOptimizedValue * (1 + limitedFactor);
-        }
-      } catch (err) {
-        console.error("Error en procesamiento TensorFlow:", err);
-      }
-    }
 
     // Logging mejorado de datos RR para detección de arritmias
     if (rrData && rrData.intervals.length > 0 && processedSignals.current % LOG_INTERVAL === 0) {
@@ -234,12 +143,12 @@ export const useVitalSignsProcessor = () => {
       const rmssd = lastIntervals.length > 1 ? 
         Math.sqrt(lastIntervals.slice(1).reduce((sum, val, i) => 
           sum + Math.pow(val - lastIntervals[i], 2), 0) / (lastIntervals.length - 1)) : 0;
-        
+      
       console.log("RR Data:", {
         intervalCount: rrData.intervals.length,
         lastIntervals,
         lastPeakTime: rrData.lastPeakTime,
-        rmssd: rmssd.toFixed(2) // Añadir RMSSD como métrica para arritmias
+        rmssd: rmssd.toFixed(2)
       });
     }
 
@@ -256,10 +165,8 @@ export const useVitalSignsProcessor = () => {
     // Sistema de feedback mejorado con mejor detección de calidad
     const feedback: Record<string, ChannelFeedback> = {};
     const baseQuality = extendedSignal.quality;
-    // Calcular confianza con curva sigmoidea para mejor sensibilidad
     const baseConfidence = 1 / (1 + Math.exp(-0.05 * (baseQuality - 50)));
     
-    // Inicializar feedback para todos los canales
     OPTIMIZER_CHANNELS.forEach(channel => {
       feedback[channel] = { 
         metricType: channel, 
@@ -268,7 +175,6 @@ export const useVitalSignsProcessor = () => {
       };
     });
 
-    // Ajustar feedback específico por tipo de señal
     if (result.glucoseConfidence !== undefined) {
       feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence);
     }
@@ -276,17 +182,15 @@ export const useVitalSignsProcessor = () => {
       feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence);
     }
     
-    // Detección mejorada de arritmias con análisis de patrones
     if (result.arrhythmiaStatus) {
       if (result.arrhythmiaStatus.includes('ARRHYTHMIA DETECTED')) {
         feedback['arrhythmia'].confidence = ARRHYTHMIA_HIGH_CONFIDENCE;
-        feedback['hr'].confidence = Math.max(0.7, feedback['hr'].confidence); // Aumentar confianza HR también
+        feedback['hr'].confidence = Math.max(0.7, feedback['hr'].confidence);
       } else if (result.arrhythmiaStatus.includes('POSSIBLE ARRHYTHMIA')) {
         feedback['arrhythmia'].confidence = Math.max(0.6, feedback['arrhythmia'].confidence);
       }
     }
 
-    // Aplicar feedback a todos los canales con manejo de errores
     for (const channel of OPTIMIZER_CHANNELS) {
       if (feedback[channel]) {
         try {
@@ -297,7 +201,6 @@ export const useVitalSignsProcessor = () => {
       }
     }
 
-    // Logging periódico para monitoreo de rendimiento
     if (processedSignals.current % LOG_INTERVAL === 0) {
       console.log("VitalSignsProcessor Hook: Results snapshot #", processedSignals.current, {
         spo2: result.spo2,
@@ -308,14 +211,12 @@ export const useVitalSignsProcessor = () => {
         hemoglobin: result.hemoglobin,
         arrhythmiaStatus: result.arrhythmiaStatus,
         qualityIndicator: baseQuality,
-        tfModelActive: tfModelReady
+        tfModelActive: false // TensorFlow desactivado
       });
     }
 
-    // Logging y análisis de arritmias
     logSignalData(primaryOptimizedValue, result, processedSignals.current);
     if (result.arrhythmiaStatus.includes('ARRHYTHMIA DETECTED') && result.lastArrhythmiaData) {
-      // Ventana ampliada para mejor visualización
       addArrhythmiaWindow(
         result.lastArrhythmiaData.timestamp - 500, 
         result.lastArrhythmiaData.timestamp + 500
@@ -328,7 +229,7 @@ export const useVitalSignsProcessor = () => {
   // Envolver la función interna con throttle para limitar su frecuencia de ejecución
   const processSignal = useCallback(
     throttle(processSignalInternal, 30),
-    [optimizerManager, logSignalData, addArrhythmiaWindow, tfModelReady, tfPredict]
+    [optimizerManager, logSignalData, addArrhythmiaWindow]
   );
 
   const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
@@ -394,7 +295,7 @@ export const useVitalSignsProcessor = () => {
     arrhythmiaWindows,
     getSignalLog,
     signalLog,
-    tensorFlowReady: tfModelReady,
-    tensorFlowError: tfError
+    tensorFlowReady: false,
+    tensorFlowError: null
   };
 };
