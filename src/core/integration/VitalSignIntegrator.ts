@@ -1,3 +1,4 @@
+
 /**
  * VitalSignIntegrator
  * 
@@ -113,7 +114,7 @@ export class VitalSignIntegrator {
     
     // Process feedback from calibration system
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
-    if (calibrationState && calibrationState.phase === 'active') {
+    if (calibrationState.phase === 'active') {
       // Apply calibration feedback to relevant channels
       Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
         const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
