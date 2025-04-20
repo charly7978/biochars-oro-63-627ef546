@@ -6,7 +6,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createSignalProcessor, SignalChannel } from '../core/signal-processing';
 import { VITAL_SIGN_CHANNELS } from '../core/signal-processing/SignalCoreProcessor';
 import { VitalSignIntegrator } from '../core/integration/VitalSignIntegrator';
-import React, { createContext, useContext } from 'react';
 
 export interface SignalCoreResult {
   channels: Map<string, SignalChannel>;
@@ -267,24 +266,4 @@ export function useSignalCore(options = {}) {
     getVitalSignData,
     VITAL_SIGN_CHANNELS
   };
-}
-
-// Crear el contexto
-export const SignalCoreContext = createContext<ReturnType<typeof useSignalCore> | null>(null);
-
-// Provider que inicializa el hook y expone el valor
-export function SignalCoreProvider({ children }: { children: React.ReactNode }) {
-  const signalCore = useSignalCore();
-  return (
-    <SignalCoreContext.Provider value={signalCore}>
-      {children}
-    </SignalCoreContext.Provider>
-  );
-}
-
-// Hook para consumir el contexto
-export function useSignalCoreContext() {
-  const ctx = useContext(SignalCoreContext);
-  if (!ctx) throw new Error('useSignalCoreContext debe usarse dentro de <SignalCoreProvider>');
-  return ctx;
 }
