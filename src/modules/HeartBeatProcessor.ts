@@ -142,18 +142,29 @@ export class HeartBeatProcessor {
     const currentValue = signal[currentIndex];
     const prev1 = signal[currentIndex - 1];
     const prev2 = signal[currentIndex - 2];
-    const next1 = signal[0]; // No hay valores "futuros" en streaming, omitimos
+    // const next1 = signal[0]; // No hay valores "futuros" en streaming, omitimos
 
     // El pico es máximo local si:
     // 1. valor actual mayor que prev1 y prev2
     // 2. valor > umbral basado en señal (ej 0.2)
     const isLocalMax = (currentValue > prev1 && currentValue > prev2 && currentValue > 0.2);
 
+    console.log('[HeartBeatProcessor] detectPeak:', {
+      currentValue,
+      prev1,
+      prev2,
+      isLocalMax
+    });
+
     // Restricción de mínimo tiempo desde pico anterior para evitar falsos picos rápidos
     // Se omite para detección más sensible, pero puede agregar limitación
 
     // Confianza basada en la amplitud del pico saturada a [0,1]
     const confidence = isLocalMax ? Math.min(1, currentValue / 1.0) : 0;
+
+    if (isLocalMax) {
+      console.log('[HeartBeatProcessor] ¡Pico detectado!', { currentValue, prev1, prev2, confidence });
+    }
 
     return {
       isPeak: isLocalMax,
