@@ -68,7 +68,7 @@ export class VitalSignIntegrator {
    */
   private synchronizeFeedback(): void {
     const currentTime = Date.now();
-
+    
     this.processorMetrics.forEach((metrics, processorName) => {
       if (currentTime - metrics.timestamp < 2000) {
         const channelName = this.mapProcessorToChannel(processorName);
@@ -101,26 +101,25 @@ export class VitalSignIntegrator {
       }
     });
 
-    // Fix: getCalibrationState() before use, avoid testing void
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
-
-    // Defensive check: ensure calibrationState is not null and has phase property
-    if (calibrationState !== null && typeof calibrationState === 'object' && 'phase' in calibrationState) {
-      // Typescript now knows calibrationState is object with property phase
-      const castedState = calibrationState as { phase: string };
-      if (castedState.phase === 'active') {
-        Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
-          const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
-          if (calibrationFactor !== 1.0) {
-            this.signalProcessor.provideFeedback(channelName, {
-              source: 'calibration',
-              timestamp: currentTime,
-              calibrationFactor,
-              confidenceScore: 0.9
-            });
-          }
-        });
-      }
+    // Controlar que calibrationState no sea void ni null, y que contenga phase
+    if (
+      calibrationState &&
+      typeof calibrationState === 'object' &&
+      'phase' in calibrationState &&
+      calibrationState.phase === 'active'
+    ) {
+      Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
+        const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
+        if (calibrationFactor !== 1.0) {
+          this.signalProcessor.provideFeedback(channelName, {
+            source: 'calibration',
+            timestamp: currentTime,
+            calibrationFactor,
+            confidenceScore: 0.9
+          });
+        }
+      });
     }
   }
   
