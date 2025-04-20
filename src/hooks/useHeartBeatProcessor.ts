@@ -115,6 +115,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
 
     // Ejecutar procesado de señal real
+    console.log('[useHeartBeatProcessor] Llamando a processSignalInternal con valor:', value);
     const result = processSignalInternal(
       value,
       currentBPM,
