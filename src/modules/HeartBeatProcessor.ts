@@ -89,10 +89,11 @@ export class HeartBeatProcessor {
     // Si hay pico confirmado, actualizar RR intervals y calcular BPM robústamente
     if (detectedPeak.isPeak) {
       const currentTime = Date.now();
-      if (
-        this.lastPeakTime !== null && 
-        currentTime - this.lastPeakTime >= this.MIN_PEAK_DISTANCE_MS
-      ) {
+      if (this.lastPeakTime === null) {
+        // Primer pico: solo inicializa
+        this.lastPeakTime = currentTime;
+        console.log('[HeartBeatProcessor][RR] Primer pico detectado, inicializando lastPeakTime:', currentTime);
+      } else {
         const rrInterval = currentTime - this.lastPeakTime;
         if (rrInterval > 300 && rrInterval < 2000) {
           this.rrIntervals.push(rrInterval);
@@ -103,8 +104,8 @@ export class HeartBeatProcessor {
         } else {
           console.log('[HeartBeatProcessor][RR] Intervalo RR fuera de rango:', rrInterval);
         }
+        this.lastPeakTime = currentTime;
       }
-      this.lastPeakTime = Date.now();
     }
 
     // Calcular BPM robusto sobre ventana de RR intervals en ms
