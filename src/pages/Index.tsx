@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
@@ -40,15 +40,13 @@ const Index = () => {
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const {
-    currentBPM,
-    confidence,
+    heartBeatResult,
+    isProcessing: isHeartProcessing,
     processSignal: processHeartBeat,
     reset,
     isArrhythmia,
-    arrhythmiaPhase,
-    beats,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
+    startMonitoring: startHeartRateMonitoring,
+    stopMonitoring: stopHeartRateMonitoring,
   } = useHeartBeatProcessor();
   
   const { 
@@ -98,7 +96,7 @@ const Index = () => {
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
           if (heartBeatResult.bpm > 0) {
-            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
+            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence})`);
             setHeartRate(heartBeatResult.bpm);
           }
           
@@ -151,7 +149,7 @@ const Index = () => {
       FeedbackService.playSound('notification');
       
       startProcessing();
-      startHeartBeatMonitoring();
+      startHeartRateMonitoring();
       
       setElapsedTime(0);
       
@@ -181,7 +179,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartRateMonitoring();
     
     FeedbackService.signalMeasurementComplete(signalQuality >= 70);
     
@@ -207,7 +205,7 @@ const Index = () => {
     setIsCameraOn(false);
     setShowResults(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
+    stopHeartRateMonitoring();
     reset();
     
     FeedbackService.vibrate([50, 30, 50]);
@@ -367,8 +365,6 @@ const Index = () => {
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
-              beats={beats}
-              arrhythmiaPhase={arrhythmiaPhase}
             />
           </div>
 
