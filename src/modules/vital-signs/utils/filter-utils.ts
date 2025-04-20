@@ -1,3 +1,4 @@
+export * from './signal-processing-utils';
 
 export const applyBandpassFilter = (values: number[], lowCut: number, highCut: number, sampleRate: number): number[] => {
   // Simple implementation of a bandpass filter

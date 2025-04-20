@@ -2,11 +2,11 @@
  * Central Signal Processing Hook - provides access to the core signal processor
  * with dedicated channels for each vital sign and bidirectional feedback
  */
-import { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, createContext, useContext } from 'react';
 import { createSignalProcessor, SignalChannel } from '../core/signal-processing';
 import { VITAL_SIGN_CHANNELS } from '../core/signal-processing/SignalCoreProcessor';
 import { VitalSignIntegrator } from '../core/integration/VitalSignIntegrator';
-import React, { createContext, useContext } from 'react';
+// ... resto del código del hook useSignalCore ...
 
 export interface SignalCoreResult {
   channels: Map<string, SignalChannel>;
@@ -287,4 +287,4 @@ export function useSignalCoreContext() {
   const ctx = useContext(SignalCoreContext);
   if (!ctx) throw new Error('useSignalCoreContext debe usarse dentro de <SignalCoreProvider>');
   return ctx;
-}
+} 

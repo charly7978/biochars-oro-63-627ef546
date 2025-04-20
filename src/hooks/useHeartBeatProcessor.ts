@@ -2,60 +2,35 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from './arrhythmia/types';
-import { useBeepProcessor } from './heart-beat/beep-processor';
-import { useSignalProcessor } from './heart-beat/signal-processor';
+import { useSignalCoreContext } from './useSignalCore';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
-import { useArrhythmiaPatternDetector } from './heart-beat/arrhythmia-pattern-detector';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
-  const [currentBPM, setCurrentBPM] = useState<number>(0);
-  const [confidence, setConfidence] = useState<number>(0);
-  const [isArrhythmia, setIsArrhythmia] = useState<boolean>(false);
-  const [lastPeakTime, setLastPeakTime] = useState<number | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   const missedBeepsCounter = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
-  
-  // Hooks para procesamiento y detección, sin funcionalidad de beep
-  const { 
-    requestImmediateBeep, 
-    processBeepQueue, 
-    pendingBeepsQueue, 
-    lastBeepTimeRef, 
-    beepProcessorTimeoutRef, 
-    cleanup: cleanupBeepProcessor 
-  } = useBeepProcessor();
-  
-  const {
-    processSignal: processSignalInternal,
-    reset: resetSignalProcessor,
-    lastPeakTimeRef,
-    lastValidBpmRef,
-    lastSignalQualityRef,
-    consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS
-  } = useSignalProcessor();
 
   // Mantener el último resultado para exponer isArrhythmia y arrhythmiaCount
   const lastResultRef = useRef<HeartBeatResult | null>(null);
 
-  // Referencias locales para cumplir con la firma de processSignalInternal
-  const lastRRIntervalsRef = useRef<number[]>([]);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+  // Usar el contexto centralizado de señal
+  const { signalState, processValue, startProcessing, stopProcessing, getChannel } = useSignalCoreContext();
 
-  // Nuevo detector de patrón rítmico
-  const {
-    phase: arrhythmiaPhase,
-    baseRR,
-    baseSDNN,
-    beats,
-    registerBeat,
-    reset: resetArrhythmia
-  } = useArrhythmiaPatternDetector();
+  // Obtener canal de frecuencia cardíaca
+  const heartbeatChannel = signalState.channels.get('heartbeat');
+  const heartRate = heartbeatChannel?.getMetadata('heartRate') || 0;
+  const confidence = heartbeatChannel?.getLastMetadata()?.quality || 0;
+  const lastPeakTime = heartbeatChannel?.getMetadata('lastPeakTime') || null;
+  const rrData = {
+    intervals: heartbeatChannel?.getMetadata('rrIntervals') || [],
+    lastPeakTime
+  };
+  const arrhythmiaCount = signalState.channels.get('arrhythmia')?.getMetadata('arrhythmiaCount') || 0;
+  const isArrhythmia = arrhythmiaCount > 0;
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -132,7 +107,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
 
     const result = processSignalInternal(
       value, 
-      currentBPM, 
+      heartRate, 
       confidence, 
       processorRef.current, 
       requestBeep, 
@@ -142,8 +117,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     );
 
     if (result.bpm > 0 && result.confidence > 0.4) {
-      setCurrentBPM(result.bpm);
-      setConfidence(result.confidence);
+      // No se actualiza heartRate, confidence, etc., aquí, se actualiza en el contexto
     }
 
     lastResultRef.current = result;
@@ -151,16 +125,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     // Llamar a registerBeat SOLO cuando se detecta un pico real
     if (result.isPeak) {
       registerBeat();
-      setLastPeakTime(Date.now());
+      // No se actualiza lastPeakTime aquí, se actualiza en el contexto
     }
     // Detectar arritmia en tiempo real
     if (beats.length > 0) {
       const lastBeat = beats[beats.length - 1];
-      setIsArrhythmia(lastBeat.isAnomalous);
+      // No se actualiza isArrhythmia aquí, se actualiza en el contexto
     }
 
     return {
-      bpm: currentBPM,
+      bpm: heartRate,
       confidence,
       isPeak: result.isPeak,
       arrhythmiaCount: beats.filter(b => b.isAnomalous).length,
@@ -171,7 +145,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       isArrhythmia: isArrhythmia
     };
   }, [
-    currentBPM, 
+    heartRate, 
     confidence, 
     processSignalInternal, 
     requestBeep,
@@ -193,11 +167,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current.reset();
       // No iniciamos audio aquí, está centralizado en PPGSignalMeter
     }
-    
-    setCurrentBPM(0);
-    setConfidence(0);
-    setIsArrhythmia(false);
-    setLastPeakTime(null);
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
@@ -238,22 +207,33 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     cleanupBeepProcessor();
     
-    setCurrentBPM(0);
-    setConfidence(0);
+    // No se actualiza heartRate, confidence, etc., aquí, se actualiza en el contexto
   }, [cleanupBeepProcessor]);
 
+  // API pública compatible
   return {
-    currentBPM,
+    currentBPM: heartRate,
     confidence,
-    processSignal,
-    reset,
+    processSignal: (value: number) => {
+      processValue(value);
+      return {
+        bpm: heartRate,
+        confidence,
+        isPeak: heartbeatChannel?.getLastMetadata()?.isPeak || false,
+        arrhythmiaCount,
+        isArrhythmia,
+        rrData
+      };
+    },
+    reset: stopProcessing,
     isArrhythmia,
-    arrhythmiaPhase,
-    baseRR,
-    baseSDNN,
-    beats,
-    requestBeep,
+    requestBeep: () => false, // El beep está centralizado en el componente visual
     startMonitoring,
-    stopMonitoring
+    stopMonitoring,
+    arrhythmiaCount,
+    arrhythmiaPhase: undefined,
+    baseRR: undefined,
+    baseSDNN: undefined,
+    beats: undefined
   };
 };
