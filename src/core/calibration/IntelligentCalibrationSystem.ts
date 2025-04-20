@@ -871,3 +871,27 @@ export class IntelligentCalibrationSystem {
           diastolic_reference: this.userProfile.referenceValues.diastolic,
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
+        });
+      
+      // Finish saving at Supabase
+      if (error) {
+        console.error('Error al guardar perfil de calibración en Supabase:', error);
+      } else {
+        console.log('Perfil de calibración guardado en Supabase');
+      }
+    } catch (error) {
+      console.error('Error al guardar perfil de calibración:', error);
+    }
+  }
+  
+  /**
+   * Aplica el perfil de usuario cargado
+   */
+  private applyUserProfile(): void {
+    if (!this.userProfile) return;
+    this.correctionFactors = { ...this.userProfile.correctionFactors };
+    this.referenceValues = { ...this.userProfile.referenceValues };
+    this.config = { ...this.userProfile.config };
+  }
+  
+}
