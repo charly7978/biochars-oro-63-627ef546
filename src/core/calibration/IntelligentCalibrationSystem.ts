@@ -1,8 +1,3 @@
-import { getModel } from '../neural/ModelRegistry';
-import { HeartRateNeuralModel } from '../neural/HeartRateModel';
-import { SpO2NeuralModel } from '../neural/SpO2Model';
-import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
-import { GlucoseNeuralModel } from '../neural/GlucoseModel';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
@@ -448,39 +443,8 @@ export class IntelligentCalibrationSystem {
    * Actualiza los modelos neuronales con datos de referencia
    */
   private updateNeuralModels(type: MeasurementType, reference: number | { systolic: number, diastolic: number }): void {
-    // Encontrar las últimas señales PPG de alta calidad
-    const recentHighQualityData = this.measurementHistory
-      .filter(m => m.quality > 85)
-      .slice(-3);
-    
-    if (recentHighQualityData.length === 0) return;
-    
-    try {
-      if (type === 'heartRate' && typeof reference === 'number') {
-        const heartRateModel = getModel<HeartRateNeuralModel>('heartRate');
-        if (heartRateModel) {
-          // Aquí simularíamos un ajuste de los pesos internos del modelo
-          console.log('Actualizando modelo neural de frecuencia cardíaca con referencia:', reference);
-        }
-      } else if (type === 'spo2' && typeof reference === 'number') {
-        const spo2Model = getModel<SpO2NeuralModel>('spo2');
-        if (spo2Model) {
-          console.log('Actualizando modelo neural de SpO2 con referencia:', reference);
-        }
-      } else if (type === 'bloodPressure' && typeof reference !== 'number') {
-        const bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
-        if (bpModel) {
-          console.log('Actualizando modelo neural de presión con referencia:', reference);
-        }
-      } else if (type === 'glucose' && typeof reference === 'number') {
-        const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
-        if (glucoseModel) {
-          console.log('Actualizando modelo neural de glucosa con referencia:', reference);
-        }
-      }
-    } catch (error) {
-      console.error('Error al actualizar modelo neural:', error);
-    }
+    // Método vacío para evitar error de referencia a modelos que no existen
+    console.log('updateNeuralModels llamado pero sin implementación disponible');
   }
   
   /**
@@ -907,54 +871,3 @@ export class IntelligentCalibrationSystem {
           diastolic_reference: this.userProfile.referenceValues.diastolic,
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
-        });
-      
-      if (error) {
-        console.error('Error al guardar en Supabase:', error);
-      }
-    } catch (error) {
-      console.error('Error al guardar perfil de calibración:', error);
-    }
-  }
-  
-  /**
-   * Aplica perfil de calibración al sistema
-   */
-  private applyUserProfile(): void {
-    if (this.userProfile) {
-      this.correctionFactors = this.userProfile.correctionFactors;
-      this.referenceValues = this.userProfile.referenceValues;
-      this.config = this.userProfile.config;
-    }
-  }
-
-  private calculateCalibrationFactor(signal: number[], threshold: number): number {
-    const signalMean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
-    const signalVariance = signal.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / signal.length;
-    
-    // Factor de calibración basado en la varianza de la señal y el umbral
-    const calibrationFactor = Math.max(0.1, Math.min(2.0, 
-      (signalVariance > threshold * threshold) ? Math.sqrt(signalVariance) / threshold : 1.0
-    ));
-    
-    return calibrationFactor;
-  }
-
-  public adjustCalibrationParameters(signal: number[], currentParams: CalibrationParameters): CalibrationParameters {
-    const calibrationFactor = this.calculateCalibrationFactor(signal, currentParams.threshold);
-    
-    return {
-      gain: currentParams.gain * calibrationFactor,
-      offset: currentParams.offset,
-      threshold: currentParams.threshold * Math.sqrt(calibrationFactor),
-      sensitivity: currentParams.sensitivity / calibrationFactor
-    };
-  }
-}
-
-/**
- * Función de utilidad para acceso rápido al sistema de calibración
- */
-export function getCalibrationSystem(): IntelligentCalibrationSystem {
-  return IntelligentCalibrationSystem.getInstance();
-}

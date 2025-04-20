@@ -204,7 +204,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current.stopMonitoring();
     }
     cleanupBeepProcessor();
-    
+
     setCurrentBPM(0);
     setConfidence(0);
   }, [cleanupBeepProcessor]);
