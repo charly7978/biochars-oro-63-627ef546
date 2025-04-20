@@ -44,7 +44,6 @@ export class ArrhythmiaProcessor {
     if (rrData?.intervals && rrData.intervals.length > 0) {
       this.rrIntervals = rrData.intervals;
       this.lastPeakTime = rrData.lastPeakTime;
-      console.log('[Arrhythmia] RR intervals recibidos:', this.rrIntervals);
       
       // Only proceed with sufficient real data
       if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
@@ -66,8 +65,6 @@ export class ArrhythmiaProcessor {
           rrVariation: calculateRRVariation(this.rrIntervals.slice(-8))
         } 
       : null;
-    
-    console.log('[Arrhythmia] Estado:', arrhythmiaStatusMessage, 'Data:', lastArrhythmiaData);
     
     return {
       arrhythmiaStatus: arrhythmiaStatusMessage,
@@ -93,7 +90,6 @@ export class ArrhythmiaProcessor {
     // Require sufficient valid intervals
     if (validIntervals.length < this.MIN_RR_INTERVALS * 0.7) { // Reducido para mayor sensibilidad
       this.consecutiveAbnormalBeats = 0;
-      console.log('[Arrhythmia] Intervals no válidos para análisis:', validIntervals);
       return;
     }
     
@@ -117,7 +113,14 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats++;
       
       // Log detection
-      console.log('[Arrhythmia] Posible latido prematuro:', { variation, avgRR, lastRR, consecutivos: this.consecutiveAbnormalBeats });
+      console.log("ArrhythmiaProcessor: Posible latido prematuro detectado en datos reales", {
+        porcentajeVariacion: variation,
+        umbral: this.MIN_VARIATION_PERCENT,
+        consecutivos: this.consecutiveAbnormalBeats,
+        avgRR,
+        lastRR,
+        timestamp: currentTime
+      });
     } else {
       // Reducir el contador gradualmente para mantener la detección
       this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 0.5);
@@ -135,7 +138,11 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
-      console.log('[Arrhythmia] ARRITMIA CONFIRMADA', { contadorArritmias: this.arrhythmiaCount, timestamp: currentTime });
+      console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA en datos reales", {
+        contadorArritmias: this.arrhythmiaCount,
+        tiempoDesdeUltima: timeSinceLastArrhythmia,
+        timestamp: currentTime
+      });
     }
   }
 

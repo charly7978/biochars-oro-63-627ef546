@@ -70,10 +70,8 @@ export class BloodPressureProcessor {
     try {
       // Análisis de señal real
       const { peakIndices, valleyIndices } = findPeaksAndValleys(this.ppgBuffer);
-      console.log('[BP] Picos:', peakIndices.length, 'Valles:', valleyIndices.length, 'Buffer:', this.ppgBuffer.length);
-      if (peakIndices.length < 3 || valleyIndices.length < 3) {
+      if (peakIndices.length < 5 || valleyIndices.length < 5) {
         // Si no hay suficientes picos/valles, mantener el último valor válido
-        console.log('[BP] No hay suficientes picos/valles, manteniendo último valor:', this.getLastValidBP());
         return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
       }
       // Extracción de características de la señal PPG real
@@ -88,19 +86,23 @@ export class BloodPressureProcessor {
       const avgPeakToPeakInterval = peakToPeakIntervals.reduce((sum, val) => sum + val, 0) / peakToPeakIntervals.length;
       // Índice de rigidez (estimado a partir de características de la forma de onda)
       const stiffnessIndex = (ac / dc) * Math.sqrt(avgPeakToPeakInterval);
+      // Usar calibración para personalizar predicción - modelo basado en características reales
+      // Eliminar factores arbitrarios: solo usar la calibración y la amplitud relativa
       let systolic = this.userCalibration.systolic + (amplitude - 0.5) * 0.15 * this.userCalibration.systolic;
       let diastolic = this.userCalibration.diastolic + (amplitude - 0.5) * 0.12 * this.userCalibration.diastolic;
+      // Validación fisiológica - si el valor es muy diferente al anterior, mantener el anterior
       if (this.lastSystolic > 0 && Math.abs(systolic - this.lastSystolic) > 25) {
         systolic = this.lastSystolic;
       }
       if (this.lastDiastolic > 0 && Math.abs(diastolic - this.lastDiastolic) > 20) {
         diastolic = this.lastDiastolic;
       }
+      // Limitar a rangos fisiológicos
       systolic = Math.max(90, Math.min(200, systolic));
       diastolic = Math.max(40, Math.min(120, diastolic));
+      // Actualizar últimos valores válidos
       this.lastSystolic = systolic;
       this.lastDiastolic = diastolic;
-      console.log('[BP] Calculado:', { systolic: Math.round(systolic), diastolic: Math.round(diastolic) });
       return {
         systolic: Math.round(systolic),
         diastolic: Math.round(diastolic)
