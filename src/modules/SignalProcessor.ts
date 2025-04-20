@@ -29,11 +29,18 @@ class KalmanFilter {
   }
 }
 
+// Constantes para canales de procesamiento
+const CHANNEL_RED = 'red';
+const CHANNEL_GREEN = 'green';
+const CHANNEL_BLUE = 'blue';
+const CHANNEL_IR = 'ir';
+
 // Instancia global o de clase del optimizador para todos los canales relevantes
 const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
+  [CHANNEL_RED]: { filterType: 'bandpass', gain: 1.8, adaptiveMode: true },
+  [CHANNEL_GREEN]: { filterType: 'ema', gain: 1.2, emaAlpha: 0.7 },
+  [CHANNEL_BLUE]: { filterType: 'kalman', gain: 0.8, kalmanQ: 0.15, kalmanR: 0.1 },
+  [CHANNEL_IR]: { filterType: 'wavelet', gain: 2.0, adaptiveMode: true }
 });
 
 /**
@@ -81,6 +88,16 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly PERIODICITY_BUFFER_SIZE = 60; // Ventana para análisis de periodicidad
   private periodicityBuffer: number[] = [];
   private lastPeriodicityScore: number = 0;
+  
+  // Evaluación adaptativa de región
+  private lastROI = {
+    startX: 0,
+    startY: 0,
+    endX: 0, 
+    endY: 0,
+    score: 0
+  };
+  private roiHistory: Array<{red: number, green: number, blue: number, score: number}> = [];
 
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
@@ -104,6 +121,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.movementScores = [];
       this.periodicityBuffer = [];
       this.lastPeriodicityScore = 0;
+      this.roiHistory = [];
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -133,6 +151,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consistencyHistory = [];
     this.movementScores = [];
     this.periodicityBuffer = [];
+    this.roiHistory = [];
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -193,14 +212,15 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.lastProcessedTime = now;
       
       // 1. Extraer valores crudos de todos los canales disponibles
-      const redValue = this.extractRedChannel(imageData);
-      const irValue = this.extractIRChannel(imageData);
-      const greenValue = this.extractGreenChannel(imageData);
+      const { redValue, greenValue, blueValue, isValidRegion } = this.extractRGBChannels(imageData);
+      
+      // Si no se encontró una región válida, reducir calidad pero seguir procesando
+      let qualityPenalty = isValidRegion ? 0 : 30;
 
       // 2. Optimización: procesar cada valor crudo con el manager
-      const redOptimized = optimizerManager.process('red', redValue);
-      const irOptimized = optimizerManager.process('ir', irValue);
-      const greenOptimized = optimizerManager.process('green', greenValue);
+      const redOptimized = optimizerManager.process(CHANNEL_RED, redValue);
+      const greenOptimized = optimizerManager.process(CHANNEL_GREEN, greenValue);
+      const blueOptimized = optimizerManager.process(CHANNEL_BLUE, blueValue);
 
       // 3. Usar los valores optimizados en los algoritmos de cálculo
       // Ejemplo: para HR, SpO2, presión, etc. (esto se hará en los procesadores de métricas)
@@ -234,7 +254,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         this.lastPeriodicityScore = this.analyzeSignalPeriodicity();
       }
       
-      // Calcular datos espectrales
+      // Calcular datos espectrales reales usando FFT
       const spectrumData = this.calculateSpectrumData();
 
       // Crear señal procesada (puedes incluir los valores de todos los canales si lo deseas)
@@ -242,76 +262,112 @@ export class PPGSignalProcessor implements SignalProcessor {
         timestamp: now,
         rawValue: redValue,
         filteredValue: redOptimized,
-        quality: quality,
+        quality: Math.max(0, quality - qualityPenalty),
         fingerDetected: isFingerDetected,
         roi: this.detectROI(redValue),
         perfusionIndex,
-        spectrumData
+        spectrumData,
+        // Nuevos campos para analíticas mejoradas
+        minValue: Math.min(...this.lastValues),
+        maxValue: Math.max(...this.lastValues),
+        windowValues: [...this.lastValues]
       };
 
-      this.onSignalReady?.(processedSignal);
-
-      // DOCUMENTACIÓN DEL CICLO DE FEEDBACK:
-      // 1. Cada valor crudo de canal se optimiza con el manager.
-      // 2. Los valores optimizados se usan en los algoritmos de cálculo.
-      // 3. El feedback de calidad/confianza se enviará a cada canal tras cada métrica (en los procesadores de métricas).
-      // 4. El manager ajusta sus parámetros automáticamente o por intervención manual.
-      // 5. El ciclo se repite para la siguiente muestra.
-
+      // Enviar señal procesada
+      if (this.onSignalReady) {
+        this.onSignalReady(processedSignal);
+      }
     } catch (error) {
       console.error("PPGSignalProcessor: Error procesando frame", error);
-      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
+      this.handleError("PROCESSING_ERROR", "Error procesando frame de cámara");
     }
   }
-  
+
   /**
-   * Calcula datos de espectro de frecuencia
+   * Calcula datos espectrales reales usando FFT.
+   * Este método realiza análisis de frecuencia real, NO simulación.
    */
   private calculateSpectrumData() {
+    // Solo proceder si tenemos suficientes datos
     if (this.periodicityBuffer.length < 30) {
-      return undefined;
+      return {
+        frequencies: [],
+        amplitudes: [],
+        dominantFrequency: 0
+      };
     }
     
-    // Implementación básica, podría ser mejorada con FFT real
-    const buffer = this.periodicityBuffer.slice(-30);
-    const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
-    const normalizedBuffer = buffer.map(v => v - mean);
+    // Calcular media para normalización
+    const mean = this.periodicityBuffer.reduce((sum, val) => sum + val, 0) / this.periodicityBuffer.length;
     
-    // Simular análisis espectral simple
+    // Normalizar datos para FFT
+    const normalizedData = this.periodicityBuffer.map(val => val - mean);
+    
+    // Preparar arrays para resultados FFT
     const frequencies: number[] = [];
     const amplitudes: number[] = [];
     
-    // Calcular amplitudes para diferentes frecuencias
-    for (let freq = 0.5; freq <= 4.0; freq += 0.1) {
-      frequencies.push(freq);
-      
-      let amplitude = 0;
-      for (let i = 0; i < normalizedBuffer.length; i++) {
-        const phase = (i / normalizedBuffer.length) * Math.PI * 2 * freq;
-        amplitude += normalizedBuffer[i] * Math.sin(phase);
-      }
-      amplitude = Math.abs(amplitude) / normalizedBuffer.length;
-      amplitudes.push(amplitude);
-    }
+    // Calcular FFT real (versión simplificada de DFT para dispositivos móviles)
+    const N = normalizedData.length;
+    const samplingRate = 1000 / this.MIN_PROCESS_INTERVAL; // Aproximadamente basado en tiempo entre frames
     
-    // Encontrar la frecuencia dominante
-    let maxIndex = 0;
-    for (let i = 1; i < amplitudes.length; i++) {
-      if (amplitudes[i] > amplitudes[maxIndex]) {
-        maxIndex = i;
+    // Calcular hasta la frecuencia de Nyquist (la mitad de la frecuencia de muestreo)
+    // Solo incluimos el rango de frecuencias cardíacas humanas típicas (0.5-4Hz)
+    const maxFreq = Math.min(4, samplingRate / 2);
+    const minFreq = 0.5; // 30 BPM min
+    
+    // Resolución de frecuencia
+    const freqStep = samplingRate / N;
+    
+    // Número máximo de frecuencias a analizar (reducido para rendimiento móvil)
+    const maxBins = 25;
+    
+    let dominantFrequency = 0;
+    let maxAmplitude = 0;
+    
+    // Implementación de DFT simplificada enfocada en rendimiento
+    for (let k = 0; k < maxBins; k++) {
+      const freq = k * freqStep;
+      
+      // Solo analizar frecuencias en el rango cardíaco
+      if (freq < minFreq || freq > maxFreq) continue;
+      
+      let real = 0;
+      let imag = 0;
+      
+      // Convertir frecuencia a BPM para tener significado fisiológico
+      const freqInBPM = freq * 60;
+      
+      // Calcular componentes DFT
+      for (let n = 0; n < N; n++) {
+        const angle = -2 * Math.PI * k * n / N;
+        real += normalizedData[n] * Math.cos(angle);
+        imag += normalizedData[n] * Math.sin(angle);
+      }
+      
+      // Calcular magnitud
+      const magnitude = Math.sqrt(real * real + imag * imag) / N;
+      
+      // Solo incluir si la magnitud es significativa
+      if (magnitude > 0.1) {
+        frequencies.push(freqInBPM);
+        amplitudes.push(magnitude);
+        
+        // Encontrar frecuencia dominante
+        if (magnitude > maxAmplitude) {
+          maxAmplitude = magnitude;
+          dominantFrequency = freqInBPM;
+        }
       }
     }
     
     return {
       frequencies,
       amplitudes,
-      dominantFrequency: frequencies[maxIndex]
+      dominantFrequency
     };
   }
-  
-  /**
-   * Actualiza métricas de consistencia
-   */
+
   private updateConsistencyMetrics(value: number): void {
     this.consistencyHistory.push(value);
     if (this.consistencyHistory.length > this.CONSISTENCY_BUFFER_SIZE) {
@@ -319,89 +375,210 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
   }
   
-  /**
-   * Calcula puntuación de movimiento (0-100, donde 0 es muy estable)
-   */
   private calculateMovementScore(): number {
-    if (this.consistencyHistory.length < 4) {
-      return 100; // Máximo movimiento si no hay suficientes datos
+    if (this.consistencyHistory.length < 3) {
+      return this.MAX_MOVEMENT_THRESHOLD; // Valor máximo al inicio
     }
     
-    // Calcular variaciones entre muestras consecutivas
-    const variations: number[] = [];
+    // Calcular derivada primera (diferencias entre puntos consecutivos)
+    const derivatives: number[] = [];
     for (let i = 1; i < this.consistencyHistory.length; i++) {
-      variations.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
+      derivatives.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
     }
     
-    // Calcular desviación estándar
-    const mean = variations.reduce((a, b) => a + b, 0) / variations.length;
-    const variance = variations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / variations.length;
-    const stdDev = Math.sqrt(variance);
+    // Calcular derivada segunda (cambios de pendiente)
+    const secondDerivatives: number[] = [];
+    for (let i = 1; i < derivatives.length; i++) {
+      secondDerivatives.push(Math.abs(derivatives[i] - derivatives[i-1]));
+    }
     
-    // Calcular puntuación (normalizada a 0-100)
-    const score = Math.min(100, stdDev * 10);
+    // Determinar puntuación de movimiento basado en derivadas
+    // Valor más alto = más movimiento = peor señal
+    const avgFirstDerivative = derivatives.reduce((sum, val) => sum + val, 0) / derivatives.length;
+    const avgSecondDerivative = secondDerivatives.length ? 
+      secondDerivatives.reduce((sum, val) => sum + val, 0) / secondDerivatives.length : 0;
     
-    // Mantener historial para suavizado
-    this.movementScores.push(score);
+    // Mantener historial para suavizar cambios
+    const movementScore = avgFirstDerivative * 0.7 + avgSecondDerivative * 0.3;
+    this.movementScores.push(movementScore);
     if (this.movementScores.length > this.MOVEMENT_HISTORY_SIZE) {
       this.movementScores.shift();
     }
     
-    // Retornar promedio ponderado (más peso a valores recientes)
-    let weightedSum = 0;
-    let weightSum = 0;
-    this.movementScores.forEach((s, i) => {
-      const weight = i + 1;
-      weightedSum += s * weight;
-      weightSum += weight;
+    // Devolver media ponderada dando más peso a las puntuaciones recientes
+    const weightedSum = this.movementScores.reduce((sum, score, i, arr) => {
+      const weight = (i + 1) / arr.length; // Mayor peso a valores más recientes
+      return sum + score * weight;
+    }, 0);
+    
+    const totalWeight = this.movementScores.reduce((sum, _, i, arr) => {
+      return sum + (i + 1) / arr.length;
+    }, 0);
+    
+    return weightedSum / totalWeight;
+  }
+
+  /**
+   * Extrae canales RGB de la imagen con análisis de región óptima
+   * OPTIMIZACIÓN: Análisis multiregional para identificar la mejor zona para PPG
+   */
+  private extractRGBChannels(imageData: ImageData): {
+    redValue: number;
+    greenValue: number;
+    blueValue: number;
+    isValidRegion: boolean;
+  } {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    
+    // Dividir la imagen en regiones para análisis
+    const regions = [
+      // Centro (40%)
+      {
+        startX: Math.floor(width * 0.3),
+        startY: Math.floor(height * 0.3),
+        endX: Math.floor(width * 0.7),
+        endY: Math.floor(height * 0.7),
+        weight: 1.0
+      },
+      // Cuarto superior izquierdo
+      {
+        startX: Math.floor(width * 0.1),
+        startY: Math.floor(height * 0.1),
+        endX: Math.floor(width * 0.4),
+        endY: Math.floor(height * 0.4),
+        weight: 0.7
+      },
+      // Cuarto superior derecho
+      {
+        startX: Math.floor(width * 0.6),
+        startY: Math.floor(height * 0.1),
+        endX: Math.floor(width * 0.9),
+        endY: Math.floor(height * 0.4),
+        weight: 0.7
+      },
+      // Cuarto inferior izquierdo
+      {
+        startX: Math.floor(width * 0.1),
+        startY: Math.floor(height * 0.6),
+        endX: Math.floor(width * 0.4),
+        endY: Math.floor(height * 0.9),
+        weight: 0.7
+      },
+      // Cuarto inferior derecho
+      {
+        startX: Math.floor(width * 0.6),
+        startY: Math.floor(height * 0.6),
+        endX: Math.floor(width * 0.9),
+        endY: Math.floor(height * 0.9),
+        weight: 0.7
+      }
+    ];
+    
+    // Analizar cada región
+    const regionResults = regions.map(region => {
+      let redSum = 0, greenSum = 0, blueSum = 0;
+      let pixelCount = 0;
+      
+      // Muestreo adaptativo para mejorar rendimiento
+      const sampleRate = Math.max(1, Math.floor(Math.min(width, height) / 120));
+      
+      for (let y = region.startY; y < region.endY; y += sampleRate) {
+        for (let x = region.startX; x < region.endX; x += sampleRate) {
+          const i = (y * width + x) * 4;
+          redSum += data[i];
+          greenSum += data[i + 1];
+          blueSum += data[i + 2];
+          pixelCount++;
+        }
+      }
+      
+      if (pixelCount === 0) return { red: 0, green: 0, blue: 0, score: 0, valid: false };
+      
+      const red = redSum / pixelCount;
+      const green = greenSum / pixelCount;
+      const blue = blueSum / pixelCount;
+      
+      // Criterios para evaluar la región
+      const brightness = (red + green + blue) / 3;
+      const redDominance = (red / (green + 0.1)) + (red / (blue + 0.1)); 
+      const contrast = Math.max(red, green, blue) - Math.min(red, green, blue);
+      
+      // Score combinado
+      let score = 0;
+      
+      // Factores que indican buena señal PPG
+      if (red > 40 && red < 250) score += 2;  // Nivel rojo adecuado
+      if (red > green * 1.2) score += 2;      // Dominancia de rojo
+      if (red > blue * 1.2) score += 2;       // Dominancia de rojo
+      if (brightness > 30 && brightness < 200) score += 1; // Brillo adecuado
+      if (contrast > 15) score += 1;          // Contraste suficiente
+      
+      score *= region.weight;  // Ajustar por importancia de región
+      
+      return { red, green, blue, score, valid: score > 4 };
     });
     
-    return weightSum > 0 ? weightedSum / weightSum : 100;
-  }
-
-  /**
-   * Extrae el canal rojo de un frame
-   * El canal rojo es el más sensible a cambios en volumen sanguíneo
-   */
-  private extractRedChannel(imageData: ImageData): number {
-    const data = imageData.data;
-    let redSum = 0;
-    let count = 0;
+    // Seleccionar mejor región
+    const validRegions = regionResults.filter(r => r.valid);
     
-    // Analizar una parte más grande de la imagen (40% central)
-    const startX = Math.floor(imageData.width * 0.3);
-    const endX = Math.floor(imageData.width * 0.7);
-    const startY = Math.floor(imageData.height * 0.3);
-    const endY = Math.floor(imageData.height * 0.7);
-    
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
-        count++;
-      }
+    if (validRegions.length === 0) {
+      // Si no hay regiones válidas, usar la central como fallback
+      const centralRegion = regionResults[0];
+      
+      // Mantener la última ROI conocida para suavidad
+      this.lastROI = {
+        startX: regions[0].startX,
+        startY: regions[0].startY, 
+        endX: regions[0].endX,
+        endY: regions[0].endY,
+        score: centralRegion.score
+      };
+      
+      return {
+        redValue: centralRegion.red,
+        greenValue: centralRegion.green,
+        blueValue: centralRegion.blue,
+        isValidRegion: false
+      };
     }
     
-    const avgRed = redSum / count;
-    return avgRed;
-  }
-
-  /**
-   * Extrae el canal infrarrojo (IR) de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractIRChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal IR si el hardware lo soporta
-    return 0;
-  }
-
-  /**
-   * Extrae el canal verde de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractGreenChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal verde si el hardware lo soporta
-    return 0;
+    // Ordenar por score
+    validRegions.sort((a, b) => b.score - a.score);
+    const bestRegion = validRegions[0];
+    
+    // Encontrar a qué región pertenece el mejor resultado
+    const bestRegionIndex = regionResults.findIndex(r => 
+      r.red === bestRegion.red && r.green === bestRegion.green && r.blue === bestRegion.blue);
+    
+    // Actualizar ROI
+    this.lastROI = {
+      startX: regions[bestRegionIndex].startX,
+      startY: regions[bestRegionIndex].startY,
+      endX: regions[bestRegionIndex].endX,
+      endY: regions[bestRegionIndex].endY,
+      score: bestRegion.score
+    };
+    
+    // Guardar historial para análisis de tendencias
+    this.roiHistory.push({
+      red: bestRegion.red,
+      green: bestRegion.green,
+      blue: bestRegion.blue,
+      score: bestRegion.score
+    });
+    
+    if (this.roiHistory.length > 5) {
+      this.roiHistory.shift();
+    }
+    
+    return {
+      redValue: bestRegion.red,
+      greenValue: bestRegion.green,
+      blueValue: bestRegion.blue,
+      isValidRegion: true
+    };
   }
 
   /**
@@ -565,27 +742,27 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Detecta región de interés para análisis
+   * Detecta región de interés (ROI) para análisis
    */
   private detectROI(redValue: number): ProcessedSignal['roi'] {
     return {
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100
+      x: this.lastROI.startX,
+      y: this.lastROI.startY,
+      width: this.lastROI.endX - this.lastROI.startX,
+      height: this.lastROI.endY - this.lastROI.startY
     };
   }
 
   /**
-   * Maneja errores del procesador
+   * Gestiona errores del procesador
    */
   private handleError(code: string, message: string): void {
-    console.error("PPGSignalProcessor: Error", code, message);
-    const error: ProcessingError = {
-      code,
-      message,
-      timestamp: Date.now()
-    };
-    this.onError?.(error);
+    if (this.onError) {
+      this.onError({
+        code,
+        message,
+        timestamp: Date.now()
+      });
+    }
   }
 }

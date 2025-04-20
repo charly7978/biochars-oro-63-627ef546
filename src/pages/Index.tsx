@@ -239,14 +239,63 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
-    if (videoTrack.getCapabilities()?.torch) {
-      console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({
-        advanced: [{ torch: true }]
-      }).catch(err => console.error("Error activando linterna:", err));
-    } else {
-      console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
-    }
+    // Optimización 1: Configuración avanzada de la cámara
+    const applyOptimalCameraSettings = async () => {
+      try {
+        const capabilities = videoTrack.getCapabilities();
+        console.log("Capacidades de cámara:", capabilities);
+        
+        // Crear objeto de restricciones
+        const constraints: MediaTrackConstraints = {};
+        
+        // Configuración óptima para captura PPG
+        if (capabilities) {
+          // Activar linterna si está disponible
+          if (capabilities.torch) {
+            constraints.advanced = [{ torch: true }];
+          }
+          
+          // Optimizar exposición para mejor detección de pulsaciones
+          if (capabilities.exposureMode) {
+            constraints.exposureMode = 'continuous';
+          }
+          
+          // Optimizar balance de blancos para mejor detección de rojos
+          if (capabilities.whiteBalanceMode) {
+            constraints.whiteBalanceMode = 'continuous';
+          }
+          
+          // Configurar focus para que no cambie constantemente
+          if (capabilities.focusMode) {
+            constraints.focusMode = 'fixed';
+          }
+          
+          // Maximizar framerate para mejor detección
+          if (capabilities.frameRate && capabilities.frameRate.max) {
+            constraints.frameRate = {
+              ideal: Math.min(30, capabilities.frameRate.max)
+            };
+          }
+        }
+        
+        await videoTrack.applyConstraints(constraints);
+        console.log("Configuración óptima de cámara aplicada");
+      } catch (err) {
+        console.error("Error optimizando configuración de cámara:", err);
+      }
+    };
+    
+    applyOptimalCameraSettings();
+    
+    // Optimización 2: Memoria de rendimiento para ajuste adaptativo
+    const performanceMetrics = {
+      lastFPSUpdateTime: Date.now(),
+      frameCount: 0,
+      processingFPS: 0,
+      averageProcessingTime: 0,
+      processingTimes: [] as number[],
+      maxSamples: 10
+    };
     
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
@@ -256,23 +305,52 @@ const Index = () => {
     }
     
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
-    let frameCount = 0;
-    let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
+    const baseFrameInterval = 1000/30; // Objetivo: 30 FPS
     
+    // Optimización 3: Procesamiento adaptativo basado en calidad y rendimiento
     const processImage = async () => {
       if (!isMonitoring) return;
       
       const now = Date.now();
+      
+      // Ajuste adaptativo del intervalo de captura según:
+      // 1. Calidad de señal (calidad alta = podemos reducir frecuencia)
+      // 2. Rendimiento del dispositivo (FPS bajo = aumentar intervalo)
+      let adaptiveInterval = baseFrameInterval;
+      
+      // Con buena calidad de señal podemos reducir la frecuencia de muestreo
+      if (signalQuality > 80) {
+        adaptiveInterval *= 1.2; // 25 FPS
+      } else if (signalQuality < 40) {
+        adaptiveInterval *= 0.9; // 33 FPS
+      }
+      
+      // Si el rendimiento es bajo, reducir la frecuencia
+      if (performanceMetrics.processingFPS < 20 && performanceMetrics.processingFPS > 0) {
+        adaptiveInterval *= 1.1;
+      }
+      
       const timeSinceLastProcess = now - lastProcessTime;
       
-      if (timeSinceLastProcess >= targetFrameInterval) {
+      if (timeSinceLastProcess >= adaptiveInterval) {
+        const processStart = performance.now();
+        
         try {
           const frame = await imageCapture.grabFrame();
           
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
+          // Resolución adaptativa: con buena señal podemos reducir resolución
+          let targetWidth = 320;
+          let targetHeight = 240;
+          
+          // Con calidad alta, reducir resolución para mejorar rendimiento
+          if (signalQuality > 75) {
+            targetWidth = 256;
+            targetHeight = 192;
+          } else if (signalQuality < 30) {
+            // Con calidad baja, aumentar resolución para mejorar detección
+            targetWidth = Math.min(400, frame.width);
+            targetHeight = Math.min(300, frame.height);
+          }
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
@@ -284,16 +362,44 @@ const Index = () => {
           );
           
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          
+          // Optimización 4: Pre-procesamiento de imagen para mejorar detección
+          if (signalQuality < 50) {
+            // Aplicar pre-procesamiento para imágenes problemáticas
+            enhanceImageForPPG(imageData, tempCtx);
+          }
+          
+          // Procesar frame con nuestro optimizador de señal
           processFrame(imageData);
           
-          frameCount++;
+          // Actualizar métricas de rendimiento
+          performanceMetrics.frameCount++;
+          const processingTime = performance.now() - processStart;
+          
+          // Guardar tiempo de procesamiento para análisis
+          performanceMetrics.processingTimes.push(processingTime);
+          if (performanceMetrics.processingTimes.length > performanceMetrics.maxSamples) {
+            performanceMetrics.processingTimes.shift();
+          }
+          
+          // Calcular tiempo promedio de procesamiento
+          performanceMetrics.averageProcessingTime = 
+            performanceMetrics.processingTimes.reduce((sum, time) => sum + time, 0) / 
+            performanceMetrics.processingTimes.length;
+          
           lastProcessTime = now;
           
-          if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
-            frameCount = 0;
-            lastFpsUpdateTime = now;
-            console.log(`Rendimiento de procesamiento: ${processingFps} FPS`);
+          if (now - performanceMetrics.lastFPSUpdateTime > 1000) {
+            performanceMetrics.processingFPS = performanceMetrics.frameCount;
+            performanceMetrics.frameCount = 0;
+            performanceMetrics.lastFPSUpdateTime = now;
+            
+            console.log(
+              `Rendimiento: ${performanceMetrics.processingFPS} FPS | ` +
+              `Tiempo promedio: ${performanceMetrics.averageProcessingTime.toFixed(1)}ms | ` +
+              `Calidad: ${signalQuality} | ` +
+              `Dedo: ${lastSignal?.fingerDetected ? 'Sí' : 'No'}`
+            );
           }
         } catch (error) {
           console.error("Error capturando frame:", error);
@@ -302,6 +408,25 @@ const Index = () => {
       
       if (isMonitoring) {
         requestAnimationFrame(processImage);
+      }
+    };
+    
+    // Optimización 5: Mejora de imagen para PPG
+    const enhanceImageForPPG = (imageData: ImageData, ctx: CanvasRenderingContext2D) => {
+      // Esta función realiza ajustes para mejorar la detección de señal PPG
+      const { data, width, height } = imageData;
+      
+      // Aplicar mejoras directamente en los datos de la imagen
+      for (let i = 0; i < data.length; i += 4) {
+        // Aumentar sensibilidad en el canal rojo
+        data[i] = Math.min(255, data[i] * 1.2);
+        
+        // Opcional: reducir otros canales para aumentar contraste
+        if (data[i] > data[i+1] * 1.1 && data[i] > data[i+2] * 1.1) {
+          // Si el píxel ya tiene dominancia roja, aumentarla
+          data[i+1] = Math.max(0, data[i+1] * 0.9);
+          data[i+2] = Math.max(0, data[i+2] * 0.9);
+        }
       }
     };
 
