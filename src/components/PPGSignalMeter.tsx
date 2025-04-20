@@ -455,26 +455,33 @@ const PPGSignalMeter = memo(({
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
+    
     const currentTime = performance.now();
     const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
+    
     if (!IMMEDIATE_RENDERING && timeSinceLastRender < FRAME_TIME) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
+    
     const canvas = canvasRef.current;
     const renderCtx = USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current ? 
       offscreenCanvasRef.current.getContext('2d', { alpha: false }) : 
       canvas.getContext('2d', { alpha: false });
+    
     if (!renderCtx) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
+    
     const now = Date.now();
+    
     if (gridCanvasRef.current) {
       renderCtx.drawImage(gridCanvasRef.current, 0, 0);
     } else {
       drawGrid(renderCtx);
     }
+    
     if (preserveResults && !isFingerDetected) {
       if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
         const visibleCtx = canvas.getContext('2d', { alpha: false });
@@ -482,19 +489,24 @@ const PPGSignalMeter = memo(({
           visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
         }
       }
+      
       lastRenderTimeRef.current = currentTime;
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
+    
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
       baselineRef.current = baselineRef.current * 0.95 + value * 0.05;
     }
+    
     const smoothedValue = smoothValue(value, lastValueRef.current);
     lastValueRef.current = smoothedValue;
+    
     const normalizedValue = smoothedValue - (baselineRef.current || 0);
     const scaledValue = normalizedValue * verticalScale;
+    
     let currentIsArrhythmia = false;
     if (rawArrhythmiaData && 
         arrhythmiaStatus?.includes("ARRITMIA") && 
@@ -505,17 +517,30 @@ const PPGSignalMeter = memo(({
       currentIsArrhythmia = true;
       lastArrhythmiaTime.current = now;
     }
+    
     updateArrhythmiaSegments(currentIsArrhythmia, now);
+    
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
       isArrhythmia: currentIsArrhythmia || isPointInArrhythmiaSegment(now)
     };
+    
     dataBufferRef.current.push(dataPoint);
+    
     const points = dataBufferRef.current.getPoints();
     detectPeaks(points, now);
-    // --- DIBUJAR LA ONDA SIEMPRE ---
+    
+    let shouldBeep = false;
+    
     if (points.length > 1) {
+      renderCtx.beginPath();
+      renderCtx.strokeStyle = '#0EA5E9';
+      renderCtx.lineWidth = 2;
+      renderCtx.lineJoin = 'round';
+      renderCtx.lineCap = 'round';
+      
+      let lastColor = null;
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const point = points[i];
@@ -524,69 +549,99 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - point.value;
         // Buscar si hay un beat cerca de este punto
-        const beat = beats.find(b => Math.abs(b.timestamp - point.time) < 80);
+        const beat = beats.find(b => Math.abs(b.timestamp - point.time) < 80); // 80ms de tolerancia
         let color = '#2563eb'; // Azul normal
         if (beat) {
           color = beat.isAnomalous ? '#ef4444' : '#2563eb';
+          // Si es un nuevo beat, disparar feedback
+          if (!prevPoint.isArrhythmia && beat.isAnomalous && (!lastColor || lastColor !== 'red')) {
+            triggerHeartbeatFeedback('arrhythmia');
+            lastColor = 'red';
+          } else if (!prevPoint.isArrhythmia && !beat.isAnomalous && (!lastColor || lastColor !== 'blue')) {
+            triggerHeartbeatFeedback('normal');
+            lastColor = 'blue';
+          }
         }
-        renderCtx.beginPath();
         renderCtx.strokeStyle = color;
-        renderCtx.lineWidth = 2;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
-        renderCtx.stroke();
       }
-    }
-    // --- FIN DIBUJAR LA ONDA ---
-    // Círculos y feedback (sincronizados solo con picos)
-    peaksRef.current.forEach(peak => {
-      const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-      const y = canvas.height / 2 - 50 - peak.value;
-      if (x >= 0 && x <= canvas.width) {
-        renderCtx.beginPath();
-        renderCtx.arc(x, y, 5, 0, Math.PI * 2);
-        renderCtx.fillStyle = peak.isArrhythmia ? '#FFD600' : '#0EA5E9';
-        renderCtx.fill();
-        if (peak.isArrhythmia) {
+      
+      peaksRef.current.forEach(peak => {
+        const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y = canvas.height / 2 - 50 - peak.value;
+        if (x >= 0 && x <= canvas.width) {
           renderCtx.beginPath();
-          renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-          renderCtx.strokeStyle = '#FEF7CD';
-          renderCtx.lineWidth = 3;
-          renderCtx.stroke();
-          renderCtx.font = 'bold 18px Inter';
-          renderCtx.fillStyle = '#F97316';
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText('ARRITMIA', x, y - 25);
-        }
-        renderCtx.font = 'bold 16px Inter';
-        renderCtx.fillStyle = '#000000';
-        renderCtx.textAlign = 'center';
-        renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
-        // Feedback instantáneo: beep y vibración SOLO al detectar el pico
-        if (!peak.beepPlayed) {
+          renderCtx.arc(x, y, 5, 0, Math.PI * 2);
+          renderCtx.fillStyle = peak.isArrhythmia ? '#FFD600' : '#0EA5E9';
+          renderCtx.fill();
           if (peak.isArrhythmia) {
-            safeVibrate([100, 50, 100]); // vibración larga/doble para arritmia
-          } else {
-            safeVibrate(40); // vibración corta para normal
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
+            renderCtx.stroke();
+            renderCtx.font = 'bold 18px Inter';
+            renderCtx.fillStyle = '#F97316';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText('ARRITMIA', x, y - 25);
           }
-          playBeep(1.0, peak.isArrhythmia);
-          peak.beepPlayed = true;
+          renderCtx.font = 'bold 16px Inter';
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          // Feedback instantáneo: beep y vibración SOLO al detectar el pico
+          if (!peak.beepPlayed) {
+            if (peak.isArrhythmia) {
+              safeVibrate([100, 50, 100]); // vibración larga/doble para arritmia
+            } else {
+              safeVibrate(40); // vibración corta para normal
+            }
+            playBeep(1.0, peak.isArrhythmia);
+            peak.beepPlayed = true;
+          }
         }
-      }
-    });
+      });
+    }
+    
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
       const visibleCtx = canvas.getContext('2d', { alpha: false });
       if (visibleCtx) {
         visibleCtx.drawImage(offscreenCanvasRef.current, 0, 0);
       }
     }
+    
+    if (shouldBeep && isFingerDetected && 
+        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
+      playBeep(1.0, isArrhythmia || 
+        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+    }
+    
+    // --- NUEVO: Marcar puntos recientes como arritmia si hay arritmia activa ---
+    if (
+      arrhythmiaStatus && arrhythmiaStatus.includes("ARRITMIA") &&
+      rawArrhythmiaData && now - rawArrhythmiaData.timestamp < 2000 &&
+      dataBufferRef.current
+    ) {
+      const points = dataBufferRef.current.getPoints();
+      for (let i = points.length - 1; i >= 0; i--) {
+        if (now - points[i].time <= 2000) {
+          points[i].isArrhythmia = true;
+        } else {
+          break;
+        }
+      }
+    }
+    // --- FIN NUEVO ---
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
     isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
-    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES, beats
+    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES, triggerHeartbeatFeedback, beats
   ]);
 
   useEffect(() => {

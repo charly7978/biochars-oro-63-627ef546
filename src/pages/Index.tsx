@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
+import { useSignalProcessor } from "@/hooks/useSignalProcessor";
+import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
@@ -36,25 +37,24 @@ const Index = () => {
   const [lastArrhythmiaTimestamp, setLastArrhythmiaTimestamp] = useState<number | null>(null);
   const [lastArrhythmiaData, setLastArrhythmiaData] = useState<any>(null);
   const [lastArrhythmiaStatus, setLastArrhythmiaStatus] = useState<string>("--");
-  const [lastSignal, setLastSignal] = useState<any>(null);
   
-  const {
-    currentBPM,
-    confidence,
-    processSignal: processHeartBeat,
-    reset,
+  const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
+  const { 
+    processSignal: processHeartBeat, 
+    heartBeatResult,
     isArrhythmia,
     arrhythmiaPhase,
     beats,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
+    startProcessing: startHeartBeatMonitoring,
+    stopProcessing: stopHeartBeatMonitoring,
+    reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
-  const {
-    processSignal: processVitalSigns,
+  const { 
+    processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
+    lastValidResults
   } = useVitalSignsProcessor();
 
   const enterFullScreen = async () => {
@@ -76,9 +76,12 @@ const Index = () => {
     };
   }, []);
 
+  // Importante: Monitorear resultados válidos
   useEffect(() => {
+    // Si hay resultados válidos y no estamos monitoreando, actualizar UI
     if (lastValidResults && !isMonitoring) {
       console.log("Resultados válidos disponibles:", lastValidResults);
+      // Solo actualizar si son diferentes a los actuales
       if (JSON.stringify(lastValidResults) !== JSON.stringify(vitalSigns)) {
         setVitalSigns(lastValidResults);
         setShowResults(true);
@@ -86,24 +89,32 @@ const Index = () => {
     }
   }, [lastValidResults, isMonitoring, vitalSigns]);
 
+  // Monitor de señal PPG y procesamiento
   useEffect(() => {
-    if (processVitalSigns && isMonitoring) {
+    if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      setSignalQuality(processVitalSigns.quality);
+      // Actualizar calidad de señal siempre
+      setSignalQuality(lastSignal.quality);
       
-      if (processVitalSigns.fingerDetected && processVitalSigns.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(processVitalSigns.filteredValue);
+      // Solo procesar si la señal tiene calidad aceptable y hay dedo detectado
+      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        // Procesar para ritmo cardíaco
+        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
+          // Actualizar UI con ritmo cardíaco
           if (heartBeatResult.bpm > 0) {
             console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
             setHeartRate(heartBeatResult.bpm);
           }
           
+          // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
-            processVitalSigns(processVitalSigns, heartBeatResult.rrData)
+            // Utilizar el procesamiento asíncrono
+            processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
+                // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
                 if (elapsedTime >= minimumMeasurementTime) {
                   console.log("Actualizando signos vitales:", vitals);
                   setVitalSigns(vitals);
@@ -117,16 +128,19 @@ const Index = () => {
           }
         }
       } else {
-        if (!processVitalSigns.fingerDetected && heartRate > 0) {
+        // Si no hay dedo detectado o la calidad es mala, resetear la frecuencia cardíaca
+        if (!lastSignal.fingerDetected && heartRate > 0) {
           console.log("Dedo no detectado, reseteando frecuencia cardíaca");
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
+      // Cuando no se está monitoreando, señal debe ser 0
       setSignalQuality(0);
     }
-  }, [processVitalSigns, isMonitoring, processHeartBeat, heartRate, elapsedTime]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, elapsedTime]);
 
+  // Monitorear cambios en vitalSigns para detectar arritmia
   useEffect(() => {
     if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes("ARRITMIA DETECTADA")) {
       setLastArrhythmiaTimestamp(Date.now());
@@ -149,6 +163,7 @@ const Index = () => {
       FeedbackService.vibrate(100);
       FeedbackService.playSound('notification');
       
+      startProcessing();
       startHeartBeatMonitoring();
       
       setElapsedTime(0);
@@ -178,6 +193,7 @@ const Index = () => {
     
     setIsMonitoring(false);
     setIsCameraOn(false);
+    stopProcessing();
     stopHeartBeatMonitoring();
     
     FeedbackService.signalMeasurementComplete(signalQuality >= 70);
@@ -187,6 +203,7 @@ const Index = () => {
       measurementTimerRef.current = null;
     }
     
+    // Importante: guardar los resultados antes de resetear
     const savedResults = resetVitalSigns();
     if (savedResults) {
       console.log("Guardando resultados finales:", savedResults);
@@ -203,7 +220,9 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     setShowResults(false);
-    reset();
+    stopProcessing();
+    stopHeartBeatMonitoring();
+    resetHeartBeatProcessor();
     
     FeedbackService.vibrate([50, 30, 50]);
     
@@ -230,56 +249,62 @@ const Index = () => {
     setSignalQuality(0);
   };
 
-  // Utilidad para extraer datos de la imagen (simulación, reemplazar por tu lógica real)
-  function extractSignalFeatures(imageData) {
-    // Aquí deberías poner tu lógica real de extracción de señal
-    // Por ahora, simula valores
-    return {
-      filteredValue: Math.random() * 100, // valor simulado
-      quality: Math.floor(Math.random() * 100),
-      fingerDetected: Math.random() > 0.2 // 80% de probabilidad de dedo detectado
-    };
-  }
-
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
+    
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
+    
     if (videoTrack.getCapabilities()?.torch) {
       console.log("Activando linterna para mejorar la señal PPG");
-      videoTrack.applyConstraints({ advanced: [{ torch: true }] }).catch(err => console.error("Error activando linterna:", err));
+      videoTrack.applyConstraints({
+        advanced: [{ torch: true }]
+      }).catch(err => console.error("Error activando linterna:", err));
     } else {
       console.warn("Esta cámara no tiene linterna disponible, la medición puede ser menos precisa");
     }
+    
     const tempCanvas = document.createElement('canvas');
     const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
     if (!tempCtx) {
       console.error("No se pudo obtener el contexto 2D");
       return;
     }
+    
     let lastProcessTime = 0;
     const targetFrameInterval = 1000/30;
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
     let processingFps = 0;
+    
     const processImage = async () => {
       if (!isMonitoring) return;
+      
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
+      
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           const frame = await imageCapture.grabFrame();
+          
           const targetWidth = Math.min(320, frame.width);
           const targetHeight = Math.min(240, frame.height);
+          
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
-          tempCtx.drawImage(frame, 0, 0, frame.width, frame.height, 0, 0, targetWidth, targetHeight);
+          
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
+          
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          const signalFeatures = extractSignalFeatures(imageData);
-          setLastSignal(signalFeatures);
-          const signalResult = processVitalSigns(signalFeatures.filteredValue);
+          processFrame(imageData);
+          
           frameCount++;
           lastProcessTime = now;
+          
           if (now - lastFpsUpdateTime > 1000) {
             processingFps = frameCount;
             frameCount = 0;
@@ -290,10 +315,12 @@ const Index = () => {
           console.error("Error capturando frame:", error);
         }
       }
+      
       if (isMonitoring) {
         requestAnimationFrame(processImage);
       }
     };
+
     processImage();
   };
 
@@ -313,7 +340,7 @@ const Index = () => {
   };
 
   return (
-    <div className="fixed inset-0 flex flex-col" style={{
+    <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
       width: '100vw',
       maxWidth: '100vw',
@@ -329,14 +356,14 @@ const Index = () => {
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
             isFingerDetected={lastSignal?.fingerDetected}
-            signalQuality={lastSignal?.quality}
+            signalQuality={signalQuality}
           />
         </div>
 
         <div className="relative z-10 h-full flex flex-col">
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-sm">
-              Calidad: {lastSignal?.quality}
+              Calidad: {signalQuality}
             </div>
             <div className="text-white text-sm">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
@@ -344,7 +371,7 @@ const Index = () => {
           </div>
 
           <div className="flex-1">
-            <PPGSignalMeter
+            <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
               isFingerDetected={lastSignal?.fingerDetected || false}
