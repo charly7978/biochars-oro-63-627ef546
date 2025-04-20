@@ -193,6 +193,14 @@ export const useHeartBeatProcessor = () => {
     return false;
   }, [lastValidBpmRef]);
 
+  /**
+   * Obtener el valor actual de ritmo cardíaco
+   */
+  const getCurrentHeartRate = useCallback(() => {
+    // Usar el valor más reciente calculado
+    return heartBeatResult.bpm || lastBpmRef.current || 0;
+  }, [heartBeatResult.bpm]);
+
   return {
     heartBeatResult,
     isProcessing,
@@ -207,6 +215,7 @@ export const useHeartBeatProcessor = () => {
     lastValidBpm: lastValidBpmRef.current,
     hasBpmData: lastValidBpmRef.current > 0,
     isMonitoring: isMonitoringRef.current,
-    ppgData
+    ppgData,
+    getCurrentHeartRate
   };
 };

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
@@ -31,7 +31,9 @@ const Index = () => {
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
-  const measurementTimerRef = useRef<number | null>(null);
+  const measurementTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const measurementStartTimeRef = useRef<number | null>(null);
+  const lastDiagnosticLogTime = useRef<number>(0);
   const minimumMeasurementTime = 10; // Segundos mínimos antes de mostrar resultados
   const optimalMeasurementTime = 30; // Tiempo óptimo para resultados más precisos
   const [lastArrhythmiaTimestamp, setLastArrhythmiaTimestamp] = useState<number | null>(null);
@@ -47,6 +49,7 @@ const Index = () => {
     isArrhythmia,
     startMonitoring: startHeartRateMonitoring,
     stopMonitoring: stopHeartRateMonitoring,
+    getCurrentHeartRate
   } = useHeartBeatProcessor();
   
   const { 
@@ -55,6 +58,11 @@ const Index = () => {
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  let imageCapture: ImageCapture | null = null;
+  let tempCanvas: HTMLCanvasElement | null = null;
+  let tempCtx: CanvasRenderingContext2D | null = null;
 
   const enterFullScreen = async () => {
     try {
@@ -133,6 +141,46 @@ const Index = () => {
       setLastArrhythmiaStatus(vitalSigns.arrhythmiaStatus);
     }
   }, [vitalSigns.arrhythmiaStatus, vitalSigns.lastArrhythmiaData]);
+
+  // Función para actualizar las métricas vitales
+  const updateVitalSigns = useCallback((newValues: Partial<VitalSignsResult>) => {
+    setVitalSigns(prev => ({
+      ...prev,
+      ...newValues
+    }));
+  }, []);
+
+  // Actualizar las métricas de ritmo cardíaco periódicamente
+  useEffect(() => {
+    // Solo actualizar cuando estamos monitoreando
+    if (!isMonitoring) return;
+    
+    // Crear un temporizador para actualizar el ritmo cardíaco cada 500ms
+    const heartRateUpdateTimer = setInterval(() => {
+      // Obtener el ritmo cardíaco actual del procesador
+      const currentHeartRate = getCurrentHeartRate();
+      
+      // Actualizar el estado solo si hay un valor válido
+      if (currentHeartRate > 0) {
+        setHeartRate(currentHeartRate);
+        
+        // Actualizar otras métricas vitales si es necesario
+        updateVitalSigns({
+          heartRate: currentHeartRate
+        });
+      }
+      
+      // Actualizar calidad de señal basada en el último valor
+      if (lastSignal) {
+        setSignalQuality(lastSignal.quality);
+      }
+    }, 500);
+    
+    // Limpiar el temporizador cuando el componente se desmonte o cambie el estado
+    return () => {
+      clearInterval(heartRateUpdateTimer);
+    };
+  }, [isMonitoring, getCurrentHeartRate, lastSignal, updateVitalSigns]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -234,203 +282,138 @@ const Index = () => {
   };
 
   const handleStreamReady = (stream: MediaStream) => {
-    if (!isMonitoring) return;
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(track => track.stop());
+    }
+    cameraStreamRef.current = stream;
     
-    const videoTrack = stream.getVideoTracks()[0];
-    const imageCapture = new ImageCapture(videoTrack);
-    
-    // Optimización 1: Configuración avanzada de la cámara
-    const applyOptimalCameraSettings = async () => {
-      try {
-        const capabilities = videoTrack.getCapabilities();
-        console.log("Capacidades de cámara:", capabilities);
-        
-        // Crear objeto de restricciones
-        const constraints: MediaTrackConstraints = {};
-        
-        // Configuración óptima para captura PPG
-        if (capabilities) {
-          // Activar linterna si está disponible
-          if (capabilities.torch) {
-            constraints.advanced = [{ torch: true }];
-          }
-          
-          // Optimizar exposición para mejor detección de pulsaciones
-          if (capabilities.exposureMode) {
-            constraints.exposureMode = 'continuous';
-          }
-          
-          // Optimizar balance de blancos para mejor detección de rojos
-          if (capabilities.whiteBalanceMode) {
-            constraints.whiteBalanceMode = 'continuous';
-          }
-          
-          // Configurar focus para que no cambie constantemente
-          if (capabilities.focusMode) {
-            constraints.focusMode = 'fixed';
-          }
-          
-          // Maximizar framerate para mejor detección
-          if (capabilities.frameRate && capabilities.frameRate.max) {
-            constraints.frameRate = {
-              ideal: Math.min(30, capabilities.frameRate.max)
-            };
-          }
-        }
-        
-        await videoTrack.applyConstraints(constraints);
-        console.log("Configuración óptima de cámara aplicada");
-      } catch (err) {
-        console.error("Error optimizando configuración de cámara:", err);
+    try {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        console.error("No se pudo obtener la pista de video");
+        return;
       }
-    };
+      
+      // Información importante para diagnóstico
+      console.log("Información del track de video:", {
+        settings: videoTrack.getSettings(),
+        constraints: videoTrack.getConstraints(),
+        capabilities: videoTrack.getCapabilities ? videoTrack.getCapabilities() : "No soportado"
+      });
+      
+      // Inicializar captura de imágenes
+      imageCapture = new ImageCapture(videoTrack);
+      
+      // Iniciar procesamiento si está monitoreando
+      if (isCameraOn) {
+        startProcessors();
+        
+        // Asegurar que tenemos un contexto válido para el canvas temporal
+        tempCanvas = document.createElement('canvas');
+        tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+        
+        // Iniciar bucle de procesamiento
+        requestAnimationFrame(processImage);
+        
+        console.log("Procesamiento de frames iniciado");
+      }
+    } catch (error) {
+      console.error("Error al inicializar la captura de imágenes:", error);
+    }
+  };
+
+  const startProcessors = () => {
+    console.log("Iniciando procesadores de señal");
+    startProcessing();
+    startHeartRateMonitoring();
     
-    applyOptimalCameraSettings();
+    // Establecer el estado inicial
+    setHeartRate(0);
+    setElapsedTime(0);
+    setSignalQuality(0);
     
-    // Optimización 2: Memoria de rendimiento para ajuste adaptativo
-    const performanceMetrics = {
-      lastFPSUpdateTime: Date.now(),
-      frameCount: 0,
-      processingFPS: 0,
-      averageProcessingTime: 0,
-      processingTimes: [] as number[],
-      maxSamples: 10
-    };
+    // Registrar el tiempo de inicio
+    measurementStartTimeRef.current = Date.now();
     
-    const tempCanvas = document.createElement('canvas');
-    const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true});
-    if (!tempCtx) {
-      console.error("No se pudo obtener el contexto 2D");
+    // Iniciar el temporizador de medición
+    if (!measurementTimerRef.current) {
+      measurementTimerRef.current = setInterval(() => {
+        if (measurementStartTimeRef.current) {
+          const now = Date.now();
+          const elapsed = Math.floor((now - measurementStartTimeRef.current) / 1000);
+          setElapsedTime(elapsed);
+        }
+      }, 1000);
+    }
+  };
+
+  const processImage = async () => {
+    if (!isCameraOn || !imageCapture || !tempCanvas || !tempCtx) {
+      console.log("No se puede procesar la imagen - falta configuración");
       return;
     }
     
-    let lastProcessTime = 0;
-    const baseFrameInterval = 1000/30; // Objetivo: 30 FPS
-    
-    // Optimización 3: Procesamiento adaptativo basado en calidad y rendimiento
-    const processImage = async () => {
-      if (!isMonitoring) return;
+    try {
+      // Capturar frame de la cámara
+      const frame = await imageCapture.grabFrame();
       
-      const now = Date.now();
+      // Configurar resolución óptima para el procesamiento
+      // Usar resolución adaptativa basada en la calidad de la señal
+      let targetWidth = 320;
+      let targetHeight = 240;
       
-      // Ajuste adaptativo del intervalo de captura según:
-      // 1. Calidad de señal (calidad alta = podemos reducir frecuencia)
-      // 2. Rendimiento del dispositivo (FPS bajo = aumentar intervalo)
-      let adaptiveInterval = baseFrameInterval;
-      
-      // Con buena calidad de señal podemos reducir la frecuencia de muestreo
-      if (signalQuality > 80) {
-        adaptiveInterval *= 1.2; // 25 FPS
+      if (signalQuality > 70) {
+        // Buena calidad - podemos reducir resolución para rendimiento
+        targetWidth = 256;
+        targetHeight = 192;
       } else if (signalQuality < 40) {
-        adaptiveInterval *= 0.9; // 33 FPS
+        // Baja calidad - aumentar resolución
+        targetWidth = Math.min(400, frame.width);
+        targetHeight = Math.min(300, frame.height);
       }
       
-      // Si el rendimiento es bajo, reducir la frecuencia
-      if (performanceMetrics.processingFPS < 20 && performanceMetrics.processingFPS > 0) {
-        adaptiveInterval *= 1.1;
-      }
+      // Configurar el canvas temporal
+      tempCanvas.width = targetWidth;
+      tempCanvas.height = targetHeight;
       
-      const timeSinceLastProcess = now - lastProcessTime;
+      // Dibujar el frame en el canvas con el tamaño objetivo
+      tempCtx.drawImage(
+        frame,
+        0, 0, frame.width, frame.height,
+        0, 0, targetWidth, targetHeight
+      );
       
-      if (timeSinceLastProcess >= adaptiveInterval) {
-        const processStart = performance.now();
+      // Obtener los datos de la imagen del canvas
+      const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+      
+      // Procesar el frame actual con nuestro procesador de señal
+      // Este es el paso clave que conecta la captura con el procesamiento
+      processFrame(imageData);
+      
+      // Registrar métricas de diagnóstico periódicamente
+      const now = Date.now();
+      if (now - lastDiagnosticLogTime.current > 2000) {
+        console.log("Diagnóstico de señal PPG:", {
+          timestamp: new Date().toISOString(),
+          frameProcessed: true,
+          signalQuality,
+          fingerDetected: lastSignal?.fingerDetected,
+          heartRate,
+          elapsedTime,
+          lastSignalTimestamp: lastSignal?.timestamp,
+          hasValidPpgSignal: lastSignal?.channelData?.red && lastSignal?.channelData?.green
+        });
         
-        try {
-          const frame = await imageCapture.grabFrame();
-          
-          // Resolución adaptativa: con buena señal podemos reducir resolución
-          let targetWidth = 320;
-          let targetHeight = 240;
-          
-          // Con calidad alta, reducir resolución para mejorar rendimiento
-          if (signalQuality > 75) {
-            targetWidth = 256;
-            targetHeight = 192;
-          } else if (signalQuality < 30) {
-            // Con calidad baja, aumentar resolución para mejorar detección
-            targetWidth = Math.min(400, frame.width);
-            targetHeight = Math.min(300, frame.height);
-          }
-          
-          tempCanvas.width = targetWidth;
-          tempCanvas.height = targetHeight;
-          
-          tempCtx.drawImage(
-            frame, 
-            0, 0, frame.width, frame.height, 
-            0, 0, targetWidth, targetHeight
-          );
-          
-          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          
-          // Optimización 4: Pre-procesamiento de imagen para mejorar detección
-          if (signalQuality < 50) {
-            // Aplicar pre-procesamiento para imágenes problemáticas
-            enhanceImageForPPG(imageData, tempCtx);
-          }
-          
-          // Procesar frame con nuestro optimizador de señal
-          processFrame(imageData);
-          
-          // Actualizar métricas de rendimiento
-          performanceMetrics.frameCount++;
-          const processingTime = performance.now() - processStart;
-          
-          // Guardar tiempo de procesamiento para análisis
-          performanceMetrics.processingTimes.push(processingTime);
-          if (performanceMetrics.processingTimes.length > performanceMetrics.maxSamples) {
-            performanceMetrics.processingTimes.shift();
-          }
-          
-          // Calcular tiempo promedio de procesamiento
-          performanceMetrics.averageProcessingTime = 
-            performanceMetrics.processingTimes.reduce((sum, time) => sum + time, 0) / 
-            performanceMetrics.processingTimes.length;
-          
-          lastProcessTime = now;
-          
-          if (now - performanceMetrics.lastFPSUpdateTime > 1000) {
-            performanceMetrics.processingFPS = performanceMetrics.frameCount;
-            performanceMetrics.frameCount = 0;
-            performanceMetrics.lastFPSUpdateTime = now;
-            
-            console.log(
-              `Rendimiento: ${performanceMetrics.processingFPS} FPS | ` +
-              `Tiempo promedio: ${performanceMetrics.averageProcessingTime.toFixed(1)}ms | ` +
-              `Calidad: ${signalQuality} | ` +
-              `Dedo: ${lastSignal?.fingerDetected ? 'Sí' : 'No'}`
-            );
-          }
-        } catch (error) {
-          console.error("Error capturando frame:", error);
-        }
+        lastDiagnosticLogTime.current = now;
       }
-      
-      if (isMonitoring) {
-        requestAnimationFrame(processImage);
-      }
-    };
+    } catch (error) {
+      console.error("Error al procesar frame:", error);
+    }
     
-    // Optimización 5: Mejora de imagen para PPG
-    const enhanceImageForPPG = (imageData: ImageData, ctx: CanvasRenderingContext2D) => {
-      // Esta función realiza ajustes para mejorar la detección de señal PPG
-      const { data, width, height } = imageData;
-      
-      // Aplicar mejoras directamente en los datos de la imagen
-      for (let i = 0; i < data.length; i += 4) {
-        // Aumentar sensibilidad en el canal rojo
-        data[i] = Math.min(255, data[i] * 1.2);
-        
-        // Opcional: reducir otros canales para aumentar contraste
-        if (data[i] > data[i+1] * 1.1 && data[i] > data[i+2] * 1.1) {
-          // Si el píxel ya tiene dominancia roja, aumentarla
-          data[i+1] = Math.max(0, data[i+1] * 0.9);
-          data[i+2] = Math.max(0, data[i+2] * 0.9);
-        }
-      }
-    };
-
-    processImage();
+    // Continuar el ciclo de procesamiento si aún estamos monitoreando
+    if (isCameraOn) {
+      requestAnimationFrame(processImage);
+    }
   };
 
   const handleToggleMonitoring = () => {
@@ -526,61 +509,4 @@ const Index = () => {
                   value={vitalSigns.hydration || "--"}
                   unit="%"
                   highlighted={showResults}
-                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />}
-                  compact={false}
-                />
-              </div>
-              <VitalSign 
-                label="GLUCOSA"
-                value={vitalSigns.glucose || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="COLESTEROL"
-                value={vitalSigns.lipids?.totalCholesterol || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="TRIGLICÉRIDOS"
-                value={vitalSigns.lipids?.triglycerides || "--"}
-                unit="mg/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-              <VitalSign 
-                label="HEMOGLOBINA"
-                value={Math.round(vitalSigns.hemoglobin) || "--"}
-                unit="g/dL"
-                highlighted={showResults}
-                compact={false}
-              />
-            </div>
-          </div>
-
-          <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
-            <div className="w-1/2">
-              <MonitorButton 
-                isMonitoring={isMonitoring} 
-                onToggle={handleToggleMonitoring} 
-                variant="monitor"
-              />
-            </div>
-            <div className="w-1/2">
-              <MonitorButton 
-                isMonitoring={isMonitoring} 
-                onToggle={handleReset} 
-                variant="reset"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default Index;
+                  icon={<Droplet className={`
