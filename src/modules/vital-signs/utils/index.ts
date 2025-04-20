@@ -30,6 +30,8 @@ export {
   amplifySignal
 } from './signal-processing-utils';
 
+import { useVitalSignsProcessor } from "@/modules/vital-signs/utils";
+
 /**
  * DOCUMENTACIÓN:
  * Este archivo es el ÚNICO punto de entrada para todas las utilidades de filtrado y procesamiento de señal.
