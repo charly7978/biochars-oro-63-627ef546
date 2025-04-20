@@ -94,6 +94,7 @@ const Index = () => {
       setSignalQuality(lastSignal.quality);
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+        console.log("Valor filtrado recibido:", lastSignal?.filteredValue);
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
