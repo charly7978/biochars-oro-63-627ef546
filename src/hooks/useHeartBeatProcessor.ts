@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
+import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { useArrhythmiaPatternDetector } from './heart-beat/arrhythmia-pattern-detector';
