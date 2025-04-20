@@ -861,7 +861,7 @@ export class IntelligentCalibrationSystem {
       // Guardar en localStorage para acceso rápido
       localStorage.setItem('calibrationProfile', JSON.stringify(this.userProfile));
       
-      // Si hay conexión a Supabase, sincronizar
+      // Si hay conexión a Supabase, sincronizar la base de datos
       const { error } = await supabase
         .from('calibration_settings')
         .upsert({
@@ -871,3 +871,16 @@ export class IntelligentCalibrationSystem {
           diastolic_reference: this.userProfile.referenceValues.diastolic,
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error('Error sincronizando perfil de calibración con Supabase:', error);
+      } else {
+        console.log('Perfil de calibración sincronizado con Supabase correctamente');
+      }
+    } catch (error) {
+      console.error('Error al guardar perfil de calibración:', error);
+    }
+  }
+  
+}
