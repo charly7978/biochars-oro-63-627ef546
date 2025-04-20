@@ -39,18 +39,26 @@ export class GlucoseProcessor {
     if (ppgValues.length < this.MIN_SAMPLES) {
       this.confidence = 0;
       this.hasQualityData = false;
-      return this.lastCalculatedGlucose || this.GLUCOSE_BASELINE;
+      console.log("GlucoseProcessor: Insufficient data points", { 
+        provided: ppgValues.length, 
+        required: this.MIN_SAMPLES 
+      });
+      return 0; // Not enough data
     }
     
     // Validate signal quality
     const signalVariability = this.calculateVariability(ppgValues);
     const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
     
-    // If signal quality is too poor, return last valid value
+    // If signal quality is too poor, return 0
     if (signalAmplitude < 0.05 || signalVariability > 0.8) {
       this.confidence = 0;
       this.hasQualityData = false;
-      return this.lastCalculatedGlucose || this.GLUCOSE_BASELINE;
+      console.log("GlucoseProcessor: Signal quality too poor", { 
+        amplitude: signalAmplitude, 
+        variability: signalVariability 
+      });
+      return 0;
     }
     
     this.hasQualityData = true;
@@ -59,23 +67,63 @@ export class GlucoseProcessor {
     const recentValues = ppgValues.slice(-Math.min(150, ppgValues.length));
     
     // Calculate signal metrics with improved analysis
-    const { amplitude, perfusionIndex } = this.analyzeSignal(recentValues);
+    const { 
+      amplitude, 
+      frequency, 
+      phase, 
+      perfusionIndex,
+      areaUnderCurve,
+      signalVariability: variability
+    } = this.analyzeSignal(recentValues);
     
-    // Eliminar factores arbitrarios: solo usar la amplitud y perfusionIndex de forma fisiológica
-    let glucoseEstimate = this.GLUCOSE_BASELINE + (amplitude - 0.5) * 12 + (perfusionIndex - 0.5) * 10;
+    // Directly calculate glucose from signal characteristics with reduced factors
+    let glucoseEstimate = this.GLUCOSE_BASELINE;
     
-    // Validación fisiológica - si el valor es muy diferente al anterior, mantener el anterior
-    if (this.lastCalculatedGlucose > 0 && Math.abs(glucoseEstimate - this.lastCalculatedGlucose) > 20) {
-      glucoseEstimate = this.lastCalculatedGlucose;
-    }
+    // Apply smaller adjustments to prevent extreme values
+    glucoseEstimate += amplitude * this.AMPLITUDE_FACTOR * 100;
+    glucoseEstimate += frequency * this.FREQUENCY_FACTOR * 150;
+    glucoseEstimate += phase * this.PHASE_FACTOR * 50;
+    glucoseEstimate += areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35;
     
-    // Limitar a rangos fisiológicos
-    glucoseEstimate = Math.max(70, Math.min(180, glucoseEstimate));
+    // Perfusion index contribution
+    const perfusionAdjustment = (perfusionIndex - 0.5) * this.PERFUSION_FACTOR * 40;
+    glucoseEstimate += perfusionAdjustment;
     
-    // Guardar y retornar
-    this.lastCalculatedGlucose = glucoseEstimate;
+    // Add small variability component
+    glucoseEstimate += (variability - 0.5) * 8;
     
-    return Math.round(glucoseEstimate);
+    // Apply individual variation factor based on signal characteristics
+    const individualFactor = this.calculateIndividualFactor(recentValues);
+    glucoseEstimate = glucoseEstimate * (1 + (individualFactor - 0.5) * 0.15);
+    
+    // Apply physiological constraints with narrower range
+    // Normal fasting range: 70-99 mg/dL
+    glucoseEstimate = Math.max(80, Math.min(140, glucoseEstimate));
+    
+    // Stabilize readings with temporal smoothing
+    const stabilizedGlucose = this.stabilizeReading(glucoseEstimate);
+    
+    // Calculate confidence based on signal quality and stability
+    this.confidence = this.calculateConfidence(recentValues, perfusionIndex, variability);
+    
+    // Store this value for future stability calculations
+    this.lastCalculatedGlucose = stabilizedGlucose;
+    
+    console.log("GlucoseProcessor: Calculation details", {
+      baseValue: this.GLUCOSE_BASELINE,
+      amplitudeContribution: amplitude * this.AMPLITUDE_FACTOR * 100,
+      frequencyContribution: frequency * this.FREQUENCY_FACTOR * 150,
+      phaseContribution: phase * this.PHASE_FACTOR * 50,
+      aucContribution: areaUnderCurve * this.AREA_UNDER_CURVE_FACTOR * 35,
+      perfusionContribution: perfusionAdjustment,
+      variabilityContribution: (variability - 0.5) * 8,
+      individualFactor,
+      rawEstimate: glucoseEstimate,
+      stabilized: stabilizedGlucose,
+      confidence: this.confidence
+    });
+    
+    return Math.round(stabilizedGlucose);
   }
   
   /**

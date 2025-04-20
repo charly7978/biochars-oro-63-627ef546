@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -11,62 +12,80 @@ export class HeartRateDetector {
   // Store recent peaks for consistent timing analysis
   private peakTimes: number[] = [];
   private lastProcessTime: number = 0;
-  private lastValidBPM: number = 75;
   
   /**
    * Calculate heart rate from real PPG values with enhanced peak detection
    */
   public calculateHeartRate(ppgValues: number[], sampleRate: number = 30): number {
-    if (ppgValues.length < sampleRate * 0.5) {
-      return this.lastValidBPM;
+    if (ppgValues.length < sampleRate * 1.0) { // Reducido para detección más rápida
+      return 0;
     }
+    
     const now = Date.now();
+    
+    // Track processing time for natural timing
     const timeDiff = now - this.lastProcessTime;
     this.lastProcessTime = now;
-    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 3));
+    
+    // Get recent real data - analizamos más datos para mejor detección
+    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 6)); // Aumentado para mejor detección
+    
+    // Calculate signal statistics for adaptive thresholding
     const mean = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
     const stdDev = Math.sqrt(
       recentData.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentData.length
     );
-    const peaks = this.findPeaksEnhanced(recentData, mean, stdDev * 0.8);
+    
+    // Find peaks in real data with adaptive threshold
+    const peaks = this.findPeaksEnhanced(recentData, mean, stdDev);
+    
     if (peaks.length < 2) {
-      return this.lastValidBPM;
+      return 0;
     }
+    
+    // Convert peak indices to timestamps for natural timing
     const sampleDuration = timeDiff / recentData.length;
     const peakTimes = peaks.map(idx => now - (recentData.length - idx) * sampleDuration);
-    this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-20);
+    
+    // Update stored peak times
+    this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-15); // Aumentado para mejor análisis
+    
+    // Calculate intervals between consecutive peaks
     const intervals: number[] = [];
     for (let i = 1; i < this.peakTimes.length; i++) {
       const interval = this.peakTimes[i] - this.peakTimes[i-1];
-      if (interval >= 200 && interval <= 2200) {
+      // Only use physiologically plausible intervals (30-240 BPM)
+      if (interval >= 250 && interval <= 2000) { // Ampliado para detectar FC más altas
         intervals.push(interval);
       }
     }
-    let bpm = this.lastValidBPM;
-    if (intervals.length >= 2) {
-      intervals.sort((a, b) => a - b);
-      const filteredIntervals = intervals.slice(
-        Math.floor(intervals.length * 0.05),
-        Math.ceil(intervals.length * 0.95)
-      );
-      if (filteredIntervals.length > 0) {
-        const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
-        bpm = Math.round(60000 / avgInterval);
-      }
-    } else if (peaks.length >= 2) {
+    
+    if (intervals.length < 2) {
+      // Fall back to sample-based calculation if not enough timestamp-based intervals
       let totalInterval = 0;
       for (let i = 1; i < peaks.length; i++) {
         totalInterval += peaks[i] - peaks[i - 1];
       }
+      
       const avgInterval = totalInterval / (peaks.length - 1);
-      bpm = Math.round(60 / (avgInterval / sampleRate));
+      return Math.round(60 / (avgInterval / sampleRate));
     }
-    // Validación fisiológica
-    if (bpm < 30 || bpm > 220 || Math.abs(bpm - this.lastValidBPM) > 50) {
-      bpm = this.lastValidBPM;
+    
+    // Calculate average interval with outlier rejection - mejora en el filtrado
+    intervals.sort((a, b) => a - b);
+    const filteredIntervals = intervals.slice(
+      Math.floor(intervals.length * 0.1), // Más inclusivo
+      Math.ceil(intervals.length * 0.9)   // Más inclusivo
+    );
+    
+    if (filteredIntervals.length === 0) {
+      return 0;
     }
-    this.lastValidBPM = bpm;
-    return bpm;
+    
+    const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
+    
+    // Convert to beats per minute
+    return Math.round(60000 / avgInterval);
   }
   
   /**

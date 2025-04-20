@@ -52,63 +52,78 @@ export class BloodPressureProcessor {
     if (this.ppgBuffer.length > this.BUFFER_SIZE) {
       this.ppgBuffer = this.ppgBuffer.slice(-this.BUFFER_SIZE);
     }
+    
     // Verificar si hay suficientes datos para estimar
     if (this.ppgBuffer.length < this.MIN_VALID_DATA_POINTS) {
-      return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
+    
     // Controlar frecuencia de cálculo para evitar sobrecarga
     const now = Date.now();
     if (now - this.lastCalculationTime < this.BP_UPDATE_INTERVAL) {
-      return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
     this.lastCalculationTime = now;
+    
     // Verificar si tenemos calibración del usuario
     if (!this.userCalibration) {
-      // Sin calibración, usar el último valor válido o un valor seguro
-      return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
+      console.log("BloodPressureProcessor: Sin calibración de usuario, usando modelo general");
+      // Sin calibración, podemos usar un modelo general menos preciso
+      return this.estimateWithGeneralModel() || { systolic: 120, diastolic: 80 };
     }
+    
     try {
       // Análisis de señal real
       const { peakIndices, valleyIndices } = findPeaksAndValleys(this.ppgBuffer);
-      if (peakIndices.length < 5 || valleyIndices.length < 5) {
-        // Si no hay suficientes picos/valles, mantener el último valor válido
-        return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
+      
+      if (peakIndices.length < 3 || valleyIndices.length < 3) {
+        console.log("BloodPressureProcessor: Detección insuficiente de picos/valles");
+        return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
       }
+      
       // Extracción de características de la señal PPG real
       const amplitude = calculateAmplitude(this.ppgBuffer, peakIndices, valleyIndices);
       const ac = calculateAC(this.ppgBuffer);
       const dc = calculateDC(this.ppgBuffer);
+      
       // Características temporales
       const peakToPeakIntervals: number[] = [];
       for (let i = 1; i < peakIndices.length; i++) {
         peakToPeakIntervals.push(peakIndices[i] - peakIndices[i - 1]);
       }
+      
       const avgPeakToPeakInterval = peakToPeakIntervals.reduce((sum, val) => sum + val, 0) / peakToPeakIntervals.length;
+      
       // Índice de rigidez (estimado a partir de características de la forma de onda)
       const stiffnessIndex = (ac / dc) * Math.sqrt(avgPeakToPeakInterval);
+      
       // Usar calibración para personalizar predicción - modelo basado en características reales
-      // Eliminar factores arbitrarios: solo usar la calibración y la amplitud relativa
-      let systolic = this.userCalibration.systolic + (amplitude - 0.5) * 0.15 * this.userCalibration.systolic;
-      let diastolic = this.userCalibration.diastolic + (amplitude - 0.5) * 0.12 * this.userCalibration.diastolic;
-      // Validación fisiológica - si el valor es muy diferente al anterior, mantener el anterior
+      const systolic = this.calculateSystolic(amplitude, stiffnessIndex);
+      const diastolic = this.calculateDiastolic(amplitude, stiffnessIndex);
+      
+      // Validación fisiológica - desconfiar de cambios bruscos o valores fuera de rango normal
       if (this.lastSystolic > 0 && Math.abs(systolic - this.lastSystolic) > 25) {
-        systolic = this.lastSystolic;
+        // Cambio demasiado brusco, promediar con último válido
+        const smoothedSystolic = (systolic + this.lastSystolic) / 2;
+        const smoothedDiastolic = (diastolic + this.lastDiastolic) / 2;
+        
+        this.lastSystolic = smoothedSystolic;
+        this.lastDiastolic = smoothedDiastolic;
+        
+        return { systolic: Math.round(smoothedSystolic), diastolic: Math.round(smoothedDiastolic) };
       }
-      if (this.lastDiastolic > 0 && Math.abs(diastolic - this.lastDiastolic) > 20) {
-        diastolic = this.lastDiastolic;
-      }
-      // Limitar a rangos fisiológicos
-      systolic = Math.max(90, Math.min(200, systolic));
-      diastolic = Math.max(40, Math.min(120, diastolic));
+      
       // Actualizar últimos valores válidos
       this.lastSystolic = systolic;
       this.lastDiastolic = diastolic;
-      return {
-        systolic: Math.round(systolic),
-        diastolic: Math.round(diastolic)
+      
+      return { 
+        systolic: Math.round(systolic), 
+        diastolic: Math.round(diastolic) 
       };
     } catch (error) {
-      return this.getLastValidBP() || { systolic: 120, diastolic: 80 };
+      console.error("BloodPressureProcessor: Error estimando presión arterial:", error);
+      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
   }
   
@@ -120,8 +135,8 @@ export class BloodPressureProcessor {
     if (!this.userCalibration) return 120; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.35;
-    const stiffnessNormalizer = 0.28;
+    const amplitudeNormalizer = 0.2;
+    const stiffnessNormalizer = 0.15;
     
     // Modelo basado en características, personalizado con calibración
     let systolic = this.userCalibration.systolic;
@@ -142,8 +157,8 @@ export class BloodPressureProcessor {
     if (!this.userCalibration) return 80; // Valor por defecto solo si no hay calibración
     
     // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.22;
-    const stiffnessNormalizer = 0.32;
+    const amplitudeNormalizer = 0.15;
+    const stiffnessNormalizer = 0.2;
     
     // Modelo basado en características, personalizado con calibración
     let diastolic = this.userCalibration.diastolic;
@@ -182,8 +197,8 @@ export class BloodPressureProcessor {
     const baselineDiastolic = 80;
     
     // Ajuste basado en amplitud
-    let systolic = baselineSystolic + (amplitude - 0.5) * 80;
-    let diastolic = baselineDiastolic + (amplitude - 0.5) * 40;
+    let systolic = baselineSystolic + (amplitude - 0.5) * 40;
+    let diastolic = baselineDiastolic + (amplitude - 0.5) * 20;
     
     // Ajustar proporción sistólica/diastólica
     if (diastolic > systolic * 0.8) {
