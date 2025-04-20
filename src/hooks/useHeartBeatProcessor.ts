@@ -165,8 +165,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     const arrhythmiaCount = beats.filter(b => b.isAnomalous).length;
 
     const finalResult = {
-      bpm: currentBPM,
-      confidence,
+      bpm: result.bpm,
+      confidence: result.confidence,
       isPeak: result.isPeak,
       arrhythmiaCount,
       rrData: {
