@@ -100,17 +100,20 @@ const Index = () => {
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
           if (heartBeatResult.bpm > 0) {
-            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
+            console.log(`[DEBUG] Antes de setHeartRate:`, heartRate, 'Nuevo:', heartBeatResult.bpm);
             setHeartRate(heartBeatResult.bpm);
+            console.log(`[DEBUG] Después de setHeartRate:`, heartRate);
           }
           
           console.log("Llamando a processVitalSigns con:", lastSignal, heartBeatResult.rrData);
           try {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
-                console.log("Resultado de processVitalSigns:", vitals);
+                console.log("[DEBUG] Resultado completo de processVitalSigns:", vitals);
                 if (elapsedTime >= minimumMeasurementTime) {
+                  console.log(`[DEBUG] Antes de setVitalSigns:`, vitalSigns, 'Nuevo:', vitals);
                   setVitalSigns(vitals);
+                  console.log(`[DEBUG] Después de setVitalSigns:`, vitalSigns);
                 }
               })
               .catch(error => {
