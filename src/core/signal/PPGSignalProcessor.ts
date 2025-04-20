@@ -75,7 +75,7 @@ export class PPGSignalProcessor {
     
     // Usar el canal de acuerdo a la configuración
     let signalValue: number;
-    if (this.processingOptions.useGreenChannelForPPG) {
+    if (this.processingOptions.useGreenChannel) {
       signalValue = g;  // Usar canal verde (más común en la literatura)
       this.rgbBuffers.g.push(g);
     } else {

@@ -1,6 +1,47 @@
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
+ * Definición de frame de video para análisis PPG
+ */
+export interface Frame {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+}
+
+/**
+ * Resultado del análisis de un frame
+ */
+export interface FrameAnalysisResult {
+  isFingerDetected: boolean;
+  signalValue: number;
+  signalQuality: number;
+  timestamp: number;
+  frameData: FrameData | null;
+}
+
+/**
+ * Datos del frame procesados
+ */
+export interface FrameData {
+  original: number[];
+  processed: number[];
+  decomposition: number[][];
+  residue: number[];
+}
+
+/**
+ * Configuración de regiones de interés
+ */
+export interface ROISettings {
+  rows: number;
+  cols: number;
+  centerWeight: number;
+  qualityThreshold: number;
+  redDominanceMin: number;
+}
+
+/**
  * Representa una señal PPG procesada
  */
 export interface ProcessedSignal {
@@ -81,13 +122,7 @@ export interface ProcessingOptions {
     order?: number;          // Orden del filtro
     filterType?: 'lowpass' | 'highpass' | 'bandpass' | 'notch';
   };
-  roiSettings?: {
-    autoDetect?: boolean;    // Detección automática de ROI
-    x?: number;              // Posición X de ROI manual
-    y?: number;              // Posición Y de ROI manual
-    width?: number;          // Ancho de ROI manual
-    height?: number;         // Alto de ROI manual
-  };
+  roiSettings?: ROISettings;  // Configuración de regiones de interés
   emdOptions?: {
     maxIterations?: number;  // Número máximo de iteraciones
     threshold?: number;      // Umbral para detener iteraciones
