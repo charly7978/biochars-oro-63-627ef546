@@ -148,9 +148,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
 
     lastResultRef.current = result;
 
-    // Simulación de procesamiento de señal: cada vez que se detecta un pico, llamar a registerBeat
-    const isPeak = value > 0.5; // Reemplaza por tu lógica real
-    if (isPeak) {
+    // Llamar a registerBeat SOLO cuando se detecta un pico real
+    if (result.isPeak) {
       registerBeat();
       setLastPeakTime(Date.now());
     }
@@ -163,7 +162,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     return {
       bpm: currentBPM,
       confidence,
-      isPeak,
+      isPeak: result.isPeak,
       arrhythmiaCount: beats.filter(b => b.isAnomalous).length,
       rrData: {
         intervals: beats.map(b => b.rr),
