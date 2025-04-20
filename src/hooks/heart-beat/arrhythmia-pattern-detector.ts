@@ -15,7 +15,7 @@ interface ArrhythmiaPatternDetectorState {
 }
 
 const LEARNING_DURATION_MS = 6000;
-const ANOMALY_THRESHOLD = 0.10; // ±10% (más sensible)
+const ANOMALY_THRESHOLD = 0.05; // ±5% (más sensible)
 const MIN_BEATS_FOR_BASE = 5;
 
 export function useArrhythmiaPatternDetector() {
@@ -67,13 +67,21 @@ export function useArrhythmiaPatternDetector() {
     } else {
       // Fase de monitoreo: comparar cada nuevo RR con el patrón base
       let isAnomalous = false;
-      if (state.baseRR > 0 && rr > 0) {
-        const deviation = Math.abs(rr - state.baseRR) / state.baseRR;
-        isAnomalous = deviation > ANOMALY_THRESHOLD;
+      let variation = 0;
+      if (state.phase === 'monitoring' && state.baseRR > 0) {
+        variation = Math.abs(rr - state.baseRR) / state.baseRR;
+        isAnomalous = variation > ANOMALY_THRESHOLD;
+        if (isAnomalous) {
+          console.log('[ArrhythmiaPatternDetector] Latido ANÓMALO detectado', {
+            rr, baseRR: state.baseRR, variation, threshold: ANOMALY_THRESHOLD, timestamp: now
+          });
+        } else {
+          console.log('[ArrhythmiaPatternDetector] Latido normal', {
+            rr, baseRR: state.baseRR, variation, threshold: ANOMALY_THRESHOLD, timestamp: now
+          });
+        }
       }
       newBeats.push({ timestamp: now, rr, isAnomalous });
-      // Log para debug
-      console.log('Beat registrado:', { timestamp: now, rr, isAnomalous });
       // Mantener solo los últimos 20 latidos
       if (newBeats.length > 20) newBeats = newBeats.slice(-20);
       setState(s => ({ ...s, beats: newBeats, lastBeatTime: now }));
