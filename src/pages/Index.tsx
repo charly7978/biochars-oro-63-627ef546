@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -116,7 +115,8 @@ const Index = () => {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
                 if (elapsedTime >= minimumMeasurementTime) {
-                  setVitalSigns(vitals);
+                  const safeVitals = { ...vitals, lastArrhythmiaData: vitals.lastArrhythmiaData ?? null };
+                  setVitalSigns(safeVitals);
                 }
               });
           } catch (error) {
@@ -380,4 +380,3 @@ const Index = () => {
 };
 
 export default Index;
-

@@ -1,4 +1,3 @@
-
 /**
  * VitalSignIntegrator
  * 
@@ -68,7 +67,7 @@ export class VitalSignIntegrator {
    */
   private synchronizeFeedback(): void {
     const currentTime = Date.now();
-    
+
     this.processorMetrics.forEach((metrics, processorName) => {
       if (currentTime - metrics.timestamp < 2000) {
         const channelName = this.mapProcessorToChannel(processorName);
@@ -101,14 +100,13 @@ export class VitalSignIntegrator {
       }
     });
 
+    // Fix: getCalibrationState() before use, avoid testing void
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
-    // Controlar que calibrationState no sea void ni null, y que contenga phase
-    if (
-      calibrationState &&
-      typeof calibrationState === 'object' &&
-      'phase' in calibrationState &&
-      calibrationState.phase === 'active'
-    ) {
+
+    // Defensive check to ensure calibrationState is an object with phase property
+    const hasPhase = calibrationState !== undefined && calibrationState !== null && typeof calibrationState === 'object' && 'phase' in calibrationState;
+
+    if (hasPhase && calibrationState.phase === 'active') {
       Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
         const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
         if (calibrationFactor !== 1.0) {
@@ -243,4 +241,3 @@ export class VitalSignIntegrator {
     }
   }
 }
-
