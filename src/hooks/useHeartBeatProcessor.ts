@@ -13,7 +13,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
-
+  
   // Mantener el último resultado para exponer isArrhythmia y arrhythmiaCount
   const lastResultRef = useRef<HeartBeatResult | null>(null);
 
