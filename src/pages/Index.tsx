@@ -485,4 +485,35 @@ const Index = () => {
                   value={vitalSigns.hydration || "--"}
                   unit="%"
                   highlighted={showResults}
-                  icon={<Droplet className={`
+                  icon={<Droplet className={`${getHydrationColor(vitalSigns.hydration)}`} />}
+                  compact={false}
+                />
+              </div>
+              {/* Añadir aquí los otros VitalSign si es necesario */}
+            </div>
+          </div>
+
+          {/* Botones de Monitoreo y Reset */}
+          <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleToggleMonitoring} 
+                variant="monitor"
+              />
+            </div>
+            <div className="w-1/2">
+              <MonitorButton 
+                isMonitoring={isMonitoring} 
+                onToggle={handleReset} 
+                variant="reset"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Index;
