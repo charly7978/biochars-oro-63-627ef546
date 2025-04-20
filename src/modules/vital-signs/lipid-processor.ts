@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -22,97 +21,50 @@ export class LipidProcessor {
     totalCholesterol: number; 
     triglycerides: number;
   } {
-    // Verificar que haya suficientes datos para el análisis
-    if (ppgValues.length < this.DEFAULT_BUFFER_SIZE * 0.5) {
-      console.log("LipidProcessor: Datos insuficientes para análisis de lípidos");
-      return {
-        totalCholesterol: this.lastTotalCholesterol,
-        triglycerides: this.lastTriglycerides
-      };
+    // Verificar que haya suficientes datos para el análisis (relajada)
+    if (!ppgValues || ppgValues.length < 10) {
+      console.log('[Lípidos] Datos insuficientes para cálculo:', ppgValues?.length);
+      return { totalCholesterol: this.lastTotalCholesterol, triglycerides: this.lastTriglycerides };
     }
-    
-    // Utilizar los datos más recientes para el análisis
-    const recentValues = ppgValues.slice(-this.DEFAULT_BUFFER_SIZE);
-    
-    // Extraer características de la forma de onda PPG
+    // Usar los valores más recientes
+    const recentValues = ppgValues.slice(-30);
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
     const amplitude = max - min;
     const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // Evaluar la pendiente y forma general de la onda
-    let slopes = [];
+    const slopes = [];
     for (let i = 1; i < recentValues.length; i++) {
-      slopes.push(recentValues[i] - recentValues[i-1]);
+      slopes.push(recentValues[i] - recentValues[i - 1]);
     }
-    
-    // Calcular estadísticas de pendiente
     const posSlopes = slopes.filter(s => s > 0);
     const negSlopes = slopes.filter(s => s < 0);
     const avgPosSlope = posSlopes.reduce((sum, val) => sum + val, 0) / (posSlopes.length || 1);
     const avgNegSlope = negSlopes.reduce((sum, val) => sum + val, 0) / (negSlopes.length || 1);
-    
-    // Calcular características de forma
     const slopeRatio = Math.abs(avgPosSlope / (avgNegSlope || -0.001));
-    
-    // Calcular la variabilidad de la señal
     let sumSquares = 0;
     for (const val of recentValues) {
       sumSquares += Math.pow(val - mean, 2);
     }
     const stdDev = Math.sqrt(sumSquares / recentValues.length);
-    
-    // Determinar factores de ajuste basados en características de la forma de onda
     const amplitudeAdjustment = this.mapRange(amplitude, 0.1, 0.5, 20, -20);
     const slopeAdjustment = this.mapRange(slopeRatio, 0.8, 1.2, -15, 15);
     const variabilityAdjustment = this.mapRange(stdDev, 0.01, 0.1, -10, 10);
-    
-    // Calcular colesterol total basado en características PPG
-    let totalCholesterol = 180; // Valor base
+    let totalCholesterol = 180;
     totalCholesterol += amplitudeAdjustment;
     totalCholesterol += slopeAdjustment;
     totalCholesterol += variabilityAdjustment;
-    
-    // Calcular triglicéridos con relación calibrada al colesterol
-    let triglycerides = 150; // Valor base
+    let triglycerides = 150;
     triglycerides += amplitudeAdjustment * 1.2;
     triglycerides += slopeAdjustment * 0.8;
     triglycerides += variabilityAdjustment * 1.5;
-    
-    // Aplicar factor de calibración
     totalCholesterol = Math.round(totalCholesterol * this.calibrationFactor);
     triglycerides = Math.round(triglycerides * this.calibrationFactor);
-    
-    // Asegurar rangos fisiológicos
     totalCholesterol = Math.max(120, Math.min(320, totalCholesterol));
     triglycerides = Math.max(50, Math.min(500, triglycerides));
-    
-    // Calcular confianza basada en calidad de datos
-    const snr = amplitude / (stdDev || 0.001);
-    this.confidenceScore = Math.min(0.9, Math.max(0.1, snr / 10));
-    
-    // Registrar para debugging
-    if (ppgValues.length % 100 === 0) {
-      console.log("LipidProcessor: Estimación realizada", {
-        totalCholesterol,
-        triglycerides,
-        confidence: this.confidenceScore,
-        characteristics: {
-          amplitude,
-          slopeRatio,
-          stdDev
-        }
-      });
-    }
-    
-    // Actualizar últimos valores
     this.lastTotalCholesterol = totalCholesterol;
     this.lastTriglycerides = triglycerides;
-    
-    return {
-      totalCholesterol,
-      triglycerides
-    };
+    console.log('[Lípidos] Calculado:', { totalCholesterol, triglycerides, amplitude, slopeRatio, stdDev });
+    return { totalCholesterol, triglycerides };
   }
   
   /**
