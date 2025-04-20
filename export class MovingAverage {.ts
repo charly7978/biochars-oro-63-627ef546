@@ -1,4 +1,4 @@
-import { MovingAverage } from '../utils/MovingAverage';export class MovingAverage {
+export class MovingAverage {
     private window: number[];
     private size: number;
 
