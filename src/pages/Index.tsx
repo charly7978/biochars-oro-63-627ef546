@@ -135,7 +135,7 @@ const Index = () => {
   useEffect(() => {
     if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.toLowerCase().includes("arritmia")) {
       setLastArrhythmiaTimestamp(Date.now());
-      setLastArrhythmiaData(vitalSigns.lastArrhythmiaData);
+      setLastArrhythmiaData(vitalSigns.lastArrhythmiaData ?? null);
       setLastArrhythmiaStatus(vitalSigns.arrhythmiaStatus);
     }
   }, [vitalSigns.arrhythmiaStatus, vitalSigns.lastArrhythmiaData]);
