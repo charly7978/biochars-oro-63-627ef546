@@ -10,6 +10,9 @@ import AppTitle from "@/components/AppTitle";
 import { Droplet } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
 
+// @ts-ignore
+declare var ImageCapture: any;
+
 interface VitalSignsState {
   spo2: number | null;
   pressure: string | null;
@@ -73,7 +76,28 @@ const Index = () => {
   } = useVitalSignsProcessor();
 
   const handleStreamReady = (stream: MediaStream) => {
-    console.log("Camera stream is ready", stream);
+    const videoTrack = stream.getVideoTracks()[0];
+    const imageCapture = new ImageCapture(videoTrack);
+
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+    const processImage = async () => {
+      if (!isMonitoring) return;
+      try {
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx?.drawImage(frame, 0, 0, frame.width, frame.height);
+        const imageData = tempCtx?.getImageData(0, 0, frame.width, frame.height);
+        if (imageData) processFrame(imageData);
+      } catch (e) {
+        console.error("Error capturando frame:", e);
+      }
+      if (isMonitoring) requestAnimationFrame(processImage);
+    };
+
+    processImage();
   };
 
   const handleToggleMonitoring = () => {
@@ -115,7 +139,10 @@ const Index = () => {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
                 if (elapsedTime >= minimumMeasurementTime) {
-                  setVitalSigns(vitals);
+                  setVitalSigns({
+                    ...vitals,
+                    lastArrhythmiaData: vitals.lastArrhythmiaData ?? null
+                  });
                 }
               });
           } catch (error) {
