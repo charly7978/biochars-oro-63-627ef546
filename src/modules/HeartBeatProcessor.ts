@@ -9,8 +9,48 @@
  */
 
 import { antiRedundancyGuard } from '../core/validation/CrossValidationSystem';
+import { MovingAverage } from '../utils/MovingAverage'; // Reutilizar MovingAverage
+import { AdaptivePeakDetector } from './peak_detectors/AdaptivePeakDetector'; // Integración del detector adaptativo
+
+// Interfaz para resultados más detallados
+export interface HeartBeatAnalysis {
+    bpm: number;         // BPM calculado
+    confidence: number;  // Confianza en la medición (0-1)
+    isPeak: boolean;     // Si el último punto fue un pico detectado
+    rrIntervalsMs: number[]; // Historial reciente de intervalos RR en ms
+    lastRrMs: number | null; // Último intervalo RR calculado
+    rmssd: number;       // RMSSD para variabilidad (indicador de arritmia/estrés)
+    sdnn: number;        // SDNN para variabilidad
+    isArrhythmiaLikely: boolean; // Indicador simple de posible arritmia
+    filteredValue: number; // Valor de la señal después del filtrado
+    threshold?: number;    // Umbral dinámico actual (opcional, para visualización)
+    snr?: number;          // SNR estimado (opcional, para visualización)
+}
 
 let globalHeartBeatProcessorInstanceCount = 0;
+
+class ButterworthIIR {
+  private x: Float32Array = new Float32Array(5);
+  private y: Float32Array = new Float32Array(5);
+  private readonly a = [1, -3.1806, 3.8612, -2.1122, 0.4383];
+  private readonly b = [0.0004, 0, -0.0011, 0, 0.0011, 0, -0.0004];
+
+  process(newValue: number): number {
+    // Desplaza los valores antiguos
+    for (let i = 4; i > 0; i--) {
+      this.x[i] = this.x[i-1];
+      this.y[i] = this.y[i-1];
+    }
+    this.x[0] = newValue;
+    this.y[0] = this.b[0]*this.x[0] + this.b[2]*this.x[2] + this.b[4]*this.x[4]
+                - this.a[1]*this.y[1] - this.a[2]*this.y[2] - this.a[3]*this.y[3] - this.a[4]*this.y[4];
+    return this.y[0];
+  }
+  reset() {
+    this.x.fill(0);
+    this.y.fill(0);
+  }
+}
 
 export class HeartBeatProcessor {
   private readonly SAMPLE_RATE = 30;                 // 30 FPS típico cámara
@@ -22,168 +62,106 @@ export class HeartBeatProcessor {
   private readonly MAX_BPM = 200;
   private readonly PEAK_CONFIDENCE_THRESHOLD = 0.5;
 
-  private signalBuffer: number[] = [];
-  private filteredSignal: number[] = [];
+  private signalBuffer: Float32Array;
+  private bufferHead: number = 0;
+  private bufferCount: number = 0;
+  private filteredSignal: Float32Array;
   private rrIntervals: number[] = [];
-  private lastPeakTime: number | null = null;
-  private lastPeakIndex: number | null = null;
-  private peakConfidenceHistory: number[] = [];
-  private bpmHistory: number[] = [];
+  private lastPeakTimestamp: number | null = null;
+  private bpmHistory = new MovingAverage(10); // Suavizar BPM usando los últimos 10 valores calculados
+  private confidence: number = 0;
+
+  private peakDetector = new AdaptivePeakDetector();
+  private butterworth = new ButterworthIIR();
 
   constructor() {
+    this.signalBuffer = new Float32Array(this.WINDOW_LENGTH);
+    this.filteredSignal = new Float32Array(this.WINDOW_LENGTH);
     this.reset();
     globalHeartBeatProcessorInstanceCount++;
     console.log('[HeartBeatProcessor] Nueva instancia creada. Total:', globalHeartBeatProcessorInstanceCount, new Error().stack.split('\n').slice(1,3).join(' | '));
   }
 
   /**
-   * Aplica filtro pasa-banda Butterworth 2° orden digital simplificado a la señal buffer
-   * usando coeficientes pre-calculados para 0.5-5 Hz @ 30Hz.
-   * Retorna la señal filtrada normalizada.
-   */
-  private bandPassFilter(signal: number[]): number[] {
-    if (signal.length < 5) {
-      return signal; // Buffer muy corto, no filtrar
-    }
-    // Coeficientes estándar Butterworth 2° orden pasa-banda discretizado (aprox)
-    // Basado en diseño típico, normalizados para fs=30Hz, f1=0.5Hz, f2=5Hz
-    const a = [1, -3.1806, 3.8612, -2.1122, 0.4383];
-    const b = [0.0004, 0, -0.0011, 0, 0.0011, 0, -0.0004];
-    // Implementar filtro IIR cascada simplificado (se puede mejorar después)
-    const filtered: number[] = new Array(signal.length).fill(0);
-    for (let i = 4; i < signal.length; i++) {
-      filtered[i] =
-          b[0]*signal[i] + b[2]*signal[i-2] + b[4]*signal[i-4]
-          - a[1]*filtered[i-1] - a[2]*filtered[i-2] - a[3]*filtered[i-3] - a[4]*filtered[i-4];
-    }
-    // Normalizar señal a rango [-1, 1]
-    const max = Math.max(...filtered.slice(4).map(Math.abs));
-    console.log('[HeartBeatProcessor] Valor máximo para normalización filtro:', max);
-    if (max > 0) {
-      return filtered.map(v => v / max);
-    }
-    return filtered;
-  }
-
-  /**
    * Actualiza buffers con nuevo valor de señal PPG cruda, filtra y detecta picos robustos.
    */
-  public processSignal(rawValue: number): {
-    bpm: number;
-    confidence: number;
-    isPeak: boolean;
-    filteredValue: number;
-    arrhythmiaCount: number; // Para integrar con detector externo
-  } {
+  public processSignal(rawValue: number, timestamp: number): HeartBeatAnalysis {
     console.log('[HeartBeatProcessor] processSignal llamado con valor:', rawValue, new Error().stack.split('\n').slice(1,3).join(' | '));
-    // Añadir valor raw a buffer
-    this.signalBuffer.push(rawValue);
-    if (this.signalBuffer.length > this.WINDOW_LENGTH) {
-      this.signalBuffer.shift();
-    }
-    const minRaw = Math.min(...this.signalBuffer);
-    const maxRaw = Math.max(...this.signalBuffer);
-    console.log('[HeartBeatProcessor] Rango señal cruda:', { min: minRaw, max: maxRaw });
+    // Añadir valor raw a buffer circular
+    this.signalBuffer[this.bufferHead] = rawValue;
+    // Filtrar incrementalmente
+    const filtered = this.butterworth.process(rawValue);
+    this.filteredSignal[this.bufferHead] = filtered;
+    this.bufferHead = (this.bufferHead + 1) % this.WINDOW_LENGTH;
+    if (this.bufferCount < this.WINDOW_LENGTH) this.bufferCount++;
 
-    // Filtrar la señal usando banda 0.5-5Hz para reducir ruido y DC
-    this.filteredSignal = this.bandPassFilter(this.signalBuffer);
+    // Obtener el valor filtrado más reciente
+    const currentFilteredValue = filtered;
+    const currentFilteredTimestamp = timestamp;
 
-    // Detectar pico usando ventana y restricciones temporales (Pan-Tompkins adaptado)
-    const detectedPeak = this.detectPeak();
+    // Detección de Picos Adaptativa
+    const peakResult = this.peakDetector.process(currentFilteredValue, currentFilteredTimestamp);
+    const isPeak = peakResult.isPeak;
+    const peakTimestamp = peakResult.timestamp;
+    const currentSnr = peakResult.snr;
+    const threshold = peakResult.threshold;
+    let lastRrMs: number | null = null;
 
     // Si hay pico confirmado, actualizar RR intervals y calcular BPM robústamente
-    if (detectedPeak.isPeak) {
-      const currentTime = Date.now();
-      if (this.lastPeakTime === null) {
+    if (isPeak) {
+      if (this.lastPeakTimestamp === null) {
         // Primer pico: solo inicializa
-        this.lastPeakTime = currentTime;
-        console.log('[HeartBeatProcessor][RR] Primer pico detectado, inicializando lastPeakTime:', currentTime);
+        this.lastPeakTimestamp = currentFilteredTimestamp;
+        console.log('[HeartBeatProcessor][RR] Primer pico detectado, inicializando lastPeakTimestamp:', currentFilteredTimestamp);
       } else {
-        const rrInterval = currentTime - this.lastPeakTime;
-        if (rrInterval > 300 && rrInterval < 2000) {
-          this.rrIntervals.push(rrInterval);
+        const rr = peakTimestamp - this.lastPeakTimestamp;
+        if (rr > 300 && rr < 2000) {
+          this.rrIntervals.push(rr);
           if (this.rrIntervals.length > 20) { // mantener últimos 20 intervalos
             this.rrIntervals.shift();
           }
-          console.log('[HeartBeatProcessor][RR] Nuevo intervalo RR:', rrInterval, 'Todos:', this.rrIntervals);
+          lastRrMs = rr;
+          console.log('[HeartBeatProcessor][RR] Nuevo intervalo RR:', rr, 'Todos:', this.rrIntervals);
         } else {
-          console.log('[HeartBeatProcessor][RR] Intervalo RR fuera de rango:', rrInterval);
+          console.log('[HeartBeatProcessor][RR] Intervalo RR fuera de rango:', rr);
         }
-        this.lastPeakTime = currentTime;
+        this.lastPeakTimestamp = currentFilteredTimestamp;
       }
     }
 
     // Calcular BPM robusto sobre ventana de RR intervals en ms
     const bpm = this.calculateRobustBPM();
+    this.bpmHistory.add(bpm);
+    const finalBpm = this.bpmHistory.size() > 0 ? Math.round(this.bpmHistory.getAverage()) : 0;
     console.log('[HeartBeatProcessor][BPM] BPM calculado:', bpm, 'RR intervals:', this.rrIntervals);
 
-    // Calcular confianza como media móvil del valor de confianza detectado
-    this.peakConfidenceHistory.push(detectedPeak.confidence);
-    if (this.peakConfidenceHistory.length > 10) {
-      this.peakConfidenceHistory.shift();
-    }
-    const confidence = this.peakConfidenceHistory.reduce((a,b) => a+b, 0)/this.peakConfidenceHistory.length;
+    // Calcular confianza usando SNR
+    this.confidence = this.calculateConfidence(currentSnr);
+
+    // HRV: RMSSD y SDNN
+    const { rmssd, sdnn } = this.calculateHRV();
+    const isArrhythmiaLikely = sdnn > 120 || rmssd > 80; // Umbrales orientativos
 
     return {
-      bpm,
-      confidence,
-      isPeak: detectedPeak.isPeak,
-      filteredValue: this.filteredSignal[this.filteredSignal.length-1] || 0,
-      arrhythmiaCount: 0
+      bpm: finalBpm,
+      confidence: this.confidence,
+      isPeak,
+      rrIntervalsMs: this.rrIntervals.slice(),
+      lastRrMs,
+      rmssd,
+      sdnn,
+      isArrhythmiaLikely,
+      filteredValue: currentFilteredValue,
+      threshold,
+      snr: currentSnr
     };
   }
 
-  /**
-   * Detecta picos robustos analizando la señal filtrada (últimos datos) en ventana
-   * Utiliza detección de máximos locales con restricciones temporales.
-   */
-  private detectPeak(): { isPeak: boolean; confidence: number } {
-    const signal = this.filteredSignal;
-
-    if (signal.length < 7) {
-      return { isPeak: false, confidence: 0 };
-    }
-
-    // Buscamos máximo local en últimas 5 muestras
-    const windowSize = 5;
-    const currentIndex = signal.length - 1;
-    const windowStart = currentIndex - windowSize + 1;
-
-    if (windowStart < 1) {
-      return { isPeak: false, confidence: 0 };
-    }
-
-    const currentValue = signal[currentIndex];
-    const prev1 = signal[currentIndex - 1];
-    const prev2 = signal[currentIndex - 2];
-    // const next1 = signal[0]; // No hay valores "futuros" en streaming, omitimos
-
-    // El pico es máximo local si:
-    // 1. valor actual mayor que prev1 y prev2
-    // 2. valor > umbral basado en señal (ej 0.01)
-    const isLocalMax = (currentValue > prev1 && currentValue > prev2 && currentValue > 0.01);
-
-    console.log('[HeartBeatProcessor] detectPeak:', {
-      currentValue,
-      prev1,
-      prev2,
-      isLocalMax
-    });
-
-    // Restricción de mínimo tiempo desde pico anterior para evitar falsos picos rápidos
-    // Se omite para detección más sensible, pero puede agregar limitación
-
-    // Confianza basada en la amplitud del pico saturada a [0,1]
-    const confidence = isLocalMax ? Math.min(1, currentValue / 1.0) : 0;
-
-    if (isLocalMax) {
-      console.log('[HeartBeatProcessor] ¡Pico detectado!', { currentValue, prev1, prev2, confidence });
-    }
-
-    return {
-      isPeak: isLocalMax,
-      confidence
-    };
+  private calculateConfidence(snr: number): number {
+    // Escalar SNR a [0,1] con saturación
+    if (snr < 1) return 0;
+    if (snr > 10) return 1;
+    return (snr - 1) / 9;
   }
 
   /**
@@ -225,17 +203,53 @@ export class HeartBeatProcessor {
     return Math.round(avg);
   }
 
+  private calculateHRV(): { rmssd: number; sdnn: number } {
+    if (this.rrIntervals.length < 2) {
+      return { rmssd: 0, sdnn: 0 };
+    }
+    // RMSSD
+    let sumSq = 0;
+    let count = 0;
+    for (let i = 1; i < this.rrIntervals.length; i++) {
+      const diff = this.rrIntervals[i] - this.rrIntervals[i-1];
+      sumSq += diff * diff;
+      count++;
+    }
+    const rmssd = count > 0 ? Math.sqrt(sumSq / count) : 0;
+    // SDNN
+    const mean = this.rrIntervals.reduce((a,b) => a+b,0) / this.rrIntervals.length;
+    const sdnn = Math.sqrt(this.rrIntervals.reduce((a,b) => a + (b-mean)*(b-mean), 0) / this.rrIntervals.length);
+    return { rmssd, sdnn };
+  }
+
+  private createDefaultResult(rawValue: number): HeartBeatAnalysis {
+    return {
+      bpm: 0,
+      confidence: 0,
+      isPeak: false,
+      rrIntervalsMs: [],
+      lastRrMs: null,
+      rmssd: 0,
+      sdnn: 0,
+      isArrhythmiaLikely: false,
+      filteredValue: rawValue
+    };
+  }
+
   /**
    * Permite resetear todos los estados
    */
   public reset() {
-    this.signalBuffer = [];
-    this.filteredSignal = [];
+    this.signalBuffer.fill(0);
+    this.filteredSignal.fill(0);
+    this.bufferHead = 0;
+    this.bufferCount = 0;
     this.rrIntervals = [];
-    this.lastPeakTime = null;
-    this.lastPeakIndex = null;
-    this.peakConfidenceHistory = [];
-    this.bpmHistory = [];
+    this.lastPeakTimestamp = null;
+    this.bpmHistory.clear();
+    this.confidence = 0;
+    this.peakDetector.reset();
+    this.butterworth.reset();
   }
 
   /**
@@ -244,7 +258,7 @@ export class HeartBeatProcessor {
   public getRRIntervals() {
     return {
       intervals: this.rrIntervals.slice(),
-      lastPeakTime: this.lastPeakTime
+      lastPeakTime: this.lastPeakTimestamp
     };
   }
 

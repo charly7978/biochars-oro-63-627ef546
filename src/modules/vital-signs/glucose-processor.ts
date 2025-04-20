@@ -3,6 +3,8 @@
  * Calculates glucose levels directly from PPG signal characteristics
  * with no reliance on synthetic data or reference values
  */
+import { MovingAverage } from '../utils/MovingAverage';
+
 export class GlucoseProcessor {
   private confidence: number = 0;
   private readonly MIN_SAMPLES = 20; // Increased required samples
@@ -24,6 +26,9 @@ export class GlucoseProcessor {
   // Flag to track if data quality is sufficient
   private hasQualityData: boolean = false;
   
+  private glucoseBuffer = new MovingAverage(10); // Suavizar glucosa
+  private confidenceBuffer = new MovingAverage(10); // Suavizar confianza
+  
   /**
    * Initialize the processor
    */
@@ -39,6 +44,8 @@ export class GlucoseProcessor {
     if (ppgValues.length < this.MIN_SAMPLES) {
       this.confidence = 0;
       this.hasQualityData = false;
+      this.confidenceBuffer.add(0);
+      this.glucoseBuffer.add(0);
       console.log("GlucoseProcessor: Insufficient data points", { 
         provided: ppgValues.length, 
         required: this.MIN_SAMPLES 
@@ -54,6 +61,8 @@ export class GlucoseProcessor {
     if (signalAmplitude < 0.05 || signalVariability > 0.8) {
       this.confidence = 0;
       this.hasQualityData = false;
+      this.confidenceBuffer.add(0);
+      this.glucoseBuffer.add(0);
       console.log("GlucoseProcessor: Signal quality too poor", { 
         amplitude: signalAmplitude, 
         variability: signalVariability 
@@ -123,7 +132,9 @@ export class GlucoseProcessor {
       confidence: this.confidence
     });
     
-    return Math.round(stabilizedGlucose);
+    this.confidenceBuffer.add(this.confidence);
+    this.glucoseBuffer.add(glucoseEstimate);
+    return this.glucoseBuffer.getAverage();
   }
   
   /**
@@ -391,6 +402,8 @@ export class GlucoseProcessor {
     this.previousValues = [];
     this.lastCalculatedGlucose = 0;
     this.hasQualityData = false;
+    this.glucoseBuffer.clear();
+    this.confidenceBuffer.clear();
     console.log("GlucoseProcessor: Reset complete");
   }
 }
