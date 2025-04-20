@@ -99,6 +99,9 @@ export class HeartBeatProcessor {
           if (this.rrIntervals.length > 20) { // mantener últimos 20 intervalos
             this.rrIntervals.shift();
           }
+          console.log('[HeartBeatProcessor][RR] Nuevo intervalo RR:', rrInterval, 'Todos:', this.rrIntervals);
+        } else {
+          console.log('[HeartBeatProcessor][RR] Intervalo RR fuera de rango:', rrInterval);
         }
       }
       this.lastPeakTime = Date.now();
@@ -106,6 +109,7 @@ export class HeartBeatProcessor {
 
     // Calcular BPM robusto sobre ventana de RR intervals en ms
     const bpm = this.calculateRobustBPM();
+    console.log('[HeartBeatProcessor][BPM] BPM calculado:', bpm, 'RR intervals:', this.rrIntervals);
 
     // Calcular confianza como media móvil del valor de confianza detectado
     this.peakConfidenceHistory.push(detectedPeak.confidence);
@@ -181,11 +185,13 @@ export class HeartBeatProcessor {
    */
   private calculateRobustBPM(): number {
     if (this.rrIntervals.length < 2) {
+      console.log('[HeartBeatProcessor][BPM] No hay suficientes RR intervals para calcular BPM:', this.rrIntervals);
       return 0;
     }
 
     // Convertir RR a bpm
     const bpmValues = this.rrIntervals.map(intervalMs => 60000 / intervalMs);
+    console.log('[HeartBeatProcessor][BPM] BPM values (sin recorte):', bpmValues);
 
     // Ordenar ascending
     const sorted = bpmValues.slice().sort((a,b) => a - b);
@@ -193,16 +199,20 @@ export class HeartBeatProcessor {
     // Recortar extremos (10%)
     const cut = Math.floor(sorted.length * 0.1);
     const trimmed = sorted.slice(cut, sorted.length - cut);
+    console.log('[HeartBeatProcessor][BPM] BPM values (recortados):', trimmed);
 
     if (trimmed.length === 0) {
+      console.log('[HeartBeatProcessor][BPM] No quedan valores tras recorte.');
       return 0;
     }
 
     // Promedio trimmed
     const avg = trimmed.reduce((a,b) => a + b, 0) / trimmed.length;
+    console.log('[HeartBeatProcessor][BPM] Promedio BPM:', avg);
 
     // Validar rango fisiológico
     if (avg < this.MIN_BPM || avg > this.MAX_BPM) {
+      console.log('[HeartBeatProcessor][BPM] BPM fuera de rango fisiológico:', avg);
       return 0;
     }
 
