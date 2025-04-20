@@ -882,19 +882,4 @@ export class IntelligentCalibrationSystem {
       console.error('Error al guardar perfil de calibración:', error);
     }
   }
-  
-  /**
-   * Aplica user profile data to internal instance state
-   */
-  private applyUserDataFromProfile(): void {
-    if (!this.userProfile) return;
-    try {
-      this.correctionFactors = { ...this.userProfile.correctionFactors };
-      this.referenceValues = { ...this.userProfile.referenceValues };
-      this.config = { ...this.userProfile.config };
-      console.log('User calibration profile applied.');
-    } catch (error) {
-      console.error('Error applying user profile data:', error);
-    }
-  }
 }
