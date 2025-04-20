@@ -82,10 +82,7 @@ export class CalibrationIntegrator {
   /**
    * Obtiene el estado actual de calibración
    */
-  public getCalibrationState(): { phase: string } | null {
-    // For now, return null meaning no active calibration
-    // In the future, this method should return an object with phase info if calibration is active
-    return null;
+  public getCalibrationState() {
   }
   
   /**
