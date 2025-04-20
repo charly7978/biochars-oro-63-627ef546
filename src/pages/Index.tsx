@@ -140,7 +140,7 @@ const Index = () => {
 
   // Monitorear cambios en vitalSigns para detectar arritmia
   useEffect(() => {
-    if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED")) {
+    if (vitalSigns.arrhythmiaStatus && vitalSigns.arrhythmiaStatus.includes("ARRITMIA DETECTADA")) {
       setLastArrhythmiaTimestamp(Date.now());
       setLastArrhythmiaData(vitalSigns.lastArrhythmiaData);
       setLastArrhythmiaStatus(vitalSigns.arrhythmiaStatus);
@@ -337,11 +337,6 @@ const Index = () => {
     return 'text-red-500';
   };
 
-  // En el render, decidir qué status y data pasar a PPGSignalMeter
-  const arrhythmiaActive = lastArrhythmiaTimestamp && (Date.now() - lastArrhythmiaTimestamp < 2000);
-  const arrhythmiaStatusToShow = arrhythmiaActive ? lastArrhythmiaStatus : vitalSigns.arrhythmiaStatus;
-  const arrhythmiaDataToShow = arrhythmiaActive ? lastArrhythmiaData : null;
-
   return (
     <div className="fixed inset-0 flex flex-col" style={{ 
       height: '100vh',
@@ -380,8 +375,8 @@ const Index = () => {
               isFingerDetected={lastSignal?.fingerDetected || false}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
-              arrhythmiaStatus={arrhythmiaStatusToShow || "--"}
-              rawArrhythmiaData={arrhythmiaDataToShow}
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
             />

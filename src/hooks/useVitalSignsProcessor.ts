@@ -183,10 +183,10 @@ export const useVitalSignsProcessor = () => {
     }
     
     if (result.arrhythmiaStatus) {
-      if (result.arrhythmiaStatus.includes('ARRHYTHMIA DETECTED')) {
+      if (result.arrhythmiaStatus.includes('ARRITMIA DETECTADA')) {
         feedback['arrhythmia'].confidence = ARRHYTHMIA_HIGH_CONFIDENCE;
         feedback['hr'].confidence = Math.max(0.7, feedback['hr'].confidence);
-      } else if (result.arrhythmiaStatus.includes('POSSIBLE ARRHYTHMIA')) {
+      } else if (result.arrhythmiaStatus.includes('POSIBLE ARRITMIA')) {
         feedback['arrhythmia'].confidence = Math.max(0.6, feedback['arrhythmia'].confidence);
       }
     }
@@ -216,7 +216,7 @@ export const useVitalSignsProcessor = () => {
     }
 
     logSignalData(primaryOptimizedValue, result, processedSignals.current);
-    if (result.arrhythmiaStatus.includes('ARRHYTHMIA DETECTED') && result.lastArrhythmiaData) {
+    if (result.arrhythmiaStatus.includes('ARRITMIA DETECTADA') && result.lastArrhythmiaData) {
       addArrhythmiaWindow(
         result.lastArrhythmiaData.timestamp - 500, 
         result.lastArrhythmiaData.timestamp + 500

@@ -53,8 +53,8 @@ export class ArrhythmiaProcessor {
     // Build status message
     const arrhythmiaStatusMessage = 
       this.arrhythmiaCount > 0 
-        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
+        ? `ARRITMIA DETECTADA|${this.arrhythmiaCount}` 
+        : `SIN ARRITMIAS|${this.arrhythmiaCount}`;
     
     // Additional information only if there's active arrhythmia
     const lastArrhythmiaData = this.arrhythmiaDetected 
