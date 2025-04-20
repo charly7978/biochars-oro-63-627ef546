@@ -31,6 +31,20 @@ export interface ProcessedSignal {
     green?: number;
     blue?: number;
     ir?: number;
+    redFiltered?: number;
+    greenFiltered?: number;
+    blueFiltered?: number;
+    irFiltered?: number;
+    redPower?: number;      // Potencia de la señal roja
+    greenPower?: number;    // Potencia de la señal verde
+    bluePower?: number;     // Potencia de la señal azul
+    irPower?: number;       // Potencia de la señal infrarroja
+    dominantChannel?: string; // Canal dominante (red, green, blue, ir)
+  };
+  decompositionData?: {     // Datos de descomposición de la señal
+    imfs?: number[][];      // Funciones de modo intrínseco
+    residue?: number[];     // Residuo de la descomposición
+    selectedImf?: number;   // IMF seleccionada para análisis
   };
 }
 
@@ -53,6 +67,55 @@ export interface SignalProcessor {
   calibrate: () => Promise<boolean>;                    // Calibrar el procesador
   onSignalReady?: (signal: ProcessedSignal) => void;    // Callback de señal lista
   onError?: (error: ProcessingError) => void;           // Callback de error
+}
+
+/**
+ * Opciones para configurar el procesamiento de señales
+ */
+export interface ProcessingOptions {
+  windowSize?: number;       // Tamaño de la ventana para análisis
+  samplingRate?: number;     // Frecuencia de muestreo en Hz
+  filterSettings?: {
+    lowCut?: number;         // Frecuencia de corte inferior
+    highCut?: number;        // Frecuencia de corte superior
+    order?: number;          // Orden del filtro
+    filterType?: 'lowpass' | 'highpass' | 'bandpass' | 'notch';
+  };
+  roiSettings?: {
+    autoDetect?: boolean;    // Detección automática de ROI
+    x?: number;              // Posición X de ROI manual
+    y?: number;              // Posición Y de ROI manual
+    width?: number;          // Ancho de ROI manual
+    height?: number;         // Alto de ROI manual
+  };
+  emdOptions?: {
+    maxIterations?: number;  // Número máximo de iteraciones
+    threshold?: number;      // Umbral para detener iteraciones
+    maxImf?: number;         // Número máximo de IMFs a calcular
+  };
+  enableEMD?: boolean;       // Habilitar descomposición EMD
+  useGreenChannel?: boolean; // Usar canal verde para PPG
+  useRedChannel?: boolean;   // Usar canal rojo para PPG
+  adaptiveMode?: boolean;    // Modo adaptativo para ajustes automáticos
+  fingerDetectionThreshold?: number; // Umbral para detección de dedo
+}
+
+/**
+ * Interfaz para EMD (Empirical Mode Decomposition)
+ */
+export interface EMDProcessor {
+  decompose(signal: number[]): {
+    imfs: number[][];        // Funciones de modo intrínseco
+    residue: number[];       // Residuo final
+  };
+  reconstruct(imfs: number[][], selectedIndices: number[]): number[];
+  getInstantaneousFrequency(imf: number[]): number[];
+  getEnergy(imf: number[]): number;
+  isMonotonic(signal: number[]): boolean;
+  findExtrema(signal: number[]): {
+    maxima: { indices: number[], values: number[] };
+    minima: { indices: number[], values: number[] };
+  };
 }
 
 /**

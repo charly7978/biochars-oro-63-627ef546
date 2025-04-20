@@ -35,6 +35,21 @@ const CHANNEL_GREEN = 'green';
 const CHANNEL_BLUE = 'blue';
 const CHANNEL_IR = 'ir';
 
+// Constantes para detección de dedo optimizada
+const FINGER_DETECTION = {
+  // Umbrales más permisivos para diferentes tonos de piel
+  MIN_RED_VALUE: 20,        // Menor umbral para pieles más oscuras
+  MAX_RED_VALUE: 250,       // Mayor umbral para pieles más claras
+  RED_GREEN_RATIO: 1.15,    // Ratio mínimo de rojo a verde para detectar dedo
+  RED_BLUE_RATIO: 1.15,     // Ratio mínimo de rojo a azul para detectar dedo
+  MIN_BRIGHTNESS: 25,       // Brillo mínimo para detectar dedo
+  MAX_BRIGHTNESS: 230,      // Brillo máximo para detectar dedo
+  MIN_REGION_SCORE: 3.5,    // Puntaje mínimo de región para considerar válida
+  STABILITY_BONUS: 10,      // Bonus a la calidad por estabilidad
+  TRANSITION_SMOOTHING: 3,  // Frames para transición suave al detectar/perder dedo
+  QUALITY_THRESHOLD: 25     // Umbral de calidad mínimo para detección
+};
+
 // Instancia global o de clase del optimizador para todos los canales relevantes
 const optimizerManager = new SignalOptimizerManager({
   [CHANNEL_RED]: { filterType: 'bandpass', gain: 1.8, adaptiveMode: true },
@@ -80,6 +95,9 @@ export class PPGSignalProcessor implements SignalProcessor {
   private readonly MAX_MOVEMENT_THRESHOLD = 15; // Umbral máximo de movimiento permitido
   private readonly MIN_PERIODICITY_SCORE = 0.25; // Umbral mínimo de periodicidad
   
+  // Para detección de dedo estable
+  private fingerDetectionCounter: number = 0;
+  
   // Procesamiento temporal
   private lastProcessedTime: number = 0;
   private readonly MIN_PROCESS_INTERVAL = 30; // Mínimo intervalo en ms entre procesamiento
@@ -122,6 +140,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.periodicityBuffer = [];
       this.lastPeriodicityScore = 0;
       this.roiHistory = [];
+      this.fingerDetectionCounter = 0;
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -136,6 +155,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     if (this.isProcessing) return;
     this.isProcessing = true;
     this.initialize();
+    this.fingerDetectionCounter = 0;
     console.log("PPGSignalProcessor: Iniciado");
   }
 
@@ -152,6 +172,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.movementScores = [];
     this.periodicityBuffer = [];
     this.roiHistory = [];
+    this.fingerDetectionCounter = 0;
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -270,7 +291,16 @@ export class PPGSignalProcessor implements SignalProcessor {
         // Nuevos campos para analíticas mejoradas
         minValue: Math.min(...this.lastValues),
         maxValue: Math.max(...this.lastValues),
-        windowValues: [...this.lastValues]
+        windowValues: [...this.lastValues],
+        // Incluir datos de todos los canales para diagnóstico
+        channelData: {
+          red: redValue,
+          green: greenValue,
+          blue: blueValue,
+          redFiltered: redOptimized,
+          greenFiltered: greenOptimized,
+          blueFiltered: blueOptimized
+        }
       };
 
       // Enviar señal procesada
@@ -484,40 +514,108 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Muestreo adaptativo para mejorar rendimiento
       const sampleRate = Math.max(1, Math.floor(Math.min(width, height) / 120));
       
+      // Análisis de distribución de color
+      let redDistribution = new Array(256).fill(0);
+      let pixelsInRedRange = 0;
+      
       for (let y = region.startY; y < region.endY; y += sampleRate) {
         for (let x = region.startX; x < region.endX; x += sampleRate) {
           const i = (y * width + x) * 4;
-          redSum += data[i];
-          greenSum += data[i + 1];
-          blueSum += data[i + 2];
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          
+          // Acumular valores RGB para promedios
+          redSum += r;
+          greenSum += g;
+          blueSum += b;
           pixelCount++;
+          
+          // Análisis de histograma para rojo
+          redDistribution[r]++;
+          
+          // Contar píxeles dentro del rango esperado para dedo
+          if (r >= FINGER_DETECTION.MIN_RED_VALUE && 
+              r <= FINGER_DETECTION.MAX_RED_VALUE &&
+              r / (g + 0.1) >= FINGER_DETECTION.RED_GREEN_RATIO &&
+              r / (b + 0.1) >= FINGER_DETECTION.RED_BLUE_RATIO) {
+            pixelsInRedRange++;
+          }
         }
       }
       
+      // Si no hay suficientes píxeles analizados
       if (pixelCount === 0) return { red: 0, green: 0, blue: 0, score: 0, valid: false };
       
+      // Calcular valores promedio
       const red = redSum / pixelCount;
       const green = greenSum / pixelCount;
       const blue = blueSum / pixelCount;
       
-      // Criterios para evaluar la región
+      // Criterios mejorados para evaluar la región
       const brightness = (red + green + blue) / 3;
       const redDominance = (red / (green + 0.1)) + (red / (blue + 0.1)); 
       const contrast = Math.max(red, green, blue) - Math.min(red, green, blue);
       
-      // Score combinado
+      // Análisis de histograma para determinar agrupamiento de color
+      // (Señal de mejor calidad suele tener distribución más concentrada)
+      let maxBin = 0, maxBinValue = 0;
+      let histogramSpread = 0;
+      for (let i = 0; i < 256; i++) {
+        if (redDistribution[i] > maxBinValue) {
+          maxBinValue = redDistribution[i];
+          maxBin = i;
+        }
+        if (redDistribution[i] > 0) {
+          histogramSpread++;
+        }
+      }
+      
+      // Porcentaje de píxeles en rango de dedo
+      const fingerPixelRatio = pixelsInRedRange / pixelCount;
+      
+      // Score combinado con factores ponderados
       let score = 0;
       
-      // Factores que indican buena señal PPG
-      if (red > 40 && red < 250) score += 2;  // Nivel rojo adecuado
-      if (red > green * 1.2) score += 2;      // Dominancia de rojo
-      if (red > blue * 1.2) score += 2;       // Dominancia de rojo
-      if (brightness > 30 && brightness < 200) score += 1; // Brillo adecuado
-      if (contrast > 15) score += 1;          // Contraste suficiente
+      // Sistema de scoring mejorado para diferentes condiciones de iluminación y tonos de piel
       
-      score *= region.weight;  // Ajustar por importancia de región
+      // 1. Porcentaje de píxeles en rango esperado para dedo
+      score += fingerPixelRatio * 5.0; // Hasta 5 puntos
       
-      return { red, green, blue, score, valid: score > 4 };
+      // 2. Dominancia de rojo sobre otros canales
+      if (red > green * FINGER_DETECTION.RED_GREEN_RATIO) score += 1.5;
+      if (red > blue * FINGER_DETECTION.RED_BLUE_RATIO) score += 1.5;
+      
+      // 3. Nivel óptimo de rojo (curva gaussiana con máximo en ~160)
+      const redLevelOptimality = Math.exp(-Math.pow((red - 160) / 80, 2));
+      score += redLevelOptimality * 2.0;
+      
+      // 4. Brillo dentro de rango óptimo
+      if (brightness >= FINGER_DETECTION.MIN_BRIGHTNESS && 
+          brightness <= FINGER_DETECTION.MAX_BRIGHTNESS) {
+        score += 1.0;
+      }
+      
+      // 5. Contraste suficiente, pero no extremo
+      if (contrast > 15 && contrast < 150) score += 1.0;
+      
+      // 6. Distribución de histograma (penalizar distribución muy dispersa)
+      const histogramQuality = Math.max(0, 1 - (histogramSpread / 128));
+      score += histogramQuality * 1.0;
+      
+      // Ajustar por importancia de región
+      score *= region.weight;
+      
+      // Validar región con umbral optimizado para detección de dedo
+      return { 
+        red, 
+        green, 
+        blue, 
+        score,
+        histogramSpread,
+        fingerPixelRatio,
+        valid: score > FINGER_DETECTION.MIN_REGION_SCORE
+      };
     });
     
     // Seleccionar mejor región
@@ -527,14 +625,19 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Si no hay regiones válidas, usar la central como fallback
       const centralRegion = regionResults[0];
       
-      // Mantener la última ROI conocida para suavidad
+      // Mantener la última ROI conocida para suavidad, pero con score bajo
       this.lastROI = {
         startX: regions[0].startX,
         startY: regions[0].startY, 
         endX: regions[0].endX,
         endY: regions[0].endY,
-        score: centralRegion.score
+        score: Math.min(centralRegion.score, this.lastROI.score * 0.8) // Degradar gradualmente el score
       };
+      
+      // Imprimir diagnóstico si está muy cerca del umbral
+      if (centralRegion.score > FINGER_DETECTION.MIN_REGION_SCORE * 0.7) {
+        console.log(`Región central cerca del umbral: score=${centralRegion.score.toFixed(2)}, umbral=${FINGER_DETECTION.MIN_REGION_SCORE}`);
+      }
       
       return {
         redValue: centralRegion.red,
@@ -552,13 +655,24 @@ export class PPGSignalProcessor implements SignalProcessor {
     const bestRegionIndex = regionResults.findIndex(r => 
       r.red === bestRegion.red && r.green === bestRegion.green && r.blue === bestRegion.blue);
     
-    // Actualizar ROI
-    this.lastROI = {
+    // Actualizar ROI con transición suave (evitar saltos bruscos)
+    const prevROI = this.lastROI;
+    const targetROI = {
       startX: regions[bestRegionIndex].startX,
       startY: regions[bestRegionIndex].startY,
       endX: regions[bestRegionIndex].endX,
       endY: regions[bestRegionIndex].endY,
       score: bestRegion.score
+    };
+    
+    // Transición suave entre regiones (evita parpadeo)
+    const smoothingFactor = 0.8; // 80% de la nueva región, 20% de la anterior
+    this.lastROI = {
+      startX: Math.round(targetROI.startX * smoothingFactor + prevROI.startX * (1 - smoothingFactor)),
+      startY: Math.round(targetROI.startY * smoothingFactor + prevROI.startY * (1 - smoothingFactor)),
+      endX: Math.round(targetROI.endX * smoothingFactor + prevROI.endX * (1 - smoothingFactor)),
+      endY: Math.round(targetROI.endY * smoothingFactor + prevROI.endY * (1 - smoothingFactor)),
+      score: targetROI.score
     };
     
     // Guardar historial para análisis de tendencias
@@ -608,21 +722,32 @@ export class PPGSignalProcessor implements SignalProcessor {
     movementScore: number
   ): { isFingerDetected: boolean, quality: number } {
     // Verificación de umbrales básicos (más permisiva)
-    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
+    const isInRange = rawValue >= FINGER_DETECTION.MIN_RED_VALUE && 
+                      rawValue <= FINGER_DETECTION.MAX_RED_VALUE;
     
-    // Si está completamente fuera de rango, no hay dedo
+    // Si está completamente fuera de rango, reducir contador gradualmente
     if (!isInRange) {
-      // Reducir contador de estabilidad gradualmente en lugar de reiniciar
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
-      return { isFingerDetected: this.stableFrameCount > 0, quality: Math.max(0, this.stableFrameCount * 10) };
+      // Reducir contador de estabilidad gradualmente
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.3);
+      this.fingerDetectionCounter = Math.max(0, this.fingerDetectionCounter - 1);
+      
+      return { 
+        isFingerDetected: this.fingerDetectionCounter > 0,
+        quality: Math.max(0, this.stableFrameCount * 15) 
+      };
     }
 
     // Verificar si tenemos suficientes muestras para analizar
     if (this.lastValues.length < 3) {
+      // Dar el beneficio de la duda si vemos una señal prometedora
+      if (rawValue > 100 && isInRange) {
+        this.fingerDetectionCounter = Math.min(FINGER_DETECTION.TRANSITION_SMOOTHING, this.fingerDetectionCounter + 1);
+        return { isFingerDetected: true, quality: 40 };
+      }
       return { isFingerDetected: false, quality: 0 };
     }
 
-    // Analizar estabilidad de la señal (ahora más permisiva)
+    // Analizar estabilidad de la señal (más permisiva)
     const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
     const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     
@@ -636,51 +761,78 @@ export class PPGSignalProcessor implements SignalProcessor {
     const maxVariation = Math.max(...variations.map(Math.abs));
     const minVariation = Math.min(...variations);
     
-    // Umbral adaptativo basado en promedio (más permisivo)
-    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
+    // Umbral adaptativo basado en promedio para ser más tolerante con pulsaciones
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.04); // Aumentado para mayor tolerancia
     
     // Detección de estabilidad más permisiva
-    const isStable = maxVariation < adaptiveThreshold * 3 && 
-                    minVariation > -adaptiveThreshold * 3;
+    const isStable = maxVariation < adaptiveThreshold * 4 && // Aumentado umbral
+                     minVariation > -adaptiveThreshold * 4;  // Más permisivo
     
-    // Ajustar contador de estabilidad
+    // Ajustar contador de estabilidad con más graduación
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
+      this.stableFrameCount = Math.min(this.stableFrameCount + 0.4, 5.0); // Mayor límite
       this.lastStableValue = filtered;
     } else {
-      // Reducción más gradual
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
+      // Reducción más gradual para evitar pérdidas bruscas de detección
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.15);
     }
     
-    // Factor de movimiento (permite más movimiento)
-    const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
+    // Factor de movimiento (más permisivo)
+    const movementFactor = Math.max(0.2, 1 - (movementScore / (this.MAX_MOVEMENT_THRESHOLD * 1.2)));
     
-    // Factor de periodicidad (buscar patrones cardíacos)
-    const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
+    // Factor de periodicidad (buscar patrones cardíacos con umbral más bajo)
+    const periodicityFactor = Math.max(0.4, this.lastPeriodicityScore);
+    
+    // Analizar la rapidez de cambio (pulsatilidad) que es característica del PPG
+    let pulsatilityScore = 0;
+    if (variations.length >= 4) {
+      // Buscamos alternancia de signo en las variaciones (subidas y bajadas)
+      let signChanges = 0;
+      for (let i = 1; i < variations.length; i++) {
+        if ((variations[i] >= 0 && variations[i-1] < 0) || 
+            (variations[i] < 0 && variations[i-1] >= 0)) {
+          signChanges++;
+        }
+      }
+      pulsatilityScore = Math.min(1.0, signChanges / (variations.length - 1));
+    }
     
     // Calcular calidad ponderando múltiples factores
-    let quality = 0;
-    
     // Siempre calcular calidad, incluso con estabilidad baja
-    const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
-    const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
-                                  (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
-    const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
+    const stabilityScore = Math.min(this.stableFrameCount / 3.0, 1);
+    const intensityScore = Math.min((rawValue - FINGER_DETECTION.MIN_RED_VALUE) / 
+                                  (FINGER_DETECTION.MAX_RED_VALUE - FINGER_DETECTION.MIN_RED_VALUE), 1);
+    const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 5)));
     
-    // Ponderación ajustada para ser más permisiva
-    quality = Math.round((stabilityScore * 0.4 + 
-                        intensityScore * 0.3 + 
-                        variationScore * 0.1 + 
-                        movementFactor * 0.1 + 
-                        periodicityFactor * 0.1) * 100);
+    // Ponderación ajustada para priorizar factores críticos
+    const quality = Math.round((
+      stabilityScore * 0.35 +               // Estabilidad: 35%
+      intensityScore * 0.25 +               // Intensidad de rojo: 25% 
+      periodicityFactor * 0.15 +            // Periodicidad cardíaca: 15%
+      pulsatilityScore * 0.15 +             // Pulsatilidad: 15%
+      movementFactor * 0.05 +               // Estabilidad de movimiento: 5%
+      variationScore * 0.05                 // Variación controlada: 5%
+    ) * 100);
     
-    // Detección de dedo más permisiva
-    // Permitimos detección con calidad mínima más baja
-    const minQualityThreshold = 30; // Umbral de calidad reducido
-    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.7 && 
-                            quality >= minQualityThreshold;
-
-    return { isFingerDetected, quality };
+    // Bonus de calidad si tenemos suficiente estabilidad
+    const qualityWithBonus = stabilityScore > 0.7 ? 
+      Math.min(100, quality + FINGER_DETECTION.STABILITY_BONUS) : quality;
+    
+    // Detección de dedo más permisiva y con transición suave
+    const isFingerDetected = quality >= FINGER_DETECTION.QUALITY_THRESHOLD;
+    
+    // Actualizar contador de detección para estabilizar (evitar parpadeo)
+    if (isFingerDetected) {
+      this.fingerDetectionCounter = FINGER_DETECTION.TRANSITION_SMOOTHING;
+    } else {
+      this.fingerDetectionCounter = Math.max(0, this.fingerDetectionCounter - 1);
+    }
+    
+    // Solo reportar detección positiva si tenemos suficientes frames consecutivos
+    return { 
+      isFingerDetected: this.fingerDetectionCounter > 0,
+      quality: qualityWithBonus
+    };
   }
 
   /**

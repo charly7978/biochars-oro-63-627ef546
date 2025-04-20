@@ -7,16 +7,21 @@ export class PPGProcessor {
   // Configuración unificada con valores optimizados
   private readonly CONFIG = {
     BUFFER_SIZE: 15,
-    MIN_RED_THRESHOLD: 60,
-    MAX_RED_THRESHOLD: 230,
+    MIN_RED_THRESHOLD: 40,     // Reducido para ser más permisivo con pieles oscuras
+    MAX_RED_THRESHOLD: 240,    // Aumentado para ser más permisivo con pieles claras
     STABILITY_WINDOW: 3,
-    MIN_STABILITY_COUNT: 3,
-    PERFUSION_INDEX_THRESHOLD: 0.05,
+    MIN_STABILITY_COUNT: 2,    // Reducido para detectar más rápido
+    PERFUSION_INDEX_THRESHOLD: 0.03, // Reducido para ser más sensible
     WAVELET_THRESHOLD: 0.025,
     BASELINE_FACTOR: 0.95,
     PERIODICITY_BUFFER_SIZE: 40,
-    MIN_PERIODICITY_SCORE: 0.3,
-    SIGNAL_QUALITY_THRESHOLD: 65
+    MIN_PERIODICITY_SCORE: 0.2,  // Reducido para ser más permisivo
+    SIGNAL_QUALITY_THRESHOLD: 50, // Reducido para aceptar señales de menor calidad
+    // Nuevos parámetros para mejorar la detección
+    RED_DOMINANCE_RATIO: 1.1,   // Ratio mínimo de rojo sobre otros canales
+    FINGER_DETECTION_FORGIVENESS: 3, // Frames para mantener detección ante fluctuaciones
+    QUICK_DETECTION_THRESHOLD: 80,  // Valor para detección rápida
+    SHADOW_DETECTION_THRESHOLD: 35  // Valor mínimo para detectar dedo en sombra
   };
   
   private isProcessing: boolean = false;
@@ -124,13 +129,50 @@ export class PPGProcessor {
   }
 
   private analyzeSignal(filtered: number, rawValue: number): { isFingerDetected: boolean, quality: number } {
+    // Verificación básica de rango
     const isInRange = rawValue >= this.CONFIG.MIN_RED_THRESHOLD && 
                       rawValue <= this.CONFIG.MAX_RED_THRESHOLD;
     
+    // Mantener detección por unos cuadros adicionales para estabilidad
     if (!isInRange) {
-      this.stableFrameCount = 0;
-      this.lastStableValue = 0;
-      return { isFingerDetected: false, quality: 0 };
+      // Reducir contador gradualmente en lugar de reiniciar
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      
+      // Si todavía tenemos suficiente "confianza" acumulada, mantener la detección
+      const isStillDetected = this.stableFrameCount >= (this.CONFIG.MIN_STABILITY_COUNT - 1);
+      
+      // Calidad reducida pero no a cero inmediatamente
+      const degradedQuality = Math.max(0, Math.floor((this.stableFrameCount / this.CONFIG.MIN_STABILITY_COUNT) * 40));
+      
+      return { 
+        isFingerDetected: isStillDetected, 
+        quality: degradedQuality 
+      };
+    }
+
+    // Detección rápida para valores muy prometedores
+    if (rawValue > this.CONFIG.QUICK_DETECTION_THRESHOLD && 
+        rawValue < (this.CONFIG.MAX_RED_THRESHOLD - 30)) {
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1.5, this.CONFIG.MIN_STABILITY_COUNT * 2);
+      const quickQuality = Math.min(80, 40 + (this.stableFrameCount * 5));
+      return { 
+        isFingerDetected: true, 
+        quality: Math.round(quickQuality) 
+      };
+    }
+
+    // Manejo de condiciones de poca luz - permitir valores más bajos si son estables
+    if (rawValue >= this.CONFIG.SHADOW_DETECTION_THRESHOLD && 
+        rawValue < this.CONFIG.MIN_RED_THRESHOLD + 20) {
+      // Aumentar el contador más lentamente en condiciones de poca luz
+      this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.CONFIG.MIN_STABILITY_COUNT * 1.5);
+      
+      if (this.stableFrameCount >= this.CONFIG.MIN_STABILITY_COUNT) {
+        return { 
+          isFingerDetected: true, 
+          quality: Math.round((this.stableFrameCount / (this.CONFIG.MIN_STABILITY_COUNT * 1.5)) * 45) 
+        };
+      }
     }
 
     if (this.lastValues.length < this.CONFIG.STABILITY_WINDOW) {
@@ -145,25 +187,31 @@ export class PPGProcessor {
       return val - arr[i-1];
     });
 
+    // Cálculo de variación más sofisticado
     const maxVariation = Math.max(...variations.map(Math.abs));
-    const adaptiveThreshold = Math.max(1.5, avgValue * 0.02);
-    const isStable = maxVariation < adaptiveThreshold * 2;
+    // Umbral adaptativo basado en el valor promedio
+    const adaptiveThreshold = Math.max(1.5, avgValue * 0.03); // Más permisivo (0.03 vs 0.02)
+    const isStable = maxVariation < adaptiveThreshold * 2.5; // Más permisivo (2.5 vs 2)
 
     if (isStable) {
-      this.stableFrameCount = Math.min(this.stableFrameCount + 1, this.CONFIG.MIN_STABILITY_COUNT * 2);
+      // Incremento más rápido del contador de estabilidad
+      this.stableFrameCount = Math.min(this.stableFrameCount + 1.2, this.CONFIG.MIN_STABILITY_COUNT * 2);
       this.lastStableValue = filtered;
     } else {
-      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      // Decremento más lento para mayor tolerancia a fluctuaciones
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.3);
     }
 
     const isFingerDetected = this.stableFrameCount >= this.CONFIG.MIN_STABILITY_COUNT;
     
     let quality = 0;
     if (isFingerDetected) {
-      // Calcular calidad basada en estabilidad y periodicidad
+      // Cálculo de calidad mejorado
       const stabilityQuality = (this.stableFrameCount / (this.CONFIG.MIN_STABILITY_COUNT * 2)) * 50;
       const periodicityQuality = this.analyzePeriodicityQuality() * 50;
-      quality = Math.round(stabilityQuality + periodicityQuality);
+      const perfusionBonus = this.calculatePerfusionIndex() > this.CONFIG.PERFUSION_INDEX_THRESHOLD ? 10 : 0;
+      
+      quality = Math.round(stabilityQuality + periodicityQuality + perfusionBonus);
     }
 
     return { isFingerDetected, quality };
