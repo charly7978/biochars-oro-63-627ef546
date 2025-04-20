@@ -73,7 +73,32 @@ const Index = () => {
   } = useVitalSignsProcessor();
 
   const handleStreamReady = (stream: MediaStream) => {
-    console.log("Camera stream is ready", stream);
+    // @ts-ignore
+    const videoTrack = stream.getVideoTracks()[0];
+    // @ts-ignore
+    const imageCapture = new (window as any).ImageCapture
+      ? new (window as any).ImageCapture(videoTrack)
+      : new ImageCapture(videoTrack);
+
+    const tempCanvas = document.createElement('canvas');
+    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+    const processImage = async () => {
+      if (!isMonitoring) return;
+      try {
+        const frame = await imageCapture.grabFrame();
+        tempCanvas.width = frame.width;
+        tempCanvas.height = frame.height;
+        tempCtx?.drawImage(frame, 0, 0, frame.width, frame.height);
+        const imageData = tempCtx?.getImageData(0, 0, frame.width, frame.height);
+        if (imageData) processFrame(imageData);
+      } catch (e) {
+        console.error("Error capturando frame:", e);
+      }
+      if (isMonitoring) requestAnimationFrame(processImage);
+    };
+
+    processImage();
   };
 
   const handleToggleMonitoring = () => {
