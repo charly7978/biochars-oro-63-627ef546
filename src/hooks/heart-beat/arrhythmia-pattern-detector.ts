@@ -15,7 +15,7 @@ interface ArrhythmiaPatternDetectorState {
 }
 
 const LEARNING_DURATION_MS = 6000;
-const ANOMALY_THRESHOLD = 0.20; // ±20%
+const ANOMALY_THRESHOLD = 0.10; // ±10% (más sensible)
 const MIN_BEATS_FOR_BASE = 5;
 
 export function useArrhythmiaPatternDetector() {
@@ -72,6 +72,8 @@ export function useArrhythmiaPatternDetector() {
         isAnomalous = deviation > ANOMALY_THRESHOLD;
       }
       newBeats.push({ timestamp: now, rr, isAnomalous });
+      // Log para debug
+      console.log('Beat registrado:', { timestamp: now, rr, isAnomalous });
       // Mantener solo los últimos 20 latidos
       if (newBeats.length > 20) newBeats = newBeats.slice(-20);
       setState(s => ({ ...s, beats: newBeats, lastBeatTime: now }));
