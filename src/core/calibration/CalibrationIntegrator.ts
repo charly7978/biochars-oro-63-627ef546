@@ -1,3 +1,4 @@
+
 // Retirar imports inexistentes para evitar error TS2307
 // import { getModel } from '../neural/ModelRegistry';
 // import { HeartRateNeuralModel } from '../neural/HeartRateModel';
@@ -5,6 +6,14 @@
 // import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
 // import { GlucoseNeuralModel } from '../neural/GlucoseModel';
 import { supabase } from '@/integrations/supabase/client';
+
+/**
+ * Interface for calibration state
+ */
+export interface CalibrationState {
+  phase: 'inactive' | 'active' | 'completed' | 'error' | null;
+  [key: string]: any;
+}
 
 /**
  * Integrador del Sistema de Calibración con la aplicación
@@ -19,9 +28,13 @@ export class CalibrationIntegrator {
   // private calibrationSystem = getCalibrationSystem();
 
   private lastProcessedData: any = null;
+  private currentCalibrationState: CalibrationState | null = null;
   
   private constructor() {
     // Privado para implementar patrón singleton
+    
+    // Por defecto el estado está inactivo
+    this.currentCalibrationState = { phase: 'inactive' };
   }
   
   /**
@@ -71,29 +84,34 @@ export class CalibrationIntegrator {
    * Inicia el proceso de calibración
    */
   public startCalibration(): void {
+    this.currentCalibrationState = { phase: 'active' };
   }
   
   /**
    * Cancela o reinicia la calibración
    */
   public resetCalibration(fullReset: boolean = false): void {
+    this.currentCalibrationState = { phase: 'inactive' };
   }
   
   /**
    * Obtiene el estado actual de calibración
    */
-  public getCalibrationState() {
+  public getCalibrationState(): CalibrationState | null {
+    return this.currentCalibrationState;
   }
   
   /**
    * Proporciona retroalimentación externa (ej. de un dispositivo médico de referencia)
    */
   public provideExternalReference(type: string, value: any): void {
+    // Implementación futura
   }
   
   /**
    * Actualiza la configuración del sistema de calibración
    */
   public updateCalibrationConfig(config: any): void {
+    // Implementación futura
   }
 }
