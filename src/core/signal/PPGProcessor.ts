@@ -208,10 +208,14 @@ export class PPGProcessor {
     
     // Evaluar si la región es válida para PPG (detectar dedo)
     // Un dedo sobre la cámara típicamente muestra dominancia del canal rojo
-    const redDominance = redValue / ((greenValue + blueValue) / 2);
+    const redDominance = redValue > 0 ? redValue / ((greenValue + blueValue) / 2) : 0; // Evitar división por cero
     const isRedInRange = redValue >= this.CONFIG.MIN_RED_THRESHOLD && 
                         redValue <= this.CONFIG.MAX_RED_THRESHOLD;
-    const isValidRegion = isRedInRange && (redDominance >= this.CONFIG.RED_DOMINANCE_RATIO);
+    const isDominant = redDominance >= this.CONFIG.RED_DOMINANCE_RATIO;
+    const isValidRegion = isRedInRange && isDominant;
+    
+    // Log para diagnóstico de detección de región
+    console.log(`[extractRGBChannels] Region Check: R=${redValue.toFixed(1)}, G=${greenValue.toFixed(1)}, B=${blueValue.toFixed(1)}, Dominance=${redDominance.toFixed(2)}, InRange=${isRedInRange}, IsDominant=${isDominant}, Valid=${isValidRegion}`);
     
     return {
       redValue,
@@ -227,6 +231,9 @@ export class PPGProcessor {
     greenValue?: number,
     blueValue?: number
   ): { isFingerDetected: boolean, quality: number } {
+    // Log simple al inicio de la función
+    console.log(`[analyzeSignal] Inicio: raw=${rawValue.toFixed(1)}, filtered=${filtered.toFixed(1)}, green=${greenValue?.toFixed(1)}, blue=${blueValue?.toFixed(1)}`);
+
     // Verificación básica de rango
     const isInRange = rawValue >= this.CONFIG.MIN_RED_THRESHOLD && 
                       rawValue <= this.CONFIG.MAX_RED_THRESHOLD;

@@ -54,6 +54,11 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Log para confirmar que onSignalReady se llama y qué datos trae
+      if (framesProcessed % 30 === 0) { // Loguear cada segundo aprox.
+          console.log(`[useSignalProcessor] onSignalReady llamado. Dedo: ${signal.fingerDetected}, Calidad: ${signal.quality}, Valor: ${signal.filteredValue.toFixed(2)}`);
+      }
+      
       // Pass through without modifications - quality and detection handled by PPGSignalMeter
       setLastSignal(signal);
       setError(null);

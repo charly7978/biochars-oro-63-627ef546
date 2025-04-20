@@ -325,10 +325,18 @@ const Index = () => {
 
   const processImage = async () => {
     if (!isCameraOn || !imageCapture || !tempCanvas || !tempCtx) {
-      console.log("No se puede procesar la imagen - falta configuración");
+      // Log si no se puede procesar por falta de configuración
+      // console.log("[processImage] No se puede procesar - falta config:", { isCameraOn, hasImageCapture: !!imageCapture, hasCanvas: !!tempCanvas });
+      // Reintentar el bucle si aún estamos monitoreando
+      if (isCameraOn) requestAnimationFrame(processImage);
       return;
     }
     
+    // Log para confirmar que el bucle se ejecuta
+    if (framesProcessed % 60 === 0) { // Log cada ~2 segundos
+        console.log(`[processImage] Bucle ejecutándose... Frame: ${framesProcessed}`);
+    }
+
     try {
       // Capturar frame de la cámara
       const frame = await imageCapture.grabFrame();
