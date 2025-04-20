@@ -24,16 +24,11 @@ const Index = () => {
       totalCholesterol: null,
       triglycerides: null
     },
-<<<<<<< HEAD
-    hemoglobin: 0,
-    hydration: 0,
-    lastArrhythmiaData: null
-=======
     hemoglobin: null,
-    hydration: null
->>>>>>> abcf2df1c9110294c710eab461b29a9499cf4cf1
+    hydration: null,
+    lastArrhythmiaData: null // Added here to fix TypeScript error
   });
-  const [heartRate, setHeartRate] = useState(null);
+  const [heartRate, setHeartRate] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
@@ -57,12 +52,27 @@ const Index = () => {
     stopMonitoring: stopHeartBeatMonitoring,
   } = useHeartBeatProcessor();
 
-  const { 
-    processSignal: processVitalSigns, 
+  const {
+    processSignal: processVitalSigns,
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
     lastValidResults
   } = useVitalSignsProcessor();
+
+  // --- NEW HANDLER for camera stream readiness ---
+  const handleStreamReady = (stream: MediaStream) => {
+    // Optionally do something with stream, currently just log for debug
+    console.log("Camera stream is ready", stream);
+  };
+
+  // --- NEW HANDLER to toggle monitoring start/stop ---
+  const handleToggleMonitoring = () => {
+    if (isMonitoring) {
+      finalizeMeasurement();
+    } else {
+      startMonitoring();
+    }
+  };
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
@@ -76,17 +86,17 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
-      
+
       setSignalQuality(lastSignal.quality);
-      
+
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
+
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
           if (heartBeatResult.bpm > 0) {
             setHeartRate(heartBeatResult.bpm);
           }
-          
+
           try {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
@@ -99,7 +109,7 @@ const Index = () => {
           }
         }
       } else {
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        if (!lastSignal.fingerDetected && heartRate && heartRate > 0) {
           setHeartRate(null);
         }
       }
@@ -117,38 +127,34 @@ const Index = () => {
   }, [vitalSigns.arrhythmiaStatus, vitalSigns.lastArrhythmiaData]);
 
   const startMonitoring = () => {
-    if (isMonitoring) {
-      finalizeMeasurement();
-    } else {
-      setIsMonitoring(true);
-      setIsCameraOn(true);
-      setShowResults(false);
-      setHeartRate(null);
-      
-      FeedbackService.vibrate(100);
-      FeedbackService.playSound('notification');
-      
-      startProcessing();
-      startHeartBeatMonitoring();
-      
-      setElapsedTime(0);
-      
-      if (measurementTimerRef.current) {
-        clearInterval(measurementTimerRef.current);
-      }
-      
-      measurementTimerRef.current = window.setInterval(() => {
-        setElapsedTime(prev => {
-          const newTime = prev + 1;
-          
-          if (newTime >= optimalMeasurementTime) {
-            finalizeMeasurement();
-            return optimalMeasurementTime;
-          }
-          return newTime;
-        });
-      }, 1000);
+    setIsMonitoring(true);
+    setIsCameraOn(true);
+    setShowResults(false);
+    setHeartRate(null);
+
+    FeedbackService.vibrate(100);
+    FeedbackService.playSound('notification');
+
+    startProcessing();
+    startHeartBeatMonitoring();
+
+    setElapsedTime(0);
+
+    if (measurementTimerRef.current) {
+      clearInterval(measurementTimerRef.current);
     }
+
+    measurementTimerRef.current = window.setInterval(() => {
+      setElapsedTime(prev => {
+        const newTime = prev + 1;
+
+        if (newTime >= optimalMeasurementTime) {
+          finalizeMeasurement();
+          return optimalMeasurementTime;
+        }
+        return newTime;
+      });
+    }, 1000);
   };
 
   const finalizeMeasurement = () => {
@@ -156,20 +162,20 @@ const Index = () => {
     setIsCameraOn(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    
+
     FeedbackService.signalMeasurementComplete(signalQuality >= 70);
-    
+
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
+
     const savedResults = resetVitalSigns();
     if (savedResults) {
       setVitalSigns(savedResults);
       setShowResults(true);
     }
-    
+
     setElapsedTime(0);
     setSignalQuality(0);
   };
@@ -181,17 +187,17 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     reset();
-    
+
     FeedbackService.vibrate([50, 30, 50]);
-    
+
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
-    
+
     fullResetVitalSigns();
 
-    // Quitar todos los valores, sin valores fijos ni simulados
+    // Clear all values to null, no fixed or simulated values
     setElapsedTime(0);
     setHeartRate(null);
     setVitalSigns({
@@ -203,14 +209,9 @@ const Index = () => {
         totalCholesterol: null,
         triglycerides: null
       },
-<<<<<<< HEAD
-      hemoglobin: 0,
-      hydration: 0,
-      lastArrhythmiaData: null
-=======
       hemoglobin: null,
-      hydration: null
->>>>>>> abcf2df1c9110294c710eab461b29a9499cf4cf1
+      hydration: null,
+      lastArrhythmiaData: null
     });
     setSignalQuality(0);
   };
@@ -262,7 +263,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || ""}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData} // safe because we add lastArrhythmiaData
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
               beats={beats}
