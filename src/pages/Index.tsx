@@ -103,11 +103,12 @@ const Index = () => {
             setHeartRate(heartBeatResult.bpm);
           }
           
+          console.log("Llamando a processVitalSigns con:", lastSignal, heartBeatResult.rrData);
           try {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
+                console.log("Resultado de processVitalSigns:", vitals);
                 if (elapsedTime >= minimumMeasurementTime) {
-                  console.log("Actualizando signos vitales:", vitals);
                   setVitalSigns(vitals);
                 }
               })
@@ -209,7 +210,7 @@ const Index = () => {
     setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    resetHeartBeatProcessor();
+    reset();
     
     FeedbackService.vibrate([50, 30, 50]);
     
