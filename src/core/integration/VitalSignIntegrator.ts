@@ -100,18 +100,16 @@ export class VitalSignIntegrator {
       }
     });
 
-    // Fix: getCalibrationState() before use, avoid testing void or null
+    // Now getCalibrationState returns { phase: string } | null
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
 
-    // More robust check - make sure calibrationState is not null/undefined/void and has phase property which is "active"
     if (
-      calibrationState &&
+      calibrationState !== null &&
       typeof calibrationState === 'object' &&
       'phase' in calibrationState &&
-      typeof (calibrationState as any).phase === 'string' &&
-      (calibrationState as any).phase === 'active'
+      typeof calibrationState.phase === 'string' &&
+      calibrationState.phase === 'active'
     ) {
-      const castedState = calibrationState as { phase: string };
       Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
         const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
         if (calibrationFactor !== 1.0) {
