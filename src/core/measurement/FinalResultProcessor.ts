@@ -6,7 +6,6 @@
  * significativamente la estabilidad y precisión de las métricas reportadas.
  */
 import { antiRedundancyGuard } from 'src/core/validation/CrossValidationSystem';
-import { calculateMedian, calculateStandardDeviation } from '@/modules/vital-signs/utils/signal-processing-utils';
 
 export class FinalResultProcessor {
   // Almacenamiento de mediciones para cada tipo
@@ -137,27 +136,38 @@ export class FinalResultProcessor {
     sampleCount: number
   } {
     // Calcular mediana
-    const median = calculateMedian(values);
+    const sortedValues = [...values].sort((a, b) => a - b);
+    const median = sortedValues[Math.floor(sortedValues.length / 2)];
+    
     // Calcular media
     const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+    
     // Calcular desviación estándar
-    const stdDev = calculateStandardDeviation(values);
+    const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
     // Calcular media ponderada basada en tiempo y calidad
     const now = Date.now();
     const maxTimeDiff = Math.max(...timestamps.map(t => now - t));
+    
     const weights = values.map((_, i) => {
       // Factor de tiempo: más reciente = mayor peso
       const timeFactor = 1 - ((now - timestamps[i]) / maxTimeDiff) * 0.5;
+      
       // Factor de calidad: mejor calidad = mayor peso
       const qualityFactor = qualities[i] / 100;
+      
       // Peso combinado
       return timeFactor * qualityFactor * (i >= values.length - 3 ? this.RECENT_WEIGHT_MULTIPLIER : 1);
     });
+    
     // Normalizar pesos
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     const normalizedWeights = weights.map(w => w / totalWeight);
+    
     // Calcular media ponderada
     const weightedMean = values.reduce((sum, v, i) => sum + v * normalizedWeights[i], 0);
+    
     return {
       median,
       mean,
