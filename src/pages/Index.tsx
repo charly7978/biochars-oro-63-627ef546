@@ -26,7 +26,8 @@ const Index = () => {
       triglycerides: 0
     },
     hemoglobin: 0,
-    hydration: 0
+    hydration: 0,
+    lastArrhythmiaData: null
   });
   const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -230,7 +231,8 @@ const Index = () => {
         triglycerides: 0
       },
       hemoglobin: 0,
-      hydration: 0
+      hydration: 0,
+      lastArrhythmiaData: null
     });
     setSignalQuality(0);
   };
