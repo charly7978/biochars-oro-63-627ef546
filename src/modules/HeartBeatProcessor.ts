@@ -54,6 +54,7 @@ export class HeartBeatProcessor {
     }
     // Normalizar señal a rango [-1, 1]
     const max = Math.max(...filtered.slice(4).map(Math.abs));
+    console.log('[HeartBeatProcessor] Valor máximo para normalización filtro:', max);
     if (max > 0) {
       return filtered.map(v => v / max);
     }
@@ -75,6 +76,9 @@ export class HeartBeatProcessor {
     if (this.signalBuffer.length > this.WINDOW_LENGTH) {
       this.signalBuffer.shift();
     }
+    const minRaw = Math.min(...this.signalBuffer);
+    const maxRaw = Math.max(...this.signalBuffer);
+    console.log('[HeartBeatProcessor] Rango señal cruda:', { min: minRaw, max: maxRaw });
 
     // Filtrar la señal usando banda 0.5-5Hz para reducir ruido y DC
     this.filteredSignal = this.bandPassFilter(this.signalBuffer);
@@ -146,8 +150,8 @@ export class HeartBeatProcessor {
 
     // El pico es máximo local si:
     // 1. valor actual mayor que prev1 y prev2
-    // 2. valor > umbral basado en señal (ej 0.2)
-    const isLocalMax = (currentValue > prev1 && currentValue > prev2 && currentValue > 0.2);
+    // 2. valor > umbral basado en señal (ej 0.01)
+    const isLocalMax = (currentValue > prev1 && currentValue > prev2 && currentValue > 0.01);
 
     console.log('[HeartBeatProcessor] detectPeak:', {
       currentValue,
