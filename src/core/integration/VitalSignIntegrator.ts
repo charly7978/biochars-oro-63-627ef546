@@ -1,4 +1,3 @@
-
 /**
  * VitalSignIntegrator
  * 
@@ -102,13 +101,7 @@ export class VitalSignIntegrator {
     });
 
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
-    // Controlar que calibrationState no sea void ni null, y que contenga phase
-    if (
-      calibrationState &&
-      typeof calibrationState === 'object' &&
-      'phase' in calibrationState &&
-      calibrationState.phase === 'active'
-    ) {
+    if (calibrationState != null && calibrationState.phase === 'active') {
       Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
         const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
         if (calibrationFactor !== 1.0) {
@@ -243,4 +236,3 @@ export class VitalSignIntegrator {
     }
   }
 }
-

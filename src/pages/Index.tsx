@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -22,7 +21,7 @@ interface VitalSignsState {
   };
   hemoglobin: number | null;
   hydration: number | null;
-  lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null;
+  lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number } | null;
 }
 
 const Index = () => {
@@ -380,4 +379,3 @@ const Index = () => {
 };
 
 export default Index;
-
