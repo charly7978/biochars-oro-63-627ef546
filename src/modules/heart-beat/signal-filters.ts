@@ -1,4 +1,3 @@
-
 /**
  * Functions for filtering PPG signals
  */
@@ -83,3 +82,5 @@ export function applyFilterPipeline(
     updatedMovingAvgBuffer
   };
 }
+
+export * from '../vital-signs/utils/signal-processing-utils';

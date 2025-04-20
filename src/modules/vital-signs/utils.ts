@@ -1,4 +1,3 @@
-
 /**
  * Utilitarios para el procesamiento de señales PPG
  * ALGORITMOS REALISTAS - SIN SIMULACIÓN
@@ -145,3 +144,5 @@ export function calculateHeartRate(peakIndices: number[], sampleRate: number = 3
   // Limitar a rango fisiológico
   return Math.max(40, Math.min(200, bpm));
 }
+
+export * from './utils/signal-processing-utils';

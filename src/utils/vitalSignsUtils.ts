@@ -1,10 +1,11 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
  * Utilidades reutilizables para todos los procesadores de signos vitales
  * Solo procesa datos reales, sin simulación ni manipulación
  */
+
+export * from '../modules/vital-signs/utils/signal-processing-utils';
 
 /**
  * Calcula el componente AC (amplitud pico a pico) de una señal real

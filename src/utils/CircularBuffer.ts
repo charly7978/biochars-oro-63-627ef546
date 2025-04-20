@@ -1,4 +1,3 @@
-
 export interface PPGDataPoint {
   time: number;
   value: number;
@@ -6,7 +5,7 @@ export interface PPGDataPoint {
 
 export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
   private buffer: T[];
-  private capacity: number;
+  public readonly capacity: number;
   private index: number;
   private isFull: boolean;
 
@@ -53,6 +52,10 @@ export class CircularBuffer<T extends PPGDataPoint = PPGDataPoint> {
 
   public size(): number {
     return this.isFull ? this.capacity : this.index;
+  }
+
+  public get length(): number {
+    return this.size();
   }
 
   public isEmpty(): boolean {
