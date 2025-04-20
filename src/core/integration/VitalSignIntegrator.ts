@@ -1,4 +1,3 @@
-
 /**
  * VitalSignIntegrator
  * 
@@ -101,26 +100,29 @@ export class VitalSignIntegrator {
       }
     });
 
-    // Fix: getCalibrationState() before use, avoid testing void
+    // Fix: getCalibrationState() before use, avoid testing void or null
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
 
-    // Defensive check: ensure calibrationState is not null and has phase property
-    if (calibrationState !== null && typeof calibrationState === 'object' && 'phase' in calibrationState) {
-      // Typescript now knows calibrationState is object with property phase
+    // More robust check - make sure calibrationState is not null/undefined/void and has phase property which is "active"
+    if (
+      calibrationState &&
+      typeof calibrationState === 'object' &&
+      'phase' in calibrationState &&
+      typeof (calibrationState as any).phase === 'string' &&
+      (calibrationState as any).phase === 'active'
+    ) {
       const castedState = calibrationState as { phase: string };
-      if (castedState.phase === 'active') {
-        Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
-          const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
-          if (calibrationFactor !== 1.0) {
-            this.signalProcessor.provideFeedback(channelName, {
-              source: 'calibration',
-              timestamp: currentTime,
-              calibrationFactor,
-              confidenceScore: 0.9
-            });
-          }
-        });
-      }
+      Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
+        const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
+        if (calibrationFactor !== 1.0) {
+          this.signalProcessor.provideFeedback(channelName, {
+            source: 'calibration',
+            timestamp: currentTime,
+            calibrationFactor,
+            confidenceScore: 0.9
+          });
+        }
+      });
     }
   }
   
@@ -244,4 +246,3 @@ export class VitalSignIntegrator {
     }
   }
 }
-
