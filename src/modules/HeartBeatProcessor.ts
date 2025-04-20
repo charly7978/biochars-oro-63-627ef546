@@ -10,6 +10,8 @@
 
 import { antiRedundancyGuard } from '../core/validation/CrossValidationSystem';
 
+let globalHeartBeatProcessorInstanceCount = 0;
+
 export class HeartBeatProcessor {
   private readonly SAMPLE_RATE = 30;                 // 30 FPS típico cámara
   private readonly LOW_CUTOFF = 0.5;                  // filtro pasa-banda 0.5 Hz (~30 bpm)
@@ -30,6 +32,8 @@ export class HeartBeatProcessor {
 
   constructor() {
     this.reset();
+    globalHeartBeatProcessorInstanceCount++;
+    console.log('[HeartBeatProcessor] Nueva instancia creada. Total:', globalHeartBeatProcessorInstanceCount, new Error().stack.split('\n').slice(1,3).join(' | '));
   }
 
   /**
@@ -71,6 +75,7 @@ export class HeartBeatProcessor {
     filteredValue: number;
     arrhythmiaCount: number; // Para integrar con detector externo
   } {
+    console.log('[HeartBeatProcessor] processSignal llamado con valor:', rawValue, new Error().stack.split('\n').slice(1,3).join(' | '));
     // Añadir valor raw a buffer
     this.signalBuffer.push(rawValue);
     if (this.signalBuffer.length > this.WINDOW_LENGTH) {
