@@ -5,11 +5,14 @@ import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
+import { useArrhythmiaPatternDetector } from './heart-beat/arrhythmia-pattern-detector';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
+  const [isArrhythmia, setIsArrhythmia] = useState<boolean>(false);
+  const [lastPeakTime, setLastPeakTime] = useState<number | null>(null);
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   const missedBeepsCounter = useRef<number>(0);
@@ -43,6 +46,16 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   // Referencias locales para cumplir con la firma de processSignalInternal
   const lastRRIntervalsRef = useRef<number[]>([]);
   const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
+
+  // Nuevo detector de patrón rítmico
+  const {
+    phase: arrhythmiaPhase,
+    baseRR,
+    baseSDNN,
+    beats,
+    registerBeat,
+    reset: resetArrhythmia
+  } = useArrhythmiaPatternDetector();
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -134,12 +147,38 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
 
     lastResultRef.current = result;
-    return result;
+
+    // Simulación de procesamiento de señal: cada vez que se detecta un pico, llamar a registerBeat
+    const isPeak = value > 0.5; // Reemplaza por tu lógica real
+    if (isPeak) {
+      registerBeat();
+      setLastPeakTime(Date.now());
+    }
+    // Detectar arritmia en tiempo real
+    if (beats.length > 0) {
+      const lastBeat = beats[beats.length - 1];
+      setIsArrhythmia(lastBeat.isAnomalous);
+    }
+
+    return {
+      bpm: currentBPM,
+      confidence,
+      isPeak,
+      arrhythmiaCount: beats.filter(b => b.isAnomalous).length,
+      rrData: {
+        intervals: beats.map(b => b.rr),
+        lastPeakTime: lastPeakTime
+      },
+      isArrhythmia: isArrhythmia
+    };
   }, [
     currentBPM, 
     confidence, 
     processSignalInternal, 
-    requestBeep
+    requestBeep,
+    beats,
+    isArrhythmia,
+    registerBeat
   ]);
 
   const reset = useCallback(() => {
@@ -158,12 +197,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     setCurrentBPM(0);
     setConfidence(0);
+    setIsArrhythmia(false);
+    setLastPeakTime(null);
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
     
     cleanupBeepProcessor();
-  }, [cleanupBeepProcessor]);
+    resetArrhythmia();
+  }, [cleanupBeepProcessor, resetArrhythmia]);
 
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
@@ -206,8 +248,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     confidence,
     processSignal,
     reset,
-    isArrhythmia: lastResultRef.current?.isArrhythmia ?? false,
-    arrhythmiaCount: lastResultRef.current?.arrhythmiaCount ?? 0,
+    isArrhythmia,
+    arrhythmiaPhase,
+    baseRR,
+    baseSDNN,
+    beats,
     requestBeep,
     startMonitoring,
     stopMonitoring

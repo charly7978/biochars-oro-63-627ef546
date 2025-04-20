@@ -1,4 +1,3 @@
-
 import { RRAnalysisResult } from '../arrhythmia/types';
 
 export interface RRIntervalData {
@@ -26,4 +25,8 @@ export interface UseHeartBeatReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
   arrhythmiaCount?: number;
+  arrhythmiaPhase?: 'learning' | 'monitoring';
+  baseRR?: number;
+  baseSDNN?: number;
+  beats?: Array<{ timestamp: number; rr: number; isAnomalous: boolean }>;
 }

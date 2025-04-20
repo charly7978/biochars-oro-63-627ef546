@@ -43,6 +43,8 @@ const Index = () => {
     processSignal: processHeartBeat, 
     heartBeatResult,
     isArrhythmia,
+    arrhythmiaPhase,
+    beats,
     startProcessing: startHeartBeatMonitoring,
     stopProcessing: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -379,6 +381,8 @@ const Index = () => {
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
+              beats={beats}
+              arrhythmiaPhase={arrhythmiaPhase}
             />
           </div>
 

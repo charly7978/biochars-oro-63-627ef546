@@ -26,6 +26,8 @@ interface PPGSignalMeterProps {
   } | null;
   preserveResults?: boolean;
   isArrhythmia?: boolean;
+  beats?: Array<{ timestamp: number; rr: number; isAnomalous: boolean }>;
+  arrhythmiaPhase?: 'learning' | 'monitoring';
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -48,7 +50,9 @@ const PPGSignalMeter = memo(({
   arrhythmiaStatus,
   rawArrhythmiaData,
   preserveResults = false,
-  isArrhythmia = false
+  isArrhythmia = false,
+  beats = [],
+  arrhythmiaPhase
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -536,9 +540,7 @@ const PPGSignalMeter = memo(({
       renderCtx.lineJoin = 'round';
       renderCtx.lineCap = 'round';
       
-      let firstPoint = true;
-      let lastPointWasArrhythmia = false;
-      
+      let lastColor = null;
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const point = points[i];
@@ -546,23 +548,23 @@ const PPGSignalMeter = memo(({
         const y1 = (canvas.height / 2 - 50) - prevPoint.value;
         const x2 = canvas.width - ((now - point.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - point.value;
-        // El color de la onda depende del punto actual
-        const pointIsArrhythmia = point.isArrhythmia;
-        if (pointIsArrhythmia !== lastPointWasArrhythmia || firstPoint) {
-          if (!firstPoint) {
-            renderCtx.stroke();
-            renderCtx.beginPath();
+        // Buscar si hay un beat cerca de este punto
+        const beat = beats.find(b => Math.abs(b.timestamp - point.time) < 80); // 80ms de tolerancia
+        let color = '#2563eb'; // Azul normal
+        if (beat) {
+          color = beat.isAnomalous ? '#ef4444' : '#2563eb';
+          // Si es un nuevo beat, disparar feedback
+          if (!prevPoint.isArrhythmia && beat.isAnomalous && (!lastColor || lastColor !== 'red')) {
+            triggerHeartbeatFeedback('arrhythmia');
+            lastColor = 'red';
+          } else if (!prevPoint.isArrhythmia && !beat.isAnomalous && (!lastColor || lastColor !== 'blue')) {
+            triggerHeartbeatFeedback('normal');
+            lastColor = 'blue';
           }
-          renderCtx.strokeStyle = pointIsArrhythmia ? '#DC2626' : '#0EA5E9';
-          renderCtx.moveTo(x1, y1);
-          firstPoint = false;
         }
+        renderCtx.strokeStyle = color;
+        renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
-        lastPointWasArrhythmia = pointIsArrhythmia;
-      }
-      
-      if (!firstPoint) {
-        renderCtx.stroke();
       }
       
       peaksRef.current.forEach(peak => {
@@ -639,7 +641,7 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
     isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
-    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
+    WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES, triggerHeartbeatFeedback, beats
   ]);
 
   useEffect(() => {
