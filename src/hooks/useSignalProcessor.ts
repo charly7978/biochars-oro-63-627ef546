@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -5,7 +6,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
  * Hook para el procesamiento de señales PPG reales
@@ -22,9 +22,6 @@ export const useSignalProcessor = () => {
     return new PPGSignalProcessor();
   });
   
-  // Acceso al procesador de pulso cardiaco
-  const heartBeatProcessorRef = useRef<HeartBeatProcessor | null>(null);
-  
   // Basic state
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
@@ -37,28 +34,10 @@ export const useSignalProcessor = () => {
     totalValues: 0
   });
 
-  // Inicializar HeartBeatProcessor para el cálculo de frecuencia cardiaca
-  useEffect(() => {
-    if (!heartBeatProcessorRef.current) {
-      console.log("useSignalProcessor: Inicializando procesador de frecuencia cardiaca");
-      heartBeatProcessorRef.current = new HeartBeatProcessor();
-      
-      // Registrar a nivel global para debug si es necesario
-      if (typeof window !== 'undefined' && !window.heartBeatProcessor) {
-        window.heartBeatProcessor = heartBeatProcessorRef.current;
-      }
-    }
-  }, []);
-
   // Set up processor callbacks and cleanup
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Log para confirmar que onSignalReady se llama y qué datos trae
-      if (framesProcessed % 30 === 0) { // Loguear cada segundo aprox.
-          console.log(`[useSignalProcessor] onSignalReady llamado. Dedo: ${signal.fingerDetected}, Calidad: ${signal.quality}, Valor: ${signal.filteredValue.toFixed(2)}`);
-      }
-      
       // Pass through without modifications - quality and detection handled by PPGSignalMeter
       setLastSignal(signal);
       setError(null);
@@ -73,37 +52,6 @@ export const useSignalProcessor = () => {
           totalValues: prev.totalValues + 1
         };
       });
-      
-      // Procesar con el HeartBeatProcessor si hay dedo detectado y señal de calidad
-      if (signal.fingerDetected && signal.quality > 30 && heartBeatProcessorRef.current) {
-        try {
-          console.log(`[useSignalProcessor] Enviando señal a HeartBeatProcessor: valor=${signal.filteredValue.toFixed(2)}, calidad=${signal.quality}`);
-          // Enviar la señal filtrada al procesador de frecuencia cardiaca
-          const result = heartBeatProcessorRef.current.processSignal(signal.filteredValue);
-          
-          // Registrar resultados en consola para diagnóstico (cada 20 frames)
-          if (framesProcessed % 20 === 0) {
-            console.log("[useSignalProcessor] HeartBeatProcessor resultado:", {
-              bpm: result.bpm,
-              confidence: result.confidence,
-              isPeak: result.isPeak,
-              timestamp: new Date().toISOString()
-            });
-          }
-        } catch (error) {
-          console.error("[useSignalProcessor] Error procesando señal en HeartBeatProcessor:", error);
-        }
-      } else if (signal.fingerDetected && heartBeatProcessorRef.current) {
-        // Log si el dedo está detectado pero la calidad es baja
-        if (framesProcessed % 30 === 0) { // Loguear menos frecuentemente
-            console.log(`[useSignalProcessor] Dedo detectado, pero calidad baja (${signal.quality}), no enviando a HeartBeatProcessor.`);
-        }
-      } else if (heartBeatProcessorRef.current) {
-          // Log si no se detecta dedo
-           if (framesProcessed % 60 === 0) { // Loguear aún menos frecuentemente
-             console.log("[useSignalProcessor] No se detecta dedo, no enviando a HeartBeatProcessor.");
-           }
-      }
     };
 
     // Error callback
@@ -121,18 +69,13 @@ export const useSignalProcessor = () => {
     return () => {
       processor.stop();
     };
-  }, [processor, framesProcessed]);
+  }, [processor]);
 
   /**
    * Start processing signals
    */
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento");
-    
-    // Reiniciar el estado para nueva medición
-    if (heartBeatProcessorRef.current) {
-      heartBeatProcessorRef.current.reset();
-    }
     
     setIsProcessing(true);
     setFramesProcessed(0);
@@ -169,27 +112,6 @@ export const useSignalProcessor = () => {
     }
   }, [isProcessing, processor]);
 
-  /**
-   * Obtener la frecuencia cardiaca actual
-   */
-  const getCurrentHeartRate = useCallback(() => {
-    if (heartBeatProcessorRef.current) {
-      try {
-        // Obtener la última frecuencia cardiaca calculada
-        const rrData = heartBeatProcessorRef.current.getRRIntervals();
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          // Convertir intervalos RR a BPM y promediar
-          const bpmValues = rrData.intervals.map(interval => 60000 / interval);
-          const avgBPM = bpmValues.reduce((sum, val) => sum + val, 0) / bpmValues.length;
-          return Math.round(avgBPM);
-        }
-      } catch (error) {
-        console.error("Error al obtener frecuencia cardiaca:", error);
-      }
-    }
-    return 0;
-  }, []);
-
   return {
     isProcessing,
     lastSignal,
@@ -198,7 +120,6 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    processFrame,
-    getCurrentHeartRate
+    processFrame
   };
 };

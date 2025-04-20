@@ -42,10 +42,7 @@ export const useHeartBeatProcessor = () => {
       
       // Registrar a nivel global para debug si es necesario
       if (typeof window !== 'undefined') {
-        // Se evita sobreescribir si ya existe para no confundir debugging
-        if (!window.heartBeatProcessor) {
-          window.heartBeatProcessor = processorRef.current;
-        }
+        window.heartBeatProcessor = processorRef.current;
       }
     }
   }, []);
@@ -193,14 +190,6 @@ export const useHeartBeatProcessor = () => {
     return false;
   }, [lastValidBpmRef]);
 
-  /**
-   * Obtener el valor actual de ritmo cardíaco
-   */
-  const getCurrentHeartRate = useCallback(() => {
-    // Usar el valor más reciente calculado
-    return heartBeatResult.bpm || lastBpmRef.current || 0;
-  }, [heartBeatResult.bpm]);
-
   return {
     heartBeatResult,
     isProcessing,
@@ -215,7 +204,6 @@ export const useHeartBeatProcessor = () => {
     lastValidBpm: lastValidBpmRef.current,
     hasBpmData: lastValidBpmRef.current > 0,
     isMonitoring: isMonitoringRef.current,
-    ppgData,
-    getCurrentHeartRate
+    ppgData
   };
 };

@@ -29,5 +29,4 @@ export interface UseHeartBeatReturn {
   baseRR?: number;
   baseSDNN?: number;
   beats?: Array<{ timestamp: number; rr: number; isAnomalous: boolean }>;
-  lastPeakTime?: number | null;
 }

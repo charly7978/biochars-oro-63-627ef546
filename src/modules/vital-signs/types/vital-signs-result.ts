@@ -1,3 +1,4 @@
+
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -10,9 +11,6 @@ export interface VitalSignsResult {
   
   // Arrhythmia detection status
   arrhythmiaStatus: string;
-  
-  // Heart rate in BPM
-  heartRate?: number;
   
   // Blood glucose level in mg/dL
   glucose: number;

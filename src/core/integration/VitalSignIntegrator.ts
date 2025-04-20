@@ -1,4 +1,3 @@
-
 /**
  * VitalSignIntegrator
  * 
@@ -68,16 +67,12 @@ export class VitalSignIntegrator {
    */
   private synchronizeFeedback(): void {
     const currentTime = Date.now();
-    
-    // Process feedback from each vital sign processor to signal core
+
     this.processorMetrics.forEach((metrics, processorName) => {
-      // Only process recent metrics (within last 2 seconds)
       if (currentTime - metrics.timestamp < 2000) {
-        // Map processor name to channel name
         const channelName = this.mapProcessorToChannel(processorName);
         if (!channelName) return;
-        
-        // Create feedback data
+
         const feedback: FeedbackData = {
           source: processorName,
           timestamp: metrics.timestamp,
@@ -87,36 +82,34 @@ export class VitalSignIntegrator {
             quality: metrics.quality
           }
         };
-        
-        // Add calibration factor if value differs significantly from channel value
+
         const channel = this.signalProcessor.getChannel(channelName);
         if (channel) {
           const channelValue = channel.getLastValue();
           if (channelValue !== null && typeof metrics.value === 'number') {
-            // Calculate adaptive calibration factor
-            const idealCalibrationFactor = channelValue !== 0 ? 
-              metrics.value / channelValue : 1.0;
-            
-            // Limit calibration factor to reasonable range (0.5-2.0)
+            const idealCalibrationFactor = channelValue !== 0 ? metrics.value / channelValue : 1.0;
             const calibrationFactor = Math.max(0.5, Math.min(2.0, idealCalibrationFactor));
-            
-            // Only apply significant calibration
+
             if (Math.abs(calibrationFactor - 1.0) > 0.05) {
               feedback.calibrationFactor = calibrationFactor;
             }
           }
         }
-        
-        // Provide feedback to the channel
+
         this.signalProcessor.provideFeedback(channelName, feedback);
       }
     });
-    
-    // Process feedback from calibration system
+
+    // Now getCalibrationState returns { phase: string } | null
     const calibrationState = this.calibrationIntegrator.getCalibrationState();
-    // Fix: avoid error by checking if calibrationState is not null
-    if (calibrationState !== null && calibrationState.phase === 'active') {
-      // Apply calibration feedback to relevant channels
+
+    if (
+      calibrationState !== null &&
+      typeof calibrationState === 'object' &&
+      'phase' in calibrationState &&
+      typeof calibrationState.phase === 'string' &&
+      calibrationState.phase === 'active'
+    ) {
       Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
         const calibrationFactor = this.getCalibrationFactorForChannel(channelName);
         if (calibrationFactor !== 1.0) {

@@ -782,7 +782,7 @@ export class IntelligentCalibrationSystem {
       const localProfile = localStorage.getItem('calibrationProfile');
       if (localProfile) {
         this.userProfile = JSON.parse(localProfile);
-        this.applyUserProfile();
+        this.applyUserDataFromProfile();
         console.log('Perfil de calibración cargado desde localStorage');
       }
       
@@ -824,7 +824,7 @@ export class IntelligentCalibrationSystem {
           }
         };
         
-        this.applyUserProfile();
+        this.applyUserDataFromProfile();
         console.log('Perfil de calibración sincronizado con Supabase');
       }
     } catch (error) {
@@ -872,12 +872,11 @@ export class IntelligentCalibrationSystem {
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
         });
-      
-      // Finish saving at Supabase
+        
       if (error) {
-        console.error('Error al guardar perfil de calibración en Supabase:', error);
+        console.error('Error al guardar perfil en Supabase:', error);
       } else {
-        console.log('Perfil de calibración guardado en Supabase');
+        console.log('Perfil de calibración guardado correctamente en Supabase');
       }
     } catch (error) {
       console.error('Error al guardar perfil de calibración:', error);
@@ -885,13 +884,17 @@ export class IntelligentCalibrationSystem {
   }
   
   /**
-   * Aplica el perfil de usuario cargado
+   * Aplica user profile data to internal instance state
    */
-  private applyUserProfile(): void {
+  private applyUserDataFromProfile(): void {
     if (!this.userProfile) return;
-    this.correctionFactors = { ...this.userProfile.correctionFactors };
-    this.referenceValues = { ...this.userProfile.referenceValues };
-    this.config = { ...this.userProfile.config };
+    try {
+      this.correctionFactors = { ...this.userProfile.correctionFactors };
+      this.referenceValues = { ...this.userProfile.referenceValues };
+      this.config = { ...this.userProfile.config };
+      console.log('User calibration profile applied.');
+    } catch (error) {
+      console.error('Error applying user profile data:', error);
+    }
   }
-  
 }
