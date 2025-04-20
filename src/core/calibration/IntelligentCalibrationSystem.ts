@@ -782,7 +782,7 @@ export class IntelligentCalibrationSystem {
       const localProfile = localStorage.getItem('calibrationProfile');
       if (localProfile) {
         this.userProfile = JSON.parse(localProfile);
-        this.applyUserProfile();
+        this.applyUserDataFromProfile();
         console.log('Perfil de calibración cargado desde localStorage');
       }
       
@@ -824,7 +824,7 @@ export class IntelligentCalibrationSystem {
           }
         };
         
-        this.applyUserProfile();
+        this.applyUserDataFromProfile();
         console.log('Perfil de calibración sincronizado con Supabase');
       }
     } catch (error) {

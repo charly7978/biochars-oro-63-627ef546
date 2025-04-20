@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -11,11 +10,25 @@ import AppTitle from "@/components/AppTitle";
 import { Droplet } from "lucide-react";
 import FeedbackService from "@/services/FeedbackService";
 
+interface VitalSignsState {
+  spo2: number | null;
+  pressure: string | null;
+  arrhythmiaStatus: string | null;
+  glucose: number | null;
+  lipids: {
+    totalCholesterol: number | null;
+    triglycerides: number | null;
+  };
+  hemoglobin: number | null;
+  hydration: number | null;
+  lastArrhythmiaData: { timestamp: number; rmssd: number; rrVariation: number } | null;
+}
+
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [signalQuality, setSignalQuality] = useState(0);
-  const [vitalSigns, setVitalSigns] = useState({
+  const [vitalSigns, setVitalSigns] = useState<VitalSignsState>({
     spo2: null,
     pressure: null,
     arrhythmiaStatus: null,
@@ -26,7 +39,7 @@ const Index = () => {
     },
     hemoglobin: null,
     hydration: null,
-    lastArrhythmiaData: null // Added here to fix TypeScript error
+    lastArrhythmiaData: null
   });
   const [heartRate, setHeartRate] = useState<number | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -59,13 +72,10 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
-  // --- NEW HANDLER for camera stream readiness ---
   const handleStreamReady = (stream: MediaStream) => {
-    // Optionally do something with stream, currently just log for debug
     console.log("Camera stream is ready", stream);
   };
 
-  // --- NEW HANDLER to toggle monitoring start/stop ---
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
@@ -76,8 +86,12 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      if (JSON.stringify(lastValidResults) !== JSON.stringify(vitalSigns)) {
-        setVitalSigns(lastValidResults);
+      const safeResults = {
+        ...lastValidResults,
+        lastArrhythmiaData: lastValidResults.lastArrhythmiaData ?? null
+      };
+      if (JSON.stringify(safeResults) !== JSON.stringify(vitalSigns)) {
+        setVitalSigns(safeResults);
         setShowResults(true);
       }
     }
@@ -172,7 +186,11 @@ const Index = () => {
 
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      setVitalSigns(savedResults);
+      const safeResults = {
+        ...savedResults,
+        lastArrhythmiaData: savedResults.lastArrhythmiaData ?? null
+      };
+      setVitalSigns(safeResults);
       setShowResults(true);
     }
 
@@ -197,7 +215,6 @@ const Index = () => {
 
     fullResetVitalSigns();
 
-    // Clear all values to null, no fixed or simulated values
     setElapsedTime(0);
     setHeartRate(null);
     setVitalSigns({
@@ -263,7 +280,7 @@ const Index = () => {
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || ""}
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData} // safe because we add lastArrhythmiaData
+              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults}
               isArrhythmia={isArrhythmia}
               beats={beats}
@@ -362,4 +379,3 @@ const Index = () => {
 };
 
 export default Index;
-
