@@ -126,54 +126,70 @@ const CameraView = ({
         try {
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
+          
           await new Promise(resolve => setTimeout(resolve, 500));
+          
           const advancedConstraints: MediaTrackConstraintSet[] = [];
-
-          if (capabilities.exposureMode && capabilities.exposureMode.includes('manual')) {
-            advancedConstraints.push({ exposureMode: 'manual' });
-            console.log("Forzando exposureMode: manual");
-          } else if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'continuous' });
-            console.log("Forzando exposureMode: continuous");
-          }
-          if (capabilities.exposureCompensation) {
-            const minExposure = capabilities.exposureCompensation.min ?? 0;
-            advancedConstraints.push({ exposureCompensation: minExposure });
-            console.log("Forzando exposureCompensation:", minExposure);
-          }
-          if (capabilities.brightness) {
-            const minBrightness = capabilities.brightness.min ?? 0;
-            advancedConstraints.push({ brightness: minBrightness });
-            console.log("Forzando brightness:", minBrightness);
-          }
-          if (capabilities.contrast) {
-            const maxContrast = capabilities.contrast.max ?? 100;
-            advancedConstraints.push({ contrast: maxContrast });
-            console.log("Forzando contrast:", maxContrast);
-          }
-
-          if (capabilities.focusMode) {
-            advancedConstraints.push({ focusMode: 'continuous' });
-          }
-          if (capabilities.whiteBalanceMode) {
-            advancedConstraints.push({ whiteBalanceMode: 'continuous' });
-          }
-
-          if (advancedConstraints.length > 0) {
-            console.log("Aplicando configuraciones avanzadas (exposición/brillo):", advancedConstraints);
-            await videoTrack.applyConstraints({
-              advanced: advancedConstraints
-            });
-          }
-
-          if (capabilities.torch) {
-            console.log("Activando linterna para mejorar la señal PPG");
-            await videoTrack.applyConstraints({
-              advanced: [{ torch: true }]
-            });
-            setTorchEnabled(true);
+          
+          if (isAndroid) {
+            try {
+              if (capabilities.torch) {
+                console.log("Activando linterna en Android");
+                await videoTrack.applyConstraints({
+                  advanced: [{ torch: true }]
+                });
+                setTorchEnabled(true);
+              }
+            } catch (err) {
+              console.error("Error al activar linterna en Android:", err);
+            }
           } else {
-            console.log("La linterna no está disponible en este dispositivo");
+            if (capabilities.exposureMode) {
+              const exposureConstraint: MediaTrackConstraintSet = { 
+                exposureMode: 'continuous' 
+              };
+              
+              if (capabilities.exposureCompensation?.max) {
+                exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
+              }
+              
+              advancedConstraints.push(exposureConstraint);
+            }
+            
+            if (capabilities.focusMode) {
+              advancedConstraints.push({ focusMode: 'continuous' });
+            }
+            
+            if (capabilities.whiteBalanceMode) {
+              advancedConstraints.push({ whiteBalanceMode: 'continuous' });
+            }
+            
+            if (capabilities.brightness && capabilities.brightness.max) {
+              const maxBrightness = capabilities.brightness.max;
+              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
+            }
+            
+            if (capabilities.contrast && capabilities.contrast.max) {
+              const maxContrast = capabilities.contrast.max;
+              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+            }
+
+            if (advancedConstraints.length > 0) {
+              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+              await videoTrack.applyConstraints({
+                advanced: advancedConstraints
+              });
+            }
+
+            if (capabilities.torch) {
+              console.log("Activando linterna para mejorar la señal PPG");
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: true }]
+              });
+              setTorchEnabled(true);
+            } else {
+              console.log("La linterna no está disponible en este dispositivo");
+            }
           }
           
           if (videoRef.current) {

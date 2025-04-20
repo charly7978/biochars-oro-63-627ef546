@@ -23,9 +23,7 @@ export interface FeedbackData {
 export class SignalChannel {
   private readonly name: string;
   private readonly bufferSize: number;
-  private values: Float32Array;
-  private valueHead: number = 0;
-  private valueCount: number = 0;
+  private values: number[] = [];
   private metadata: Map<number, ChannelMetadata> = new Map();
   private customMetadata: Map<string, any> = new Map();
   private feedbackBuffer: FeedbackData[] = [];
@@ -35,7 +33,6 @@ export class SignalChannel {
   constructor(name: string, bufferSize: number = 300) {
     this.name = name;
     this.bufferSize = bufferSize;
-    this.values = new Float32Array(bufferSize);
     console.log(`SignalChannel: Created new channel "${name}" with buffer size ${bufferSize}`);
   }
   
@@ -45,17 +42,22 @@ export class SignalChannel {
   public addValue(value: number, meta?: Partial<ChannelMetadata>): void {
     // Apply optimization from feedback if enabled
     const optimizedValue = this.optimizationEnabled ? this.applyOptimization(value) : value;
-    // Add to values buffer (circular)
-    this.values[this.valueHead] = optimizedValue;
-    this.valueHead = (this.valueHead + 1) % this.bufferSize;
-    if (this.valueCount < this.bufferSize) this.valueCount++;
+    
+    // Add to values buffer
+    this.values.push(optimizedValue);
+    if (this.values.length > this.bufferSize) {
+      this.values.shift();
+    }
+    
     // Store metadata if provided
     const finalMeta: ChannelMetadata = {
       quality: meta?.quality || 0,
       timestamp: meta?.timestamp || Date.now(),
       ...(meta as ChannelMetadata)
     };
+    
     this.metadata.set(finalMeta.timestamp, finalMeta);
+    
     // Clean up old metadata
     const oldestAllowedTime = finalMeta.timestamp - (this.bufferSize * 100); // Assume max 100ms per sample
     for (const [time] of this.metadata) {
@@ -63,6 +65,7 @@ export class SignalChannel {
         this.metadata.delete(time);
       }
     }
+    
     // Notify subscribers
     this.subscribers.forEach(callback => {
       try {
@@ -160,24 +163,18 @@ export class SignalChannel {
   }
   
   /**
-   * Get all values in order of insertion
+   * Get all values in the channel
    */
   public getValues(): number[] {
-    const out = [];
-    for (let i = 0; i < this.valueCount; i++) {
-      const idx = (this.valueHead - this.valueCount + i + this.bufferSize) % this.bufferSize;
-      out.push(this.values[idx]);
-    }
-    return out;
+    return [...this.values];
   }
   
   /**
    * Get the latest value
    */
   public getLastValue(): number | null {
-    if (this.valueCount === 0) return null;
-    const idx = (this.valueHead - this.valueCount + this.bufferSize) % this.bufferSize;
-    return this.values[idx];
+    if (this.values.length === 0) return null;
+    return this.values[this.values.length - 1];
   }
   
   /**
@@ -236,12 +233,10 @@ export class SignalChannel {
   }
   
   /**
-   * Reset the channel
+   * Reset the channel to its initial state
    */
   public reset(): void {
-    this.values.fill(0);
-    this.valueHead = 0;
-    this.valueCount = 0;
+    this.values = [];
     this.metadata.clear();
     this.customMetadata.clear();
     this.feedbackBuffer = [];

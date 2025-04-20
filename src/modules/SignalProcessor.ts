@@ -1,6 +1,5 @@
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalOptimizerManager } from './signal-optimizer/SignalOptimizerManager';
-import { MovingAverage } from '../utils/MovingAverage';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -58,7 +57,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   private currentConfig: typeof this.DEFAULT_CONFIG;
   
   // Parámetros de procesamiento
-  private readonly BUFFER_SIZE = 150;
+  private readonly BUFFER_SIZE = 15;
   private readonly MIN_RED_THRESHOLD = 30; // Valor más bajo
   private readonly MAX_RED_THRESHOLD = 250; // Valor más alto
   private readonly STABILITY_WINDOW = 4;
@@ -83,10 +82,6 @@ export class PPGSignalProcessor implements SignalProcessor {
   private periodicityBuffer: number[] = [];
   private lastPeriodicityScore: number = 0;
 
-  private readonly redChannelBuffer = new MovingAverage(this.BUFFER_SIZE);
-  private readonly greenChannelBuffer = new MovingAverage(this.BUFFER_SIZE);
-  private readonly blueChannelBuffer = new MovingAverage(this.BUFFER_SIZE);
-
   constructor(
     public onSignalReady?: (signal: ProcessedSignal) => void,
     public onError?: (error: ProcessingError) => void
@@ -109,9 +104,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       this.movementScores = [];
       this.periodicityBuffer = [];
       this.lastPeriodicityScore = 0;
-      this.redChannelBuffer.clear();
-      this.greenChannelBuffer.clear();
-      this.blueChannelBuffer.clear();
       console.log("PPGSignalProcessor: Inicializado");
     } catch (error) {
       console.error("PPGSignalProcessor: Error de inicialización", error);
@@ -141,9 +133,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     this.consistencyHistory = [];
     this.movementScores = [];
     this.periodicityBuffer = [];
-    this.redChannelBuffer.clear();
-    this.greenChannelBuffer.clear();
-    this.blueChannelBuffer.clear();
     console.log("PPGSignalProcessor: Detenido");
   }
 
@@ -268,10 +257,6 @@ export class PPGSignalProcessor implements SignalProcessor {
       // 3. El feedback de calidad/confianza se enviará a cada canal tras cada métrica (en los procesadores de métricas).
       // 4. El manager ajusta sus parámetros automáticamente o por intervención manual.
       // 5. El ciclo se repite para la siguiente muestra.
-
-      this.redChannelBuffer.add(redValue);
-      this.greenChannelBuffer.add(greenValue);
-      this.blueChannelBuffer.add(0); // Si tienes blueValue, úsalo aquí
 
     } catch (error) {
       console.error("PPGSignalProcessor: Error procesando frame", error);

@@ -1,9 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
-import { MovingAverage } from '../../../utils/MovingAverage';
 
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
@@ -14,7 +14,6 @@ export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
   private readonly MIN_STRONG_SIGNALS_REQUIRED = 3;
-  private qualityBuffer = new MovingAverage(10); // Suavizar calidad
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -64,9 +63,7 @@ export class SignalQuality {
     }
     
     // Calculate quality based on real signal properties
-    let quality = this.calculateWeightedQuality(ppgValues);
-    this.qualityBuffer.add(quality);
-    return this.qualityBuffer.getAverage();
+    return this.calculateWeightedQuality(ppgValues);
   }
   
   /**
@@ -135,6 +132,5 @@ export class SignalQuality {
   public reset(): void {
     this.noiseLevel = 0;
     this.consecutiveStrongSignals = 0;
-    this.qualityBuffer.clear();
   }
 }

@@ -5,8 +5,6 @@
  * using adaptive amplification, noise filtering, and periodicity detection techniques.
  */
 
-import { MovingAverage } from '../utils/MovingAverage';
-
 export class SignalAmplifier {
   // Amplification parameters
   private readonly MIN_GAIN = 1.2;
@@ -23,12 +21,8 @@ export class SignalAmplifier {
   };
 
   // Buffers and state
-  private signalBuffer: Float32Array = new Float32Array(this.SIGNAL_BUFFER_SIZE);
-  private signalHead: number = 0;
-  private signalCount: number = 0;
-  private longTermBuffer: Float32Array = new Float32Array(this.LONG_BUFFER_SIZE);
-  private longHead: number = 0;
-  private longCount: number = 0;
+  private signalBuffer: number[] = [];
+  private longTermBuffer: number[] = [];
   private baselineValue = 0;
   private currentGain = 2.0;
   private lastQuality = 0;
@@ -36,8 +30,6 @@ export class SignalAmplifier {
   private lastValues: number[] = [];
   private readonly LAST_VALUES_SIZE = 5;
   private lastAmplifiedValues: number[] = [];
-  private amplifiedBuffer = new MovingAverage(10); // Suavizar señal amplificada
-  private qualityBuffer = new MovingAverage(10); // Suavizar calidad
 
   constructor() {
     this.reset();
@@ -55,13 +47,17 @@ export class SignalAmplifier {
     this.updateBaseline(rawValue);
     const normalizedValue = rawValue - this.baselineValue;
     
-    // Store in buffer for analysis (circular)
-    this.signalBuffer[this.signalHead] = normalizedValue;
-    this.signalHead = (this.signalHead + 1) % this.SIGNAL_BUFFER_SIZE;
-    if (this.signalCount < this.SIGNAL_BUFFER_SIZE) this.signalCount++;
-    this.longTermBuffer[this.longHead] = normalizedValue;
-    this.longHead = (this.longHead + 1) % this.LONG_BUFFER_SIZE;
-    if (this.longCount < this.LONG_BUFFER_SIZE) this.longCount++;
+    // Store in buffer for analysis
+    this.signalBuffer.push(normalizedValue);
+    this.longTermBuffer.push(normalizedValue);
+    
+    if (this.signalBuffer.length > this.SIGNAL_BUFFER_SIZE) {
+      this.signalBuffer.shift();
+    }
+    
+    if (this.longTermBuffer.length > this.LONG_BUFFER_SIZE) {
+      this.longTermBuffer.shift();
+    }
     
     // Keep track of recent raw values for analysis
     this.lastValues.push(rawValue);
@@ -76,14 +72,12 @@ export class SignalAmplifier {
     this.adjustGain(signalQuality);
     
     // Detect periodicity and calculate dominant frequency 
-    if (this.longCount > 30) {
+    if (this.longTermBuffer.length > 30) {
       this.dominantFrequency = this.detectDominantFrequency();
     }
     
     // Apply adaptive amplification, emphasizing periodic components
     const amplifiedValue = this.applyAdaptiveAmplification(normalizedValue);
-    this.amplifiedBuffer.add(amplifiedValue);
-    this.qualityBuffer.add(signalQuality);
     
     // Update amplified values history
     this.lastAmplifiedValues.push(amplifiedValue);
@@ -92,8 +86,8 @@ export class SignalAmplifier {
     }
     
     return { 
-      amplifiedValue: this.amplifiedBuffer.getAverage(),
-      quality: this.qualityBuffer.getAverage(),
+      amplifiedValue,
+      quality: signalQuality,
       dominantFrequency: this.dominantFrequency
     };
   }
@@ -114,34 +108,27 @@ export class SignalAmplifier {
    * Calculate signal quality based on multiple factors
    */
   private calculateSignalQuality(): number {
-    if (this.signalCount < 10) {
+    if (this.signalBuffer.length < 10) {
       return this.lastQuality; // Maintain last quality until enough data
     }
     
-    // Recoger los valores en orden de inserción
-    const buffer = [];
-    for (let i = 0; i < this.signalCount; i++) {
-      const idx = (this.signalHead - this.signalCount + i + this.SIGNAL_BUFFER_SIZE) % this.SIGNAL_BUFFER_SIZE;
-      buffer.push(this.signalBuffer[idx]);
-    }
-    
     // Calculate amplitude range (min to max)
-    const max = Math.max(...buffer);
-    const min = Math.min(...buffer);
+    const max = Math.max(...this.signalBuffer);
+    const min = Math.min(...this.signalBuffer);
     const range = max - min;
     
     // Calculate short-term variability (differences between consecutive samples)
     let variabilitySum = 0;
-    for (let i = 1; i < buffer.length; i++) {
-      variabilitySum += Math.abs(buffer[i] - buffer[i-1]);
+    for (let i = 1; i < this.signalBuffer.length; i++) {
+      variabilitySum += Math.abs(this.signalBuffer[i] - this.signalBuffer[i-1]);
     }
-    const avgVariability = variabilitySum / (buffer.length - 1);
+    const avgVariability = variabilitySum / (this.signalBuffer.length - 1);
     
     // Calculate periodicity (simple autocorrelation)
-    const periodicityScore = this.calculatePeriodicityScore(buffer);
+    const periodicityScore = this.calculatePeriodicityScore();
     
     // Calculate noise (high-frequency components)
-    const noiseScore = this.calculateNoiseScore(buffer);
+    const noiseScore = this.calculateNoiseScore();
     
     // Calculate baseline stability
     const baselineStability = this.calculateBaselineStability();
@@ -167,9 +154,10 @@ export class SignalAmplifier {
   /**
    * Calculate periodicity score based on autocorrelation
    */
-  private calculatePeriodicityScore(buffer: number[]): number {
-    if (buffer.length < 10) return 0;
+  private calculatePeriodicityScore(): number {
+    if (this.signalBuffer.length < 10) return 0;
     
+    const buffer = [...this.signalBuffer];
     const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
     
     // Normalize the buffer
@@ -213,13 +201,13 @@ export class SignalAmplifier {
   /**
    * Estimate noise level in the signal
    */
-  private calculateNoiseScore(buffer: number[]): number {
-    if (buffer.length < 10) return 1.0;
+  private calculateNoiseScore(): number {
+    if (this.signalBuffer.length < 10) return 1.0;
     
     // Calculate first derivative (changes between samples)
     const derivatives: number[] = [];
-    for (let i = 1; i < buffer.length; i++) {
-      derivatives.push(buffer[i] - buffer[i-1]);
+    for (let i = 1; i < this.signalBuffer.length; i++) {
+      derivatives.push(this.signalBuffer[i] - this.signalBuffer[i-1]);
     }
     
     // Calculate second derivative (changes in changes)
@@ -289,14 +277,9 @@ export class SignalAmplifier {
    * Detect dominant frequency (heart rate) in the signal
    */
   private detectDominantFrequency(): number {
-    if (this.longCount < 30) return 0;
+    if (this.longTermBuffer.length < 30) return 0;
     
-    const buffer = [];
-    for (let i = 0; i < 30; i++) {
-      const idx = (this.longHead - 30 + i + this.LONG_BUFFER_SIZE) % this.LONG_BUFFER_SIZE;
-      buffer.push(this.longTermBuffer[idx]);
-    }
-    
+    const buffer = this.longTermBuffer.slice(-30);
     const mean = buffer.reduce((a, b) => a + b, 0) / buffer.length;
     const normalized = buffer.map(v => v - mean);
     
@@ -353,14 +336,14 @@ export class SignalAmplifier {
       const dominantPeriod = Math.round(30 / this.dominantFrequency);
       
       // If we have enough values in the buffer
-      if (this.signalCount >= dominantPeriod) {
+      if (this.signalBuffer.length >= dominantPeriod) {
         // Predict periodic component based on previous samples
         let periodicComponent = 0;
         let count = 0;
         
         // Average values at distances of multiples of the period
         for (let k = 1; k <= 3; k++) {
-          const idx = (this.signalHead - k * dominantPeriod + this.SIGNAL_BUFFER_SIZE) % this.SIGNAL_BUFFER_SIZE;
+          const idx = this.signalBuffer.length - k * dominantPeriod;
           if (idx >= 0) {
             periodicComponent += this.signalBuffer[idx];
             count++;
@@ -395,20 +378,14 @@ export class SignalAmplifier {
    * Reset amplifier state
    */
   public reset(): void {
-    this.signalBuffer.fill(0);
-    this.signalHead = 0;
-    this.signalCount = 0;
-    this.longTermBuffer.fill(0);
-    this.longHead = 0;
-    this.longCount = 0;
+    this.signalBuffer = [];
+    this.longTermBuffer = [];
     this.baselineValue = 0;
     this.currentGain = 2.0;
     this.lastQuality = 0;
     this.dominantFrequency = 0;
     this.lastValues = [];
     this.lastAmplifiedValues = [];
-    this.amplifiedBuffer.clear();
-    this.qualityBuffer.clear();
   }
 
   /**

@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -26,10 +27,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
-
-  // Refs necesarios para signal-processor
-  const lastRRIntervalsRef = useRef<number[]>([]);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
 
   // Hooks para beep y signal processing
   const {
@@ -98,8 +95,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   }, []);
 
   const processSignal = useCallback((value: number): HeartBeatResult => {
-    // Loguear el valor recibido para procesamiento de latido
-    console.log("[useHeartBeatProcessor] Valor recibido para latido:", value);
     if (!processorRef.current) {
       const emptyResult: HeartBeatResult = {
         bpm: 0,
@@ -115,7 +110,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     }
 
     // Ejecutar procesado de señal real
-    console.log('[useHeartBeatProcessor] Llamando a processSignalInternal con valor:', value);
     const result = processSignalInternal(
       value,
       currentBPM,
@@ -123,14 +117,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       processorRef.current,
       requestBeep,
       isMonitoringRef,
-      lastRRIntervalsRef,
-      currentBeatIsArrhythmiaRef
+      null,
+      null
     );
-
-    // Loguear si se detecta un pico
-    if (result.isPeak) {
-      console.log("[useHeartBeatProcessor] ¡Pico detectado!", result);
-    }
 
     // Actualizar BPM si se tienen valores válidos y confianza aceptable
     if (result.bpm > 0 && result.confidence > 0.35) {
@@ -165,8 +154,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     const arrhythmiaCount = beats.filter(b => b.isAnomalous).length;
 
     const finalResult = {
-      bpm: result.bpm,
-      confidence: result.confidence,
+      bpm: currentBPM,
+      confidence,
       isPeak: result.isPeak,
       arrhythmiaCount,
       rrData: {

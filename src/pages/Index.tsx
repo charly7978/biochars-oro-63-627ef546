@@ -94,26 +94,20 @@ const Index = () => {
       setSignalQuality(lastSignal.quality);
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        console.log("Valor filtrado recibido:", lastSignal?.filteredValue);
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        console.log("[DEBUG] Resultado completo de heartBeatResult:", heartBeatResult);
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
           if (heartBeatResult.bpm > 0) {
-            console.log(`[DEBUG] Antes de setHeartRate:`, heartRate, 'Nuevo:', heartBeatResult.bpm);
+            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
             setHeartRate(heartBeatResult.bpm);
-            console.log(`[DEBUG] Después de setHeartRate:`, heartRate);
           }
           
-          console.log("Llamando a processVitalSigns con:", lastSignal, heartBeatResult.rrData);
           try {
             processVitalSigns(lastSignal, heartBeatResult.rrData)
               .then(vitals => {
-                console.log("[DEBUG] Resultado completo de processVitalSigns:", vitals);
                 if (elapsedTime >= minimumMeasurementTime) {
-                  console.log(`[DEBUG] Antes de setVitalSigns:`, vitalSigns, 'Nuevo:', vitals);
+                  console.log("Actualizando signos vitales:", vitals);
                   setVitalSigns(vitals);
-                  console.log(`[DEBUG] Después de setVitalSigns:`, vitalSigns);
                 }
               })
               .catch(error => {
@@ -214,7 +208,7 @@ const Index = () => {
     setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    reset();
+    resetHeartBeatProcessor();
     
     FeedbackService.vibrate([50, 30, 50]);
     

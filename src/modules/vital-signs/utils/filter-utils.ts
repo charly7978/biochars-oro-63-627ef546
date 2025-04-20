@@ -1,36 +1,40 @@
-// Bandpass filter: acepta Float32Array o number[]
-export const applyBandpassFilter = (values: Float32Array | number[], lowCut: number, highCut: number, sampleRate: number): Float32Array => {
-  const out = new Float32Array(values.length);
+
+export const applyBandpassFilter = (values: number[], lowCut: number, highCut: number, sampleRate: number): number[] => {
+  // Simple implementation of a bandpass filter
+  return values.map(value => {
+    // Basic filtering logic - in practice you'd want to use a proper DSP library
+    const filtered = value * (highCut - lowCut) / sampleRate;
+    return Math.max(-1, Math.min(1, filtered));
+  });
+};
+
+export const applyLowpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
+  const alpha = cutoff / (sampleRate * 0.5);
+  const filtered: number[] = [];
+  
   for (let i = 0; i < values.length; i++) {
-    // Filtro simple (ejemplo): puedes reemplazar por IIR real si tienes coeficientes
-    out[i] = values[i] * (highCut - lowCut) / sampleRate;
-    out[i] = Math.max(-1, Math.min(1, out[i]));
+    if (i === 0) {
+      filtered.push(values[0]);
+    } else {
+      filtered.push(alpha * values[i] + (1 - alpha) * filtered[i - 1]);
+    }
   }
-  return out;
+  
+  return filtered;
 };
 
-// Lowpass filter: versión incremental (EMA/IIR)
-export const applyLowpassFilter = (values: Float32Array | number[], cutoff: number, sampleRate: number): Float32Array => {
+export const applyHighpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
   const alpha = cutoff / (sampleRate * 0.5);
-  const out = new Float32Array(values.length);
-  out[0] = values[0];
-  for (let i = 1; i < values.length; i++) {
-    out[i] = alpha * values[i] + (1 - alpha) * out[i - 1];
-  }
-  return out;
-};
-
-// Highpass filter: versión incremental
-export const applyHighpassFilter = (values: Float32Array | number[], cutoff: number, sampleRate: number): Float32Array => {
-  const alpha = cutoff / (sampleRate * 0.5);
-  const out = new Float32Array(values.length);
-  let lastInput = values[0];
+  const filtered: number[] = [];
+  let lastInput = 0;
   let lastOutput = 0;
-  out[0] = 0;
-  for (let i = 1; i < values.length; i++) {
-    out[i] = alpha * (out[i - 1] + values[i] - lastInput);
+  
+  for (let i = 0; i < values.length; i++) {
+    const output = alpha * (lastOutput + values[i] - lastInput);
+    filtered.push(output);
     lastInput = values[i];
-    lastOutput = out[i];
+    lastOutput = output;
   }
-  return out;
+  
+  return filtered;
 };

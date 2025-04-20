@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,10 +7,7 @@
  * Pattern detector for arrhythmia detection - enhanced for natural rhythm detection
  */
 export class ArrhythmiaPatternDetector {
-  private readonly BUFFER_SIZE = 100;
-  private patternBuffer: Float32Array = new Float32Array(this.BUFFER_SIZE);
-  private bufferHead: number = 0;
-  private bufferCount: number = 0;
+  private patternBuffer: number[] = [];
   private anomalyScores: number[] = [];
   private peakTimestamps: number[] = [];
   
@@ -32,19 +30,79 @@ export class ArrhythmiaPatternDetector {
   /**
    * Update pattern buffer with real data
    */
-  public addPatternValue(value: number): void {
-    this.patternBuffer[this.bufferHead] = value;
-    this.bufferHead = (this.bufferHead + 1) % this.BUFFER_SIZE;
-    if (this.bufferCount < this.BUFFER_SIZE) this.bufferCount++;
+  public updatePatternBuffer(value: number): void {
+    const currentTime = Date.now();
+    
+    // Check for time gaps that would indicate finger removal
+    if (this.lastUpdateTime > 0) {
+      const timeDiff = currentTime - this.lastUpdateTime;
+      this.timeGapTooLarge = timeDiff > this.MAX_TIME_GAP_MS;
+      
+      if (this.timeGapTooLarge) {
+        console.log(`Large time gap detected: ${timeDiff}ms - likely indicates finger removal`);
+      }
+    }
+    this.lastUpdateTime = currentTime;
+    
+    // Detect sudden drops in signal that indicate finger removal
+    const suddenDrop = this.patternBuffer.length > 0 && 
+                      this.patternBuffer[this.patternBuffer.length - 1] > this.SIGNAL_DECLINE_THRESHOLD &&
+                      value < this.SIGNAL_DECLINE_THRESHOLD * 0.3;
+    
+    if (suddenDrop) {
+      console.log(`Sudden signal drop detected: ${this.patternBuffer[this.patternBuffer.length - 1]} -> ${value}`);
+      // Reset buffer on sudden drops to prevent false patterns
+      this.resetPatternBuffer();
+      return;
+    }
+    
+    this.patternBuffer.push(value);
+    if (this.patternBuffer.length > this.PATTERN_BUFFER_SIZE) {
+      this.patternBuffer.shift();
+    }
+    
+    // Update anomaly scores based on real data
+    const anomalyScore = value > 0.4 ? 1 : 0;
+    this.anomalyScores.push(anomalyScore);
+    if (this.anomalyScores.length > this.ANOMALY_HISTORY_SIZE) {
+      this.anomalyScores.shift();
+    }
+    
+    // Track peaks for natural rhythm detection
+    if (this.patternBuffer.length >= 3) {
+      const mid = this.patternBuffer.length - 2;
+      const isPeak = this.patternBuffer[mid] > this.patternBuffer[mid-1] && 
+                    this.patternBuffer[mid] > this.patternBuffer[mid+1] &&
+                    this.patternBuffer[mid] > 0.15;
+      
+      if (isPeak) {
+        // Found a potential heartbeat
+        if (this.lastHeartbeatTime > 0) {
+          const interval = currentTime - this.lastHeartbeatTime;
+          
+          // Only track physiologically plausible intervals (30-200 BPM)
+          if (interval >= 300 && interval <= 2000) {
+            this.heartRateIntervals.push(interval);
+            if (this.heartRateIntervals.length > this.MAX_INTERVALS) {
+              this.heartRateIntervals.shift();
+            }
+          }
+        }
+        
+        this.lastHeartbeatTime = currentTime;
+        this.peakTimestamps.push(currentTime);
+        if (this.peakTimestamps.length > 10) {
+          this.peakTimestamps.shift();
+        }
+      }
+    }
   }
   
   /**
    * Reset pattern buffer
    */
-  public reset(): void {
-    this.patternBuffer.fill(0);
-    this.bufferHead = 0;
-    this.bufferCount = 0;
+  public resetPatternBuffer(): void {
+    this.patternBuffer = [];
     this.anomalyScores = [];
     this.timeGapTooLarge = false;
     this.lastUpdateTime = 0;
@@ -57,13 +115,13 @@ export class ArrhythmiaPatternDetector {
    * Detect arrhythmia patterns in real data with natural rhythm analysis
    */
   public detectArrhythmiaPattern(): boolean {
-    if (this.bufferCount < this.MIN_ANOMALY_PATTERN_LENGTH || this.timeGapTooLarge) {
+    if (this.patternBuffer.length < this.MIN_ANOMALY_PATTERN_LENGTH || this.timeGapTooLarge) {
       return false;
     }
     
     // Check if there's enough variation in the signal to be a real finger
-    const minVal = Math.min(...this.getPatternBuffer());
-    const maxVal = Math.max(...this.getPatternBuffer());
+    const minVal = Math.min(...this.patternBuffer);
+    const maxVal = Math.max(...this.patternBuffer);
     const signalRange = maxVal - minVal;
     
     // If the signal range is too small, it's likely not a real finger
@@ -94,7 +152,7 @@ export class ArrhythmiaPatternDetector {
     }
     
     // Analyze recent real data pattern
-    const recentPattern = this.getPatternBuffer().slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
+    const recentPattern = this.patternBuffer.slice(-this.MIN_ANOMALY_PATTERN_LENGTH);
     
     // Feature 1: Significant variations in real data
     const significantVariations = recentPattern.filter(v => v > 0.4).length;
@@ -142,12 +200,7 @@ export class ArrhythmiaPatternDetector {
    * Get the current pattern buffer
    */
   public getPatternBuffer(): number[] {
-    const out = [];
-    for (let i = 0; i < this.bufferCount; i++) {
-      const idx = (this.bufferHead - this.bufferCount + i + this.BUFFER_SIZE) % this.BUFFER_SIZE;
-      out.push(this.patternBuffer[idx]);
-    }
-    return out;
+    return [...this.patternBuffer];
   }
 
   /**

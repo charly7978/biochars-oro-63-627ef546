@@ -31,7 +31,7 @@ class PPGWorkerProcessor {
   // Parámetros de procesamiento (ajustados o simplificados del original)
   private readonly MIN_PIXEL_VALUE = 10; // Umbral mínimo de brillo
   private readonly RED_DOMINANCE_THRESHOLD = 1.1; // Rojo debe ser al menos 10% más brillante que verde/azul
-  private readonly MIN_RED_VALUE = 80; // Umbral mínimo absoluto para el canal rojo en ROI (bajado de 130 a 80)
+  private readonly MIN_RED_VALUE = 130; // Umbral mínimo absoluto para el canal rojo en ROI
   private readonly MIN_FINGER_FRAMES = 5; // Aumentado ligeramente para estabilidad
 
   // Filtros y constantes
@@ -89,7 +89,6 @@ class PPGWorkerProcessor {
 
     try {
       const { avgRed, avgGreen, avgBlue, isFingerDetected } = this.extractSignalFromROI(imageData);
-      console.log('[PPGWorker] avgRed:', avgRed, 'isFingerDetected:', isFingerDetected);
 
       // Actualizar conteo de detección de dedo
       if (isFingerDetected) {
