@@ -208,7 +208,7 @@ const Index = () => {
     setShowResults(false);
     stopProcessing();
     stopHeartBeatMonitoring();
-    reset();
+    resetHeartBeatProcessor();
     
     FeedbackService.vibrate([50, 30, 50]);
     

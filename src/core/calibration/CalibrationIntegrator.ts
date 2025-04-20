@@ -1,4 +1,3 @@
-
 // Retirar imports inexistentes para evitar error TS2307
 // import { getModel } from '../neural/ModelRegistry';
 // import { HeartRateNeuralModel } from '../neural/HeartRateModel';
@@ -84,10 +83,6 @@ export class CalibrationIntegrator {
    * Obtiene el estado actual de calibración
    */
   public getCalibrationState() {
-    // Devuelve estado básico para evitar errores en VitalSignIntegrator
-    return {
-      phase: 'inactive' as 'inactive' | 'baseline' | 'learning' | 'validation' | 'active'
-    };
   }
   
   /**

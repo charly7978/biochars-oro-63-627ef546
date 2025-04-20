@@ -883,14 +883,4 @@ export class IntelligentCalibrationSystem {
     }
   }
   
-  /**
-   * Aplica perfil cargado a la configuración interna y factores
-   */
-  private applyUserProfile(): void {
-    if (!this.userProfile) return;
-    
-    this.correctionFactors = { ...this.userProfile.correctionFactors };
-    this.referenceValues = { ...this.userProfile.referenceValues };
-    this.config = { ...this.userProfile.config };
-  }
 }
