@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useOpenCVStatus } from '@/hooks/useOpenCVStatus';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -22,25 +21,6 @@ const CameraView = ({
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
   const maxRetryAttempts = 3;
-
-  // Integración de estado de OpenCV
-  const { status: opencvStatus, error: opencvError, retry: retryOpenCV } = useOpenCVStatus();
-
-  // Mostrar feedback visual según el estado de OpenCV
-  if (opencvStatus === 'loading') {
-    return <div className="flex flex-col items-center justify-center h-full text-blue-600">Cargando OpenCV...</div>;
-  }
-  if (opencvStatus === 'error') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-red-600">
-        <div>Error al cargar OpenCV: {opencvError}</div>
-        <button onClick={retryOpenCV} className="mt-2 px-4 py-2 bg-blue-500 text-white rounded">Reintentar</button>
-      </div>
-    );
-  }
-  if (opencvStatus !== 'ready') {
-    return null;
-  }
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();

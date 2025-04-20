@@ -31,16 +31,6 @@ export class SignalChannelOptimizer {
   private lastRaw: number = 0;
   private kalmanState = { P: 1, X: 0, K: 0 };
 
-  // Histórico de resultados y parámetros para aprendizaje automático ligero
-  private history: Array<{
-    value: number;
-    filtered: number;
-    confidence: number;
-    quality: number;
-    params: SignalChannelOptimizerParams;
-  }> = [];
-  private readonly MAX_HISTORY = 50;
-
   constructor(initialParams?: Partial<SignalChannelOptimizerParams>) {
     this.params = {
       gain: 1.8,
@@ -56,9 +46,8 @@ export class SignalChannelOptimizer {
   /**
    * Procesa un valor crudo y devuelve la señal optimizada.
    * Optimiza el cálculo del filtro SMA usando un acumulador.
-   * Almacena histórico para aprendizaje automático ligero.
    */
-  public process(value: number, confidence: number = 1, quality: number = 100): number {
+  public process(value: number): number {
     this.lastRaw = value;
     let filtered = value;
     switch (this.params.filterType) {
@@ -84,15 +73,6 @@ export class SignalChannelOptimizer {
     const gain = this.clamp(this.params.gain, 0.5, 5.0);
     filtered = (filtered - this.getMean()) * gain + this.getMean();
     this.lastFiltered = filtered;
-    // Guardar histórico para aprendizaje
-    this.history.push({
-      value,
-      filtered,
-      confidence,
-      quality,
-      params: { ...this.params },
-    });
-    if (this.history.length > this.MAX_HISTORY) this.history.shift();
     return filtered;
   }
 
@@ -184,37 +164,5 @@ export class SignalChannelOptimizer {
     this.lastFiltered = 0;
     this.lastRaw = 0;
     this.kalmanState = { P: 1, X: 0, K: 0 };
-  }
-
-  /**
-   * Sugiere nuevos parámetros usando regresión lineal simple sobre el histórico.
-   * Ajusta la ganancia y el tipo de filtro según la relación entre calidad/confianza y parámetros.
-   */
-  public suggestParams(): Partial<SignalChannelOptimizerParams> {
-    if (this.history.length < 10) return {};
-    // Regresión lineal simple: calidad/confianza vs ganancia
-    const xs = this.history.map(h => h.quality * h.confidence);
-    const ys = this.history.map(h => h.params.gain);
-    const n = xs.length;
-    const meanX = xs.reduce((a, b) => a + b, 0) / n;
-    const meanY = ys.reduce((a, b) => a + b, 0) / n;
-    let num = 0, den = 0;
-    for (let i = 0; i < n; i++) {
-      num += (xs[i] - meanX) * (ys[i] - meanY);
-      den += (xs[i] - meanX) ** 2;
-    }
-    const slope = den !== 0 ? num / den : 0;
-    const intercept = meanY - slope * meanX;
-    // Predecir ganancia óptima para calidad/confianza alta (ej: 95*0.98)
-    const predictedGain = slope * (95 * 0.98) + intercept;
-    // Sugerir filtro más robusto si la calidad promedio es baja
-    const avgQuality = this.history.reduce((a, h) => a + h.quality, 0) / n;
-    let filterType: SignalChannelOptimizerParams['filterType'] = this.params.filterType;
-    if (avgQuality < 60) filterType = 'kalman';
-    else if (avgQuality > 90) filterType = 'sma';
-    return {
-      gain: this.clamp(predictedGain, 0.5, 5.0),
-      filterType,
-    };
   }
 } 
