@@ -782,7 +782,7 @@ export class IntelligentCalibrationSystem {
       const localProfile = localStorage.getItem('calibrationProfile');
       if (localProfile) {
         this.userProfile = JSON.parse(localProfile);
-        this.applyUserDataFromProfile();
+        this.applyUserProfile();
         console.log('Perfil de calibración cargado desde localStorage');
       }
       
@@ -824,7 +824,7 @@ export class IntelligentCalibrationSystem {
           }
         };
         
-        this.applyUserDataFromProfile();
+        this.applyUserProfile();
         console.log('Perfil de calibración sincronizado con Supabase');
       }
     } catch (error) {
@@ -880,21 +880,6 @@ export class IntelligentCalibrationSystem {
       }
     } catch (error) {
       console.error('Error al guardar perfil de calibración:', error);
-    }
-  }
-  
-  /**
-   * Aplica user profile data to internal instance state
-   */
-  private applyUserDataFromProfile(): void {
-    if (!this.userProfile) return;
-    try {
-      this.correctionFactors = { ...this.userProfile.correctionFactors };
-      this.referenceValues = { ...this.userProfile.referenceValues };
-      this.config = { ...this.userProfile.config };
-      console.log('User calibration profile applied.');
-    } catch (error) {
-      console.error('Error applying user profile data:', error);
     }
   }
 }
