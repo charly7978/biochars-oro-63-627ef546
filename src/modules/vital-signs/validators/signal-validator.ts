@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,21 +9,16 @@
 export class SignalValidator {
   private readonly minAmplitude: number;
   private readonly minDataPoints: number;
-  private readonly minSignalStrength: number = 0.005; // Reducido para mayor sensibilidad
+  private readonly minSignalStrength: number = 0.03; // Incrementado para evitar pequeños ruidos
   
-  // Finger detection variables
+  // Variables para detección de dedo
   private signalPatternBuffer: number[] = [];
-  private patternDetectionCounter: number = 0;
-  private fingerDetected: boolean = false;
-  private readonly PATTERN_BUFFER_SIZE = 30;
-  private readonly MIN_PATTERN_DETECTION_COUNT = 5;
-  // Buffer extendido para robustez
-  private readonly EXTENDED_PATTERN_BUFFER_SIZE = 90; // 3 segundos a 30Hz
+  private readonly EXTENDED_PATTERN_BUFFER_SIZE = 150; // 5 segundos a 30Hz para mayor robustez
   private fingerDetectionWindow: number = 0;
-  private readonly FINGER_CONFIRM_WINDOW = 45; // 1.5 segundos
-  private lastPatternDetected: boolean = false;
+  private readonly FINGER_CONFIRM_WINDOW = 75; // 2.5 segundos
+  private fingerDetected: boolean = false;
 
-  constructor(minAmplitude: number = 0.005, minDataPoints: number = 10) {
+  constructor(minAmplitude: number = 0.02, minDataPoints: number = 15) {
     this.minAmplitude = minAmplitude;
     this.minDataPoints = minDataPoints;
   }
@@ -45,10 +41,9 @@ export class SignalValidator {
    * Verifica si la amplitud de la señal es suficiente para análisis confiable
    */
   public hasValidAmplitude(values: number[]): boolean {
-    if (values.length < 5) return false;
+    if (values.length < 8) return false;
     
-    // Tomar solo los últimos valores para análisis
-    const recentValues = values.slice(-15);
+    const recentValues = values.slice(-30); // Más muestras y tiempo
     
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
@@ -58,39 +53,42 @@ export class SignalValidator {
   }
   
   /**
-   * Track signal for rhythmic pattern detection to identify finger presence
-   * Uses physiological characteristics to recognize true finger signals
+   * Trackea la señal para detectar patrón rítmico que confirme dedo humano
+   * Usa características fisiológicas muy estrictas para evitar falsos positivos
    */
   public trackSignalForPatternDetection(value: number): void {
-    // Buffer extendido
     this.signalPatternBuffer.push(value);
     if (this.signalPatternBuffer.length > this.EXTENDED_PATTERN_BUFFER_SIZE) {
       this.signalPatternBuffer.shift();
     }
-    // Solo intentar detección con suficiente señal
+
     if (this.signalPatternBuffer.length >= this.EXTENDED_PATTERN_BUFFER_SIZE) {
       const buf = this.signalPatternBuffer;
-      // Cálculo fisiológico
       const mean = buf.reduce((a, b) => a + b, 0) / buf.length;
       const variance = buf.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / buf.length;
       const stdDev = Math.sqrt(variance);
-      const isFlat = stdDev < 0.002;
-      const isSaturated = buf.filter(v => Math.abs(v) > 0.95).length > buf.length * 0.2;
-      // Detección de picos fisiológicos
+
+      // Estricta detección de señal aplanada para evitar falsas señales
+      const isFlat = stdDev < 0.003; 
+      
+      // Detectar saturación severa que indica artefactos lumínicos o ruido
+      const isSaturated = buf.filter(v => Math.abs(v) > 0.90).length > buf.length * 0.12;
+
+      // Detectar picos fisiológicos (separados al menos 10 muestras, 300ms)
       const peaks: number[] = [];
-      for (let i = 2; i < buf.length - 2; i++) {
+      for (let i = 3; i < buf.length - 3; i++) {
         if (
-          buf[i] > buf[i-1] && buf[i] > buf[i-2] &&
-          buf[i] > buf[i+1] && buf[i] > buf[i+2] &&
-          buf[i] - mean > 0.01 // amplitud mínima fisiológica
+          buf[i] > buf[i - 1] && buf[i] > buf[i - 2] && buf[i] > buf[i - 3] &&
+          buf[i] > buf[i + 1] && buf[i] > buf[i + 2] && buf[i] > buf[i + 3] &&
+          buf[i] - mean > 0.02 // Amplitud mínima fisiológica
         ) {
-          // Separación mínima entre picos (9 muestras ~200BPM)
-          if (peaks.length === 0 || i - peaks[peaks.length-1] > 8) {
+          if (peaks.length === 0 || i - peaks[peaks.length - 1] > 12) {
             peaks.push(i);
           }
         }
       }
-      // Periodicidad (autocorrelación máxima en ventana fisiológica)
+
+      // Calculo autocorrelacion para periodicidad auténtica
       function autocorr(sig: number[], lag: number) {
         let sum = 0;
         for (let i = 0; i < sig.length - lag; i++) {
@@ -98,127 +96,71 @@ export class SignalValidator {
         }
         return sum / (sig.length - lag);
       }
+
       let periodicityScore = 0;
-      for (let lag = 8; lag <= 45; lag++) {
+      for (let lag = 15; lag <= 40; lag++) { // rango 0.5-1.3s aprox
         const ac = autocorr(buf, lag);
         if (ac > periodicityScore) periodicityScore = ac;
       }
+      // Normalizar periodicidad teniendo en cuenta varianza
       periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-      // Intervalos entre picos
+
+      // Intercvalos estrictos entre picos para fisiologia humana
       const intervals: number[] = [];
       for (let i = 1; i < peaks.length; i++) {
-        intervals.push(peaks[i] - peaks[i-1]);
+        intervals.push(peaks[i] - peaks[i - 1]);
       }
-      // Filtro fisiológico de intervalos (40-200BPM)
-      const validIntervals = intervals.filter(iv => iv >= 8 && iv <= 45);
-      // Consistencia de intervalos
+      const validIntervals = intervals.filter(iv => iv >= 12 && iv <= 40);
+
+      // Coeficiente de variación estricto
       let cv = 1;
-      if (validIntervals.length >= 2) {
+      if (validIntervals.length >= 3) {
         const avgIv = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
         const varIv = validIntervals.reduce((a, b) => a + Math.pow(b - avgIv, 2), 0) / validIntervals.length;
         cv = Math.sqrt(varIv) / avgIv;
       }
-      // Criterios fisiológicos robustos
+
+      // Condiciones muy estrictas fisiológicas para detectar dedo humano seguro
       const patternDetected = (
-        peaks.length >= 3 &&
-        validIntervals.length >= 2 &&
-        periodicityScore > 0.2 &&
-        cv < 0.25 &&
+        peaks.length >= 6 &&
+        validIntervals.length >= 4 &&
+        periodicityScore > 0.55 &&
+        cv < 0.13 &&
         !isFlat &&
         !isSaturated
       );
-      // Ventana de confirmación
+
       if (patternDetected) {
         this.fingerDetectionWindow++;
-        if (this.fingerDetectionWindow > this.FINGER_CONFIRM_WINDOW) this.fingerDetected = true;
+        if (this.fingerDetectionWindow > this.FINGER_CONFIRM_WINDOW) {
+          this.fingerDetected = true;
+        }
       } else {
         this.fingerDetectionWindow = 0;
         this.fingerDetected = false;
       }
-      this.lastPatternDetected = patternDetected;
-      // Logs para depuración
+
+      // Logs de debug para desarrollo
       if (typeof process !== 'undefined' && process.env && process.env.NODE_ENV !== 'production') {
-        console.log('[SignalValidator] peaks:', peaks.length, 'per:', periodicityScore.toFixed(2), 'cv:', cv.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'finger:', this.fingerDetected);
+        console.log('[SignalValidator] Detected peaks:', peaks.length, 'periodicity:', periodicityScore.toFixed(3), 'CV:', cv.toFixed(3), 'Flat:', isFlat, 'Sat:', isSaturated, 'Finger:', this.fingerDetected);
       }
     }
   }
   
   /**
-   * Check if finger is detected based on physiological signal patterns
+   * Indica si se ha detectado dedo humano en lente
    */
   public isFingerDetected(): boolean {
     return this.fingerDetected;
   }
   
   /**
-   * Reset finger detection state
+   * Resetea la detección
    */
   public resetFingerDetection(): void {
     this.signalPatternBuffer = [];
-    this.patternDetectionCounter = 0;
+    this.fingerDetectionWindow = 0;
     this.fingerDetected = false;
   }
-  
-  /**
-   * Detect rhythmic patterns in signal that are characteristic of PPG
-   * Looking for periodic patterns with physiological timing
-   */
-  private detectRhythmicPattern(values: number[]): boolean {
-    if (values.length < 10) return false;
-    
-    // Calculate local peaks to find heartbeat rhythm
-    const peaks: number[] = [];
-    for (let i = 2; i < values.length - 2; i++) {
-      if (values[i] > values[i-1] && 
-          values[i] > values[i-2] && 
-          values[i] > values[i+1] && 
-          values[i] > values[i+2]) {
-        peaks.push(i);
-      }
-    }
-    
-    // Need at least 2 peaks to analyze intervals
-    if (peaks.length < 2) return false;
-    
-    // Calculate intervals between peaks
-    const intervals: number[] = [];
-    for (let i = 1; i < peaks.length; i++) {
-      intervals.push(peaks[i] - peaks[i-1]);
-    }
-    
-    // Check if intervals are within physiological range (40-200 BPM)
-    // At 30Hz sampling, that's roughly between 9-45 samples between peaks
-    const validIntervals = intervals.filter(interval => interval >= 9 && interval <= 45);
-    
-    // Calculate consistency of intervals (CV < 0.2 for stable rhythm)
-    if (validIntervals.length >= 2) {
-      const avgInterval = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
-      const variance = validIntervals.reduce((sum, val) => sum + Math.pow(val - avgInterval, 2), 0) / validIntervals.length;
-      const cv = Math.sqrt(variance) / avgInterval; // Coefficient of variation
-      
-      // CV < 0.2 indicates consistent periodic pattern
-      return cv < 0.2;
-    }
-    
-    return false;
-  }
-  
-  /**
-   * Registra los resultados de validación para depuración
-   */
-  public logValidationResults(
-    isValid: boolean, 
-    amplitude: number, 
-    values: number[]
-  ): void {
-    if (!isValid) {
-      console.log("SignalValidator: Señal no válida", {
-        amplitud: amplitude,
-        umbralMinimo: this.minAmplitude,
-        longitudDatos: values.length,
-        ultimosValores: values.slice(-5),
-        fingerDetected: this.fingerDetected
-      });
-    }
-  }
 }
+

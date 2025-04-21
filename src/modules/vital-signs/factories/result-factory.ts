@@ -1,4 +1,3 @@
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
@@ -37,20 +36,24 @@ export class ResultFactory {
   }
 
   /**
-   * Creates an empty result with default values
+   * Creates an empty result with default values indicating unavailability.
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
-      spo2: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
+      spo2: NaN,
+      pressure: "N/A",
+      arrhythmiaStatus: "N/A",
+      glucose: NaN,
       lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
+        totalCholesterol: NaN,
+        triglycerides: NaN
       },
-      hemoglobin: 0,
-      hydration: 0
+      hemoglobin: NaN,
+      hydration: NaN,
+      glucoseConfidence: 0,
+      lipidsConfidence: 0,
+      overallConfidence: 0,
+      lastArrhythmiaData: null
     };
   }
 }

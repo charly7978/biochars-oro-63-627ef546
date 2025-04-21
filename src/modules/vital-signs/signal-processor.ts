@@ -200,81 +200,29 @@ export class SignalProcessor extends BaseProcessor {
   }
 
   /**
-   * Extrae el ROI (región de interés) de la imagen HSV usando los parámetros de piel y contornos.
-   * Devuelve si se encontró ROI, el rectángulo y la máscara del ROI.
-   */
-  private extractROI(hsv: any): { roiFound: boolean, roiRect: { x: number, y: number, width: number, height: number }, roiMask: any } {
-    let roiFound = false;
-    let roiRect = { x: 0, y: 0, width: 0, height: 0 };
-    let roiMask = null;
-
-    const mask = new cv.Mat();
-    const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_LOWER);
-    const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_UPPER);
-    cv.inRange(hsv, lower, upper, mask);
-    lower.delete();
-    upper.delete();
-
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-    mask.delete();
-    hierarchy.delete();
-
-    let largestContourIndex = -1;
-    let maxArea = 0;
-    for (let i = 0; i < contours.size(); ++i) {
-      const contour = contours.get(i);
-      const area = cv.contourArea(contour);
-      if (area > this.MIN_CONTOUR_AREA && area > maxArea) {
-        maxArea = area;
-        largestContourIndex = i;
-      }
-      contour.delete();
-    }
-
-    if (largestContourIndex !== -1) {
-      roiFound = true;
-      const fingerContour = contours.get(largestContourIndex);
-      roiRect = cv.boundingRect(fingerContour);
-      roiMask = cv.Mat.zeros(hsv.rows, hsv.cols, cv.CV_8UC1);
-      const roiContours = new cv.MatVector();
-      roiContours.push_back(fingerContour);
-      cv.drawContours(roiMask, roiContours, 0, new cv.Scalar(255), cv.FILLED);
-      roiContours.delete();
-      fingerContour.delete();
-    }
-    contours.delete();
-    return { roiFound, roiRect, roiMask };
-  }
-
-  /**
-   * Libera todos los Mats de OpenCV pasados en el array.
-   */
-  private releaseMats(mats: any[]): void {
-    for (const mat of mats) {
-      if (mat && typeof mat.delete === 'function') {
-        mat.delete();
-      }
-    }
-  }
-
-  /**
    * Procesa un frame de vídeo usando OpenCV para detectar ROI y extraer señal.
    * @param imageData Datos del frame de la cámara.
    */
   public processFrame(imageData: ImageData): void {
     if (!this.cvReady) {
+      // console.warn("SignalProcessor: OpenCV not ready, skipping frame.");
+      // Podríamos encolar frames o simplemente esperar
       if (!this.cvInitializing) {
-        this.initializeOpenCV();
+        this.initializeOpenCV(); // Intentar inicializar si no lo está haciendo ya
       }
+      // Devolver valores por defecto o nulos mientras no esté listo
       this.onError?.({ code: 'OPENCV_NOT_READY', message: 'OpenCV not ready.', timestamp: Date.now() });
+      // Opcional: llamar a onSignalReady con datos nulos/inválidos
+      // this.onSignalReady?.({ /* datos nulos o inválidos */ });
       return;
     }
 
     let src: any = null;
-    let rgb: any = null;
+    let rgb: any = null; // Matriz intermedia para RGB
     let hsv: any = null;
+    let mask: any = null;
+    let contours: any = null;
+    let hierarchy: any = null;
     let roiMask: any = null;
     let maskedSrc: any = null;
     let rawValue = 0;
@@ -283,45 +231,99 @@ export class SignalProcessor extends BaseProcessor {
 
     try {
       src = cv.matFromImageData(imageData);
-      rgb = new cv.Mat();
-      cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
+      rgb = new cv.Mat(); // Crear Mat para RGB
+
+      // Convertir RGBA a RGB y luego a HSV
+      cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB); // RGBA -> RGB
       hsv = new cv.Mat();
-      cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV);
+      cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV); // RGB -> HSV (CORREGIDO)
 
-      // Extraer ROI modularizado
-      const roiResult = this.extractROI(hsv);
-      roiFound = roiResult.roiFound;
-      roiRect = roiResult.roiRect;
-      roiMask = roiResult.roiMask;
+      // Crear máscara para tono de piel
+      mask = new cv.Mat();
+      const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_LOWER);
+      const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_UPPER);
+      cv.inRange(hsv, lower, upper, mask);
+      lower.delete();
+      upper.delete();
 
-      if (roiFound && roiMask) {
+      // Opcional: Mejorar la máscara (Morphological Operations)
+      // let kernel = cv.Mat.ones(5, 5, cv.CV_8U);
+      // cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
+      // cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+      // kernel.delete();
+
+      // Encontrar contornos
+      contours = new cv.MatVector();
+      hierarchy = new cv.Mat();
+      cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      // Encontrar el contorno más grande (presumiblemente el dedo)
+      let largestContourIndex = -1;
+      let maxArea = 0;
+      for (let i = 0; i < contours.size(); ++i) {
+        const contour = contours.get(i);
+        const area = cv.contourArea(contour);
+        if (area > this.MIN_CONTOUR_AREA && area > maxArea) {
+          maxArea = area;
+          largestContourIndex = i;
+        }
+        contour.delete(); // Liberar contorno individual
+      }
+
+      if (largestContourIndex !== -1) {
+        roiFound = true;
+        const fingerContour = contours.get(largestContourIndex);
+        roiRect = cv.boundingRect(fingerContour);
+
+        // Crear una máscara solo para el ROI del dedo
+        roiMask = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
+        const roiContours = new cv.MatVector();
+        roiContours.push_back(fingerContour);
+        cv.drawContours(roiMask, roiContours, 0, new cv.Scalar(255), cv.FILLED);
+        roiContours.delete(); // Liberar MatVector
+
+        // Aplicar máscara al frame original para aislar el dedo
         maskedSrc = new cv.Mat();
-        src.copyTo(maskedSrc, roiMask);
+        src.copyTo(maskedSrc, roiMask); // Copia solo los píxeles donde roiMask es > 0
+
+        // Calcular la media del canal rojo DENTRO del ROI
+        // cv.mean devuelve [B, G, R, A]
         const meanColor = cv.mean(src, roiMask);
-        rawValue = meanColor[2];
+        rawValue = meanColor[2]; // Índice 2 para el canal Rojo
+
+        fingerContour.delete(); // Liberar el contorno usado
       } else {
-        rawValue = 0;
+        // No se encontró dedo/ROI válido, usar media global o valor por defecto?
+        // Usar media global puede ser ruidoso. Usar 0 indica falta de señal fiable.
+        rawValue = 0; // Opcional: meanColor = cv.mean(src); rawValue = meanColor[2];
+        // console.log("SignalProcessor: No suitable ROI found.");
       }
 
       // ---- Procesamiento de señal subsiguiente ----
+      // Añadir valor (extraído de ROI o 0) al buffer principal
       this.ppgValues.push(rawValue);
       if (this.ppgValues.length > 100) {
         this.ppgValues.shift();
       }
-      this.signalValidator.trackSignalForPatternDetection(rawValue);
+      this.signalValidator.trackSignalForPatternDetection(rawValue); // Usar rawValue para patrón
 
-      // 1. Filtro Kalman
+      // 1. Filtro Kalman (puede ayudar incluso con señal de ROI)
       const kalmanFiltered = this.kalmanFilter.filter(rawValue);
       const preBandpassValue = kalmanFiltered;
+
       // 2. Filtro Pasa-Banda
       const bandpassFiltered = this.bandpassFilter.filter(kalmanFiltered);
       const finalFilteredValue = bandpassFiltered;
-      // 3. Calcular calidad
-      this.quality.updateNoiseLevel(rawValue, finalFilteredValue);
-      const currentQuality = roiFound ? this.quality.calculateSignalQuality(this.ppgValues) : 0;
-      // 4. Detectar dedo
-      const fingerDetected = this.isFingerDetected() && roiFound;
-      // 5. Preparar señal procesada
+
+      // 3. Calcular calidad (ahora basado en la señal del ROI procesada)
+      // Se podría mejorar la calidad usando el área del ROI, estabilidad, etc.
+      this.quality.updateNoiseLevel(rawValue, finalFilteredValue); // Comparar raw (ROI) con filtrado
+      const currentQuality = roiFound ? this.quality.calculateSignalQuality(this.ppgValues) : 0; // Calidad 0 si no hay ROI
+
+      // 4. Detectar dedo (basado en patrón y calidad)
+      const fingerDetected = this.isFingerDetected() && roiFound; // Requiere ROI y patrón/calidad
+
+      // 5. Preparar señal procesada para emitir
       const processedSignal: ExtendedProcessedSignal = {
         timestamp: Date.now(),
         rawValue: rawValue,
@@ -329,17 +331,28 @@ export class SignalProcessor extends BaseProcessor {
         filteredValue: finalFilteredValue,
         quality: currentQuality,
         fingerDetected: fingerDetected,
-        roi: roiRect,
+        roi: roiRect, // Incluir la info del ROI
+        // Opcional: añadir otros datos como perfusionIndex si se calculan
       };
+
+      // Emitir señal procesada
       if (this.onSignalReady) {
         this.onSignalReady(processedSignal);
       }
+
     } catch (error) {
       console.error("SignalProcessor: Error processing frame with OpenCV:", error);
       this.onError?.({ code: 'OPENCV_PROCESS_ERROR', message: `Error during OpenCV processing: ${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
     } finally {
-      // Liberar todos los Mats creados
-      this.releaseMats([src, rgb, hsv, roiMask, maskedSrc]);
+      // **MUY IMPORTANTE: Liberar todas las Mats creadas**
+      src?.delete();
+      rgb?.delete();
+      hsv?.delete();
+      mask?.delete();
+      contours?.delete();
+      hierarchy?.delete();
+      roiMask?.delete();
+      maskedSrc?.delete();
     }
   }
 }

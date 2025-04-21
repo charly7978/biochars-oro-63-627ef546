@@ -1,3 +1,4 @@
+
 /**
  * HeartBeatProcessor mejorado con filtrado pasa-banda 0.5-5 Hz para señal PPG,
  * detección de picos adaptada a Pan-Tompkins con validación y confirmación,
@@ -215,22 +216,6 @@ export class HeartBeatProcessor {
       intervals: this.rrIntervals.slice(),
       lastPeakTime: this.lastPeakTime
     };
-  }
-
-  /**
-   * Inicia el monitoreo: prepara buffers y estados
-   */
-  public startMonitoring(): void {
-    this.reset();
-    // Aquí puedes agregar lógica adicional si se requiere para iniciar el monitoreo
-  }
-
-  /**
-   * Detiene el monitoreo: limpia buffers y estados
-   */
-  public stopMonitoring(): void {
-    this.reset();
-    // Aquí puedes agregar lógica adicional si se requiere para detener el monitoreo
   }
 }
 

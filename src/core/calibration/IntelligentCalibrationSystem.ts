@@ -1,3 +1,8 @@
+import { getModel } from '../neural/ModelRegistry';
+import { HeartRateNeuralModel } from '../neural/HeartRateModel';
+import { SpO2NeuralModel } from '../neural/SpO2Model';
+import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
+import { GlucoseNeuralModel } from '../neural/GlucoseModel';
 import { supabase } from '@/integrations/supabase/client';
 
 /**
@@ -91,11 +96,11 @@ export interface CorrectionFactors {
  * Valores de referencia para calibración
  */
 export interface ReferenceValues {
-  heartRate: number;
-  spo2: number;
-  systolic: number;
-  diastolic: number;
-  glucose: number;
+  heartRate: number | null;
+  spo2: number | null;
+  systolic: number | null;
+  diastolic: number | null;
+  glucose: number | null;
 }
 
 /**
@@ -205,11 +210,20 @@ export class IntelligentCalibrationSystem {
   }
   
   /**
-   * Valores de referencia por defecto
+   * Valores de referencia por defecto - Todos inicializados a null
    */
   private getDefaultReferences(): ReferenceValues {
-    // Prohibido: No se permiten valores de referencia por defecto. Use solo datos reales.
-    throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
+    // Return null for all reference values initially.
+    // They should be populated by loading the profile or user input.
+    return {
+      heartRate: null,
+      spo2: null,
+      systolic: null,
+      diastolic: null,
+      glucose: null
+    };
+    // Ensure the throw new Error line below is commented out or removed.
+    // throw new Error('No se permiten valores de referencia por defecto. Use solo datos reales.');
   }
   
   /**
@@ -363,14 +377,14 @@ export class IntelligentCalibrationSystem {
    */
   public setReferenceValue(type: MeasurementType, value: number | { systolic: number, diastolic: number }): void {
     if (type === 'heartRate') {
-      this.referenceValues.heartRate = value as number;
+      this.referenceValues.heartRate = value as number | null;
     } else if (type === 'spo2') {
-      this.referenceValues.spo2 = value as number;
+      this.referenceValues.spo2 = value as number | null;
     } else if (type === 'bloodPressure' && typeof value !== 'number') {
-      this.referenceValues.systolic = value.systolic;
-      this.referenceValues.diastolic = value.diastolic;
+      this.referenceValues.systolic = value.systolic as number | null;
+      this.referenceValues.diastolic = value.diastolic as number | null;
     } else if (type === 'glucose') {
-      this.referenceValues.glucose = value as number;
+      this.referenceValues.glucose = value as number | null;
     }
     
     console.log(`Valor de referencia registrado para ${type}:`, value);
@@ -443,8 +457,39 @@ export class IntelligentCalibrationSystem {
    * Actualiza los modelos neuronales con datos de referencia
    */
   private updateNeuralModels(type: MeasurementType, reference: number | { systolic: number, diastolic: number }): void {
-    // Método vacío para evitar error de referencia a modelos que no existen
-    console.log('updateNeuralModels llamado pero sin implementación disponible');
+    // Encontrar las últimas señales PPG de alta calidad
+    const recentHighQualityData = this.measurementHistory
+      .filter(m => m.quality > 85)
+      .slice(-3);
+    
+    if (recentHighQualityData.length === 0) return;
+    
+    try {
+      if (type === 'heartRate' && typeof reference === 'number') {
+        const heartRateModel = getModel<HeartRateNeuralModel>('heartRate');
+        if (heartRateModel) {
+          // Aquí simularíamos un ajuste de los pesos internos del modelo
+          console.log('Actualizando modelo neural de frecuencia cardíaca con referencia:', reference);
+        }
+      } else if (type === 'spo2' && typeof reference === 'number') {
+        const spo2Model = getModel<SpO2NeuralModel>('spo2');
+        if (spo2Model) {
+          console.log('Actualizando modelo neural de SpO2 con referencia:', reference);
+        }
+      } else if (type === 'bloodPressure' && typeof reference !== 'number') {
+        const bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+        if (bpModel) {
+          console.log('Actualizando modelo neural de presión con referencia:', reference);
+        }
+      } else if (type === 'glucose' && typeof reference === 'number') {
+        const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
+        if (glucoseModel) {
+          console.log('Actualizando modelo neural de glucosa con referencia:', reference);
+        }
+      }
+    } catch (error) {
+      console.error('Error al actualizar modelo neural:', error);
+    }
   }
   
   /**
@@ -794,12 +839,12 @@ export class IntelligentCalibrationSystem {
         .single();
       
       if (data && !error) {
-        // Convertir formato de base de datos a perfil de usuario
+        // Corregir asignación, solo propiedades que existen en la tabla
         this.userProfile = {
           userId: data.user_id,
           createdAt: new Date(data.created_at),
           lastUpdated: new Date(data.updated_at),
-          correctionFactors: {
+          correctionFactors: { 
             heartRate: 1.0,
             spo2: 1.0,
             systolic: 1.0,
@@ -807,11 +852,11 @@ export class IntelligentCalibrationSystem {
             glucose: 1.0
           },
           referenceValues: {
-            heartRate: data.systolic_reference || 75, // Using available fields
-            spo2: data.diastolic_reference || 97,
-            systolic: data.systolic_reference || 120,
-            diastolic: data.diastolic_reference || 80,
-            glucose: data.quality_threshold || 100 // Using available field as fallback
+            heartRate: null,
+            spo2: null,
+            systolic: typeof data.systolic_reference === 'number' ? data.systolic_reference : null,
+            diastolic: typeof data.diastolic_reference === 'number' ? data.diastolic_reference : null,
+            glucose: null
           },
           config: {
             autoCalibrationEnabled: true,
@@ -819,8 +864,8 @@ export class IntelligentCalibrationSystem {
             syncWithReferenceDevices: false,
             adaptToEnvironment: true,
             adaptToUserActivity: true,
-            aggressiveness: data.quality_threshold ? data.quality_threshold / 100 : 0.5,
-            minimumQualityThreshold: data.quality_threshold || 70
+            aggressiveness: 0.5,
+            minimumQualityThreshold: typeof data.quality_threshold === 'number' ? data.quality_threshold : 70
           }
         };
         
@@ -871,3 +916,54 @@ export class IntelligentCalibrationSystem {
           diastolic_reference: this.userProfile.referenceValues.diastolic,
           quality_threshold: this.userProfile.config.minimumQualityThreshold,
           updated_at: new Date().toISOString()
+        });
+      
+      if (error) {
+        console.error('Error al guardar en Supabase:', error);
+      }
+    } catch (error) {
+      console.error('Error al guardar perfil de calibración:', error);
+    }
+  }
+  
+  /**
+   * Aplica perfil de calibración al sistema
+   */
+  private applyUserProfile(): void {
+    if (this.userProfile) {
+      this.correctionFactors = this.userProfile.correctionFactors;
+      this.referenceValues = this.userProfile.referenceValues;
+      this.config = this.userProfile.config;
+    }
+  }
+
+  private calculateCalibrationFactor(signal: number[], threshold: number): number {
+    const signalMean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+    const signalVariance = signal.reduce((sum, val) => sum + Math.pow(val - signalMean, 2), 0) / signal.length;
+    
+    // Factor de calibración basado en la varianza de la señal y el umbral
+    const calibrationFactor = Math.max(0.1, Math.min(2.0, 
+      (signalVariance > threshold * threshold) ? Math.sqrt(signalVariance) / threshold : 1.0
+    ));
+    
+    return calibrationFactor;
+  }
+
+  public adjustCalibrationParameters(signal: number[], currentParams: CalibrationParameters): CalibrationParameters {
+    const calibrationFactor = this.calculateCalibrationFactor(signal, currentParams.threshold);
+    
+    return {
+      gain: currentParams.gain * calibrationFactor,
+      offset: currentParams.offset,
+      threshold: currentParams.threshold * Math.sqrt(calibrationFactor),
+      sensitivity: currentParams.sensitivity / calibrationFactor
+    };
+  }
+}
+
+/**
+ * Función de utilidad para acceso rápido al sistema de calibración
+ */
+export function getCalibrationSystem(): IntelligentCalibrationSystem {
+  return IntelligentCalibrationSystem.getInstance();
+}

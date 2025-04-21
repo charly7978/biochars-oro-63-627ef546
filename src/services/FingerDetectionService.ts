@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -32,23 +33,29 @@ class FingerDetectionService {
   private bandpassFilter: BandpassFilter;
   
   private signalHistory: number[] = [];
-  private readonly HISTORY_SIZE = 90; // 3 seconds at 30fps
+  private readonly HISTORY_SIZE = 120; // 4 seconds at 30fps for better robustness
   private lastNotificationTime = 0;
-  private readonly NOTIFICATION_COOLDOWN = 3000; // 3 seconds between notifications
+  private readonly NOTIFICATION_COOLDOWN = 5000; // 5 seconds to avoid spamming
   
   private config: FingerDetectionConfig = {
-    minSignalAmplitude: 0.01,
-    minQualityThreshold: 35,
-    maxWeakSignalsCount: 5,
-    rhythmPatternWindow: 3000,
-    minConsistentPatterns: 4
+    minSignalAmplitude: 0.02, // Slightly increased for more strictness
+    minQualityThreshold: 45,  // Increased threshold for quality
+    maxWeakSignalsCount: 3,
+    rhythmPatternWindow: 4000,
+    minConsistentPatterns: 5
   };
 
+  private fingerDetectionWindow = 0;
+  private fingerDetected = false;
+  // Properties for cooldown and last result
+  private _cooldownStart: number | null = null;
+  private _lastResult: FingerDetectionResult | null = null;
+
   private constructor() {
-    this.validator = new SignalValidator();
+    this.validator = new SignalValidator(0.02, 10);
     this.kalmanFilter = new KalmanFilter();
     this.bandpassFilter = new BandpassFilter(0.5, 4, 30);
-    console.log("FingerDetectionService: Initialized with default config");
+    console.log("FingerDetectionService: Initialized with enhanced config");
   }
 
   public static getInstance(): FingerDetectionService {
@@ -77,18 +84,49 @@ class FingerDetectionService {
     // Track for rhythm pattern detection
     this.validator.trackSignalForPatternDetection(filteredValue);
 
-    // --- NUEVA LÓGICA DE DETECCIÓN DE DEDO Y CALIDAD ---
-    const recentSignals = this.signalHistory.slice(-60); // 2 segundos a 30Hz
+    // Verify buffer length for robust analysis
+    const ANALYSIS_BUFFER_SIZE = 120; // 4 seconds at 30Hz
+    const recentSignals = this.signalHistory.slice(-ANALYSIS_BUFFER_SIZE);
     const amplitude = Math.max(...recentSignals) - Math.min(...recentSignals);
     const mean = recentSignals.reduce((sum, val) => sum + val, 0) / recentSignals.length;
     const variance = recentSignals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentSignals.length;
     const stdDev = Math.sqrt(variance);
-    // Flatline: desviación muy baja
-    const isFlat = stdDev < 0.002;
-    // Saturación: valores muy cerca de los extremos
-    const isSaturated = recentSignals.filter(v => Math.abs(v) > 0.95).length > recentSignals.length * 0.2;
-    // Periodicidad: autocorrelación simple
-    function autocorr(sig: number[], lag: number) {
+    const isFlat = stdDev < 0.0015;
+    const isSaturated = recentSignals.filter(v => Math.abs(v) > 0.92).length > recentSignals.length * 0.15;
+    const signalPower = mean * mean;
+    const noisePower = variance;
+    const snr = noisePower > 0 ? 10 * Math.log10(signalPower / noisePower) : 0;
+    const snrLow = snr < 12; // Raised minimum SNR
+    
+    // Detect physiological peaks
+    const peaks = [];
+    for (let i = 2; i < recentSignals.length - 2; i++) {
+      if (
+        recentSignals[i] > recentSignals[i - 1] && recentSignals[i] > recentSignals[i - 2] &&
+        recentSignals[i] > recentSignals[i + 1] && recentSignals[i] > recentSignals[i + 2] &&
+        recentSignals[i] - mean > 0.015 // higher amplitude minimum
+      ) {
+        if (peaks.length === 0 || i - peaks[peaks.length - 1] > 8) {
+          peaks.push(i);
+        }
+      }
+    }
+    
+    // Peak intervals
+    const intervals = [];
+    for (let i = 1; i < peaks.length; i++) {
+      intervals.push(peaks[i] - peaks[i - 1]);
+    }
+    const validIntervals = intervals.filter(iv => iv >= 8 && iv <= 45);
+    let cv = 1;
+    if (validIntervals.length >= 2) {
+      const avgIv = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+      const varIv = validIntervals.reduce((a, b) => a + Math.pow(b - avgIv, 2), 0) / validIntervals.length;
+      cv = Math.sqrt(varIv) / avgIv;
+    }
+
+    // Periodicity using autocorrelation
+    function autocorr(sig, lag) {
       let sum = 0;
       for (let i = 0; i < sig.length - lag; i++) {
         sum += (sig[i] - mean) * (sig[i + lag] - mean);
@@ -96,112 +134,94 @@ class FingerDetectionService {
       return sum / (sig.length - lag);
     }
     let periodicityScore = 0;
-    for (let lag = 8; lag <= 45; lag++) { // 40-200 BPM
+    for (let lag = 10; lag <= 40; lag++) {
       const ac = autocorr(recentSignals, lag);
       if (ac > periodicityScore) periodicityScore = ac;
     }
     periodicityScore = Math.max(0, Math.min(1, periodicityScore / (variance || 1)));
-    // Ruido: varianza de la derivada
-    const diffs = recentSignals.slice(1).map((v, i) => v - recentSignals[i]);
-    const noise = Math.sqrt(diffs.reduce((s, v) => s + v * v, 0) / diffs.length);
-    const noiseScore = 1 - Math.min(1, noise / 0.05);
-    // Amplitud normalizada
-    const ampScore = Math.max(0, Math.min(1, (amplitude - 0.01) / 0.2));
-    // Estabilidad (1 - coeficiente de variación)
-    const stabilityScore = 1 - Math.min(1, stdDev / (mean === 0 ? 1 : Math.abs(mean)));
-    // Penalizaciones
-    const flatPenalty = isFlat ? 0 : 1;
-    const satPenalty = isSaturated ? 0 : 1;
-    // Calidad compuesta
-    let quality = (
-      0.3 * ampScore +
-      0.3 * periodicityScore +
-      0.2 * stabilityScore +
-      0.2 * noiseScore
-    ) * flatPenalty * satPenalty;
-    // Suavizado temporal (EMA)
-    if (typeof (this as any)._lastQuality === 'undefined') (this as any)._lastQuality = quality;
-    quality = 0.2 * quality + 0.8 * (this as any)._lastQuality;
-    (this as any)._lastQuality = quality;
-    quality = Math.round(quality * 100);
 
-    // Detección robusta de dedo
-    const isFingerDetected = (
-      ampScore > 0.2 &&
-      periodicityScore > 0.2 &&
-      stabilityScore > 0.2 &&
-      !isFlat &&
-      !isSaturated &&
-      this.validator.isFingerDetected() // patrón rítmico consistente
-    );
+    // Shape analysis: up/down timing ratio
+    let upTime = 0, downTime = 0;
+    for (let i = 1; i < recentSignals.length; i++) {
+      if (recentSignals[i] > recentSignals[i-1]) upTime++;
+      else if (recentSignals[i] < recentSignals[i-1]) downTime++;
+    }
+    const upDownRatio = downTime > 0 ? upTime / downTime : 0;
+    const physiologicalShape = upDownRatio > 0.95 && upDownRatio < 1.05;
 
-    // Calcular confianza
-    const confidence = (ampScore * 0.3 + periodicityScore * 0.3 + stabilityScore * 0.2 + noiseScore * 0.2) * flatPenalty * satPenalty;
-
-    // Feedback
-    const feedback = this.generateFeedback(isFingerDetected, quality, amplitude, this.validator.isFingerDetected());
-    this.handleUserFeedback(isFingerDetected, quality, this.validator.isFingerDetected());
-
-    // Logs para depuración
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[FingerDetection] amp:', ampScore.toFixed(2), 'per:', periodicityScore.toFixed(2), 'stab:', stabilityScore.toFixed(2), 'noise:', noiseScore.toFixed(2), 'flat:', isFlat, 'sat:', isSaturated, 'qual:', quality, 'finger:', isFingerDetected);
+    // Check sudden jumps
+    let hasJump = false;
+    for (let i = 1; i < recentSignals.length; i++) {
+      if (Math.abs(recentSignals[i] - recentSignals[i-1]) > 0.18) { // stricter limit
+        hasJump = true;
+        break;
+      }
     }
 
-    return {
-      isFingerDetected,
-      quality,
-      confidence,
+    // Combine strict physiological criteria
+    const allCriteria = (
+      amplitude > 0.025 &&
+      !isFlat &&
+      !isSaturated &&
+      !snrLow &&
+      periodicityScore > 0.55 &&
+      validIntervals.length >= 4 &&
+      cv < 0.14 &&
+      !hasJump &&
+      physiologicalShape &&
+      this.validator.isFingerDetected()
+    );
+    
+    if (allCriteria) {
+      this.fingerDetectionWindow++;
+      if (this.fingerDetectionWindow >= ANALYSIS_BUFFER_SIZE) {
+        this.fingerDetected = true;
+      }
+    } else {
+      this.fingerDetectionWindow = 0;
+      this.fingerDetected = false;
+    }
+    
+    // Build feedback and confidence
+    const confidence = this.calculateConfidence(amplitude, this.fingerDetected, periodicityScore, snr, cv, !hasJump, physiologicalShape);
+
+    this._lastResult = {
+      isFingerDetected: this.fingerDetected,
+      quality: Math.round(periodicityScore * 100),
+      confidence: confidence,
       rhythmDetected: this.validator.isFingerDetected(),
       signalStrength: amplitude,
       lastUpdate: Date.now(),
-      feedback
+      feedback: this.generateFeedback(allCriteria, amplitude, isFlat, isSaturated, snr, cv, hasJump, physiologicalShape)
     };
+    
+    return this._lastResult;
   }
 
-  private calculateSignalQuality(): number {
-    if (this.signalHistory.length < 30) return 0;
-    
-    const recentSignals = this.signalHistory.slice(-30);
-    const mean = recentSignals.reduce((sum, val) => sum + val, 0) / recentSignals.length;
-    const variance = recentSignals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentSignals.length;
-    
-    // Normalize quality score between 0-100
-    const amplitude = Math.max(...recentSignals) - Math.min(...recentSignals);
-    const baseQuality = Math.min(100, Math.max(0, (amplitude / this.config.minSignalAmplitude) * 50));
-    const stabilityScore = Math.min(50, Math.max(0, (1 - Math.sqrt(variance)) * 50));
-    
-    return Math.round(baseQuality + stabilityScore);
+  private calculateConfidence(amplitude: number, fingerDetected: boolean, periodicity: number, snr: number, cv: number, noJump: boolean, shape: boolean): number {
+    const amplitudeScore = Math.min(1, amplitude / (this.config.minSignalAmplitude * 3));
+    const periodicityScore = periodicity;
+    const snrScore = snr > 15 ? 1 : snr / 15;
+    const cvScore = 1 - cv;
+    const jumpScore = noJump ? 1 : 0;
+    const shapeScore = shape ? 1 : 0;
+
+    const combined = 0.3 * amplitudeScore + 0.3 * periodicityScore + 0.2 * snrScore + 0.1 * cvScore + 0.1 * jumpScore + 0.1 * shapeScore;
+    return Math.min(1, combined);
   }
 
-  private calculateConfidence(signalStrength: number, rhythmDetected: boolean, quality: number): number {
-    const strengthScore = Math.min(1, signalStrength / (this.config.minSignalAmplitude * 2));
-    const qualityScore = quality / 100;
-    const rhythmScore = rhythmDetected ? 1 : 0;
-    
-    return (strengthScore * 0.3 + qualityScore * 0.4 + rhythmScore * 0.3);
-  }
-
-  private determineFingerPresence(signalStrength: number, rhythmDetected: boolean, quality: number): boolean {
-    return (
-      signalStrength >= this.config.minSignalAmplitude &&
-      quality >= this.config.minQualityThreshold &&
-      rhythmDetected
-    );
-  }
-
-  private generateFeedback(isFingerDetected: boolean, quality: number, signalStrength: number, rhythmDetected: boolean): string {
-    if (!isFingerDetected) {
-      if (signalStrength < this.config.minSignalAmplitude) {
-        return "Señal muy débil - Asegure que su dedo cubra completamente la cámara";
-      }
-      if (!rhythmDetected) {
-        return "No se detecta ritmo cardíaco - Mantenga el dedo quieto";
-      }
-      if (quality < this.config.minQualityThreshold) {
-        return "Calidad de señal baja - Ajuste la posición del dedo";
-      }
+  private generateFeedback(allCriteria: boolean, amplitude: number, isFlat: boolean, isSaturated: boolean, snr: number, cv: number, hasJump: boolean, shape: boolean): string {
+    if (!allCriteria) {
+      if (amplitude < 0.025) return "Amplitud insuficiente: asegure el dedo correctamente";
+      if (isFlat) return "Señal plana detectada: ajuste la presión del dedo";
+      if (isSaturated) return "Saturación detectada: ajuste la presión del dedo";
+      if (snr < 12) return "Relación señal/ruido insuficiente (SNR < 12dB)";
+      if (cv >= 0.14) return "Variabilidad irregular en señal";
+      if (hasJump) return "Saltos bruscos detectados: mantenga el dedo quieto";
+      if (!shape) return "Forma de onda no fisiológica";
+      if (!this.validator.isFingerDetected()) return "No se detecta patrón fisiológico";
     }
-    return "Señal OK";
+    return "Señal fisiológica detectada";
   }
 
   private handleUserFeedback(isFingerDetected: boolean, quality: number, rhythmDetected: boolean): void {
@@ -212,9 +232,9 @@ class FingerDetectionService {
 
     if (!isFingerDetected) {
       if (quality < this.config.minQualityThreshold) {
-        toast.warning("Ajuste la posición del dedo sobre la cámara");
+        toast.warning("Por favor, ajuste la posición del dedo sobre la cámara.");
       } else if (!rhythmDetected) {
-        toast.warning("Mantenga el dedo quieto para detectar el ritmo cardíaco");
+        toast.warning("Mantenga el dedo quieto para detectar el ritmo cardíaco.");
       }
       this.lastNotificationTime = now;
     }
@@ -226,8 +246,11 @@ class FingerDetectionService {
     this.bandpassFilter.reset();
     this.validator.resetFingerDetection();
     this.lastNotificationTime = 0;
+    this.fingerDetectionWindow = 0;
+    this.fingerDetected = false;
     console.log("FingerDetectionService: Reset completed");
   }
 }
 
 export const fingerDetectionService = FingerDetectionService.getInstance();
+
