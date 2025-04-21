@@ -14,7 +14,6 @@ export interface UseVitalSignsProcessorReturn {
   processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
   reset: () => VitalSignsResult | null;
   fullReset: () => void;
-  applyBloodPressureCalibration: (systolic: number, diastolic: number) => void;
   arrhythmiaCounter: number;
   lastValidResults: VitalSignsResult | null;
   arrhythmiaWindows: ArrhythmiaWindow[];

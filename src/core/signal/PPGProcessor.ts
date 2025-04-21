@@ -1,7 +1,7 @@
+
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
-import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
 
 export class PPGProcessor {
   // Configuración unificada con valores optimizados
@@ -221,7 +221,3 @@ export class PPGProcessor {
     this.onError?.(error);
   }
 }
-
-// Registrar el archivo y la tarea única globalmente (fuera de la clase)
-antiRedundancyGuard.registerFile('src/core/signal/PPGProcessor.ts');
-antiRedundancyGuard.registerTask('PPGProcessorSingleton');

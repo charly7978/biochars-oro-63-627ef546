@@ -1,13 +1,12 @@
+
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Functions for signal processing logic, working with real data only
  */
 
 import { useRef, useCallback } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
-import { ProcessedSignal } from '@/types/signal';
-import { RRData } from '@/core/signal/PeakDetector';
 
 /**
  * Hook for processing signal using the VitalSignsProcessor
@@ -19,38 +18,60 @@ export const useSignalProcessing = () => {
   const processedSignals = useRef<number>(0);
   const signalLog = useRef<{timestamp: number, value: number, result: any}[]>([]);
   
-  // Define the type for the processSignal function return value
-  type ProcessSignalType = (value: number, rrData?: RRData) => VitalSignsResult | null;
-
   /**
-   * Process the raw PPG signal value
-   * Returns null if processing fails.
+   * Process PPG signal directly
+   * No simulation or reference values
    */
-  const processSignal = useCallback<ProcessSignalType>((value: number, rrData?: RRData) => {
+  const processSignal = useCallback((
+    value: number, 
+    rrData?: { intervals: number[], lastPeakTime: number | null },
+    isWeakSignal: boolean = false
+  ): VitalSignsResult => {
     if (!processorRef.current) {
-      console.error("useVitalSignsProcessor: Processor not initialized");
-      return null; // Return null if processor is not ready
+      console.log("useVitalSignsProcessor: Processor not initialized");
+      return ResultFactory.createEmptyResults();
     }
-
+    
+    processedSignals.current++;
+    
+    // If too many weak signals, return zeros
+    if (isWeakSignal) {
+      return ResultFactory.createEmptyResults();
+    }
+    
+    // Logging for diagnostics
+    if (processedSignals.current % 45 === 0) {
+      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
+        inputValue: value,
+        rrDataPresent: !!rrData,
+        rrIntervals: rrData?.intervals.length || 0,
+        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        signalNumber: processedSignals.current
+      });
+    }
+    
     try {
-      processedSignals.current++;
+      // Process signal directly - no simulation
+      // Important: We've changed this to handle sync processing only, avoiding Promise issues
+      let result = processorRef.current.processSignal(value, rrData);
       
-      const result = processorRef.current.processSignal(
-        value, // Use the raw value directly as primary optimized value for now
-        {
-          rawValue: value,
-          filteredValue: value, // Pass raw value as filtered for now, assuming processor handles filtering
-          timestamp: Date.now(),
-          quality: 100, // Assume quality is handled within the processor, pass default
-          fingerDetected: true, // Assume finger detection is handled elsewhere or default
-          roi: { x: 0, y: 0, width: 0, height: 0 } // Default ROI
-        },
-        rrData
-      );
-      
-      if (!result) {
-        console.warn("useVitalSignsProcessor: processSignal returned null or undefined");
-        return null; // Return null if processor returns no result
+      // Add null checks for arrhythmia status
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
+        
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        }
       }
       
       // Log processed signals
@@ -69,8 +90,8 @@ export const useSignalProcessing = () => {
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return null on error instead of empty results
-      return null; 
+      // Return safe fallback values on error
+      return ResultFactory.createEmptyResults();
     }
   }, []);
 
@@ -88,19 +109,6 @@ export const useSignalProcessing = () => {
   }, []);
 
   /**
-   * Apply blood pressure calibration to the processor
-   */
-  const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number) => {
-    if (!processorRef.current) {
-      console.error("useVitalSignsProcessor: Cannot calibrate - processor not initialized");
-      return;
-    }
-    
-    processorRef.current.applyBloodPressureCalibration(systolic, diastolic);
-    console.log("useVitalSignsProcessor: Blood pressure calibration applied", { systolic, diastolic });
-  }, []);
-
-  /**
    * Reset the processor
    * No simulations or reference values
    */
@@ -114,7 +122,7 @@ export const useSignalProcessing = () => {
     console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
     return null;
   }, []);
-
+  
   /**
    * Perform full reset - clear all data
    * No simulations or reference values
@@ -153,7 +161,6 @@ export const useSignalProcessing = () => {
     initializeProcessor,
     reset,
     fullReset,
-    applyBloodPressureCalibration,
     getArrhythmiaCounter,
     getDebugInfo,
     processorRef,
