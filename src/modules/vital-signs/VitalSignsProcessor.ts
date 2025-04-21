@@ -17,7 +17,6 @@ import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem
 import { ProcessedSignal } from '@/types/signal';
 import { RRData } from '@/core/signal/PeakDetector';
 import { HemoglobinEstimator } from '@/core/analysis/HemoglobinEstimator';
-import { CircularBuffer } from '@/utils/CircularBuffer';
 
 // Instancia global o de clase del optimizador para todos los canales relevantes
 const optimizerManager = new SignalOptimizerManager({
@@ -51,7 +50,8 @@ export class VitalSignsProcessor {
 
   // Estado interno
   private lastValidResult: VitalSignsResult | null = null;
-  private ppgBuffer: CircularBuffer = new CircularBuffer(150); // Buffer circular para el valor OPTIMIZADO principal
+  private ppgBuffer: number[] = []; // Buffer para el valor OPTIMIZADO principal
+  private readonly BUFFER_SIZE = 150; // Tamaño de buffer para cálculos
   private processingCount = 0;
 
   /**
@@ -111,10 +111,11 @@ export class VitalSignsProcessor {
     }
 
     // Push optimized main PPG value into buffer
-    this.ppgBuffer.push({ time: Date.now(), value: primaryOptimizedValue });
+    this.ppgBuffer.push(primaryOptimizedValue);
+    if (this.ppgBuffer.length > this.BUFFER_SIZE) this.ppgBuffer.shift();
 
-    if (this.ppgBuffer.length < this.ppgBuffer.capacity * 0.3) {
-      console.log(`VitalSignsProcessor: PPG buffer insufficient (${this.ppgBuffer.length}/${this.ppgBuffer.capacity})`);
+    if (this.ppgBuffer.length < this.BUFFER_SIZE * 0.3) {
+      console.log(`VitalSignsProcessor: PPG buffer insufficient (${this.ppgBuffer.length}/${this.BUFFER_SIZE})`);
       return ResultFactory.createEmptyResults();
     }
 
@@ -131,10 +132,10 @@ export class VitalSignsProcessor {
 
     try {
       // SpO2 calculation with direct signal buffer
-      spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer.getPoints().map(p => p.value));
+      spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer);
 
       // Blood pressure calculation using neural model with calibration check
-      pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.getPoints().map(p => p.value));
+      pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
 
       // Enhanced arrhythmia detection using RR intervals with real-time validation
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
@@ -143,14 +144,14 @@ export class VitalSignsProcessor {
       }
 
       // Glucose and lipid processing 
-      glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer.getPoints().map(p => p.value));
-      lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer.getPoints().map(p => p.value));
+      glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
+      lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
 
       // Hemoglobin estimation based on SpO2 with valid signal
       hemoglobin = this.calculateDefaultHemoglobin(spo2);
 
       // Hydration estimation from PPG signal shape and variability
-      hydration = this.hydrationEstimator.analyze(this.ppgBuffer.getPoints().map(p => p.value));
+      hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
 
       if (this.processingCount % 5 === 0) {
         console.log("VitalSignsProcessor: Results", {
@@ -241,7 +242,7 @@ export class VitalSignsProcessor {
     this.signalValidator.resetFingerDetection();
     
     const result = this.lastValidResult;
-    this.ppgBuffer.clear();
+    this.ppgBuffer = []; // Limpiar buffer principal
     this.lastValidResult = null;
     this.processingCount = 0;
     
