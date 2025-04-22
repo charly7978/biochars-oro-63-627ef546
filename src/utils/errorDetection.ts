@@ -1,3 +1,7 @@
+
+// Corrección del tipo variante para Alert donde "warning" no está permitido, por lo tanto reemplazamos "warning" por "destructive" o eliminamos.
+
+// También corregimos que al usar "destructive" en el código no se use el string "warning" en lugar de "destructive" para evitar error TS2322
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -11,8 +15,7 @@ const alertVariants = cva(
         default: "bg-background text-foreground",
         destructive:
           "border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive",
-        // Fix: Replace any usage of "warning" to "destructive" or add "warning" to allowed type
-        // variant: "warning" is replaced with "destructive"
+        // Eliminamos 'warning' del tipo ya que no está incluido en los tipos permitidos
         success: 
           "border-green-500/50 text-green-600 dark:border-green-500 dark:text-green-400 [&>svg]:text-green-500",
       },

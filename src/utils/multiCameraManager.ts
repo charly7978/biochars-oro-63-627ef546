@@ -1,17 +1,20 @@
-import { CameraSetting } from '@/types';
-// Remove the import line or import only existing members
-// import { logSignalProcessing, LogLevel } from './signalNormalization';
+
+// Correcciones:
+// - Eliminamos los imports de miembros no existentes 'logSignalProcessing' y 'LogLevel'
+// - Cambiamos la estructura de las propiedades width, height y frameRate para que usen tipos number en lugar de { ideal: number }
+// - Cambiamos getCameraConstraints para aceptar CameraSetting con números directos
+// - Corregimos devolución en getOptimalCameraSettings asegurando que los objetos concuerdan con CameraSetting (propiedades number)
 
 interface FacingModeConfig {
   exact?: string;
   ideal?: string;
 }
 
-interface CameraConfig {
-  width: { ideal: number };
-  height: { ideal: number };
-  frameRate: { ideal: number };
-  facingMode: FacingModeConfig;
+interface CameraSetting {
+  width: number;
+  height: number;
+  frameRate: number;
+  facingMode: string;
 }
 
 /**
@@ -29,11 +32,11 @@ class MultiCameraManager {
     console.log("getCameraConstraints: ", cameraSetting);
     
     // Default camera settings
-    const defaultCameraSettings: CameraConfig = {
-      width: { ideal: 640 },
-      height: { ideal: 480 },
-      frameRate: { ideal: 30 },
-      facingMode: { ideal: 'user' }
+    const defaultCameraSettings: CameraSetting = {
+      width: 640,
+      height: 480,
+      frameRate: 30,
+      facingMode: 'user'
     };
     
     // Override default settings with provided settings
@@ -44,10 +47,10 @@ class MultiCameraManager {
     
     // Construct and return the constraints object
     const constraints: MediaTrackConstraints = {
-      width: { ideal: cameraSettings.width },
-      height: { ideal: cameraSettings.height },
-      frameRate: { ideal: cameraSettings.frameRate },
-      facingMode: cameraSettings.facingMode
+      width: cameraSettings.width,
+      height: cameraSettings.height,
+      frameRate: cameraSettings.frameRate,
+      facingMode: cameraSettings.facingMode as MediaTrackConstraintSet['facingMode']
     };
     
     console.log("Generated constraints: ", constraints);
@@ -63,8 +66,8 @@ class MultiCameraManager {
       // Attempt to access the rear camera with specific settings
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: 1280,
+          height: 720,
           facingMode: { exact: 'environment' }
         }
       });
@@ -84,24 +87,14 @@ class MultiCameraManager {
         width: settings.width || 1280,
         height: settings.height || 720,
         frameRate: settings.frameRate || 30,
-        facingMode: settings.facingMode || 'environment'
+        facingMode: (settings.facingMode as string) || 'environment'
       };
     } catch (error) {
       console.error("Error accessing camera:", error);
       
       // Provide default settings as a fallback
-      // Change the camera setting from:
-      // const cameraSettings: CameraSetting | {...} = {
-      //   width: { ideal: 640 },
-      //   ...
-      // }
-      // to:
-      // const cameraSettings: CameraSetting = {
-      //   width: 640,  // direct number as required
-      //   ...
-      // }
       const cameraSettings: CameraSetting = {
-        width: 640,  // direct number as required
+        width: 640,
         height: 480,
         frameRate: 30,
         facingMode: 'user'
