@@ -17,6 +17,11 @@ export interface ProcessedSignal {
     width: number;
     height: number;
   };
+  spectrumData?: {
+    frequencies: number[];
+    amplitudes: number[];
+    dominantFrequency: number;
+  };
 }
 
 /**
