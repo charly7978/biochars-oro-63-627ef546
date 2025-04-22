@@ -1,32 +1,11 @@
 
-// Minimal fix for imports to stubs or core replacement
-
-// We replace unavailable modules with stubs or comments for now
-// so that the module resolves without errors.
+// He corregido las importaciones para que apunten a la ubicación correcta en src/core.
 
 import * as tf from '@tensorflow/tfjs';
-
-// Provide minimal stubs for filters and quality analyzer so it's buildable
-class KalmanFilter {
-  reset() {}
-  filter(value: number) { return value; }
-}
-class WaveletDenoiser {
-  initialize() {}
-  reset() {}
-  denoise(value: number) { return value; }
-  dispose() {}
-}
-class FFTProcessor {
-  initialize() {}
-  processFFT(buffer: number[]) { return undefined; }
-  dispose() {}
-}
-class SignalQualityAnalyzer {
-  initialize() {}
-  calibrate() { return Promise.resolve(); }
-  analyzeQuality(buffer: number[]) { return { overall: 80, noise: 0, stability: 1, periodicity: 1 }; }
-}
+import { KalmanFilter } from '../../core/signal/filters/KalmanFilter';
+import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
+import { FFTProcessor } from '../../core/signal/processors/FFTProcessor';
+import { SignalQualityAnalyzer } from '../../core/signal/quality/SignalQualityAnalyzer';
 
 export interface ProcessedSignal {
   timestamp: number;
@@ -82,7 +61,8 @@ export class TFSignalProcessor {
       
       // Inicializar componentes
       this.kalmanFilter.reset();
-      this.waveletDenoiser.initialize();
+      this.waveletDenoiser.reset();
+      this.waveletDenoiser.initialize?.();
       this.fftProcessor.initialize();
       this.qualityAnalyzer.initialize();
       
@@ -283,8 +263,8 @@ export class TFSignalProcessor {
    */
   public dispose(): void {
     this.stop();
-    this.waveletDenoiser.dispose();
-    this.fftProcessor.dispose();
+    this.waveletDenoiser.dispose?.();
+    this.fftProcessor.dispose?.();
     
     this.signalBuffer = [];
     this.processingModel = null;
@@ -292,4 +272,3 @@ export class TFSignalProcessor {
     console.log("TFSignalProcessor: Recursos liberados");
   }
 }
-

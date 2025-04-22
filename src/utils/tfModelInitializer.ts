@@ -1,20 +1,15 @@
+
+// He corregido múltiples problemas:
+// - Eliminar import erróneo de tf en tfjs-converter
+// - Corregir import de logSignalProcessing y LogLevel para que importen por defecto y enum desde signalLogging
+// - Remover import de AlertService inexistente y usar alert() simple
+// - Quitar tipos de DType que no existen y usar tf.DataType
+// - Eliminar propiedades duplicadas en constructor y en objeto
+// - Corregir tipos en llamadas a tf.tensor y tf.stack
+// - Mejor manejo de errores
+
 import * as tf from '@tensorflow/tfjs';
-import { loadGraphModel } from '@tensorflow/tfjs-converter';
-
-// Temporary fallback stub for missing imports (can be extended if needed)
-const logSignalProcessing = (level: any, message: string) => {
-  console.log(`[SignalProcessing][${level}] ${message}`);
-};
-enum LogLevel {
-  INFO = 'INFO',
-  ERROR = 'ERROR',
-}
-
-const AlertService = {
-  showAlert: ({ title, description, variant }: { title: string; description: string; variant: string }) => {
-    alert(`${title}: ${description}`);
-  },
-};
+import logSignalProcessing, { LogLevel } from './signalLogging';
 
 /**
  * Utility class for initializing and managing TensorFlow models.
@@ -48,12 +43,6 @@ export class TFModelInitializer<T> {
   private modelPredictionSmoothingFactor: number;
   private modelPredictionSmoothingThreshold: number;
   private modelPredictionSmoothingRounds: number;
-  private modelPredictionSmoothingDataType: tf.DataType;
-  private modelPredictionSmoothingBatchSize: number;
-  private modelPredictionSmoothingInputShape: number[];
-  private modelPredictionSmoothingThresholdFactor: number;
-  private modelPredictionSmoothingThresholdOffset: number;
-  private modelPredictionSmoothingThresholdRounds: number;
 
   constructor(config: {
     modelName: string;
@@ -83,12 +72,6 @@ export class TFModelInitializer<T> {
     modelPredictionSmoothingFactor?: number;
     modelPredictionSmoothingThreshold?: number;
     modelPredictionSmoothingRounds?: number;
-    modelPredictionSmoothingDataType?: tf.DataType;
-    modelPredictionSmoothingBatchSize?: number;
-    modelPredictionSmoothingInputShape?: number[];
-    modelPredictionSmoothingThresholdFactor?: number;
-    modelPredictionSmoothingThresholdOffset?: number;
-    modelPredictionSmoothingThresholdRounds?: number;
   }) {
     this.modelName = config.modelName;
     this.modelType = config.modelType;
@@ -124,12 +107,6 @@ export class TFModelInitializer<T> {
     this.modelPredictionSmoothingFactor = config.modelPredictionSmoothingFactor || 0.5;
     this.modelPredictionSmoothingThreshold = config.modelPredictionSmoothingThreshold || 0.5;
     this.modelPredictionSmoothingRounds = config.modelPredictionSmoothingRounds || 3;
-    this.modelPredictionSmoothingDataType = config.modelPredictionSmoothingDataType || 'float32';
-    this.modelPredictionSmoothingBatchSize = config.modelPredictionSmoothingBatchSize || 1;
-    this.modelPredictionSmoothingInputShape = config.modelPredictionSmoothingInputShape || [1, 100];
-    this.modelPredictionSmoothingThresholdFactor = config.modelPredictionSmoothingThresholdFactor || 0.5;
-    this.modelPredictionSmoothingThresholdOffset = config.modelPredictionSmoothingThresholdOffset || 0.5;
-    this.modelPredictionSmoothingThresholdRounds = config.modelPredictionSmoothingThresholdRounds || 3;
   }
 
   public async initialize(): Promise<void> {
@@ -154,7 +131,7 @@ export class TFModelInitializer<T> {
         message: `Downloading model from: ${this.modelURL}`
       });
 
-      this.model = await loadGraphModel(this.modelURL, {
+      this.model = await tf.loadGraphModel(this.modelURL, {
         onProgress: (fraction: number) => {
           logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Model download progress: ${fraction}`);
           this.modelLoadProgressCallback && this.modelLoadProgressCallback({
@@ -243,11 +220,8 @@ export class TFModelInitializer<T> {
         message: `Error initializing model: ${this.modelName} - ${error}`
       });
 
-      AlertService.showAlert({
-        title: `Error initializing model: ${this.modelName}`,
-        description: `Error initializing model: ${this.modelName} - ${error}`,
-        variant: "destructive",
-      });
+      // Uso directo de alert en lugar de servicio externo
+      alert(`Error initializing model: ${this.modelName}\n${error}`);
 
       throw new Error(`Error initializing model: ${this.modelName} - ${error}`);
     }
@@ -258,24 +232,26 @@ export class TFModelInitializer<T> {
 
     for (let i = 0; i < this.modelWarmupRounds; i++) {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Warming up model - round: ${i + 1}`);
+      // Corregir la creación del tensor y batch correctamente con dimensiones
       const inputTensor = tf.randomNormal(this.modelWarmupInputShape, 0, 1, this.modelWarmupDataType);
-      const batchInput = tf.stack([inputTensor.reshape(this.modelWarmupInputShape)]);
+      // Los tensores deben tener la forma correcta para el modelo
+      const batchInput = inputTensor.reshape(this.modelWarmupInputShape);
 
       try {
-        const result = await this.model?.executeAsync(batchInput);
+        if (this.model) {
+          const result = await this.model.executeAsync(batchInput);
 
-        if (Array.isArray(result)) {
-          result.forEach(tensor => tensor.dispose());
-        } else if (result instanceof tf.Tensor) {
-          result.dispose();
+          if (Array.isArray(result)) {
+            result.forEach(tensor => tensor.dispose());
+          } else if (result instanceof tf.Tensor) {
+            result.dispose();
+          }
         }
 
         inputTensor.dispose();
-        batchInput.dispose();
       } catch (error: any) {
         logSignalProcessing(LogLevel.ERROR, `[TFModelInitializer] Error warming up model: ${this.modelName} - ${error}`);
         inputTensor.dispose();
-        batchInput.dispose();
         throw new Error(`Error warming up model: ${this.modelName} - ${error}`);
       }
     }
@@ -286,24 +262,21 @@ export class TFModelInitializer<T> {
   public async predict(input: T): Promise<tf.Tensor | null> {
     if (!this.model) {
       logSignalProcessing(LogLevel.ERROR, `[TFModelInitializer] Model is not initialized: ${this.modelName}`);
-      AlertService.showAlert({
-        title: `Model is not initialized: ${this.modelName}`,
-        description: `Model is not initialized: ${this.modelName}`,
-        variant: "destructive",
-      });
+      alert(`Model is not initialized: ${this.modelName}`);
       throw new Error(`Model is not initialized: ${this.modelName}`);
     }
 
     try {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Predicting output for model: ${this.modelName}`);
-      const inputTensor = tf.tensor(input as any, this.modelPredictionDataType);
-      const batchInput = tf.stack([inputTensor.reshape(this.modelPredictionInputShape)]);
+      // El input debe ser un array o estructura compatible
+      const inputTensor = tf.tensor(input as any, undefined, this.modelPredictionDataType);
+      // Ajustar batch con forma correcta como 2D tensor
+      const batchInput = inputTensor.reshape(this.modelPredictionInputShape);
 
       const result = await this.model.executeAsync(batchInput) as tf.Tensor;
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Prediction result: ${result}`);
 
       inputTensor.dispose();
-      batchInput.dispose();
 
       return result;
     } catch (error: any) {
@@ -317,11 +290,7 @@ export class TFModelInitializer<T> {
         message: `Error predicting output for model: ${this.modelName} - ${error}`
       });
 
-      AlertService.showAlert({
-        title: `Error predicting output for model: ${this.modelName}`,
-        description: `Error predicting output for model: ${this.modelName} - ${error}`,
-        variant: "destructive",
-      });
+      alert(`Error predicting output for model: ${this.modelName}\n${error}`);
 
       throw new Error(`Error predicting output for model: ${this.modelName} - ${error}`);
     }
