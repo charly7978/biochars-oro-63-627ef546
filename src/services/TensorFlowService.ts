@@ -1,4 +1,3 @@
-
 import { TensorFlowWorkerClient } from '../workers/tensorflow-worker-client';
 import { detectOptimalConfig } from '../core/neural/tensorflow/TensorFlowConfig';
 import { toast } from 'sonner';
@@ -169,16 +168,12 @@ class TensorFlowService {
     if (!this.workerClient) return false;
     
     try {
-      // Store the result without evaluating it immediately
-      const result = await this.workerClient.disposeModel(modelType);
+      // Call the disposeModel method
+      await this.workerClient.disposeModel(modelType);
       
-      // Safely check the result value without testing void for truthiness
-      const success = result === true;
-      
-      if (success) {
-        this.modelStatus.set(modelType, false);
-      }
-      return success;
+      // Assuming that if no error was thrown, the operation was successful
+      this.modelStatus.set(modelType, false);
+      return true;
     } catch (error) {
       console.error(`TensorFlowService: Error liberando modelo ${modelType}`, error);
       return false;
