@@ -1,7 +1,4 @@
 
-// Corrección del tipo variante para Alert donde "warning" no está permitido, 
-// por lo tanto hemos eliminado "warning" y sustituido en el código por "destructive" o "success".
-
 import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
@@ -38,8 +35,7 @@ const Alert = React.forwardRef<
 ));
 Alert.displayName = "Alert";
 
-// Aquí corregimos el tipo para AlertTitle: 
-// El ref debe corresponderse con HTMLHeadingElement ya que es un heading (h5), y las props son React.HTMLAttributes<HTMLHeadingElement>
+// Corrección tipo para AlertTitle, ya que es un heading <h5>, el ref debe ser HTMLHeadingElement
 const AlertTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement>
@@ -52,6 +48,7 @@ const AlertTitle = React.forwardRef<
 ));
 AlertTitle.displayName = "AlertTitle";
 
+// Corrección tipo para AlertDescription, es un contenedor <div>
 const AlertDescription = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
