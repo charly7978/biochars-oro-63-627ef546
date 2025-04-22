@@ -1,4 +1,3 @@
-
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
@@ -90,7 +89,6 @@ export class PPGProcessor {
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
         perfusionIndex: perfusionIndex
       };
 
@@ -202,7 +200,7 @@ export class PPGProcessor {
     return normalizedCorrelation;
   }
 
-  private detectROI(redValue: number): ProcessedSignal['roi'] {
+  private detectROI(redValue: number): { x: number; y: number; width: number; height: number; } {
     return {
       x: 0,
       y: 0,

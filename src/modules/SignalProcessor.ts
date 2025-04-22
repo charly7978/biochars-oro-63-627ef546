@@ -1,5 +1,4 @@
-
-import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
+import { ProcessedSignal, ProcessingError, SignalProcessor as SignalProcessorInterface } from '../types/signal';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -33,7 +32,7 @@ class KalmanFilter {
  * Procesador de señales PPG (Fotopletismografía)
  * Implementa la interfaz SignalProcessor
  */
-export class PPGSignalProcessor implements SignalProcessor {
+export class PPGSignalProcessor implements SignalProcessorInterface {
   private isProcessing: boolean = false;
   private kalmanFilter: KalmanFilter;
   private lastValues: number[] = [];
@@ -228,7 +227,6 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
         perfusionIndex,
         spectrumData
       };
@@ -527,7 +525,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   /**
    * Detecta región de interés para análisis
    */
-  private detectROI(redValue: number): ProcessedSignal['roi'] {
+  private detectROI(redValue: number): { x: number; y: number; width: number; height: number; } {
     return {
       x: 0,
       y: 0,

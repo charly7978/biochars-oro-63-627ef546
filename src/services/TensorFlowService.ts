@@ -1,4 +1,3 @@
-
 import { TensorFlowWorkerClient } from '../workers/tensorflow-worker-client';
 import { detectOptimalConfig } from '../core/neural/tensorflow/TensorFlowConfig';
 import { toast } from 'sonner';
@@ -173,7 +172,7 @@ class TensorFlowService {
       if (result) {
         this.modelStatus.set(modelType, false);
       }
-      return result;
+      return result || false;
     } catch (error) {
       console.error(`TensorFlowService: Error liberando modelo ${modelType}`, error);
       return false;
