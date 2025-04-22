@@ -126,30 +126,30 @@ export class TFSignalProcessor implements SignalProcessor {
    */
   public processFrame(value: number): void {
     if (!this.isProcessing) return;
-    
+
     try {
       // Aplicar filtros básicos
       const kalmanFiltered = this.kalmanFilter.filter(value);
       const filteredValue = this.waveletDenoiser.denoise(kalmanFiltered);
-      
+
       // Actualizar buffer de señal
       this.signalBuffer.push(filteredValue);
       if (this.signalBuffer.length > this.BUFFER_SIZE) {
         this.signalBuffer.shift();
       }
-      
+
       // Actualizar línea base
       if (this.baselineValue === 0) {
         this.baselineValue = filteredValue;
       } else {
         this.baselineValue = this.baselineValue * 0.95 + filteredValue * 0.05;
       }
-      
+
       // Analizar calidad de señal
       const qualityResult = this.qualityAnalyzer.analyzeQuality(this.signalBuffer);
       const qualityScore = qualityResult.overall;
       this.lastQualityScore = qualityScore;
-      
+
       // Detección de dedo
       let isFingerDetected = false;
       if (qualityScore > this.MIN_FINGER_DETECTION_QUALITY) {
@@ -157,18 +157,18 @@ export class TFSignalProcessor implements SignalProcessor {
       } else {
         this.fingerDetectionCounter = Math.max(0, this.fingerDetectionCounter - 1);
       }
-      
+
       isFingerDetected = this.fingerDetectionCounter >= this.MIN_FINGER_DETECTION_COUNT;
-      
+
       // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
-      
+
       // Procesar espectro de frecuencia si hay suficientes datos
       let spectrumData = undefined;
       if (this.signalBuffer.length >= 64 && isFingerDetected) {
         spectrumData = this.fftProcessor.processFFT(this.signalBuffer.slice(-64));
       }
-      
+
       // Crear objeto de señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: Date.now(),
@@ -179,10 +179,10 @@ export class TFSignalProcessor implements SignalProcessor {
         perfusionIndex: perfusionIndex,
         spectrumData: spectrumData
       };
-      
+
       // Notificar señal procesada
       this.onSignalReady?.(processedSignal);
-      
+
       // Procesar calidad para análisis
       this.processQualityScore({
         quality: qualityScore,
@@ -191,7 +191,7 @@ export class TFSignalProcessor implements SignalProcessor {
         periodicity: qualityResult.periodicity,
         timestamp: Date.now()
       });
-      
+
       this.lastProcessedValue = filteredValue;
     } catch (error) {
       console.error("TFSignalProcessor: Error procesando frame", error);

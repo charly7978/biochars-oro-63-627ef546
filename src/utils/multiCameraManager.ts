@@ -77,7 +77,7 @@ class MultiCameraManager {
       
       // Stop the track and stream
       track.stop();
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(t => t.stop());
       
       // Log the detected settings
       console.log("Detected camera settings: ", settings);
@@ -91,7 +91,6 @@ class MultiCameraManager {
       };
     } catch (error) {
       console.error("Error accessing camera:", error);
-      
       // Provide default settings as a fallback
       const cameraSettings: CameraSetting = {
         width: 640,
@@ -99,10 +98,10 @@ class MultiCameraManager {
         frameRate: 30,
         facingMode: 'user'
       };
-      
       return cameraSettings;
     }
   }
 }
 
 export default MultiCameraManager;
+
