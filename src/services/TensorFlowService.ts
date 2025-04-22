@@ -187,10 +187,9 @@ class TensorFlowService {
     if (!this.workerClient) return;
     
     try {
-      const result = await this.workerClient.cleanupMemory();
+      await this.workerClient.cleanupMemory();
       this.lastCleanupTime = Date.now();
       console.log('TensorFlowService: Limpieza de memoria completada');
-      return result;
     } catch (error) {
       console.error('TensorFlowService: Error limpiando memoria', error);
       throw error;

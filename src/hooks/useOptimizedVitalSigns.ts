@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
 import { ResultFactory } from '../modules/vital-signs/factories/result-factory';
@@ -111,70 +110,98 @@ export function useOptimizedVitalSigns() {
         
         // Procesar frecuencia cardíaca con TensorFlow
         if (heartRateModel.isReady && framesProcessedRef.current % 5 === 0) {
-          try {
-            const heartRatePrediction = await heartRateModel.predict(recentBuffer.slice(-200));
-            if (heartRatePrediction.length > 0 && heartRatePrediction[0] > 40 && heartRatePrediction[0] < 200) {
-              result.heartRate = Math.round(heartRatePrediction[0]);
-            }
-          } catch (error) {
-            console.warn("Error predicting heart rate:", error);
-          }
+          // Convertimos la llamada asíncrona en síncrona con un valor temporal
+          heartRateModel.predict(recentBuffer.slice(-200))
+            .then(heartRatePrediction => {
+              if (heartRatePrediction.length > 0 && heartRatePrediction[0] > 40 && heartRatePrediction[0] < 200) {
+                result.heartRate = Math.round(heartRatePrediction[0]);
+                // Actualizar resultados 
+                if (result.heartRate > 0) {
+                  setLastValidResults(result);
+                }
+              }
+            })
+            .catch(error => {
+              console.warn("Error predicting heart rate:", error);
+            });
         }
         
         // Procesar SpO2 con TensorFlow cada 10 frames
         if (spo2Model.isReady && framesProcessedRef.current % 10 === 0) {
-          try {
-            const spo2Prediction = await spo2Model.predict(recentBuffer.slice(-150));
-            if (spo2Prediction.length > 0 && spo2Prediction[0] > 80 && spo2Prediction[0] <= 100) {
-              result.spo2 = Math.round(spo2Prediction[0]);
-            }
-          } catch (error) {
-            console.warn("Error predicting SpO2:", error);
-          }
+          // Convertimos la llamada asíncrona en síncrona con un valor temporal
+          spo2Model.predict(recentBuffer.slice(-150))
+            .then(spo2Prediction => {
+              if (spo2Prediction.length > 0 && spo2Prediction[0] > 80 && spo2Prediction[0] <= 100) {
+                result.spo2 = Math.round(spo2Prediction[0]);
+                // Actualizar resultados 
+                if (result.heartRate > 0) {
+                  setLastValidResults(result);
+                }
+              }
+            })
+            .catch(error => {
+              console.warn("Error predicting SpO2:", error);
+            });
         }
         
         // Procesar presión arterial cada 20 frames
         if (bpModel.isReady && framesProcessedRef.current % 20 === 0) {
-          try {
-            const bpPrediction = await bpModel.predict(recentBuffer.slice(-250));
-            if (bpPrediction.length >= 2) {
-              const systolic = Math.round(bpPrediction[0]);
-              const diastolic = Math.round(bpPrediction[1]);
-              
-              if (systolic > 70 && systolic < 200 && diastolic > 40 && diastolic < 120 && systolic > diastolic) {
-                result.pressure = `${systolic}/${diastolic}`;
+          // Convertimos la llamada asíncrona en síncrona con un valor temporal
+          bpModel.predict(recentBuffer.slice(-250))
+            .then(bpPrediction => {
+              if (bpPrediction.length >= 2) {
+                const systolic = Math.round(bpPrediction[0]);
+                const diastolic = Math.round(bpPrediction[1]);
+                
+                if (systolic > 70 && systolic < 200 && diastolic > 40 && diastolic < 120 && systolic > diastolic) {
+                  result.pressure = `${systolic}/${diastolic}`;
+                  // Actualizar resultados 
+                  if (result.heartRate > 0) {
+                    setLastValidResults(result);
+                  }
+                }
               }
-            }
-          } catch (error) {
-            console.warn("Error predicting blood pressure:", error);
-          }
+            })
+            .catch(error => {
+              console.warn("Error predicting blood pressure:", error);
+            });
         }
         
         // Detectar arritmias cada 15 frames si hay suficientes datos RR
         if (arrhythmiaModel.isReady && framesProcessedRef.current % 15 === 0 && rrIntervalsRef.current.length >= 5) {
-          try {
-            // Preparar datos para detección de arritmia
-            const rrFeatures = processRRIntervalsForArrhythmia(rrIntervalsRef.current);
-            const arrhythmiaPrediction = await arrhythmiaModel.predict(rrFeatures);
-            
-            if (arrhythmiaPrediction.length >= 2) {
-              const isArrhythmia = arrhythmiaPrediction[1] > 0.65; // Umbral de confianza
-              
-              if (isArrhythmia) {
-                lastArrhythmiaTimeRef.current = Date.now();
-                result.arrhythmiaStatus = "ARRITMIA DETECTADA|1";
-                result.lastArrhythmiaData = {
-                  timestamp: Date.now(),
-                  rmssd: calculateRMSSD(rrIntervalsRef.current),
-                  rrVariation: calculateRRVariation(rrIntervalsRef.current)
-                };
-              } else {
-                result.arrhythmiaStatus = "RITMO NORMAL|0";
+          // Preparar datos para detección de arritmia
+          const rrFeatures = processRRIntervalsForArrhythmia(rrIntervalsRef.current);
+          
+          // Convertimos la llamada asíncrona en síncrona con un valor temporal
+          arrhythmiaModel.predict(rrFeatures)
+            .then(arrhythmiaPrediction => {
+              if (arrhythmiaPrediction.length >= 2) {
+                const isArrhythmia = arrhythmiaPrediction[1] > 0.65; // Umbral de confianza
+                
+                if (isArrhythmia) {
+                  lastArrhythmiaTimeRef.current = Date.now();
+                  result.arrhythmiaStatus = "ARRITMIA DETECTADA|1";
+                  result.lastArrhythmiaData = {
+                    timestamp: Date.now(),
+                    rmssd: calculateRMSSD(rrIntervalsRef.current),
+                    rrVariation: calculateRRVariation(rrIntervalsRef.current)
+                  };
+                  // Actualizar resultados 
+                  if (result.heartRate > 0) {
+                    setLastValidResults(result);
+                  }
+                } else {
+                  result.arrhythmiaStatus = "RITMO NORMAL|0";
+                  // Actualizar resultados 
+                  if (result.heartRate > 0) {
+                    setLastValidResults(result);
+                  }
+                }
               }
-            }
-          } catch (error) {
-            console.warn("Error detecting arrhythmia:", error);
-          }
+            })
+            .catch(error => {
+              console.warn("Error detecting arrhythmia:", error);
+            });
         }
         
         // Procesar glucosa, hemoglobina y otros parámetros cada 30 frames
@@ -190,11 +217,11 @@ export function useOptimizedVitalSigns() {
             totalCholesterol: lipids.totalCholesterol,
             triglycerides: lipids.triglycerides
           };
-        }
-        
-        // Guardar resultados válidos
-        if (result.heartRate > 0) {
-          setLastValidResults(result);
+          
+          // Actualizar resultados válidos
+          if (result.heartRate > 0) {
+            setLastValidResults(result);
+          }
         }
         
         return result;

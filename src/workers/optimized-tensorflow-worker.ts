@@ -1,4 +1,3 @@
-
 /**
  * Web Worker optimizado para procesamiento con TensorFlow.js
  * Ejecuta inferencia de modelos en segundo plano con máximo rendimiento
@@ -270,7 +269,7 @@ function createOptimizedFallbackModel(modelType: string): tf.LayersModel {
   const input = tf.input({shape: inputShape.length === 2 ? inputShape : [inputShape[0], inputShape[1]]});
   
   // Reshape para asegurar compatibilidad con Conv1D (necesita 3D)
-  let x: tf.SymbolicTensor;
+  let x: tf.SymbolicTensor | any;
   if (inputShape.length === 2) {
     x = tf.layers.reshape({targetShape: [inputShape[0], 1]}).apply(input);
   } else {

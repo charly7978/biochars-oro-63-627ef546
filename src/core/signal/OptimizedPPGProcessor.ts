@@ -1,4 +1,3 @@
-
 import { ProcessedSignal } from '../../types/signal';
 
 /**
@@ -115,10 +114,9 @@ export class OptimizedPPGProcessor {
     
     return {
       timestamp,
-      rawRedValue: avgRed,
+      rawValue: intensity,
       rawGreenValue: avgGreen, 
       rawBlueValue: avgBlue,
-      rawValue: intensity,
       filteredValue: normalizedValue,
       fingerDetected: this.fingerDetected,
       quality: this.signalQuality
