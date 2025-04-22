@@ -1,4 +1,3 @@
-
 // He corregido múltiples problemas:
 // - Eliminar import erróneo de tf en tfjs-converter
 // - Corregir import de logSignalProcessing y LogLevel para que importen por defecto y enum desde signalLogging
@@ -232,9 +231,15 @@ export class TFModelInitializer<T> {
 
     for (let i = 0; i < this.modelWarmupRounds; i++) {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Warming up model - round: ${i + 1}`);
-      // Corregir la creación del tensor y batch correctamente con dimensiones
-      const inputTensor = tf.randomNormal(this.modelWarmupInputShape, 0, 1, this.modelWarmupDataType);
-      // Los tensores deben tener la forma correcta para el modelo
+
+      // Crear tensor con tipo compatible (float32 o int32)
+      const inputTensor = tf.randomNormal(
+        this.modelWarmupInputShape,
+        0,
+        1,
+        // Hacemos cast a DataType válido explícito para evitar error TS
+        this.modelWarmupDataType as 'float32' | 'int32'
+      );
       const batchInput = inputTensor.reshape(this.modelWarmupInputShape);
 
       try {
@@ -268,9 +273,12 @@ export class TFModelInitializer<T> {
 
     try {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Predicting output for model: ${this.modelName}`);
-      // El input debe ser un array o estructura compatible
-      const inputTensor = tf.tensor(input as any, undefined, this.modelPredictionDataType);
-      // Ajustar batch con forma correcta como 2D tensor
+
+      const inputTensor = tf.tensor(
+        input as any,
+        undefined,
+        this.modelPredictionDataType as 'float32' | 'int32'
+      );
       const batchInput = inputTensor.reshape(this.modelPredictionInputShape);
 
       const result = await this.model.executeAsync(batchInput) as tf.Tensor;

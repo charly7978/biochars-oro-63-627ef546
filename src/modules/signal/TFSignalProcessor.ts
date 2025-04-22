@@ -1,4 +1,3 @@
-
 // He corregido las importaciones para que apunten a la ubicación correcta en src/core.
 
 import * as tf from '@tensorflow/tfjs';
@@ -62,7 +61,6 @@ export class TFSignalProcessor {
       // Inicializar componentes
       this.kalmanFilter.reset();
       this.waveletDenoiser.reset();
-      this.waveletDenoiser.initialize?.();
       this.fftProcessor.initialize();
       this.qualityAnalyzer.initialize();
       
@@ -263,12 +261,11 @@ export class TFSignalProcessor {
    */
   public dispose(): void {
     this.stop();
-    this.waveletDenoiser.dispose?.();
     this.fftProcessor.dispose?.();
-    
+
     this.signalBuffer = [];
     this.processingModel = null;
-    
+
     console.log("TFSignalProcessor: Recursos liberados");
   }
 }
