@@ -1,50 +1,46 @@
 import * as tf from '@tensorflow/tfjs';
-import { loadGraphModel, tf as tfl } from '@tensorflow/tfjs-converter';
+import { loadGraphModel } from '@tensorflow/tfjs-converter';
 
-import {
-  ModelConfig,
-  TFModel,
-  ModelLoadProgressCallback,
-  ModelLoadErrorCallback,
-  ModelLoadSuccessCallback,
-  ModelDownloadProgressCallback,
-  ModelDownloadErrorCallback,
-  ModelDownloadSuccessCallback,
-  ModelInitializeProgressCallback,
-  ModelInitializeErrorCallback,
-  ModelInitializeSuccessCallback,
-  ModelPredictionCallback,
-  ModelPredictionErrorCallback,
-} from '../types/tf';
-import { logSignalProcessing, LogLevel } from './signalLogging';
-import { AlertService } from '../services/AlertService';
+// Temporary fallback stub for missing imports (can be extended if needed)
+const logSignalProcessing = (level: any, message: string) => {
+  console.log(`[SignalProcessing][${level}] ${message}`);
+};
+enum LogLevel {
+  INFO = 'INFO',
+  ERROR = 'ERROR',
+}
+
+const AlertService = {
+  showAlert: ({ title, description, variant }: { title: string; description: string; variant: string }) => {
+    alert(`${title}: ${description}`);
+  },
+};
 
 /**
  * Utility class for initializing and managing TensorFlow models.
  */
 export class TFModelInitializer<T> {
   private model: tf.GraphModel | null = null;
-  private modelConfig: ModelConfig;
   private modelName: string;
   private modelType: string;
   private modelURL: string;
   private quantizationType: string;
-  private modelLoadProgressCallback?: ModelLoadProgressCallback;
-  private modelLoadErrorCallback?: ModelLoadErrorCallback;
-  private modelLoadSuccessCallback?: ModelLoadSuccessCallback;
-  private modelDownloadProgressCallback?: ModelDownloadProgressCallback;
-  private modelDownloadErrorCallback?: ModelDownloadErrorCallback;
-  private modelDownloadSuccessCallback?: ModelDownloadSuccessCallback;
-  private modelInitializeProgressCallback?: ModelInitializeProgressCallback;
-  private modelInitializeErrorCallback?: ModelInitializeErrorCallback;
-  private modelInitializeSuccessCallback?: ModelInitializeSuccessCallback;
-  private modelPredictionCallback?: ModelPredictionCallback;
-  private modelPredictionErrorCallback?: ModelPredictionErrorCallback;
+  private modelLoadProgressCallback?: (info: any) => void;
+  private modelLoadErrorCallback?: (info: any) => void;
+  private modelLoadSuccessCallback?: (info: any) => void;
+  private modelDownloadProgressCallback?: (info: any) => void;
+  private modelDownloadErrorCallback?: (info: any) => void;
+  private modelDownloadSuccessCallback?: (info: any) => void;
+  private modelInitializeProgressCallback?: (info: any) => void;
+  private modelInitializeErrorCallback?: (info: any) => void;
+  private modelInitializeSuccessCallback?: (info: any) => void;
+  private modelPredictionCallback?: (info: any) => void;
+  private modelPredictionErrorCallback?: (info: any) => void;
   private modelWarmupRounds: number;
   private modelWarmupBatchSize: number;
   private modelWarmupInputShape: number[];
-  private modelWarmupDataType: tf.DType;
-  private modelPredictionDataType: tf.DType;
+  private modelWarmupDataType: tf.DataType;
+  private modelPredictionDataType: tf.DataType;
   private modelPredictionBatchSize: number;
   private modelPredictionInputShape: number[];
   private modelPredictionRounds: number;
@@ -52,38 +48,48 @@ export class TFModelInitializer<T> {
   private modelPredictionSmoothingFactor: number;
   private modelPredictionSmoothingThreshold: number;
   private modelPredictionSmoothingRounds: number;
-  private modelPredictionSmoothingDataType: tf.DType;
+  private modelPredictionSmoothingDataType: tf.DataType;
   private modelPredictionSmoothingBatchSize: number;
   private modelPredictionSmoothingInputShape: number[];
   private modelPredictionSmoothingThresholdFactor: number;
   private modelPredictionSmoothingThresholdOffset: number;
   private modelPredictionSmoothingThresholdRounds: number;
-  private modelPredictionSmoothingThresholdDataType: tf.DType;
-  private modelPredictionSmoothingThresholdBatchSize: number;
-  private modelPredictionSmoothingThresholdInputShape: number[];
-  private modelPredictionSmoothingThresholdThresholdFactor: number;
-  private modelPredictionSmoothingThresholdThresholdOffset: number;
-  private modelPredictionSmoothingThresholdThresholdRounds: number;
-  private modelPredictionSmoothingThresholdThresholdDataType: tf.DType;
-  private modelPredictionSmoothingThresholdThresholdBatchSize: number;
-  private modelPredictionSmoothingThresholdThresholdInputShape: number[];
-  private modelPredictionSmoothingThresholdThresholdThresholdFactor: number;
-  private modelPredictionSmoothingThresholdThresholdOffset: number;
-  private modelPredictionSmoothingThresholdThresholdThresholdRounds: number;
-  private modelPredictionSmoothingThresholdThresholdThresholdDataType: tf.DType;
-  private modelPredictionSmoothingThresholdThresholdBatchSize: number;
-  private modelPredictionSmoothingThresholdThresholdInputShape: number[];
-  private modelPredictionSmoothingThresholdThresholdThresholdFactor: number;
-  private modelPredictionSmoothingThresholdThresholdOffset: number;
-  private modelPredictionSmoothingThresholdThresholdRounds: number;
-  private modelPredictionSmoothingThresholdThresholdDataType: tf.DType;
-  private modelPredictionSmoothingThresholdThresholdBatchSize: number;
 
-  /**
-   * Constructor for TFModelInitializer.
-   * @param {TFModel} config - The configuration object for the TensorFlow model.
-   */
-  constructor(config: TFModel) {
+  constructor(config: {
+    modelName: string;
+    modelType: string;
+    modelURL: string;
+    quantizationType: string;
+    modelLoadProgressCallback?: (info: any) => void;
+    modelLoadErrorCallback?: (info: any) => void;
+    modelLoadSuccessCallback?: (info: any) => void;
+    modelDownloadProgressCallback?: (info: any) => void;
+    modelDownloadErrorCallback?: (info: any) => void;
+    modelDownloadSuccessCallback?: (info: any) => void;
+    modelInitializeProgressCallback?: (info: any) => void;
+    modelInitializeErrorCallback?: (info: any) => void;
+    modelInitializeSuccessCallback?: (info: any) => void;
+    modelPredictionCallback?: (info: any) => void;
+    modelPredictionErrorCallback?: (info: any) => void;
+    modelWarmupRounds?: number;
+    modelWarmupBatchSize?: number;
+    modelWarmupInputShape?: number[];
+    modelWarmupDataType?: tf.DataType;
+    modelPredictionDataType?: tf.DataType;
+    modelPredictionBatchSize?: number;
+    modelPredictionInputShape?: number[];
+    modelPredictionRounds?: number;
+    modelPredictionThreshold?: number;
+    modelPredictionSmoothingFactor?: number;
+    modelPredictionSmoothingThreshold?: number;
+    modelPredictionSmoothingRounds?: number;
+    modelPredictionSmoothingDataType?: tf.DataType;
+    modelPredictionSmoothingBatchSize?: number;
+    modelPredictionSmoothingInputShape?: number[];
+    modelPredictionSmoothingThresholdFactor?: number;
+    modelPredictionSmoothingThresholdOffset?: number;
+    modelPredictionSmoothingThresholdRounds?: number;
+  }) {
     this.modelName = config.modelName;
     this.modelType = config.modelType;
     this.modelURL = config.modelURL;
@@ -124,76 +130,8 @@ export class TFModelInitializer<T> {
     this.modelPredictionSmoothingThresholdFactor = config.modelPredictionSmoothingThresholdFactor || 0.5;
     this.modelPredictionSmoothingThresholdOffset = config.modelPredictionSmoothingThresholdOffset || 0.5;
     this.modelPredictionSmoothingThresholdRounds = config.modelPredictionSmoothingThresholdRounds || 3;
-    this.modelPredictionSmoothingThresholdDataType = config.modelPredictionSmoothingThresholdDataType || 'float32';
-    this.modelPredictionSmoothingThresholdBatchSize = config.modelPredictionSmoothingThresholdBatchSize || 1;
-    this.modelPredictionSmoothingThresholdInputShape = config.modelPredictionSmoothingThresholdInputShape || [1, 100];
-    this.modelPredictionSmoothingThresholdThresholdFactor = config.modelPredictionSmoothingThresholdThresholdFactor || 0.5;
-    this.modelPredictionSmoothingThresholdThresholdOffset = config.modelPredictionSmoothingThresholdThresholdOffset || 0.5;
-    this.modelPredictionSmoothingThresholdThresholdRounds = config.modelPredictionSmoothingThresholdThresholdRounds || 3;
-    this.modelPredictionSmoothingThresholdThresholdDataType = config.modelPredictionSmoothingThresholdThresholdDataType || 'float32';
-    this.modelPredictionSmoothingThresholdThresholdBatchSize = config.modelPredictionSmoothingThresholdThresholdBatchSize || 1;
-    this.modelPredictionSmoothingThresholdThresholdInputShape = config.modelPredictionSmoothingThresholdThresholdInputShape || [1, 100];
-    this.modelPredictionSmoothingThresholdThresholdThresholdFactor = config.modelPredictionSmoothingThresholdThresholdThresholdFactor || 0.5;
-    this.modelPredictionSmoothingThresholdThresholdOffset = config.modelPredictionSmoothingThresholdThresholdOffset || 0.5;
-    this.modelPredictionSmoothingThresholdThresholdRounds = config.modelPredictionSmoothingThresholdThresholdRounds || 3;
-    this.modelPredictionSmoothingThresholdThresholdThresholdDataType = config.modelPredictionSmoothingThresholdThresholdThresholdDataType || 'float32';
-    this.modelPredictionSmoothingThresholdThresholdBatchSize = config.modelPredictionSmoothingThresholdThresholdBatchSize || 1;
-
-    this.modelConfig = {
-      modelName: this.modelName,
-      modelType: this.modelType,
-      modelURL: this.modelURL,
-      quantizationType: this.quantizationType,
-      modelLoadProgressCallback: this.modelLoadProgressCallback,
-      modelLoadErrorCallback: this.modelLoadErrorCallback,
-      modelLoadSuccessCallback: this.modelLoadSuccessCallback,
-      modelDownloadProgressCallback: this.modelDownloadProgressCallback,
-      modelDownloadErrorCallback: this.modelDownloadErrorCallback,
-      modelDownloadSuccessCallback: this.modelDownloadSuccessCallback,
-      modelInitializeProgressCallback: this.modelInitializeProgressCallback,
-      modelInitializeErrorCallback: this.modelInitializeErrorCallback,
-      modelInitializeSuccessCallback: this.modelInitializeSuccessCallback,
-      modelPredictionCallback: this.modelPredictionCallback,
-      modelPredictionErrorCallback: this.modelPredictionErrorCallback,
-      modelWarmupRounds: this.modelWarmupRounds,
-      modelWarmupBatchSize: this.modelWarmupBatchSize,
-      modelWarmupInputShape: this.modelWarmupInputShape,
-      modelWarmupDataType: this.modelWarmupDataType,
-      modelPredictionDataType: this.modelPredictionDataType,
-      modelPredictionBatchSize: this.modelPredictionBatchSize,
-      modelPredictionInputShape: this.modelPredictionInputShape,
-      modelPredictionRounds: this.modelPredictionRounds,
-      modelPredictionThreshold: this.modelPredictionThreshold,
-      modelPredictionSmoothingFactor: this.modelPredictionSmoothingFactor,
-      modelPredictionSmoothingThreshold: this.modelPredictionSmoothingThreshold,
-      modelPredictionSmoothingRounds: this.modelPredictionSmoothingRounds,
-      modelPredictionSmoothingDataType: this.modelPredictionSmoothingDataType,
-      modelPredictionSmoothingBatchSize: this.modelPredictionSmoothingBatchSize,
-      modelPredictionSmoothingInputShape: this.modelPredictionSmoothingInputShape,
-      modelPredictionSmoothingThresholdFactor: this.modelPredictionSmoothingThresholdFactor,
-      modelPredictionSmoothingThresholdOffset: this.modelPredictionSmoothingThresholdOffset,
-      modelPredictionSmoothingThresholdRounds: this.modelPredictionSmoothingThresholdRounds,
-      modelPredictionSmoothingThresholdDataType: this.modelPredictionSmoothingThresholdDataType,
-      modelPredictionSmoothingThresholdBatchSize: this.modelPredictionSmoothingThresholdBatchSize,
-      modelPredictionSmoothingThresholdInputShape: this.modelPredictionSmoothingThresholdInputShape,
-      modelPredictionSmoothingThresholdThresholdFactor: this.modelPredictionSmoothingThresholdThresholdFactor,
-      modelPredictionSmoothingThresholdThresholdOffset: this.modelPredictionSmoothingThresholdThresholdOffset,
-      modelPredictionSmoothingThresholdThresholdRounds: this.modelPredictionSmoothingThresholdThresholdRounds,
-      modelPredictionSmoothingThresholdThresholdDataType: this.modelPredictionSmoothingThresholdThresholdDataType,
-      modelPredictionSmoothingThresholdThresholdBatchSize: this.modelPredictionSmoothingThresholdThresholdBatchSize,
-      modelPredictionSmoothingThresholdThresholdInputShape: this.modelPredictionSmoothingThresholdThresholdInputShape,
-      modelPredictionSmoothingThresholdThresholdThresholdFactor: this.modelPredictionSmoothingThresholdThresholdThresholdFactor,
-      modelPredictionSmoothingThresholdThresholdOffset: this.modelPredictionSmoothingThresholdThresholdOffset,
-      modelPredictionSmoothingThresholdThresholdRounds: this.modelPredictionSmoothingThresholdThresholdRounds,
-      modelPredictionSmoothingThresholdThresholdDataType: this.modelPredictionSmoothingThresholdThresholdDataType,
-      modelPredictionSmoothingThresholdThresholdBatchSize: this.modelPredictionSmoothingThresholdThresholdBatchSize,
-    };
   }
 
-  /**
-   * Initializes the TensorFlow model.
-   * @returns {Promise<void>} - A promise that resolves when the model is initialized.
-   */
   public async initialize(): Promise<void> {
     try {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Initializing model: ${this.modelName}`);
@@ -315,16 +253,12 @@ export class TFModelInitializer<T> {
     }
   }
 
-  /**
-   * Warms up the model by running a few inference rounds.
-   * @returns {Promise<void>} - A promise that resolves when the model is warmed up.
-   */
   private async warmUpModel(): Promise<void> {
     logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Warming up model: ${this.modelName}`);
 
     for (let i = 0; i < this.modelWarmupRounds; i++) {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Warming up model - round: ${i + 1}`);
-      const inputTensor = tf.randomNormal(this.modelWarmupInputShape, 0, 1, this.modelWarmupDataType as tf.DType, null);
+      const inputTensor = tf.randomNormal(this.modelWarmupInputShape, 0, 1, this.modelWarmupDataType);
       const batchInput = tf.stack([inputTensor.reshape(this.modelWarmupInputShape)]);
 
       try {
@@ -349,11 +283,6 @@ export class TFModelInitializer<T> {
     logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Model warmed up successfully: ${this.modelName}`);
   }
 
-  /**
-   * Predicts the output for a given input.
-   * @param {T} input - The input for the model.
-   * @returns {Promise<tf.Tensor | null>} - A promise that resolves with the output of the model.
-   */
   public async predict(input: T): Promise<tf.Tensor | null> {
     if (!this.model) {
       logSignalProcessing(LogLevel.ERROR, `[TFModelInitializer] Model is not initialized: ${this.modelName}`);
@@ -367,7 +296,7 @@ export class TFModelInitializer<T> {
 
     try {
       logSignalProcessing(LogLevel.INFO, `[TFModelInitializer] Predicting output for model: ${this.modelName}`);
-      const inputTensor = tf.tensor(input as any, this.modelPredictionDataType as tf.DType,);
+      const inputTensor = tf.tensor(input as any, this.modelPredictionDataType);
       const batchInput = tf.stack([inputTensor.reshape(this.modelPredictionInputShape)]);
 
       const result = await this.model.executeAsync(batchInput) as tf.Tensor;
@@ -398,10 +327,6 @@ export class TFModelInitializer<T> {
     }
   }
 
-  /**
-   * Disposes of the model and releases the memory.
-   * @returns {void}
-   */
   public dispose(): void {
     if (this.model) {
       this.model.dispose();
