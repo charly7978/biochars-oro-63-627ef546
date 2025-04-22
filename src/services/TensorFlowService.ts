@@ -169,8 +169,11 @@ class TensorFlowService {
     if (!this.workerClient) return false;
     
     try {
+      // Store the result without evaluating it immediately
       const result = await this.workerClient.disposeModel(modelType);
-      const success = result !== undefined ? !!result : false;
+      
+      // Safely check the result value without testing void for truthiness
+      const success = result === true;
       
       if (success) {
         this.modelStatus.set(modelType, false);
