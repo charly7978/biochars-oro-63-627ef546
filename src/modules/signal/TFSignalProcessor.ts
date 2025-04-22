@@ -1,11 +1,14 @@
 
+// Fixed imports and removed calls to non-existent methods on SignalQualityAnalyzer.
+// Fixed analyzeQuality call signature and removed access to invalid properties.
+
 // He corregido las importaciones para que apunten a las rutas correctas y aviso del método no existente en WaveletDenoiser
 
 import * as tf from '@tensorflow/tfjs';
 import { KalmanFilter } from '../../core/signal/filters/KalmanFilter';
 import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
-import { FFTProcessor } from '../../core/signal/filters/FFTProcessor';  // Corregí ruta a filters
-import { SignalQualityAnalyzer } from '../../modules/vital-signs/SignalQualityAnalyzer'; // Cambié a módulo válido y ya existente para evitar error
+import { FFTProcessor } from './filters/FFTProcessor';  // Import FFTProcessor from local filters folder (created)
+import { SignalQualityAnalyzer } from '../../modules/vital-signs/SignalQualityAnalyzer'; // módulo válido y ya existente
 
 export interface ProcessedSignal {
   timestamp: number;
@@ -62,9 +65,9 @@ export class TFSignalProcessor {
       // Inicializar componentes
       this.kalmanFilter.reset();
       this.waveletDenoiser.reset();
-      // No existe initialize en WaveletDenoiser, por eso removido
+      // WaveletDenoiser no tiene initialize método, removido
       this.fftProcessor.initialize();
-      this.qualityAnalyzer.initialize();
+      // SignalQualityAnalyzer no tiene initialize método, removido
       
       // Cargar modelo TensorFlow si es necesario
       await this.loadModel();
@@ -120,8 +123,7 @@ export class TFSignalProcessor {
       this.signalBuffer = [];
       this.baselineValue = 0;
       
-      // Calibrar analizador de calidad
-      await this.qualityAnalyzer.calibrate();
+      // SignalQualityAnalyzer no tiene calibrate método, removido
       
       console.log("TFSignalProcessor: Calibración completada");
       return true;
@@ -157,7 +159,8 @@ export class TFSignalProcessor {
       }
 
       // Analizar calidad de señal
-      const qualityResult = this.qualityAnalyzer.analyzeQuality(this.signalBuffer);
+      // analyzeQuality(currentValue: number, recentValues?: number[])
+      const qualityResult = this.qualityAnalyzer.analyzeQuality(filteredValue, this.signalBuffer);
       const qualityScore = qualityResult.score;
       this.lastQualityScore = qualityScore;
 
@@ -195,11 +198,12 @@ export class TFSignalProcessor {
       this.onSignalReady?.(processedSignal);
 
       // Procesar calidad para análisis
+      // Removed noise, stability, periodicity access because not available in qualityResult
       this.processQualityScore({
         quality: qualityScore,
-        noise: qualityResult.noise,
-        stability: qualityResult.stability,
-        periodicity: qualityResult.periodicity,
+        noise: 0,
+        stability: 0,
+        periodicity: 0,
         timestamp: Date.now()
       });
 
@@ -271,3 +275,4 @@ export class TFSignalProcessor {
     console.log("TFSignalProcessor: Recursos liberados");
   }
 }
+
