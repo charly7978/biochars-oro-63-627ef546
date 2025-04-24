@@ -42,17 +42,10 @@ export class LipidProcessor {
    * Calcula perfil lipídico basado en características de señal PPG
    * Utilizando análisis avanzado de forma de onda y parámetros espectrales
    */
-  public calculateLipids(ppgValues: number[]): { 
-    totalCholesterol: number; 
-    triglycerides: number;
-  } {
-    // Verificar cantidad mínima de datos
+  public calculateLipids(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
     if (ppgValues.length < this.MIN_SAMPLE_SIZE) {
-      this.confidenceScore = 0;
-      return { 
-        totalCholesterol: 0, 
-        triglycerides: 0 
-      };
+      // No hay datos suficientes para una estimación genuina
+      return null;
     }
     
     // Usar los datos más recientes para evaluación más estable

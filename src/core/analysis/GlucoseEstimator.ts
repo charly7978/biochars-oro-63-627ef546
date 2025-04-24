@@ -1,4 +1,3 @@
-
 import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { SignalAnalyzer } from './SignalAnalyzer';
@@ -21,12 +20,13 @@ export class GlucoseEstimator extends SignalAnalyzer {
   /**
    * Analiza el nivel de glucosa a partir de valores PPG crudos
    */
-  public analyze(ppgValues: number[]): number {
+  public analyze(ppgValues: number[]): number | null {
     // Actualizar buffer de señal
     this.updateBuffer(ppgValues);
     
     if (this.signalBuffer.length < this.windowSize) {
-      return this.lastEstimate;
+      // No hay datos suficientes para una estimación genuina
+      return null;
     }
     
     // Usar los valores más recientes
@@ -82,7 +82,7 @@ export class GlucoseEstimator extends SignalAnalyzer {
   /**
    * Método de compatibilidad
    */
-  public estimate(ppgValues: number[]): number {
+  public estimate(ppgValues: number[]): number | null {
     return this.analyze(ppgValues);
   }
   

@@ -1,4 +1,3 @@
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
@@ -41,19 +40,20 @@ export class ResultFactory {
   /**
    * Creates an empty result with default values
    */
-  public static createEmptyResults(): VitalSignsResult {
+  public static createEmptyResults(): VitalSignsResult & { isValid: false } {
     return {
-      spo2: 0,
-      heartRate: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
+      spo2: null,
+      heartRate: null,
+      pressure: null,
+      arrhythmiaStatus: null,
+      glucose: null,
       lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
+        totalCholesterol: null,
+        triglycerides: null
       },
-      hemoglobin: 0,
-      hydration: 0
+      hemoglobin: null,
+      hydration: null,
+      isValid: false
     };
   }
 }

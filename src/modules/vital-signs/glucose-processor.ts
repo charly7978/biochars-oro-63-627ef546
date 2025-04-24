@@ -35,7 +35,7 @@ export class GlucoseProcessor {
    * Calculate glucose based on PPG waveform characteristics
    * Using direct measurement techniques without reference values
    */
-  public calculateGlucose(ppgValues: number[]): number {
+  public calculateGlucose(ppgValues: number[]): number | null {
     if (ppgValues.length < this.MIN_SAMPLES) {
       this.confidence = 0;
       this.hasQualityData = false;
@@ -43,14 +43,14 @@ export class GlucoseProcessor {
         provided: ppgValues.length, 
         required: this.MIN_SAMPLES 
       });
-      return 0; // Not enough data
+      return null; // No hay datos suficientes
     }
     
     // Validate signal quality
     const signalVariability = this.calculateVariability(ppgValues);
     const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
     
-    // If signal quality is too poor, return 0
+    // If signal quality is too poor, return null
     if (signalAmplitude < 0.05 || signalVariability > 0.8) {
       this.confidence = 0;
       this.hasQualityData = false;
@@ -58,7 +58,7 @@ export class GlucoseProcessor {
         amplitude: signalAmplitude, 
         variability: signalVariability 
       });
-      return 0;
+      return null; // Señal de mala calidad
     }
     
     this.hasQualityData = true;

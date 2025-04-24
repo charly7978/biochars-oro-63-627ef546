@@ -64,7 +64,7 @@ export class VitalSignsProcessor {
   ): VitalSignsResult {
     // Check for near-zero signal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+      console.log("VitalSignsProcessor: Signal too weak, returning empty result");
       return ResultFactory.createEmptyResults();
     }
     
@@ -104,21 +104,21 @@ export class VitalSignsProcessor {
     }
     
     // Calculate SpO2 using real data only
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
+    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
-    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+    const pressure = bp && bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
-      : "--/--";
+      : null;
     
     // Estimate heart rate from signal if RR data available
     const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
       ? Math.round(60000 / (rrData.intervals.slice(-5).reduce((sum, val) => sum + val, 0) / 5))
-      : 0;
+      : null;
     
     // Calculate glucose with real data only
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
+    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calculate lipids with real data only
@@ -126,13 +126,25 @@ export class VitalSignsProcessor {
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
     // Calculate hydration with real PPG data
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    const hydration = this.hydrationEstimator.analyze(ppgValues);
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
       lipidsConfidence
     );
+
+    // Si alguna métrica principal es null, devolver resultado vacío y honesto
+    if (
+      spo2 === null ||
+      glucose === null ||
+      lipids === null ||
+      pressure === null ||
+      heartRate === null ||
+      hydration === null
+    ) {
+      return ResultFactory.createEmptyResults();
+    }
 
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;

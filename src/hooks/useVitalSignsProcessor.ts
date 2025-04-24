@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -11,6 +10,7 @@ import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
+import { ResultFactory } from '../modules/vital-signs/factories/result-factory';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -116,25 +116,24 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         setLastValidResults(result);
       }
       
+      // Si alguna métrica principal es null, devolver resultado vacío y honesto
+      if (
+        !result ||
+        result.spo2 === null ||
+        result.glucose === null ||
+        result.lipids === null ||
+        result.pressure === null ||
+        result.heartRate === null ||
+        result.hydration === null
+      ) {
+        return ResultFactory.createEmptyResults();
+      }
+      
       // Return processed result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
-      
-      // Return safe fallback values on error that include heartRate
-      return {
-        spo2: 0,
-        heartRate: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        hydration: 0
-      };
+      return ResultFactory.createEmptyResults();
     }
   };
 

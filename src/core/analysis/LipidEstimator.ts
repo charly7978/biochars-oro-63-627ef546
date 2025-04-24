@@ -1,4 +1,3 @@
-
 import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { SignalAnalyzer } from './SignalAnalyzer';
@@ -19,12 +18,10 @@ export class LipidEstimator extends SignalAnalyzer {
   /**
    * Analyze lipid levels from PPG signal
    */
-  public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
+  public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
     if (ppgValues.length < 30) {
-      return { 
-        totalCholesterol: this.lastTotal,
-        triglycerides: this.lastTriglycerides
-      };
+      // No hay datos suficientes para una estimación genuina
+      return null;
     }
     
     // Calculate metrics from PPG
@@ -69,7 +66,7 @@ export class LipidEstimator extends SignalAnalyzer {
   /**
    * Legacy method for compatibility
    */
-  public estimate(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
+  public estimate(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
     return this.analyze(ppgValues);
   }
   
