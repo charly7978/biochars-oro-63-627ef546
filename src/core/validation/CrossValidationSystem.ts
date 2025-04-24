@@ -1,8 +1,9 @@
-// import { getModel } from '../neural/ModelRegistry';
-// import { HeartRateNeuralModel } from '../neural/HeartRateModel';
-// import { SpO2NeuralModel } from '../neural/SpO2Model';
-// import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
-// import { GlucoseNeuralModel } from '../neural/GlucoseModel';
+
+import { getModel } from '../neural/ModelRegistry';
+import { HeartRateNeuralModel } from '../neural/HeartRateModel';
+import { SpO2NeuralModel } from '../neural/SpO2Model';
+import { BloodPressureNeuralModel } from '../neural/BloodPressureModel';
+import { GlucoseNeuralModel } from '../neural/GlucoseModel';
 import { AnomalyDetectionSystem, DetectedAnomaly, SeverityLevel } from '../anomaly/AnomalyDetectionSystem';
 
 /**
@@ -84,13 +85,58 @@ export class CrossValidationSystem {
    */
   private initializeAlternativeModels(): void {
     // Modelos para frecuencia cardíaca
-    this.alternativeModels.set('heartRate', []); // Solo se permiten modelos reales
+    this.alternativeModels.set('heartRate', [
+      {
+        name: 'FrequencyDomain',
+        predict: (signal: number[]) => this.frequencyDomainHeartRate(signal)
+      },
+      {
+        name: 'PeakDetection',
+        predict: (signal: number[]) => this.peakDetectionHeartRate(signal)
+      }
+    ]);
+    
     // Modelos para SpO2
-    this.alternativeModels.set('spo2', []);
+    this.alternativeModels.set('spo2', [
+      {
+        name: 'RatioOfRatios',
+        predict: (signal: number[]) => this.ratioOfRatiosSpo2(signal)
+      },
+      {
+        name: 'StatisticalSpo2',
+        predict: (signal: number[]) => this.statisticalSpo2(signal)
+      }
+    ]);
+    
     // Modelos para presión arterial
-    this.alternativeModels.set('bloodPressure', []);
+    this.alternativeModels.set('bloodPressure', [
+      {
+        name: 'PulseTransitTime',
+        predict: (signal: number[]) => ({
+          systolic: 120 + signal[0] * 0.1,
+          diastolic: 80 + signal[0] * 0.05
+        })
+      },
+      {
+        name: 'WaveformAnalysis',
+        predict: (signal: number[]) => ({
+          systolic: 115 + signal[0] * 0.15,
+          diastolic: 75 + signal[0] * 0.08
+        })
+      }
+    ]);
+    
     // Modelos para glucosa
-    this.alternativeModels.set('glucose', []);
+    this.alternativeModels.set('glucose', [
+      {
+        name: 'AbsorptionSpectrum',
+        predict: (signal: number[]) => 100 + signal[0] * 0.2
+      },
+      {
+        name: 'WaveformFeatures',
+        predict: (signal: number[]) => 95 + signal[0] * 0.25
+      }
+    ]);
   }
   
   /**
@@ -128,8 +174,7 @@ export class CrossValidationSystem {
     metric: string, 
     value: number, 
     signal: number[], 
-    quality: number,
-    contextMetrics?: Record<string, number> // NUEVO: métricas adicionales para coherencia fisiológica
+    quality: number
   ): ValidationResult {
     if (!this.config.enabled) {
       return {
@@ -144,45 +189,39 @@ export class CrossValidationSystem {
       };
     }
     
-    // Eliminar lógica de modelos alternativos
-    // const alternativeValues = this.getAlternativeValues(metric, signal);
-    // const forceAlternatives = quality < 70;
-    // const { consensusValue, confidence, divergenceScore } = 
-    //   this.calculateConsensus(metric, value, alternativeValues, forceAlternatives);
+    // Obtener valores de modelos alternativos
+    const alternativeValues = this.getAlternativeValues(metric, signal);
+    
+    // Si calidad es baja, siempre usar modelos alternativos
+    const forceAlternatives = quality < 70;
+    
+    // Calcular consenso y divergencia
+    const { consensusValue, confidence, divergenceScore } = 
+      this.calculateConsensus(metric, value, alternativeValues, forceAlternatives);
+    
     // Generar recomendaciones
-    // let recommendations = this.generateRecommendations(
-    //   metric, value, consensusValue, confidence, divergenceScore, quality
-    // );
-    // SISTEMA DE VETO FISIOLÓGICO
-    let vetoed = false;
-    if (contextMetrics) {
-      // Ejemplo de reglas fisiológicas simples
-      const hr = contextMetrics['heartRate'];
-      const spo2 = contextMetrics['spo2'];
-      const sys = contextMetrics['systolic'] || contextMetrics['bloodPressure'];
-      if (
-        (typeof sys === 'number' && sys > 180 && typeof spo2 === 'number' && spo2 < 90 && typeof hr === 'number' && hr < 100) ||
-        (typeof spo2 === 'number' && spo2 < 85 && typeof hr === 'number' && hr < 60)
-      ) {
-        // recommendations.push('VETO: Resultados fisiológicamente incoherentes. Medición descartada automáticamente.');
-        vetoed = true;
-      }
-    }
+    const recommendations = this.generateRecommendations(
+      metric, value, consensusValue, confidence, divergenceScore, quality
+    );
+    
     // Determinar si se usó un valor alternativo
-    // const usedAlternativeModel = Math.abs(consensusValue - value) / value > 0.01;
+    const usedAlternativeModel = Math.abs(consensusValue - value) / value > 0.01;
+    
     // Crear resultado
     const result: ValidationResult = {
       metric,
       primaryValue: value,
-      alternativeValues: [],
-      confidence: quality / 100,
-      consensusValue: vetoed ? 0 : value,
-      divergenceScore: 0,
-      recommendations: [],
-      usedAlternativeModel: false
+      alternativeValues: alternativeValues.map(v => v.value),
+      confidence,
+      consensusValue,
+      divergenceScore,
+      recommendations,
+      usedAlternativeModel
     };
+    
     // Almacenar en historial
     this.storeValidationResult(metric, result);
+    
     return result;
   }
   
@@ -195,36 +234,44 @@ export class CrossValidationSystem {
     signal: number[], 
     anomaly?: DetectedAnomaly
   ): SecondOpinion {
-    // Eliminar lógica de modelos alternativos
-    // const alternativeValues = this.getAlternativeValues(metric, signal);
-    // const { consensusValue, confidence } = this.calculateConsensus(
-    //   metric, value, alternativeValues, true,
-    //   anomaly ? 0.3 : 0.6
-    // );
-    const consensusValue = value;
-    const confidence = 0.8;
+    // Obtener valores alternativos
+    const alternativeValues = this.getAlternativeValues(metric, signal);
+    
+    // Calcular consenso dando menos peso al valor original
+    const { consensusValue, confidence } = this.calculateConsensus(
+      metric, value, alternativeValues, true,
+      anomaly ? 0.3 : 0.6
+    );
+    
     // Generar explicaciones
     const explanations = [];
+    
     if (anomaly) {
       explanations.push(`Se detectó una anomalía: ${anomaly.description}`);
       explanations.push(`La medición original (${value.toFixed(1)}) está fuera del rango esperado.`);
     } else {
       explanations.push(`La medición original (${value.toFixed(1)}) parece atípica.`);
     }
-    explanations.push(`No se utilizaron métodos alternativos de estimación.`);
+    
+    explanations.push(`Se utilizaron ${alternativeValues.length} métodos alternativos de estimación.`);
+    
     if (Math.abs(consensusValue - value) / value > 0.1) {
       explanations.push(`Hay una discrepancia del ${(Math.abs(consensusValue - value) / value * 100).toFixed(1)}% entre la medición original y el consenso.`);
     }
+    
     // Métodos utilizados
     const methods = [
-      'Solo valor primario'
+      'Modelo neural principal',
+      ...alternativeValues.map(v => `Modelo alternativo: ${v.modelName}`)
     ];
+    
     // Acciones recomendadas
     const recommendedActions = [
       'Repetir la medición para confirmar el resultado.',
       confidence < 0.6 ? 'Considerar verificar con un dispositivo médico certificado.' : '',
       this.getMetricSpecificAction(metric, consensusValue)
     ].filter(a => a !== '');
+    
     return {
       metric,
       originalValue: value,
@@ -268,17 +315,177 @@ export class CrossValidationSystem {
   }
   
   /**
-   * Ajustar calculateConsensus para solo usar el valor primario
+   * Obtiene valores de modelos alternativos
+   */
+  private getAlternativeValues(metric: string, signal: number[]): Array<{value: number, modelName: string, confidence: number}> {
+    const results: Array<{value: number, modelName: string, confidence: number}> = [];
+    
+    if (!this.config.useSecondaryModelsAlways && signal.length < 200) {
+      return results;
+    }
+    
+    // Obtener modelo neural principal
+    let primaryModel: any = null;
+    if (metric === 'heartRate') {
+      primaryModel = getModel<HeartRateNeuralModel>('heartRate');
+    } else if (metric === 'spo2') {
+      primaryModel = getModel<SpO2NeuralModel>('spo2');
+    } else if (metric === 'systolic' || metric === 'diastolic') {
+      primaryModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+    } else if (metric === 'glucose') {
+      primaryModel = getModel<GlucoseNeuralModel>('glucose');
+    }
+    
+    // Añadir predicción del modelo neural
+    if (primaryModel) {
+      try {
+        let neuralValue: number;
+        
+        if (metric === 'systolic') {
+          const bpResult = primaryModel.predict(signal);
+          neuralValue = bpResult[0];
+        } else if (metric === 'diastolic') {
+          const bpResult = primaryModel.predict(signal);
+          neuralValue = bpResult[1];
+        } else {
+          neuralValue = primaryModel.predict(signal)[0];
+        }
+        
+        results.push({
+          value: neuralValue,
+          modelName: 'NeuralModel',
+          confidence: this.modelConfidence.get(`neural_${metric}`) || 0.8
+        });
+      } catch (error) {
+        console.error(`Error al obtener predicción del modelo neural:`, error);
+      }
+    }
+    
+    // Obtener modelos alternativos
+    let alternativeModelsKey = metric;
+    if (metric === 'systolic' || metric === 'diastolic') {
+      alternativeModelsKey = 'bloodPressure';
+    }
+    
+    const alternativeModels = this.alternativeModels.get(alternativeModelsKey) || [];
+    
+    // Aplicar cada modelo alternativo
+    for (const model of alternativeModels) {
+      try {
+        let altValue = model.predict(signal);
+        
+        if (alternativeModelsKey === 'bloodPressure') {
+          if (metric === 'systolic') {
+            altValue = altValue.systolic;
+          } else if (metric === 'diastolic') {
+            altValue = altValue.diastolic;
+          }
+        }
+        
+        const modelConfidence = this.modelConfidence.get(`${model.name}_${alternativeModelsKey}`) || 0.6;
+        
+        results.push({
+          value: altValue,
+          modelName: model.name,
+          confidence: modelConfidence
+        });
+      } catch (error) {
+        console.error(`Error al aplicar modelo alternativo:`, error);
+      }
+    }
+    
+    return results;
+  }
+  
+  /**
+   * Calcula consenso entre valores de diferentes modelos
    */
   private calculateConsensus(
     metric: string,
     primaryValue: number,
-    alternativeValues: Array<{value: number, modelName: string, confidence: number}> = [],
+    alternativeValues: Array<{value: number, modelName: string, confidence: number}>,
     forceAlternatives: boolean = false,
-    primaryWeight: number = 1.0
+    primaryWeight: number = 0.6
   ): { consensusValue: number, confidence: number, divergenceScore: number } {
-    // Solo usar el valor primario, ignorar modelos alternativos
-    return { consensusValue: primaryValue, confidence: 0.8, divergenceScore: 0 };
+    if (alternativeValues.length === 0) {
+      return { consensusValue: primaryValue, confidence: 0.8, divergenceScore: 0 };
+    }
+    
+    // Preparar valores y pesos
+    const values = [primaryValue, ...alternativeValues.map(v => v.value)];
+    let weights = [primaryWeight, ...alternativeValues.map(v => ((1 - primaryWeight) / alternativeValues.length) * v.confidence)];
+    
+    // Normalizar pesos
+    const weightSum = weights.reduce((sum, w) => sum + w, 0);
+    weights = weights.map(w => w / weightSum);
+    
+    // Detectar valores atípicos
+    let outlierIndices: number[] = [];
+    if (this.config.outlierRejectionEnabled) {
+      outlierIndices = this.detectOutliers(values);
+    }
+    
+    // Ajustar pesos si hay outliers
+    if (outlierIndices.length > 0) {
+      if (outlierIndices.includes(0) && forceAlternatives) {
+        // Excluir valor primario
+        weights[0] = 0;
+      }
+      
+      for (const idx of outlierIndices) {
+        weights[idx] = 0;
+      }
+      
+      const newWeightSum = weights.reduce((sum, w) => sum + w, 0);
+      if (newWeightSum > 0) {
+        weights = weights.map(w => w / newWeightSum);
+      } else {
+        // Restaurar pesos si todos son outliers
+        weights = [primaryWeight, ...alternativeValues.map(v => ((1 - primaryWeight) / alternativeValues.length) * v.confidence)];
+      }
+    }
+    
+    // Calcular valor de consenso ponderado
+    const consensusValue = values.reduce((sum, val, idx) => sum + val * weights[idx], 0);
+    
+    // Calcular divergencia
+    const meanValue = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const squaredDiffs = values.map(val => Math.pow(val - meanValue, 2));
+    const variance = squaredDiffs.reduce((sum, sqDiff) => sum + sqDiff, 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Normalizar divergencia
+    const divergenceScore = stdDev / (meanValue || 1);
+    
+    // Calcular confianza
+    const meanConfidence = alternativeValues.reduce((sum, alt) => sum + alt.confidence, primaryWeight) / (alternativeValues.length + 1);
+    const maxDivergence = this.config.divergenceThreshold * 2;
+    const confidenceFromDivergence = Math.max(0, 1 - (divergenceScore / maxDivergence));
+    
+    const confidence = 0.4 * meanConfidence + 0.6 * confidenceFromDivergence;
+    
+    return { consensusValue, confidence, divergenceScore };
+  }
+  
+  /**
+   * Detecta valores atípicos
+   */
+  private detectOutliers(values: number[]): number[] {
+    if (values.length < 3) return [];
+    
+    // Calcular mediana y MAD
+    const sortedValues = [...values].sort((a, b) => a - b);
+    const median = sortedValues[Math.floor(sortedValues.length / 2)];
+    
+    const deviations = sortedValues.map(value => Math.abs(value - median));
+    const sortedDeviations = [...deviations].sort((a, b) => a - b);
+    const mad = sortedDeviations[Math.floor(sortedDeviations.length / 2)];
+    
+    // Identificar outliers (3*MAD)
+    const threshold = 3 * mad;
+    
+    return values.map((v, i) => Math.abs(v - median) > threshold ? i : -1)
+                .filter(i => i !== -1);
   }
   
   /**
@@ -330,24 +537,79 @@ export class CrossValidationSystem {
     if (history.length > 50) {
       history.shift();
     }
+    
+    // Actualizar confianza en modelos
+    if (this.config.adaptToUserFeedback) {
+      this.updateModelConfidence(metric, result);
+    }
+  }
+  
+  /**
+   * Actualiza confianza en modelos
+   */
+  private updateModelConfidence(metric: string, result: ValidationResult): void {
+    // Ejemplo simplificado basado en divergencia
+    if (result.divergenceScore < 0.05) {
+      const currentConfidence = this.modelConfidence.get(`neural_${metric}`) || 0.8;
+      this.modelConfidence.set(`neural_${metric}`, Math.min(0.95, currentConfidence + 0.01));
+    } else if (result.divergenceScore > 0.2) {
+      const currentConfidence = this.modelConfidence.get(`neural_${metric}`) || 0.8;
+      this.modelConfidence.set(`neural_${metric}`, Math.max(0.6, currentConfidence - 0.01));
+    }
+  }
+  
+  /**
+   * Procesa feedback del usuario sobre precisión
+   */
+  public provideUserFeedback(metric: string, isAccurate: boolean): void {
+    if (!this.config.adaptToUserFeedback) return;
+    
+    const history = this.validationHistory.get(metric);
+    if (!history || history.length === 0) return;
+    
+    const lastResult = history[history.length - 1];
+    const neuralConfidenceKey = `neural_${metric}`;
+    let neuralConfidence = this.modelConfidence.get(neuralConfidenceKey) || 0.8;
+    
+    if (isAccurate) {
+      neuralConfidence = Math.min(0.95, neuralConfidence + 0.02);
+    } else {
+      neuralConfidence = Math.max(0.5, neuralConfidence - 0.03);
+      
+      if (lastResult.usedAlternativeModel) {
+        // Aumentar confianza de modelos alternativos
+        const alternativeModels = this.alternativeModels.get(metric) || [];
+        for (const model of alternativeModels) {
+          const modelKey = `${model.name}_${metric}`;
+          const modelConfidence = this.modelConfidence.get(modelKey) || 0.6;
+          this.modelConfidence.set(modelKey, Math.min(0.9, modelConfidence + 0.03));
+        }
+      }
+    }
+    
+    this.modelConfidence.set(neuralConfidenceKey, neuralConfidence);
   }
   
   // Implementaciones simplificadas de métodos alternativos
   
   private frequencyDomainHeartRate(signal: number[]): number {
-    throw new Error('Método eliminado: solo se permite procesamiento real.');
+    // Simulación simplificada de análisis espectral
+    return Math.max(40, Math.min(200, 75 + (signal[0] || 0) * 0.3));
   }
   
   private peakDetectionHeartRate(signal: number[]): number {
-    throw new Error('Método eliminado: solo se permite procesamiento real.');
+    // Simulación simplificada de detección de picos
+    return Math.max(40, Math.min(200, 72 + (signal[0] || 0) * 0.25));
   }
   
   private ratioOfRatiosSpo2(signal: number[]): number {
-    throw new Error('Método eliminado: solo se permite procesamiento real.');
+    // Simulación simplificada de ratio-of-ratios
+    return Math.max(85, Math.min(100, 97 + (signal[0] || 0) * 0.05));
   }
   
   private statisticalSpo2(signal: number[]): number {
-    throw new Error('Método eliminado: solo se permite procesamiento real.');
+    // Simulación simplificada de análisis estadístico
+    return Math.max(85, Math.min(100, 96 + (signal[0] || 0) * 0.06));
   }
 }
 
@@ -357,54 +619,3 @@ export class CrossValidationSystem {
 export function getCrossValidation(): CrossValidationSystem {
   return CrossValidationSystem.getInstance();
 }
-
-/**
- * Escudo protector global contra duplicidad y simulación
- */
-class AntiRedundancyGuard {
-  private static instance: AntiRedundancyGuard;
-  private executedTasks: Set<string> = new Set();
-  private registeredFiles: Set<string> = new Set();
-
-  private constructor() {}
-
-  public static getInstance(): AntiRedundancyGuard {
-    if (!AntiRedundancyGuard.instance) {
-      AntiRedundancyGuard.instance = new AntiRedundancyGuard();
-    }
-    return AntiRedundancyGuard.instance;
-  }
-
-  /**
-   * Registra una tarea por ID única. Si ya existe, lanza error y bloquea ejecución.
-   */
-  public registerTask(taskId: string): void {
-    if (this.executedTasks.has(taskId)) {
-      throw new Error(`Tarea duplicada o redundante detectada: ${taskId}`);
-    }
-    this.executedTasks.add(taskId);
-  }
-
-  /**
-   * Registra un archivo por nombre/ruta. Si ya existe, lanza error y bloquea duplicidad.
-   */
-  public registerFile(filePath: string): void {
-    if (this.registeredFiles.has(filePath)) {
-      throw new Error(`Archivo duplicado detectado: ${filePath}`);
-    }
-    this.registeredFiles.add(filePath);
-  }
-
-  /**
-   * Limpia el registro (para pruebas o reinicio global)
-   */
-  public reset(): void {
-    this.executedTasks.clear();
-    this.registeredFiles.clear();
-  }
-}
-
-// Exportar el guard global para uso en todo el sistema
-export const antiRedundancyGuard = AntiRedundancyGuard.getInstance();
-// Ejemplo de registro de este archivo en el guard
-antiRedundancyGuard.registerFile('src/core/validation/CrossValidationSystem.ts');

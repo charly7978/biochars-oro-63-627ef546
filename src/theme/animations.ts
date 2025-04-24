@@ -16,7 +16,8 @@ export const animations = {
   "efficient-beat": "heart-beat 1s cubic-bezier(0.2, 0, 0.4, 1) infinite",
   "efficient-update": "vital-sign-update 0.4s cubic-bezier(0.2, 0, 0.2, 1) forwards",
   
-  /* Animations for result numbers */
-  "result-animate": "display-darken 0.8s cubic-bezier(0.2, 0, 0.4, 1) forwards",
-  "number-highlight": "number-glow 2s ease-in-out infinite"
+  /* New animations for result numbers */
+  "result-animate": "result-number-animation 1.2s cubic-bezier(0.2, 0, 0.4, 1) forwards",
+  "number-highlight": "number-highlight 2s ease-in-out 1",
+  "results-complete": "results-complete 0.8s cubic-bezier(0.2, 0, 0.2, 1) forwards"
 };

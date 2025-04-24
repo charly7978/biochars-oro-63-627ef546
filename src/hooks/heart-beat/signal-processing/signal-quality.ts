@@ -3,64 +3,64 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { checkSignalQuality as checkBaseSignalQuality } from '../../../modules/heart-beat/signal-quality';
+// Remove or comment out the problematic import
+// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
-/**
- * Check for weak signal to detect finger removal
- */
-export function checkWeakSignal(
-  value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number;
-    maxWeakSignalCount: number;
-  }
-): {
-  isWeakSignal: boolean;
-  updatedWeakSignalsCount: number;
-} {
-  return checkBaseSignalQuality(value, consecutiveWeakSignalsCount, config);
+interface SignalQualityOptions {
+  lowSignalThreshold?: number;
+  maxWeakSignalCount?: number;
 }
 
 /**
- * Determine if measurement should be processed based on signal quality
+ * Verifica si una señal es débil basándose en umbrales configurables
+ * Solo procesamiento directo, sin simulaciones
+ */
+export function checkWeakSignal(
+  value: number,
+  currentWeakSignalCount: number,
+  options: SignalQualityOptions = {}
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+  // Default thresholds
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+  
+  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  
+  // Update consecutive weak signals counter
+  let updatedWeakSignalsCount = isCurrentValueWeak 
+    ? currentWeakSignalCount + 1 
+    : 0;
+  
+  // Limit to max
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  
+  // Signal is considered weak if we have enough consecutive weak readings
+  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
+}
+
+/**
+ * Verifica si se debe procesar una medición según la intensidad de la señal
  */
 export function shouldProcessMeasurement(
   value: number,
   weakSignalsCount: number = 0,
-  options: {
-    lowSignalThreshold?: number;
-    maxWeakSignalCount?: number;
-  } = {}
+  options: SignalQualityOptions = {}
 ): boolean {
-  const { isWeakSignal } = checkBaseSignalQuality(
-    value,
-    weakSignalsCount,
-    options
-  );
-  
-  return !isWeakSignal && Math.abs(value) > (options.lowSignalThreshold || 0.01);
+  const { isWeakSignal } = checkWeakSignal(value, weakSignalsCount, options);
+  return !isWeakSignal;
 }
 
 /**
- * Create a safe result object for weak signal scenarios
- * No simulation, just empty result
+ * Crea un resultado vacío para señales débiles
  */
-export function createWeakSignalResult(arrhythmiaCount: number = 0): {
-  bpm: number;
-  confidence: number;
-  isPeak: boolean;
-  arrhythmiaCount: number;
-  rrData?: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
-} {
+export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
   return {
     bpm: 0,
     confidence: 0,
     isPeak: false,
-    arrhythmiaCount,
+    arrhythmiaCount: arrhythmiaCounter,
     rrData: {
       intervals: [],
       lastPeakTime: null
@@ -69,8 +69,8 @@ export function createWeakSignalResult(arrhythmiaCount: number = 0): {
 }
 
 /**
- * Reset signal quality tracking state
+ * Restablece el estado de detección de señal
  */
 export function resetSignalQualityState(): number {
-  return 0; // Reset weak signals counter to zero
+  return 0; // Reset the weak signals counter
 }

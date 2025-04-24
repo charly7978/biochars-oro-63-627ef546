@@ -2,46 +2,53 @@
 import { UserProfile } from '../types';
 import { AnalysisSettings } from '../config/AnalysisSettings';
 import { SignalAnalyzer } from './SignalAnalyzer';
+import { TensorUtils } from '../neural/tensorflow/TensorAdapter';
 
 /**
- * Analyzer for blood pressure estimation from PPG signal
+ * Analizador optimizado para presión arterial a partir de señal PPG
  */
 export class BloodPressureAnalyzer extends SignalAnalyzer {
   private systolicEstimate: number = 120;
   private diastolicEstimate: number = 80;
+  private windowSize = 30;
+  private signalBuffer: number[] = [];
   
   constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
     super(userProfile, settings);
   }
   
   /**
-   * Analyze blood pressure from PPG signal
+   * Analiza la presión arterial a partir de señal PPG
    */
   public analyze(ppgValues: number[]): { systolic: number; diastolic: number } {
-    if (ppgValues.length < 30) {
+    // Actualizar buffer de señal
+    this.updateBuffer(ppgValues);
+    
+    if (this.signalBuffer.length < this.windowSize) {
       return { systolic: this.systolicEstimate, diastolic: this.diastolicEstimate };
     }
     
-    // Simple PPG-based calculation for demonstration
-    const recentValues = ppgValues.slice(-30);
-    const max = Math.max(...recentValues);
-    const min = Math.min(...recentValues);
+    // Usar valores más recientes
+    const recentValues = this.signalBuffer.slice(-this.windowSize);
+    
+    // Procesar la señal para obtener métricas clave
+    const { mean, min, max, std } = TensorUtils.getArrayStats(recentValues);
     const amplitude = max - min;
     
-    // Apply calibration factor if available
+    // Factor de calibración si disponible
     const bpCalibrationFactor = this.settings?.bpCalibrationFactor || 1.0;
     
-    // Adjust estimates based on signal characteristics and user profile
+    // Ajustar estimaciones basado en características de señal y perfil de usuario
     let systolicAdjustment = 0;
     let diastolicAdjustment = 0;
     
-    // Age-based adjustment
+    // Ajuste basado en edad
     if (this.userProfile?.age > 50) {
       systolicAdjustment += 5;
       diastolicAdjustment += 2;
     }
     
-    // Amplitude-based adjustment
+    // Ajuste basado en amplitud
     if (amplitude > 0.2) {
       systolicAdjustment -= 3;
       diastolicAdjustment -= 2;
@@ -50,11 +57,16 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
       diastolicAdjustment += 2;
     }
     
-    // Calculate final estimates with calibration
+    // Ajuste por desviación estándar (variabilidad)
+    if (std > 0.15) {
+      systolicAdjustment += 2;
+    }
+    
+    // Calcular estimaciones finales con calibración
     const systolic = Math.round((120 + systolicAdjustment) * bpCalibrationFactor);
     const diastolic = Math.round((80 + diastolicAdjustment) * bpCalibrationFactor);
     
-    // Update stored estimates for future reference
+    // Actualizar estimaciones almacenadas para referencia futura
     this.systolicEstimate = systolic;
     this.diastolicEstimate = diastolic;
     
@@ -62,18 +74,26 @@ export class BloodPressureAnalyzer extends SignalAnalyzer {
   }
   
   /**
-   * Legacy method for compatibility
+   * Actualiza el buffer de señal de forma eficiente
+   */
+  private updateBuffer(newValues: number[]): void {
+    this.signalBuffer = [...this.signalBuffer, ...newValues].slice(-this.windowSize * 2);
+  }
+  
+  /**
+   * Método de compatibilidad
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number; diastolic: number } {
     return this.analyze(ppgValues);
   }
   
   /**
-   * Reset the analyzer to initial values
+   * Reinicia el analizador a valores iniciales
    */
   public reset(): void {
     super.reset();
     this.systolicEstimate = 120;
     this.diastolicEstimate = 80;
+    this.signalBuffer = [];
   }
 }
