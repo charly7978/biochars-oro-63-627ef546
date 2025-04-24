@@ -1,11 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
-import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
@@ -15,6 +13,7 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
 import { calculateAC, calculateDC } from './utils';
+import ArrhythmiaDetectionService from '../../services/ArrhythmiaDetectionService';
 
 /**
  * Main vital signs processor
@@ -25,7 +24,6 @@ export class VitalSignsProcessor {
   // Specialized processors
   private spo2Processor: SpO2Processor;
   private bpProcessor: BloodPressureProcessor;
-  private arrhythmiaProcessor: ArrhythmiaProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
@@ -47,7 +45,6 @@ export class VitalSignsProcessor {
     // Initialize specialized processors
     this.spo2Processor = new SpO2Processor();
     this.bpProcessor = new BloodPressureProcessor();
-    this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
@@ -81,13 +78,20 @@ export class VitalSignsProcessor {
       this.ppgBuffer.shift();
     }
     
-    // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals && 
-                           rrData.intervals.length >= 3 && 
-                           this.checkRRIntervalsValid(rrData.intervals) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
-                           { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+    // Procesar datos de arritmia usando el servicio centralizado si hay datos RR válidos
+    let arrhythmiaResult: { arrhythmiaStatus: string | null; lastArrhythmiaData: any | null } = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
+    if (rrData?.intervals && rrData.intervals.length >= 3 && this.checkRRIntervalsValid(rrData.intervals)) {
+        ArrhythmiaDetectionService.detectArrhythmia(rrData.intervals);
+        // Obtenemos el estado actualizado del servicio
+        const currentStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
+        arrhythmiaResult = {
+            arrhythmiaStatus: currentStatus.statusMessage,
+            lastArrhythmiaData: currentStatus.lastArrhythmiaData
+        };
+    } else {
+        // Si no hay datos RR válidos, asegurar que el estado del servicio también esté limpio si es necesario
+        // (Opcional: ArrhythmiaDetectionService.getInstance().reset() podría llamarse aquí si se quiere resetear al perder señal RR)
+    }
     
     // Check if we have enough data points
     if (!this.signalValidator.hasEnoughData(this.ppgBuffer)) {
@@ -272,20 +276,22 @@ export class VitalSignsProcessor {
   public reset(): VitalSignsResult | null {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
-    this.arrhythmiaProcessor.reset();
+    ArrhythmiaDetectionService.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
-    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null; // Always return null to ensure measurements start from zero
+    this.ppgBuffer = [];
+    this.signalValidator.resetFingerDetection();
+    console.log("VitalSignsProcessor: Reset completo - todos los procesadores y servicio de arritmia reiniciados.");
+    return null;
   }
   
   /**
    * Get arrhythmia counter
    */
   public getArrhythmiaCounter(): number {
-    return this.arrhythmiaProcessor.getArrhythmiaCount();
+    return ArrhythmiaDetectionService.getArrhythmiaCount();
   }
   
   /**
@@ -302,7 +308,7 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+    console.log("VitalSignsProcessor: Full reset completado.");
   }
 }
 
