@@ -36,6 +36,7 @@ class ArrhythmiaDetectionService {
   private lastRRIntervals: number[] = [];
   private lastIsArrhythmia: boolean = false;
   private currentBeatIsArrhythmia: boolean = false;
+  private isCurrentBeatPotentiallyArrhythmic: boolean = false;
   private arrhythmiaCount: number = 0;
   private lastArrhythmiaTriggeredTime: number = 0;
   private arrhythmiaWindows: ArrhythmiaWindow[] = [];
@@ -199,6 +200,8 @@ class ArrhythmiaDetectionService {
     if (variationRatio > threshold || rmssd > 55) { // Added RMSSD check here as well for potential trigger
       const timeSinceLastDetection = currentTime - this.lastDetectionTime;
       
+      this.isCurrentBeatPotentiallyArrhythmic = true;
+
       console.log(`[ArrhythmiaDebug] Potential arrhythmia trigger: variationRatio=${variationRatio.toFixed(3)}, rmssd=${rmssd.toFixed(2)}, threshold=${threshold}`);
 
 
@@ -251,7 +254,8 @@ class ArrhythmiaDetectionService {
        // If current beat doesn't meet criteria, it doesn't contribute to confirmation
        // We don't reset the counter here immediately, allowing confirmations to span across a few normal beats
        // Only reset counter if a significant time gap occurs (handled at the start of the 'if')
-       this.currentBeatIsArrhythmia = false; 
+       this.currentBeatIsArrhythmia = false;
+       this.isCurrentBeatPotentiallyArrhythmic = false;
        // console.log("[ArrhythmiaDebug] Current beat normal. No change to confirmation counter.");
     }
   }
@@ -394,6 +398,14 @@ class ArrhythmiaDetectionService {
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
+  }
+
+  /**
+   * Retorna si el latido más reciente procesado cumple los criterios iniciales de arritmia.
+   * No espera confirmación.
+   */
+  public getIsCurrentBeatPotentiallyArrhythmic(): boolean {
+    return this.isCurrentBeatPotentiallyArrhythmic;
   }
 }
 
