@@ -449,10 +449,10 @@ export class LipidProcessor {
   /**
    * Implementaciones manuales sin usar funciones Math
    */
-  private findMin(a: number, b?: number): number {
-    if (b === undefined) {
-      if (!Array.isArray(a)) return a;
-      
+  private findMin(a: number | number[], b?: number): number {
+    if (typeof a === 'number' && typeof b === 'number') {
+      return a < b ? a : b;
+    } else if (Array.isArray(a)) {
       if (a.length === 0) return 0;
       let min = a[0];
       for (let i = 1; i < a.length; i++) {
@@ -461,18 +461,20 @@ export class LipidProcessor {
       return min;
     }
     
-    return a < b ? a : b;
+    return typeof a === 'number' ? a : 0;
   }
   
   private findMax(a: number | number[]): number {
-    if (!Array.isArray(a)) return a;
-    
-    if (a.length === 0) return 0;
-    let max = a[0];
-    for (let i = 1; i < a.length; i++) {
-      if (a[i] > max) max = a[i];
+    if (Array.isArray(a)) {
+      if (a.length === 0) return 0;
+      let max = a[0];
+      for (let i = 1; i < a.length; i++) {
+        if (a[i] > max) max = a[i];
+      }
+      return max;
     }
-    return max;
+    
+    return typeof a === 'number' ? a : 0;
   }
   
   private clamp(value: number, min: number, max: number): number {
@@ -573,3 +575,4 @@ export class LipidProcessor {
     return this.confidenceScore;
   }
 }
+
