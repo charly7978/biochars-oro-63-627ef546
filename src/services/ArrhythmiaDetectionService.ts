@@ -58,13 +58,6 @@ class ArrhythmiaDetectionService {
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
 
-  private calibrationStartTime: number | null = null;
-  private calibrationRRs: number[] = [];
-  private baselineMean: number = 0;
-  private baselineSD: number = 0;
-  private isCalibrated: boolean = false;
-  private postCalibrationBeats: number | undefined = undefined;
-
   private constructor() {
     // Configurar limpieza automática periódica
     this.setupAutomaticCleanup();
@@ -117,53 +110,50 @@ class ArrhythmiaDetectionService {
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
     const currentTime = Date.now();
-    const lastRR = rrIntervals[rrIntervals.length - 1];
-
-    // Fase de calibración (primeros 6 segundos)
-    if (!this.isCalibrated) {
-      if (!this.calibrationStartTime) this.calibrationStartTime = currentTime;
-      // Filtrar artefactos
-      if (lastRR >= this.MIN_INTERVAL && lastRR <= this.MAX_INTERVAL) {
-        this.calibrationRRs.push(lastRR);
-      }
-      if (currentTime - this.calibrationStartTime >= 6000) {
-        // Calcular patrón base
-        this.baselineMean = this.calibrationRRs.reduce((a, b) => a + b, 0) / this.calibrationRRs.length;
-        const variance = this.calibrationRRs.reduce((sum, val) => sum + Math.pow(val - this.baselineMean, 2), 0) / this.calibrationRRs.length;
-        this.baselineSD = Math.sqrt(variance);
-        this.isCalibrated = true;
-        this.postCalibrationBeats = 0;
-        console.log(`[Arrhythmia] Calibración completada. Media: ${this.baselineMean}, SD: ${this.baselineSD}`);
-      }
+    if (!rrIntervals || rrIntervals.length < 8) {
       this.currentBeatIsArrhythmia = false;
       return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
     }
 
-    // Evitar falsos positivos en los primeros 3 latidos tras calibración
-    if (this.postCalibrationBeats !== undefined && this.postCalibrationBeats < 3) {
-      this.postCalibrationBeats++;
+    // Filtrar intervalos válidos
+    const validRR = rrIntervals.filter(rr => rr >= this.MIN_INTERVAL && rr <= this.MAX_INTERVAL);
+    if (validRR.length < rrIntervals.length * 0.8) {
       this.currentBeatIsArrhythmia = false;
       return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
     }
 
-    // Detección: comparar el último RR con el patrón aprendido
-    const lower = this.baselineMean - 3 * this.baselineSD;
-    const upper = this.baselineMean + 3 * this.baselineSD;
-    const isFarFromMean = Math.abs(lastRR - this.baselineMean) > 120; // Solo si la diferencia es grande
-    const isAbnormal = (lastRR < lower || lastRR > upper) && isFarFromMean;
+    // Calcular métricas
+    const rmssd = this.calculateRMSSD(validRR);
+    const sdnn = this.calculateSDNN(validRR);
+    const pnn50 = this.calculatePNN50(validRR);
+    const meanRR = validRR.reduce((a, b) => a + b, 0) / validRR.length;
 
-    this.currentBeatIsArrhythmia = isAbnormal;
+    // Detectar eventos
+    let prematureCount = 0, pauseCount = 0;
+    for (let i = 1; i < validRR.length; i++) {
+      if (validRR[i] < meanRR * 0.8) prematureCount++;
+      if (validRR[i] > meanRR * 1.2) pauseCount++;
+    }
+    const arrhythmiaEvents = prematureCount + pauseCount;
+    const isHighlyVariable = rmssd > 45 || sdnn > 60 || pnn50 > 15;
+    const isArrhythmia = (arrhythmiaEvents >= 2 && isHighlyVariable);
 
-    if (isAbnormal) {
-      this.addArrhythmiaWindow({ start: currentTime, end: currentTime + 100 });
+    // Estado directo
+    this.currentBeatIsArrhythmia = isArrhythmia;
+
+    // Visualización: solo crear ventana si hay arritmia real
+    if (isArrhythmia) {
+      this.addArrhythmiaWindow({ start: currentTime, end: currentTime + 100 }); // ventana mínima, solo para marcar el evento
       this.arrhythmiaCount++;
       this.lastArrhythmiaTriggeredTime = currentTime;
     }
 
+    // No forzar apagado ni setTimeout ni ventanas largas
+
     return {
-      isArrhythmia: isAbnormal,
-      rmssd: 0,
-      rrVariation: 0,
+      isArrhythmia,
+      rmssd,
+      rrVariation: sdnn,
       timestamp: currentTime
     };
   }
