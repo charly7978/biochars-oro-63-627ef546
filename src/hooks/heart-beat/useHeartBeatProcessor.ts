@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '../../core/types';
+import AudioFeedbackService from '../../services/AudioFeedbackService';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
@@ -36,6 +37,7 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
+  const [beatEvents, setBeatEvents] = useState<Array<{timestamp: number, value: number, isArrhythmia: boolean}>>([]);
 
   // Inicialización del procesador de latidos cardíacos
   useEffect(() => {
@@ -144,6 +146,13 @@ export const useHeartBeatProcessor = () => {
       // Obtener RR y arritmia
       const rrData = processorRef.current.getRRIntervals ? processorRef.current.getRRIntervals() : { intervals: [], lastPeakTime: null };
       const isArrhythmia = result.isArrhythmia !== undefined ? result.isArrhythmia : false;
+
+      // --- CENTRALIZAR FEEDBACK HÁPTICO Y SONORO ---
+      if (result.isPeak) {
+        AudioFeedbackService.triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
+        setBeatEvents(prev => ([...prev, { timestamp: Date.now(), value, isArrhythmia }]));
+      }
+      // --- FIN CENTRALIZACIÓN ---
 
       // Actualizar el estado con los resultados del procesamiento
       setHeartBeatResult({ ...result, isArrhythmia, rrData });
@@ -275,6 +284,7 @@ export const useHeartBeatProcessor = () => {
     reset,
     arrhythmiaStatus,
     hrvData,
-    ppgData
+    ppgData,
+    beatEvents
   };
 };
