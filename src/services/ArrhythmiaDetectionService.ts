@@ -110,7 +110,6 @@ class ArrhythmiaDetectionService {
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
     const currentTime = Date.now();
-    // Protección contra llamadas frecuentes
     if (currentTime - this.lastDetectionTime < 200) {
       return {
         isArrhythmia: this.currentBeatIsArrhythmia,
@@ -121,7 +120,6 @@ class ArrhythmiaDetectionService {
     }
     this.lastDetectionTime = currentTime;
 
-    // Requiere al menos 8 intervalos para análisis robusto
     if (!rrIntervals || rrIntervals.length < 8) {
       this.currentBeatIsArrhythmia = false;
       return {
@@ -160,25 +158,32 @@ class ArrhythmiaDetectionService {
       if (curr > meanRR * 1.2) pauseCount++;
     }
 
-    // Confirmar arritmia si hay al menos 2 eventos anómalos en ventana de 8
+    // Confirmar arritmia si hay al menos 2 eventos anómalos en ventana de 8 y alta variabilidad
     const arrhythmiaEvents = prematureCount + pauseCount;
     const isHighlyVariable = rmssd > 45 || sdnn > 60 || pnn50 > 15;
     const isArrhythmia = (arrhythmiaEvents >= 2 && isHighlyVariable);
 
-    // Actualizar estado
-    this.currentBeatIsArrhythmia = isArrhythmia;
+    // --- NUEVO: Lógica de apagado y ventanas cortas ---
     if (isArrhythmia) {
+      this.currentBeatIsArrhythmia = true;
       this.arrhythmiaCount++;
-      // Añadir ventana de arritmia para visualización
-      this.addArrhythmiaWindow({ start: currentTime - 500, end: currentTime });
+      // Ventana de arritmia de 600 ms
+      this.addArrhythmiaWindow({ start: currentTime - 300, end: currentTime + 300 });
+      this.lastArrhythmiaTriggeredTime = currentTime;
+    } else {
+      // Si han pasado más de 1.2 segundos desde la última arritmia, apagar el estado
+      if (this.currentBeatIsArrhythmia && (currentTime - this.lastArrhythmiaTriggeredTime > 1200)) {
+        this.currentBeatIsArrhythmia = false;
+      }
     }
+    // --- FIN NUEVO ---
 
     // Guardar HRV
     this.heartRateVariability.push(rmssd);
     if (this.heartRateVariability.length > 20) this.heartRateVariability.shift();
 
     return {
-      isArrhythmia,
+      isArrhythmia: this.currentBeatIsArrhythmia,
       rmssd,
       rrVariation: sdnn,
       timestamp: currentTime
