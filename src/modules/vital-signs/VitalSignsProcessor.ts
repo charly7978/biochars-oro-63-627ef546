@@ -33,6 +33,8 @@ export class VitalSignsProcessor {
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
+  private ppgBuffer: number[] = [];
+
   /**
    * Constructor that initializes all specialized processors
    * Using only direct measurement
@@ -71,6 +73,12 @@ export class VitalSignsProcessor {
     // Apply filtering to the real PPG signal
     const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
+    // Acumular el buffer de PPG de forma persistente
+    this.ppgBuffer.push(filtered);
+    if (this.ppgBuffer.length > 300) {
+      this.ppgBuffer.shift();
+    }
+    
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
@@ -79,35 +87,26 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing
-    const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
-    
-    // Limit the real data buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
-    
     // Check if we have enough data points
-    if (!this.signalValidator.hasEnoughData(ppgValues)) {
+    if (!this.signalValidator.hasEnoughData(this.ppgBuffer)) {
       return ResultFactory.createEmptyResults();
     }
     
     // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
+    const signalMin = Math.min(...this.ppgBuffer.slice(-15));
+    const signalMax = Math.max(...this.ppgBuffer.slice(-15));
     const amplitude = signalMax - signalMin;
     
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
+    if (!this.signalValidator.hasValidAmplitude(this.ppgBuffer)) {
+      this.signalValidator.logValidationResults(false, amplitude, this.ppgBuffer);
       return ResultFactory.createEmptyResults();
     }
     
     // Calculate SpO2 using real data only
-    const spo2 = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+    const spo2 = this.spo2Processor.calculateSpO2(this.ppgBuffer.slice(-45));
     
     // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
+    const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-90));
     const pressure = bp && bp.systolic > 0 && bp.diastolic > 0 
       ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
       : null;
@@ -118,15 +117,15 @@ export class VitalSignsProcessor {
       : null;
     
     // Calculate glucose with real data only
-    const glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
+    const glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calculate lipids with real data only
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    const lipids = this.lipidProcessor.calculateLipids(this.ppgBuffer);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
     // Calculate hydration with real PPG data
-    const hydration = this.hydrationEstimator.analyze(ppgValues);
+    const hydration = this.hydrationEstimator.analyze(this.ppgBuffer);
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
