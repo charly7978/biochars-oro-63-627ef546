@@ -391,7 +391,7 @@ const PPGSignalMeter = memo(({
   }, [WINDOW_WIDTH_MS, arrhythmiaWindows, playBeep]);
 
   const renderSignal = useCallback(() => {
-    if (!canvasRef.current) {
+    if (!canvasRef.current || !dataBufferRef.current) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
@@ -410,6 +410,30 @@ const PPGSignalMeter = memo(({
       drawGrid(renderCtx);
     }
     drawArrhythmiaZones(renderCtx, now);
+    const points = dataBufferRef.current.getPoints();
+    if (points.length > 1) {
+      for (let i = 1; i < points.length; i++) {
+        const prevPoint = points[i - 1];
+        const currentPoint = points[i];
+        const x1 = canvas.width - ((now - prevPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y1 = (canvas.height / 2 - 50) - prevPoint.value;
+        const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
+        const y2 = (canvas.height / 2 - 50) - currentPoint.value;
+        const isInArrhythmiaZone =
+          currentPoint.isArrhythmia ||
+          prevPoint.isArrhythmia ||
+          arrhythmiaWindows.some(window =>
+            (currentPoint.time >= window.start && currentPoint.time <= window.end) ||
+            (prevPoint.time >= window.start && prevPoint.time <= window.end)
+          );
+        renderCtx.beginPath();
+        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
+        renderCtx.lineWidth = isInArrhythmiaZone ? 3 : 2;
+        renderCtx.moveTo(x1, y1);
+        renderCtx.lineTo(x2, y2);
+        renderCtx.stroke();
+      }
+    }
     beatEvents.forEach(beat => {
       const x = canvas.width - ((now - beat.timestamp) * canvas.width / WINDOW_WIDTH_MS);
       const y = (canvas.height / 2 - 50) - (beat.value * verticalScale);
