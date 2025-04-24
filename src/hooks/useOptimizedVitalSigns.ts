@@ -4,7 +4,6 @@ import { ResultFactory } from '../modules/vital-signs/factories/result-factory';
 import { useTensorFlowProcessor } from './useTensorFlowProcessor';
 import { SignalQualityAnalyzer } from '../modules/vital-signs/SignalQualityAnalyzer';
 import TensorFlowService from '../services/TensorFlowService';
-import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
 
 /**
  * Hook centralizado y optimizado para procesamiento de signos vitales
@@ -32,6 +31,7 @@ export function useOptimizedVitalSigns() {
   const heartRateModel = useTensorFlowProcessor('heartRate', true);
   const spo2Model = useTensorFlowProcessor('spo2', true);
   const bpModel = useTensorFlowProcessor('bp', false);
+  const arrhythmiaModel = useTensorFlowProcessor('arrhythmia', false);
   
   // Inicializar modelos secundarios cuando los primarios estén listos
   useEffect(() => {
@@ -39,9 +39,12 @@ export function useOptimizedVitalSigns() {
       // Cargar modelos secundarios después de los primarios
       setTimeout(() => {
         bpModel.loadModel();
+        setTimeout(() => {
+          arrhythmiaModel.loadModel();
+        }, 2000);
       }, 1000);
     }
-  }, [heartRateModel.isReady, spo2Model.isReady, bpModel.isReady]);
+  }, [heartRateModel.isReady, spo2Model.isReady, bpModel.isReady, arrhythmiaModel.isReady]);
   
   /**
    * Procesa señal PPG y actualiza buffer
@@ -164,29 +167,41 @@ export function useOptimizedVitalSigns() {
             });
         }
         
-        // Detectar arritmias usando el servicio centralizado cada 5 frames si hay intervalos RR
-        if (framesProcessedRef.current % 5 === 0 && rrIntervalsRef.current.length > 0) {
-          // Pasar los intervalos actuales al servicio para que los procese
-          const detectionResult = ArrhythmiaDetectionService.detectArrhythmia(rrIntervalsRef.current);
-
-          // Obtener el estado general actualizado del servicio
-          const arrhythmiaStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
-
-          // Actualizar el resultado con la información del servicio
-          result.arrhythmiaStatus = arrhythmiaStatus.statusMessage;
-          result.lastArrhythmiaData = arrhythmiaStatus.lastArrhythmiaData;
-
-          // Comparamos el contador actual (número) con el contador anterior (parseado desde string)
-          const previousCountStr = lastValidResults?.arrhythmiaStatus?.split('|')[1];
-          const previousCount = previousCountStr !== undefined ? parseInt(previousCountStr, 10) : 0;
-
-          if (detectionResult.isArrhythmia !== (lastValidResults?.lastArrhythmiaData !== null) || arrhythmiaStatus.arrhythmiaCount !== previousCount) {
-              if (result.heartRate > 0) { // Solo actualizar si tenemos HR válido
-                 // Crear una copia actualizada del resultado para evitar mutaciones
-                const updatedResult = { ...result };
-                setLastValidResults(updatedResult);
+        // Detectar arritmias cada 15 frames si hay suficientes datos RR
+        if (arrhythmiaModel.isReady && framesProcessedRef.current % 15 === 0 && rrIntervalsRef.current.length >= 5) {
+          // Preparar datos para detección de arritmia
+          const rrFeatures = processRRIntervalsForArrhythmia(rrIntervalsRef.current);
+          
+          // Convertimos la llamada asíncrona en síncrona con un valor temporal
+          arrhythmiaModel.predict(rrFeatures)
+            .then(arrhythmiaPrediction => {
+              if (arrhythmiaPrediction.length >= 2) {
+                const isArrhythmia = arrhythmiaPrediction[1] > 0.65; // Umbral de confianza
+                
+                if (isArrhythmia) {
+                  lastArrhythmiaTimeRef.current = Date.now();
+                  result.arrhythmiaStatus = "ARRITMIA DETECTADA|1";
+                  result.lastArrhythmiaData = {
+                    timestamp: Date.now(),
+                    rmssd: calculateRMSSD(rrIntervalsRef.current),
+                    rrVariation: calculateRRVariation(rrIntervalsRef.current)
+                  };
+                  // Actualizar resultados 
+                  if (result.heartRate > 0) {
+                    setLastValidResults(result);
+                  }
+                } else {
+                  result.arrhythmiaStatus = "RITMO NORMAL|0";
+                  // Actualizar resultados 
+                  if (result.heartRate > 0) {
+                    setLastValidResults(result);
+                  }
+                }
               }
-          }
+            })
+            .catch(error => {
+              console.warn("Error detecting arrhythmia:", error);
+            });
         }
         
         // Procesar glucosa, hemoglobina y otros parámetros cada 30 frames
@@ -217,7 +232,7 @@ export function useOptimizedVitalSigns() {
     
     // Si no hay suficientes datos, retornar últimos resultados válidos
     return lastValidResults || ResultFactory.createEmptyResults();
-  }, [lastValidResults, heartRateModel, spo2Model, bpModel]);
+  }, [lastValidResults, heartRateModel, spo2Model, bpModel, arrhythmiaModel]);
   
   /**
    * Inicia monitoreo de signos vitales
@@ -238,8 +253,9 @@ export function useOptimizedVitalSigns() {
     // Cargar modelos secundarios después
     setTimeout(() => {
       if (!bpModel.isReady) bpModel.loadModel();
+      if (!arrhythmiaModel.isReady) arrhythmiaModel.loadModel();
     }, 2000);
-  }, [heartRateModel, spo2Model, bpModel]);
+  }, [heartRateModel, spo2Model, bpModel, arrhythmiaModel]);
   
   /**
    * Detiene monitoreo de signos vitales
@@ -274,6 +290,69 @@ export function useOptimizedVitalSigns() {
   }, []);
   
   // Funciones de utilidad para procesamiento de parámetros secundarios
+  
+  /**
+   * Procesa intervalos RR para detección de arritmias
+   */
+  const processRRIntervalsForArrhythmia = (intervals: number[]): number[] => {
+    if (intervals.length < 3) return [];
+    
+    // Calcular características para detección de arritmia
+    const features: number[] = [];
+    
+    // Intervalos directos
+    intervals.forEach(interval => features.push(interval));
+    
+    // Agregar diferencias entre intervalos consecutivos
+    for (let i = 1; i < intervals.length; i++) {
+      features.push(intervals[i] - intervals[i-1]);
+    }
+    
+    // Calcular RMSSD (Root Mean Square of Successive Differences)
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
+    }
+    const rmssd = Math.sqrt(sumSquaredDiff / (intervals.length - 1));
+    features.push(rmssd);
+    
+    // Normalizar características
+    const maxVal = Math.max(...features);
+    const minVal = Math.min(...features);
+    const range = maxVal - minVal;
+    
+    if (range > 0) {
+      return features.map(f => (f - minVal) / range);
+    }
+    
+    return features;
+  };
+  
+  /**
+   * Calcula RMSSD (Root Mean Square of Successive Differences)
+   */
+  const calculateRMSSD = (intervals: number[]): number => {
+    if (intervals.length < 2) return 0;
+    
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
+    }
+    
+    return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
+  };
+  
+  /**
+   * Calcula variación de intervalos RR
+   */
+  const calculateRRVariation = (intervals: number[]): number => {
+    if (intervals.length < 2) return 0;
+    
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    const deviations = intervals.map(val => Math.abs(val - avg) / avg);
+    
+    return deviations.reduce((sum, val) => sum + val, 0) / deviations.length;
+  };
   
   /**
    * Estima nivel de glucosa a partir de señal PPG
@@ -402,6 +481,7 @@ export function useOptimizedVitalSigns() {
       heartRate: heartRateModel.isReady,
       spo2: spo2Model.isReady,
       bp: bpModel.isReady,
+      arrhythmia: arrhythmiaModel.isReady
     }
   };
 }
