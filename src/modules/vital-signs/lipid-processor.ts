@@ -16,7 +16,7 @@ export class LipidProcessor {
   
   // Parámetros de validación y confianza
   private readonly CONFIDENCE_THRESHOLD = 0.65; // Umbral mínimo de confianza más exigente
-  private readonly MIN_SAMPLE_SIZE = 200; // Mínimo de muestras para medición válida
+  private readonly MIN_SAMPLE_SIZE = 12; // antes 200, ahora menos estricto para móviles
   
   // Parámetros para promedio ponderado y mediana
   private readonly MEDIAN_WEIGHT = 0.65; // Mayor peso a la mediana para estabilidad
@@ -59,11 +59,8 @@ export class LipidProcessor {
     this.confidenceScore = this.calculateConfidence(features, recentPPG);
     
     // Si la confianza es muy baja, retornar último valor conocido
-    if (this.confidenceScore < 0.3) {
-      return {
-        totalCholesterol: Math.round(this.lastCholesterolEstimate),
-        triglycerides: Math.round(this.lastTriglyceridesEstimate)
-      };
+    if (this.confidenceScore < 0.1) {
+      return null;
     }
     
     // Modelo de regresión multi-parámetro para estimación lipídica con coeficientes conservadores

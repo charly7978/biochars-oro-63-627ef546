@@ -8,7 +8,7 @@ export class HydrationEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 70;
   private calibrationSamples: number[] = [];
-  private readonly SAMPLE_WINDOW = 40;
+  private readonly SAMPLE_WINDOW = 10;
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();

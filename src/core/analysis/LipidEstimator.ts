@@ -19,7 +19,7 @@ export class LipidEstimator extends SignalAnalyzer {
    * Analyze lipid levels from PPG signal
    */
   public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
-    if (ppgValues.length < 30) {
+    if (ppgValues.length < 10) {
       // No hay datos suficientes para una estimación genuina
       return null;
     }

@@ -5,7 +5,7 @@
  */
 export class GlucoseProcessor {
   private confidence: number = 0;
-  private readonly MIN_SAMPLES = 20; // Increased required samples
+  private readonly MIN_SAMPLES = 8; // antes 20, ahora menos estricto para móviles
   private readonly GLUCOSE_BASELINE = 90; // Standard fasting reference
   
   // Conservative weight factors to prevent over-estimation
@@ -51,7 +51,7 @@ export class GlucoseProcessor {
     const signalAmplitude = Math.max(...ppgValues) - Math.min(...ppgValues);
     
     // If signal quality is too poor, return null
-    if (signalAmplitude < 0.05 || signalVariability > 0.8) {
+    if (signalAmplitude < 0.01 || signalVariability > 0.95) {
       this.confidence = 0;
       this.hasQualityData = false;
       console.log("GlucoseProcessor: Signal quality too poor", { 

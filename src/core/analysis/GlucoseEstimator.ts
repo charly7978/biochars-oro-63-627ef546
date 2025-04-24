@@ -9,7 +9,7 @@ import { TensorUtils } from '../neural/tensorflow/TensorAdapter';
 export class GlucoseEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 95;
-  private windowSize = 30;
+  private windowSize = 10;
   private signalBuffer: number[] = [];
   
   constructor(config: Partial<ProcessorConfig> = {}) {

@@ -2,7 +2,7 @@ import { calculateAmplitude, findPeaksAndValleys } from './utils';
 
 export class BloodPressureProcessor {
   // Expanded buffer size for greater stability
-  private readonly BP_BUFFER_SIZE = 15;
+  private readonly BP_BUFFER_SIZE = 5;
   // Median and weighted average parameters
   private readonly MEDIAN_WEIGHT = 0.6;
   private readonly MEAN_WEIGHT = 0.4;
@@ -17,8 +17,8 @@ export class BloodPressureProcessor {
   private readonly MIN_PULSE_PRESSURE = 25;
   private readonly MAX_PULSE_PRESSURE = 70;
   // Lower thresholds to accept a measurement - further reduced
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.001; // Reduced from 0.01
-  private readonly MIN_PEAK_COUNT = 1; // Reduced from 2
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.0005;
+  private readonly MIN_PEAK_COUNT = 1;
   private readonly MIN_FPS = 20;
   
   // Keep track of last calculation time to prevent sticking

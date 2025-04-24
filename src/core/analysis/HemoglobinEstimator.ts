@@ -9,7 +9,7 @@ import { TensorUtils } from '../neural/tensorflow/TensorAdapter';
 export class HemoglobinEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 14;
-  private windowSize = 30;
+  private windowSize = 10;
   private signalBuffer: number[] = [];
   
   constructor(config: Partial<ProcessorConfig> = {}) {
