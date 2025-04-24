@@ -60,6 +60,7 @@ const PPGSignalMeter = memo(({
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
   const lastBeatIndexRef = useRef<number>(-1);
+  const vibratedBeatsRef = useRef<Set<number>>(new Set());
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -432,6 +433,10 @@ const PPGSignalMeter = memo(({
           renderCtx.textAlign = 'center';
           renderCtx.fillText('ARRITMIA', x, y - 25);
         }
+        if (!vibratedBeatsRef.current.has(beat.timestamp)) {
+          AudioFeedbackService.triggerHeartbeatFeedback(beat.isArrhythmia ? 'arrhythmia' : 'normal');
+          vibratedBeatsRef.current.add(beat.timestamp);
+        }
       }
     });
     lastRenderTimeRef.current = performance.now();
@@ -445,17 +450,6 @@ const PPGSignalMeter = memo(({
       cancelAnimationFrame(animationFrameRef.current);
     };
   }, [renderSignal]);
-
-  useEffect(() => {
-    if (!beatEvents || beatEvents.length === 0) return;
-    if (lastBeatIndexRef.current === beatEvents.length - 1) return;
-    const newBeats = beatEvents.slice(lastBeatIndexRef.current + 1);
-    newBeats.forEach(beat => {
-      console.log('[PPGSignalMeter] Vibración/beep para latido:', beat);
-      AudioFeedbackService.triggerHeartbeatFeedback(beat.isArrhythmia ? 'arrhythmia' : 'normal');
-    });
-    lastBeatIndexRef.current = beatEvents.length - 1;
-  }, [beatEvents]);
 
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
