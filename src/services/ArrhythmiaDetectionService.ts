@@ -110,80 +110,48 @@ class ArrhythmiaDetectionService {
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
     const currentTime = Date.now();
-    if (currentTime - this.lastDetectionTime < 200) {
-      return {
-        isArrhythmia: this.currentBeatIsArrhythmia,
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: currentTime
-      };
-    }
-    this.lastDetectionTime = currentTime;
-
     if (!rrIntervals || rrIntervals.length < 8) {
       this.currentBeatIsArrhythmia = false;
-      return {
-        isArrhythmia: false,
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: currentTime
-      };
+      return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
     }
 
-    // Filtrar intervalos fisiológicamente válidos
+    // Filtrar intervalos válidos
     const validRR = rrIntervals.filter(rr => rr >= this.MIN_INTERVAL && rr <= this.MAX_INTERVAL);
     if (validRR.length < rrIntervals.length * 0.8) {
       this.currentBeatIsArrhythmia = false;
-      return {
-        isArrhythmia: false,
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: currentTime
-      };
+      return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
     }
 
-    // Calcular métricas de variabilidad
+    // Calcular métricas
     const rmssd = this.calculateRMSSD(validRR);
     const sdnn = this.calculateSDNN(validRR);
     const pnn50 = this.calculatePNN50(validRR);
     const meanRR = validRR.reduce((a, b) => a + b, 0) / validRR.length;
 
-    // Detectar latidos prematuros y pausas
-    let prematureCount = 0;
-    let pauseCount = 0;
+    // Detectar eventos
+    let prematureCount = 0, pauseCount = 0;
     for (let i = 1; i < validRR.length; i++) {
-      const prev = validRR[i - 1];
-      const curr = validRR[i];
-      if (curr < meanRR * 0.8) prematureCount++;
-      if (curr > meanRR * 1.2) pauseCount++;
+      if (validRR[i] < meanRR * 0.8) prematureCount++;
+      if (validRR[i] > meanRR * 1.2) pauseCount++;
     }
-
-    // Confirmar arritmia si hay al menos 2 eventos anómalos en ventana de 8 y alta variabilidad
     const arrhythmiaEvents = prematureCount + pauseCount;
     const isHighlyVariable = rmssd > 45 || sdnn > 60 || pnn50 > 15;
     const isArrhythmia = (arrhythmiaEvents >= 2 && isHighlyVariable);
 
-    // --- NUEVO: Lógica de apagado y ventanas cortas ---
-    if (isArrhythmia) {
-      this.currentBeatIsArrhythmia = true;
-      this.arrhythmiaCount++;
-      // Ventana de arritmia de 600 ms
-      this.addArrhythmiaWindow({ start: currentTime - 300, end: currentTime + 300 });
-      this.lastArrhythmiaTriggeredTime = currentTime;
-    } else {
-      // Si han pasado más de 1.2 segundos desde la última arritmia, apagar el estado
-      if (this.currentBeatIsArrhythmia && (currentTime - this.lastArrhythmiaTriggeredTime > 1200)) {
-        this.currentBeatIsArrhythmia = false;
-      }
-    }
-    // --- FIN NUEVO ---
+    // Estado directo
+    this.currentBeatIsArrhythmia = isArrhythmia;
 
-    // Guardar HRV
-    this.heartRateVariability.push(rmssd);
-    if (this.heartRateVariability.length > 20) this.heartRateVariability.shift();
+    // Visualización: solo crear ventana si hay arritmia real
+    if (isArrhythmia) {
+      this.addArrhythmiaWindow({ start: currentTime, end: currentTime + 100 }); // ventana mínima, solo para marcar el evento
+      this.arrhythmiaCount++;
+      this.lastArrhythmiaTriggeredTime = currentTime;
+    }
+
+    // No forzar apagado ni setTimeout ni ventanas largas
 
     return {
-      isArrhythmia: this.currentBeatIsArrhythmia,
+      isArrhythmia,
       rmssd,
       rrVariation: sdnn,
       timestamp: currentTime
