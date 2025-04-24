@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -35,11 +34,10 @@ const Index = () => {
     error: processingError
   } = useSignalProcessor();
 
-  const { 
+  const {
     processSignal: processHeartBeat, 
-    isArrhythmia: heartBeatIsArrhythmia,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
+    startProcessing: startHeartBeatMonitoring,
+    stopProcessing: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
@@ -100,6 +98,12 @@ const Index = () => {
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         // Process heart beat
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+        
+        // --- NUEVO: Actualizar servicio de arritmias con los RR intervals ---
+        if (heartBeatResult && heartBeatResult.rrData && heartBeatResult.rrData.intervals.length > 4) {
+          ArrhythmiaDetectionService.detectArrhythmia(heartBeatResult.rrData.intervals);
+        }
+        // --- FIN NUEVO ---
         
         if (heartBeatResult && heartBeatResult.confidence > 0.4) {
           // Set heart rate
@@ -163,7 +167,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   useEffect(() => {
     if (vitalSigns && vitalSigns.heartRate && vitalSigns.heartRate > 0) {
