@@ -605,6 +605,7 @@ const PPGSignalMeter = memo(({
     if (lastBeatIndexRef.current === beatEvents.length - 1) return;
     const newBeats = beatEvents.slice(lastBeatIndexRef.current + 1);
     newBeats.forEach(beat => {
+      console.log('[PPGSignalMeter] Vibración/beep para latido:', beat);
       AudioFeedbackService.triggerHeartbeatFeedback(beat.isArrhythmia ? 'arrhythmia' : 'normal');
     });
     lastBeatIndexRef.current = beatEvents.length - 1;
