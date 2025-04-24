@@ -42,7 +42,7 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.28; // Increased from 0.25 to 0.28
+  private readonly DETECTION_THRESHOLD: number = 0.30; // Increased from 0.28 to 0.30
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
   private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
@@ -195,68 +195,65 @@ class ArrhythmiaDetectionService {
   ): void {
     const currentTime = Date.now();
     
-    // Verificar tiempo desde última arritmia para evitar múltiples alertas
-    const timeSinceLastTriggered = currentTime - this.lastArrhythmiaTriggeredTime;
-    if (timeSinceLastTriggered <= this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
-      return; // Demasiado pronto, ignorar
-    }
-    
-    // Log detection for debugging
-    console.log('CONFIRMED Arrhythmia detected:', {
-      rmssd,
-      variationRatio,
-      threshold,
-      stabilityCounter: this.stabilityCounter,
-      timestamp: new Date(currentTime).toISOString()
-    });
-    
-    // Create an arrhythmia window
-    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-    
-    // Ventana más grande para asegurar visualización
-    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 3));
-    
-    const arrhythmiaWindow = {
-      start: currentTime - windowWidth/2,
-      end: currentTime + windowWidth/2
-    };
-    
-    // Add window to collection and broadcast to listeners
-    this.addArrhythmiaWindow(arrhythmiaWindow);
-    
-    // Actualizar contadores
-    this.arrhythmiaCount++;
-    this.lastArrhythmiaTriggeredTime = currentTime;
-    
-    // Trigger special feedback for arrhythmia
-    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
-    
-    // Limitar número de notificaciones
-    const shouldShowToast = this.arrhythmiaCount <= 3 || this.arrhythmiaCount % 3 === 0;
-    
-    // Show toast notification (limitado para no saturar)
-    if (shouldShowToast) {
-      if (this.arrhythmiaCount === 1) {
-        toast({
-          title: '¡Atención!',
-          description: 'Se ha detectado una posible arritmia',
-          variant: 'destructive',
-          duration: 6000
-        });
-      } else {
-        toast({
-          title: 'Arritmia detectada',
-          description: `Se han detectado ${this.arrhythmiaCount} posibles arritmias`,
-          variant: 'destructive',
-          duration: 6000
-        });
+    // Basic checks first
+    if (variationRatio > threshold || rmssd > 55) { // Added RMSSD check here as well for potential trigger
+      const timeSinceLastDetection = currentTime - this.lastDetectionTime;
+      
+      console.log(`[ArrhythmiaDebug] Potential arrhythmia trigger: variationRatio=${variationRatio.toFixed(3)}, rmssd=${rmssd.toFixed(2)}, threshold=${threshold}`);
+
+
+      // Check if enough time passed or if it's part of a confirmation sequence
+      if (timeSinceLastDetection > this.CONFIRMATION_WINDOW_MS) {
+        // Reset confirmation counter if too much time passed since last potential detection
+        this.arrhythmiaConfirmationCounter = 0;
+        console.log("[ArrhythmiaDebug] Resetting confirmation counter due to time gap.");
       }
+      
+      this.lastDetectionTime = currentTime;
+      this.arrhythmiaConfirmationCounter++;
+      console.log(`[ArrhythmiaDebug] Confirmation counter incremented to: ${this.arrhythmiaConfirmationCounter}`);
+
+      // Check if enough confirmations within the time window
+      if (this.arrhythmiaConfirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
+        const timeSinceLastNotification = currentTime - this.lastArrhythmiaTriggeredTime;
+        
+        if (timeSinceLastNotification > this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+          this.lastIsArrhythmia = true;
+          this.currentBeatIsArrhythmia = true;
+          this.arrhythmiaCount++;
+          this.lastArrhythmiaTriggeredTime = currentTime;
+          
+          const windowStart = Math.max(0, this.arrhythmiaWindows.length > 0 
+                                       ? this.arrhythmiaWindows[this.arrhythmiaWindows.length - 1].end 
+                                       : currentTime - 5000); // Default window of 5s
+          const windowEnd = currentTime;
+          const newWindow: ArrhythmiaWindow = { start: windowStart, end: windowEnd };
+
+          this.addArrhythmiaWindow(newWindow);
+          this.notifyListeners(newWindow);
+          
+          // Reset confirmation counter after successful trigger
+          this.arrhythmiaConfirmationCounter = 0; 
+          console.log(`[ArrhythmiaConfirmed] Arrhythmia confirmed and triggered! Count: ${this.arrhythmiaCount}. RMSSD: ${rmssd.toFixed(2)}, VariationRatio: ${variationRatio.toFixed(3)}`);
+          
+        } else {
+          console.log("[ArrhythmiaDebug] Arrhythmia confirmed, but notification suppressed due to interval limit.");
+          // Reset counter even if suppressed to avoid rapid re-triggering on the *exact* same consecutive beats
+          this.arrhythmiaConfirmationCounter = 0; 
+        }
+      } else {
+         console.log(`[ArrhythmiaDebug] Potential arrhythmia detected, need ${this.REQUIRED_CONFIRMATIONS - this.arrhythmiaConfirmationCounter} more confirmations.`);
+         // Don't mark as arrhythmia yet, wait for more confirmations
+         this.currentBeatIsArrhythmia = false; // Explicitly set to false if not confirmed
+      }
+      
+    } else {
+       // If current beat doesn't meet criteria, it doesn't contribute to confirmation
+       // We don't reset the counter here immediately, allowing confirmations to span across a few normal beats
+       // Only reset counter if a significant time gap occurs (handled at the start of the 'if')
+       this.currentBeatIsArrhythmia = false; 
+       // console.log("[ArrhythmiaDebug] Current beat normal. No change to confirmation counter.");
     }
-    
-    // Auto-cleanup para evitar detecciones continuas
-    setTimeout(() => {
-      this.currentBeatIsArrhythmia = false;
-    }, windowWidth);
   }
   
   /**

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -23,13 +22,14 @@ export class SignalValidator {
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
   private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
   private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
-  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
+  private readonly MIN_SIGNAL_VARIANCE = 0.045; // New threshold for minimum signal variance, increased from 0.04
+  private readonly CONSECUTIVE_NORMAL_THRESHOLD = 5; // Number of consecutive normal readings to reset pattern detection
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.02, // Increased from 0.01
+    minSignalAmplitude: number = 0.025, // Increased from 0.02
     minPpgValues: number = 15
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
