@@ -1,3 +1,9 @@
+import { HeartBeatConfig } from './heart-beat/config';
+import { applyFilterPipeline } from './heart-beat/signal-filters';
+import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
+import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
+import { HeartbeatAudioManager } from './heart-beat/audio-manager';
+import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality';
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
