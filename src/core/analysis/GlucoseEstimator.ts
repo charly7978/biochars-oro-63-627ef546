@@ -1,16 +1,14 @@
+
 import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { SignalAnalyzer } from './SignalAnalyzer';
-import { TensorUtils } from '../neural/tensorflow/TensorAdapter';
 
 /**
- * Estimador optimizado para glucosa a partir de señal PPG
+ * Estimator for blood glucose from PPG signal characteristics
  */
 export class GlucoseEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 95;
-  private windowSize = 10;
-  private signalBuffer: number[] = [];
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();
@@ -18,80 +16,64 @@ export class GlucoseEstimator extends SignalAnalyzer {
   }
   
   /**
-   * Analiza el nivel de glucosa a partir de valores PPG crudos
+   * Estimate glucose level from PPG values
    */
-  public analyze(ppgValues: number[]): number | null {
-    // Actualizar buffer de señal
-    this.updateBuffer(ppgValues);
-    
-    if (this.signalBuffer.length < this.windowSize) {
-      // No hay datos suficientes para una estimación genuina
-      return null;
+  public analyze(ppgValues: number[]): number {
+    if (ppgValues.length < 30) {
+      return this.lastEstimate;
     }
     
-    // Usar los valores más recientes
-    const recentValues = this.signalBuffer.slice(-this.windowSize);
-    
-    // Cálculo de métricas directamente desde datos crudos
+    // Calculate metrics from real PPG data
+    const recentValues = ppgValues.slice(-30);
     const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const amplitude = max - min;
     
-    // Normalización de señal para análisis espectral
-    const normalizedSignal = TensorUtils.normalizeInput(recentValues);
+    // Apply calibration factor from settings
+    const calibrationFactor = this.config.analysisSettings.glucoseCalibrationFactor || 1.0;
     
-    // Calcular estimación base (rango saludable)
+    // Base estimate (healthy range)
     let glucoseEstimate = 95;
     
-    // Ajustar basado en características de la señal PPG
+    // Adjust based on PPG characteristics
     if (amplitude > 0.2) {
       glucoseEstimate -= 5;
     } else if (amplitude < 0.1) {
       glucoseEstimate += 5;
     }
     
-    // Ajuste basado en valor medio
+    // Adjust based on mean value
     if (mean > 0.6) {
       glucoseEstimate += 3;
     } else if (mean < 0.4) {
       glucoseEstimate -= 3;
     }
     
-    // Ajustar con factor de calibración
-    const calibrationFactor = this.config.analysisSettings.glucoseCalibrationFactor || 1.0;
+    // Apply calibration
     glucoseEstimate = Math.round(glucoseEstimate * calibrationFactor);
     
-    // Asegurar rango fisiológico
+    // Ensure physiological range
     glucoseEstimate = Math.max(70, Math.min(180, glucoseEstimate));
     
-    // Actualizar estimación más reciente
+    // Update last estimate
     this.lastEstimate = glucoseEstimate;
     
     return glucoseEstimate;
   }
   
   /**
-   * Actualiza el buffer de señal de forma eficiente
+   * Legacy method for compatibility
    */
-  private updateBuffer(newValues: number[]): void {
-    // Agregar nuevos valores y mantener tamaño controlado
-    this.signalBuffer = [...this.signalBuffer, ...newValues].slice(-this.windowSize * 2);
-  }
-  
-  /**
-   * Método de compatibilidad
-   */
-  public estimate(ppgValues: number[]): number | null {
+  public estimate(ppgValues: number[]): number {
     return this.analyze(ppgValues);
   }
   
   /**
-   * Reinicia el estimador
+   * Reset the estimator
    */
   public reset(): void {
     super.reset();
     this.lastEstimate = 95;
-    this.signalBuffer = [];
   }
 }

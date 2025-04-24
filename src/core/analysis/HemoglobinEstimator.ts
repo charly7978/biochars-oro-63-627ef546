@@ -1,16 +1,14 @@
+
 import { UserProfile } from '../types';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 import { SignalAnalyzer } from './SignalAnalyzer';
-import { TensorUtils } from '../neural/tensorflow/TensorAdapter';
 
 /**
- * Estimador optimizado para niveles de hemoglobina a partir de señal PPG
+ * Estimator for hemoglobin levels from PPG signal
  */
 export class HemoglobinEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 14;
-  private windowSize = 10;
-  private signalBuffer: number[] = [];
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();
@@ -18,77 +16,62 @@ export class HemoglobinEstimator extends SignalAnalyzer {
   }
   
   /**
-   * Analiza el nivel de hemoglobina a partir de valores PPG crudos
+   * Analyze hemoglobin level from PPG values
    */
-  public analyze(ppgValues: number[]): number | null {
-    // Actualizar buffer de señal
-    this.updateBuffer(ppgValues);
-    
-    if (this.signalBuffer.length < this.windowSize) {
-      // No hay datos suficientes para una estimación genuina
-      return null;
+  public analyze(ppgValues: number[]): number {
+    if (ppgValues.length < 30) {
+      return this.lastEstimate;
     }
     
-    // Usar los valores más recientes
-    const recentValues = this.signalBuffer.slice(-this.windowSize);
-    
-    // Cálculo de métricas a partir de datos crudos
+    // Calculate metrics from PPG
+    const recentValues = ppgValues.slice(-30);
     const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     const max = Math.max(...recentValues);
     const min = Math.min(...recentValues);
     const amplitude = max - min;
     
-    // Ajuste con TensorUtils para optimizar la señal
-    const normalizedSignal = TensorUtils.normalizeInput(recentValues);
+    // Get calibration factor from settings
+    const calibrationFactor = this.config.analysisSettings.hemoglobinCalibrationFactor || 1.0;
     
-    // Estimación base (rango saludable)
+    // Base estimate (healthy range)
     let hemoglobinEstimate = 14.0;
     
-    // Ajuste basado en género si disponible
+    // Gender-based adjustment if available
     if (this.userProfile?.gender === 'female') {
       hemoglobinEstimate = 12.5;
     }
     
-    // Ajuste basado en características de la señal PPG
+    // Adjust based on PPG characteristics
     if (amplitude > 0.25) {
       hemoglobinEstimate += 0.5;
     } else if (amplitude < 0.1) {
       hemoglobinEstimate -= 0.5;
     }
     
-    // Aplicar calibración
-    const calibrationFactor = this.config.analysisSettings.hemoglobinCalibrationFactor || 1.0;
+    // Apply calibration and convert to integer
     hemoglobinEstimate = Math.round(hemoglobinEstimate * calibrationFactor);
     
-    // Asegurar rango fisiológico
+    // Ensure physiological range
     hemoglobinEstimate = Math.max(8, Math.min(18, hemoglobinEstimate));
     
-    // Actualizar estimación más reciente
+    // Update last estimate
     this.lastEstimate = hemoglobinEstimate;
     
     return hemoglobinEstimate;
   }
   
   /**
-   * Actualiza el buffer de señal de forma eficiente
-   */
-  private updateBuffer(newValues: number[]): void {
-    this.signalBuffer = [...this.signalBuffer, ...newValues].slice(-this.windowSize * 2);
-  }
-  
-  /**
-   * Método de compatibilidad
+   * Legacy method for compatibility
    */
   public estimate(ppgValues: number[]): number {
     return this.analyze(ppgValues);
   }
   
   /**
-   * Reinicia el estimador
+   * Reset the estimator
    */
   public reset(): void {
     super.reset();
     this.lastEstimate = 14;
-    this.signalBuffer = [];
   }
 }

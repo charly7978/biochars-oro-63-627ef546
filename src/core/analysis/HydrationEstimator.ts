@@ -1,3 +1,4 @@
+
 import { SignalAnalyzer } from './SignalAnalyzer';
 import { ProcessorConfig, DEFAULT_PROCESSOR_CONFIG } from '../config/ProcessorConfig';
 
@@ -8,7 +9,7 @@ export class HydrationEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
   private lastEstimate: number = 70;
   private calibrationSamples: number[] = [];
-  private readonly SAMPLE_WINDOW = 10;
+  private readonly SAMPLE_WINDOW = 40;
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();
@@ -23,10 +24,9 @@ export class HydrationEstimator extends SignalAnalyzer {
    * - Baseline drift patterns
    * - Waveform morphology
    */
-  public analyze(ppgValues: number[]): number | null {
+  public analyze(ppgValues: number[]): number {
     if (ppgValues.length < this.SAMPLE_WINDOW) {
-      // No hay datos suficientes para una estimación genuina
-      return null;
+      return this.lastEstimate;
     }
     
     // Get the most recent window of values

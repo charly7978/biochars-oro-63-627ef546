@@ -1,5 +1,5 @@
 
-import React, { ReactNode, useEffect, useState } from 'react';
+import React, { ReactNode } from 'react';
 import { cn } from "@/lib/utils";
 import { animations } from '@/theme/animations';
 
@@ -20,26 +20,11 @@ const VitalSign: React.FC<VitalSignProps> = ({
   compact = false,
   icon
 }) => {
-  // Estado local para la animación suave de valores
-  const [displayValue, setDisplayValue] = useState<string | number>(value);
-  
-  // Actualizar el valor mostrado cuando cambia value
-  useEffect(() => {
-    // Asegurarse de que los valores vacíos se muestren como "--"
-    if (value === null || value === undefined || value === 0) {
-      setDisplayValue("--");
-    } else {
-      setDisplayValue(value);
-    }
-    
-    console.log(`VitalSign [${label}] updated:`, { value, highlighted });
-  }, [value, label]);
-
   const getValueTextSize = () => {
     if (compact) return "text-xl";
     
     // Adjust text size based on length
-    if (typeof displayValue === 'string' && displayValue.length > 5) {
+    if (typeof value === 'string' && value.length > 5) {
       return "text-xl sm:text-2xl";
     }
     return "text-2xl sm:text-3xl";
@@ -73,11 +58,18 @@ const VitalSign: React.FC<VitalSignProps> = ({
             : "text-gray-300"
         )}
         style={{ 
+          animation: highlighted ? animations["result-animate"] : "none",
           textShadow: highlighted ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
         }}
       >
-        <span className="inline-flex items-center">
-          {displayValue}
+        <span 
+          className="inline-flex items-center"
+          style={{ 
+            animation: highlighted ? animations["number-highlight"] : "none",
+            transition: "all 0.6s ease-out"
+          }}
+        >
+          {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
         {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}

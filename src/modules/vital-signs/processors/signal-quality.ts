@@ -3,6 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
+
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
  * All methods work with real data only, no simulation
@@ -18,9 +20,7 @@ export class SignalQuality {
    */
   public updateNoiseLevel(rawValue: number, filteredValue: number): void {
     // Noise is estimated as the difference between raw and filtered
-    const instantNoise = rawValue > filteredValue ? 
-                         rawValue - filteredValue : 
-                         filteredValue - rawValue;
+    const instantNoise = Math.abs(rawValue - filteredValue);
     
     // Update noise level with exponential smoothing
     // Slower adaptation to reduce impact of transient noise
@@ -42,17 +42,8 @@ export class SignalQuality {
     if (ppgValues.length < 5) return 0;
     
     // Calculate amplitude and standard deviation
-    let min = ppgValues[ppgValues.length - 10];
-    let max = min;
-    
-    // Manual implementation of min/max for the last 10 values
-    for (let i = ppgValues.length - 10; i < ppgValues.length; i++) {
-      if (i >= 0) {
-        if (ppgValues[i] < min) min = ppgValues[i];
-        if (ppgValues[i] > max) max = ppgValues[i];
-      }
-    }
-    
+    const min = Math.min(...ppgValues.slice(-10));
+    const max = Math.max(...ppgValues.slice(-10));
     const amplitude = max - min;
     
     // Only consider valid signals with sufficient amplitude
@@ -60,10 +51,10 @@ export class SignalQuality {
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
-      // Calculate min using ternary
-      this.consecutiveStrongSignals = this.consecutiveStrongSignals + 1 > this.MIN_STRONG_SIGNALS_REQUIRED + 2 ?
-                                      this.MIN_STRONG_SIGNALS_REQUIRED + 2 :
-                                      this.consecutiveStrongSignals + 1;
+      this.consecutiveStrongSignals = Math.min(
+        this.MIN_STRONG_SIGNALS_REQUIRED + 2, 
+        this.consecutiveStrongSignals + 1
+      );
     }
     
     // Only return positive quality after we've seen enough strong signals
@@ -86,37 +77,15 @@ export class SignalQuality {
     const recentValues = ppgValues.slice(-10);
     
     // Calculate signal amplitude (min to max) - real data only
-    let min = recentValues[0];
-    let max = recentValues[0];
-    
-    for (let i = 1; i < recentValues.length; i++) {
-      if (recentValues[i] < min) min = recentValues[i];
-      if (recentValues[i] > max) max = recentValues[i];
-    }
-    
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
     const amplitude = max - min;
     
     // Calculate average and standard deviation - real data only
-    let sum = 0;
-    for (let i = 0; i < recentValues.length; i++) {
-      sum += recentValues[i];
-    }
-    const avg = sum / recentValues.length;
-    
-    // Calculate standard deviation manually
-    let sumOfSquares = 0;
-    for (let i = 0; i < recentValues.length; i++) {
-      const diff = recentValues[i] - avg;
-      sumOfSquares += diff * diff;
-    }
-    const variance = sumOfSquares / recentValues.length;
-    
-    // Calculate square root manually using Newton's method
-    let stdDev = variance;
-    for (let i = 0; i < 5; i++) {
-      if (stdDev <= 0) break;
-      stdDev = 0.5 * (stdDev + variance / stdDev);
-    }
+    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const stdDev = Math.sqrt(
+      recentValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / recentValues.length
+    );
     
     // Calculate noise to signal ratio - real data only
     const noiseToSignalRatio = this.noiseLevel / (amplitude + 0.001);
@@ -136,34 +105,15 @@ export class SignalQuality {
     }
     
     if (peakSpacings.length >= 2) {
-      let spacingSum = 0;
-      for (let i = 0; i < peakSpacings.length; i++) {
-        spacingSum += peakSpacings[i];
-      }
-      const avgSpacing = spacingSum / peakSpacings.length;
-      
-      // Calculate variance of spacings manually
-      let spacingVarSum = 0;
-      for (let i = 0; i < peakSpacings.length; i++) {
-        const spacingDiff = peakSpacings[i] - avgSpacing;
-        spacingVarSum += spacingDiff * spacingDiff;
-      }
-      const spacingVariance = spacingVarSum / peakSpacings.length;
-      
-      // Calculate coefficient of variation manually using Newton's method for sqrt
-      let spacingStdDev = spacingVariance;
-      for (let i = 0; i < 5; i++) {
-        if (spacingStdDev <= 0) break;
-        spacingStdDev = 0.5 * (spacingStdDev + spacingVariance / spacingStdDev);
-      }
-      
-      const spacingCoeffOfVar = avgSpacing > 0 ? spacingStdDev / avgSpacing : 1;
-      peakConsistency = spacingCoeffOfVar >= 1 ? 0 : 1 - spacingCoeffOfVar;
+      const avgSpacing = peakSpacings.reduce((sum, val) => sum + val, 0) / peakSpacings.length;
+      const spacingVariance = peakSpacings.reduce((sum, val) => sum + Math.pow(val - avgSpacing, 2), 0) / peakSpacings.length;
+      const spacingCoeffOfVar = Math.sqrt(spacingVariance) / avgSpacing;
+      peakConsistency = Math.max(0, 1 - spacingCoeffOfVar);
     }
     
     // Calculate overall quality score with weighted components - real data only
-    const amplitudeScore = amplitude >= 0.5 ? 1 : amplitude / 0.5;  // Normalize amplitude
-    const stdDevScore = noiseToSignalRatio >= 1 ? 0 : 1 - noiseToSignalRatio;  // Lower noise is better
+    const amplitudeScore = Math.min(1, amplitude / 0.5);  // Normalize amplitude
+    const stdDevScore = Math.min(1, Math.max(0, 1 - noiseToSignalRatio));  // Lower noise is better
     
     // Weight the factors to get overall quality
     const weightedScore = (
@@ -172,8 +122,8 @@ export class SignalQuality {
       peakConsistency * 0.2           // 20% peak consistency
     );
     
-    // Normalize to 0-1 range using clamp
-    return weightedScore < 0 ? 0 : (weightedScore > 1 ? 1 : weightedScore);
+    // Normalize to 0-1 range
+    return Math.max(0, Math.min(1, weightedScore));
   }
   
   /**

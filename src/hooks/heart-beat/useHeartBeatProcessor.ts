@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -5,7 +6,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '../../core/types';
-import AudioFeedbackService from '../../services/AudioFeedbackService';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco
@@ -37,7 +37,6 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
-  const [beatEvents, setBeatEvents] = useState<Array<{timestamp: number, value: number, isArrhythmia: boolean}>>([]);
 
   // Inicialización del procesador de latidos cardíacos
   useEffect(() => {
@@ -55,6 +54,38 @@ export const useHeartBeatProcessor = () => {
       processorRef.current = null;
     };
   }, []);
+
+  // Función para procesar la señal
+  const processSignal = useCallback(
+    (value: number) => {
+      if (!processorRef.current) {
+        console.warn("HeartBeatProcessor no está inicializado.");
+        return null;
+      }
+
+      // Verificar si el valor de la señal es un número
+      if (typeof value !== 'number') {
+        console.error("Valor de señal inválido:", value);
+        return null;
+      }
+
+      // Actualizar la última señal válida
+      lastValidSignalRef.current = value;
+
+      // Simular el procesamiento de la señal y obtener los resultados
+      const result = processorRef.current.processSignal(value);
+
+      // Actualizar el estado con los resultados del procesamiento
+      setHeartBeatResult(result);
+
+      // Actualizar datos adicionales de análisis
+      updateAnalysisData(value, result);
+
+      // Devolver los resultados
+      return result;
+    },
+    []
+  );
 
   // Función para actualizar datos de análisis
   const updateAnalysisData = useCallback((value: number, result: any) => {
@@ -110,61 +141,6 @@ export const useHeartBeatProcessor = () => {
       });
     }
   }, [rrIntervals]);
-
-  const processSignal = useCallback(
-    (value: number) => {
-      if (!processorRef.current) {
-        console.warn("HeartBeatProcessor no está inicializado.");
-        return {
-          bpm: 0,
-          confidence: 0,
-          isPeak: false,
-          arrhythmiaCount: 0,
-          isArrhythmia: false,
-          rrData: { intervals: [], lastPeakTime: null }
-        };
-      }
-
-      // Verificar si el valor de la señal es un número
-      if (typeof value !== 'number') {
-        console.error("Valor de señal inválido:", value);
-        return {
-          bpm: 0,
-          confidence: 0,
-          isPeak: false,
-          arrhythmiaCount: 0,
-          isArrhythmia: false,
-          rrData: { intervals: [], lastPeakTime: null }
-        };
-      }
-
-      // Actualizar la última señal válida
-      lastValidSignalRef.current = value;
-
-      // Procesar la señal y obtener los resultados
-      const result: any = processorRef.current.processSignal(value);
-      // Obtener RR y arritmia
-      const rrData = processorRef.current.getRRIntervals ? processorRef.current.getRRIntervals() : { intervals: [], lastPeakTime: null };
-      const isArrhythmia = result.isArrhythmia !== undefined ? result.isArrhythmia : false;
-
-      // --- CENTRALIZAR FEEDBACK HÁPTICO Y SONORO ---
-      if (result.isPeak) {
-        AudioFeedbackService.triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
-        setBeatEvents(prev => ([...prev, { timestamp: Date.now(), value, isArrhythmia }]));
-      }
-      // --- FIN CENTRALIZACIÓN ---
-
-      // Actualizar el estado con los resultados del procesamiento
-      setHeartBeatResult({ ...result, isArrhythmia, rrData });
-
-      // Actualizar datos adicionales de análisis
-      updateAnalysisData(value, { ...result, isArrhythmia, rrData });
-
-      // Devolver los resultados
-      return { ...result, isArrhythmia, rrData };
-    },
-    [updateAnalysisData]
-  );
 
   // Función para iniciar el procesamiento
   const startProcessing = useCallback(() => {
@@ -284,7 +260,6 @@ export const useHeartBeatProcessor = () => {
     reset,
     arrhythmiaStatus,
     hrvData,
-    ppgData,
-    beatEvents
+    ppgData
   };
 };

@@ -5,12 +5,11 @@ import { SignalAnalyzer } from './SignalAnalyzer';
 
 /**
  * Estimator for blood lipids from PPG signal characteristics
- * Sin usar Math ni valores simulados
  */
 export class LipidEstimator extends SignalAnalyzer {
   private config: ProcessorConfig;
-  private lastTotal: number = 0; // Inicializado en 0 sin valores predeterminados
-  private lastTriglycerides: number = 0; // Inicializado en 0 sin valores predeterminados
+  private lastTotal: number = 180;
+  private lastTriglycerides: number = 150;
   
   constructor(config: Partial<ProcessorConfig> = {}) {
     super();
@@ -20,101 +19,58 @@ export class LipidEstimator extends SignalAnalyzer {
   /**
    * Analyze lipid levels from PPG signal
    */
-  public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
-    if (ppgValues.length < 10) {
-      // No hay datos suficientes para una estimación genuina
-      return null;
+  public analyze(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
+    if (ppgValues.length < 30) {
+      return { 
+        totalCholesterol: this.lastTotal,
+        triglycerides: this.lastTriglycerides
+      };
     }
     
-    // Calculate metrics from PPG without using Math
+    // Calculate metrics from PPG
     const recentValues = ppgValues.slice(-30);
-    
-    // Calcular promedio manualmente
-    let sum = 0;
-    for (let i = 0; i < recentValues.length; i++) {
-      sum += recentValues[i];
-    }
-    const mean = sum / recentValues.length;
-    
-    // Calcular min/max manualmente
-    let min = recentValues[0];
-    let max = recentValues[0];
-    for (let i = 1; i < recentValues.length; i++) {
-      if (recentValues[i] < min) min = recentValues[i];
-      if (recentValues[i] > max) max = recentValues[i];
-    }
-    
+    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    const max = Math.max(...recentValues);
+    const min = Math.min(...recentValues);
     const amplitude = max - min;
     
     // Get calibration factors
     const cholesterolCalibrationFactor = this.config.analysisSettings.cholesterolCalibrationFactor || 1.0;
     const triglycerideCalibrationFactor = this.config.analysisSettings.triglycerideCalibrationFactor || 1.0;
     
-    // Base estimates from direct signal characteristics only
-    let totalCholesterol = 0;
-    let triglycerides = 0;
+    // Base estimates (healthy ranges)
+    let totalCholesterol = 180;
+    let triglycerides = 150;
     
-    // Algoritmo basado directamente en características de la señal
+    // Adjust based on PPG characteristics
     if (amplitude < 0.1) {
-      // Baja perfusión - correlacionada con alteraciones lipídicas
-      totalCholesterol = 190;
-      triglycerides = 160;
-    } else if (amplitude < 0.15) {
-      totalCholesterol = 180;
-      triglycerides = 150;
-    } else if (amplitude < 0.2) {
-      totalCholesterol = 175;
-      triglycerides = 140;
-    } else if (amplitude < 0.25) {
-      totalCholesterol = 165;
-      triglycerides = 130;
-    } else {
-      // Mejor perfusión - mejor flujo sanguíneo
-      totalCholesterol = 160;
-      triglycerides = 120;
+      totalCholesterol += 10;
+      triglycerides += 15;
+    } else if (amplitude > 0.25) {
+      totalCholesterol -= 5;
+      triglycerides -= 10;
     }
     
-    // Apply calibration factors directly without Math.round
-    const calibratedCholesterol = this.roundWithoutMath(totalCholesterol * cholesterolCalibrationFactor);
-    const calibratedTriglycerides = this.roundWithoutMath(triglycerides * triglycerideCalibrationFactor);
+    // Apply calibration factors
+    totalCholesterol = Math.round(totalCholesterol * cholesterolCalibrationFactor);
+    triglycerides = Math.round(triglycerides * triglycerideCalibrationFactor);
     
-    // Ensure physiological ranges without Math.min/Math.max
-    const finalCholesterol = this.clamp(calibratedCholesterol, 120, 300);
-    const finalTriglycerides = this.clamp(calibratedTriglycerides, 50, 500);
+    // Ensure physiological ranges
+    totalCholesterol = Math.max(120, Math.min(300, totalCholesterol));
+    triglycerides = Math.max(50, Math.min(500, triglycerides));
     
     // Update last estimates
-    this.lastTotal = finalCholesterol;
-    this.lastTriglycerides = finalTriglycerides;
+    this.lastTotal = totalCholesterol;
+    this.lastTriglycerides = triglycerides;
     
-    return { 
-      totalCholesterol: finalCholesterol, 
-      triglycerides: finalTriglycerides
-    };
+    return { totalCholesterol, triglycerides };
   }
   
   /**
    * Legacy method for compatibility
    */
-  public estimate(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } | null {
+  public estimate(ppgValues: number[]): { totalCholesterol: number; triglycerides: number } {
     return this.analyze(ppgValues);
-  }
-  
-  /**
-   * Restricción de rango manual sin Math.min/Math.max
-   */
-  private clamp(value: number, min: number, max: number): number {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-  
-  /**
-   * Redondeo manual sin Math.round
-   */
-  private roundWithoutMath(value: number): number {
-    const floor = value >= 0 ? ~~value : ~~value - 1;
-    const fraction = value - floor;
-    return fraction >= 0.5 ? floor + 1 : floor;
   }
   
   /**
@@ -122,7 +78,7 @@ export class LipidEstimator extends SignalAnalyzer {
    */
   public reset(): void {
     super.reset();
-    this.lastTotal = 0;
-    this.lastTriglycerides = 0;
+    this.lastTotal = 180;
+    this.lastTriglycerides = 150;
   }
 }

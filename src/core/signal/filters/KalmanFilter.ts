@@ -1,7 +1,6 @@
 
 /**
  * Implementación del filtro de Kalman para reducción de ruido en señales PPG
- * Sin usar funciones Math
  */
 export class KalmanFilter {
   private R: number = 0.008; // Factor de reducción de ruido
@@ -11,7 +10,7 @@ export class KalmanFilter {
   private K: number = 0;     // Ganancia de Kalman
 
   /**
-   * Aplica el filtro de Kalman a un valor de medición sin usar Math
+   * Aplica el filtro de Kalman a un valor de medición
    * @param measurement Valor crudo de la medición
    * @returns Valor filtrado
    */
@@ -41,13 +40,12 @@ export class KalmanFilter {
   }
   
   /**
-   * Ajusta los parámetros del filtro sin usar Math
+   * Ajusta los parámetros del filtro
    * @param processNoise Factor Q (ruido del proceso)
    * @param measurementNoise Factor R (ruido de medición)
    */
   public setParameters(processNoise: number, measurementNoise: number): void {
-    // Validación manual sin Math.max
-    this.Q = processNoise > 0 ? processNoise : 0.01;
-    this.R = measurementNoise > 0 ? measurementNoise : 0.01;
+    this.Q = processNoise;
+    this.R = measurementNoise;
   }
 }

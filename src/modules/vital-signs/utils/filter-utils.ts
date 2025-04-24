@@ -26,14 +26,8 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   if (recentValues.length === 0) return value;
   
   // Calcular la amplitud reciente de datos reales
-  let recentMin = recentValues[0];
-  let recentMax = recentValues[0];
-  
-  for (let i = 1; i < recentValues.length; i++) {
-    if (recentValues[i] < recentMin) recentMin = recentValues[i];
-    if (recentValues[i] > recentMax) recentMax = recentValues[i];
-  }
-  
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
   const recentRange = recentMax - recentMin;
   
   // Factor de amplificación para señales reales
@@ -47,12 +41,7 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   }
   
   // Amplificar usando solo datos reales
-  let sum = 0;
-  for (let i = 0; i < recentValues.length; i++) {
-    sum += recentValues[i];
-  }
-  const mean = sum / recentValues.length;
-  
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
   const centeredValue = value - mean;
   const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   

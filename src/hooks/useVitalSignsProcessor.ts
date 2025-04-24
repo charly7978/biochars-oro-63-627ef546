@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,7 +11,6 @@ import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
-import { ResultFactory } from '../modules/vital-signs/factories/result-factory';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -21,7 +21,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking
-  const sessionId = useRef<string>(Date.now().toString(36));
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   // Signal quality tracking
   const weakSignalsCountRef = useRef<number>(0);
@@ -56,19 +56,18 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   useEffect(() => {
     console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
       sessionId: sessionId.current,
-      timestamp: Date.now()
+      timestamp: new Date().toISOString()
     });
     
     // Create new instances for direct measurement
-    const processor = initializeProcessor();
-    console.log("Processor initialized:", !!processor);
+    initializeProcessor();
     
     return () => {
       console.log("useVitalSignsProcessor: Processor cleanup", {
         sessionId: sessionId.current,
         totalArrhythmias: getArrhythmiaCounter(),
         processedSignals: processedSignals.current,
-        timestamp: Date.now()
+        timestamp: new Date().toISOString()
       });
     };
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
@@ -89,13 +88,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     );
     
     weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Log input value for debugging
-    console.log("useVitalSignsProcessor: Processing signal input", {
-      value,
-      isWeakSignal,
-      weakSignalsCount: weakSignalsCountRef.current
-    });
     
     // Process signal directly - no simulation
     try {
@@ -119,26 +111,30 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results - IMPORTANT: Do this regardless of nullity in fields to ensure UI updates
-      if (result) {
-        console.log("Saving valid result:", {
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure 
-        });
+      // Save valid results
+      if (result && result.heartRate > 0) {
         setLastValidResults(result);
-        
-        // Keep lastValidResults updated with the most recent data
-        if (result.heartRate === 0 && lastValidResults && lastValidResults.heartRate > 0) {
-          result.heartRate = lastValidResults.heartRate;
-        }
       }
       
-      // Return processed result directly to ensure data flows to UI
+      // Return processed result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
-      return lastValidResults || ResultFactory.createEmptyResults();
+      
+      // Return safe fallback values on error that include heartRate
+      return {
+        spo2: 0,
+        heartRate: 0,
+        pressure: "--/--",
+        arrhythmiaStatus: "--",
+        glucose: 0,
+        lipids: {
+          totalCholesterol: 0,
+          triglycerides: 0
+        },
+        hemoglobin: 0,
+        hydration: 0
+      };
     }
   };
 
@@ -147,12 +143,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulations or reference values
    */
   const reset = () => {
-    console.log("useVitalSignsProcessor: Reset initiated");
     resetProcessor();
     clearArrhythmiaWindows();
     setLastValidResults(null);
     weakSignalsCountRef.current = 0;
-    console.log("useVitalSignsProcessor: Reset completed");
     
     return null;
   };
@@ -162,13 +156,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulations or reference values
    */
   const fullReset = () => {
-    console.log("useVitalSignsProcessor: Full reset initiated");
     fullResetProcessor();
     setLastValidResults(null);
     clearArrhythmiaWindows();
     weakSignalsCountRef.current = 0;
     clearLog();
-    console.log("useVitalSignsProcessor: Full reset completed");
   };
 
   return {

@@ -3,7 +3,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAC, calculateDC } from './utils/signal-processing-utils';
+import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
@@ -34,15 +34,16 @@ export class SpO2Processor {
     // Direct calculation from real signal characteristics
     const R = (ac / dc);
     
-    // Usar algoritmo directo en vez de Math.round
-    let spO2 = this.roundWithoutMath(98 - (15 * R));
+    let spO2 = Math.round(98 - (15 * R));
     
     // Adjust based on real perfusion quality
     if (perfusionIndex > 0.15) {
-      spO2 = this.clamp(spO2 + 1, 0, 98);
+      spO2 = Math.min(98, spO2 + 1);
     } else if (perfusionIndex < 0.08) {
-      spO2 = this.clamp(spO2 - 1, 0, 98);
+      spO2 = Math.max(0, spO2 - 1);
     }
+
+    spO2 = Math.min(98, spO2);
 
     // Update buffer with real measurement
     this.spo2Buffer.push(spO2);
@@ -52,11 +53,8 @@ export class SpO2Processor {
 
     // Calculate average for stability from real measurements
     if (this.spo2Buffer.length > 0) {
-      let sum = 0;
-      for (let i = 0; i < this.spo2Buffer.length; i++) {
-        sum += this.spo2Buffer[i];
-      }
-      spO2 = this.roundWithoutMath(sum / this.spo2Buffer.length);
+      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
+      spO2 = Math.round(sum / this.spo2Buffer.length);
     }
 
     return spO2;
@@ -69,27 +67,9 @@ export class SpO2Processor {
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
       const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      return this.clamp(lastValid - decayAmount, 0, 100);
+      return Math.max(0, lastValid - decayAmount);
     }
     return 0;
-  }
-  
-  /**
-   * Limita un valor entre min y max sin usar Math.min/max
-   */
-  private clamp(value: number, min: number, max: number): number {
-    if (value < min) return min;
-    if (value > max) return max;
-    return value;
-  }
-  
-  /**
-   * Redondeo manual sin usar Math.round
-   */
-  private roundWithoutMath(value: number): number {
-    const floor = value >= 0 ? ~~value : ~~value - 1;
-    const fraction = value - floor;
-    return fraction >= 0.5 ? floor + 1 : floor;
   }
 
   /**
