@@ -63,6 +63,7 @@ class ArrhythmiaDetectionService {
   private baselineMean: number = 0;
   private baselineSD: number = 0;
   private isCalibrated: boolean = false;
+  private postCalibrationBeats: number | undefined = undefined;
 
   private constructor() {
     // Configurar limpieza automática periódica
@@ -121,25 +122,35 @@ class ArrhythmiaDetectionService {
     // Fase de calibración (primeros 6 segundos)
     if (!this.isCalibrated) {
       if (!this.calibrationStartTime) this.calibrationStartTime = currentTime;
-      this.calibrationRRs.push(lastRR);
-
+      // Filtrar artefactos
+      if (lastRR >= this.MIN_INTERVAL && lastRR <= this.MAX_INTERVAL) {
+        this.calibrationRRs.push(lastRR);
+      }
       if (currentTime - this.calibrationStartTime >= 6000) {
         // Calcular patrón base
         this.baselineMean = this.calibrationRRs.reduce((a, b) => a + b, 0) / this.calibrationRRs.length;
         const variance = this.calibrationRRs.reduce((sum, val) => sum + Math.pow(val - this.baselineMean, 2), 0) / this.calibrationRRs.length;
         this.baselineSD = Math.sqrt(variance);
         this.isCalibrated = true;
+        this.postCalibrationBeats = 0;
         console.log(`[Arrhythmia] Calibración completada. Media: ${this.baselineMean}, SD: ${this.baselineSD}`);
       }
-      // Durante calibración, no marcar arritmia
+      this.currentBeatIsArrhythmia = false;
+      return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
+    }
+
+    // Evitar falsos positivos en los primeros 3 latidos tras calibración
+    if (this.postCalibrationBeats !== undefined && this.postCalibrationBeats < 3) {
+      this.postCalibrationBeats++;
       this.currentBeatIsArrhythmia = false;
       return { isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: currentTime };
     }
 
     // Detección: comparar el último RR con el patrón aprendido
-    const lower = this.baselineMean - 2 * this.baselineSD;
-    const upper = this.baselineMean + 2 * this.baselineSD;
-    const isAbnormal = lastRR < lower || lastRR > upper;
+    const lower = this.baselineMean - 3 * this.baselineSD;
+    const upper = this.baselineMean + 3 * this.baselineSD;
+    const isFarFromMean = Math.abs(lastRR - this.baselineMean) > 120; // Solo si la diferencia es grande
+    const isAbnormal = (lastRR < lower || lastRR > upper) && isFarFromMean;
 
     this.currentBeatIsArrhythmia = isAbnormal;
 
