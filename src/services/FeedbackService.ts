@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -25,8 +26,34 @@ const loadSound = (url: string): HTMLAudioElement => {
 
 export const FeedbackService = {
   // Retroalimentación háptica
-  // vibrate: (pattern: number | number[] = 200) => {},
-  // vibrateArrhythmia: () => {},
+  vibrate: (pattern: number | number[] = 200) => {
+    if ('vibrate' in navigator) {
+      try {
+        navigator.vibrate(pattern);
+        console.log('Vibración activada:', pattern);
+      } catch (error) {
+        console.error('Error al activar vibración:', error);
+      }
+    } else {
+      console.log('Vibración no soportada en este dispositivo');
+    }
+  },
+
+  // Retroalimentación háptica específica para arritmias
+  vibrateArrhythmia: () => {
+    if ('vibrate' in navigator) {
+      try {
+        // Patrón distintivo para arritmias (triple pulso con pausa)
+        const pattern = [100, 50, 100, 50, 100, 300, 100];
+        navigator.vibrate(pattern);
+        console.log('Vibración de arritmia activada:', pattern);
+      } catch (error) {
+        console.error('Error al activar vibración de arritmia:', error);
+      }
+    } else {
+      console.log('Vibración no soportada en este dispositivo');
+    }
+  },
 
   // Retroalimentación sonora
   playSound: (type: 'success' | 'error' | 'notification' | 'heartbeat' = 'notification') => {
@@ -80,45 +107,61 @@ export const FeedbackService = {
     });
   },
 
+  // Retroalimentación combinada para acciones exitosas
+  signalSuccess: (message: string) => {
+    FeedbackService.vibrate([100, 50, 100]);
+    FeedbackService.playSound('success');
+    FeedbackService.showToast('¡Éxito!', message, 'success');
+  },
+
+  // Retroalimentación combinada para errores
+  signalError: (message: string) => {
+    FeedbackService.vibrate(500);
+    FeedbackService.playSound('error');
+    FeedbackService.showToast('Error', message, 'error');
+  },
+
   // Retroalimentación para arritmia detectada
-  // signalArrhythmia: (count: number) => {
-  //   FeedbackService.playSound('heartbeat');
-  //   if (count === 1) {
-  //     FeedbackService.showToast(
-  //       '¡Atención!', 
-  //       'Se ha detectado una posible arritmia', 
-  //       'warning',
-  //       6000
-  //     );
-  //   } else {
-  //     FeedbackService.showToast(
-  //       'Arritmia detectada', 
-  //       `Se han detectado ${count} posibles arritmias`, 
-  //       'warning',
-  //       6000
-  //     );
-  //   }
-  // },
+  signalArrhythmia: (count: number) => {
+    FeedbackService.vibrateArrhythmia();
+    FeedbackService.playSound('heartbeat');
+    if (count === 1) {
+      FeedbackService.showToast(
+        '¡Atención!', 
+        'Se ha detectado una posible arritmia', 
+        'warning',
+        6000
+      );
+    } else {
+      FeedbackService.showToast(
+        'Arritmia detectada', 
+        `Se han detectado ${count} posibles arritmias`, 
+        'warning',
+        6000
+      );
+    }
+  },
 
   // Retroalimentación para medición completada
-  // signalMeasurementComplete: (hasGoodQuality: boolean) => {
-  //   FeedbackService.playSound(hasGoodQuality ? 'success' : 'notification');
-  //   FeedbackService.showToast(
-  //     'Medición completada', 
-  //     hasGoodQuality ? 'Medición finalizada con éxito' : 'Calidad de señal baja. Intente nuevamente para mayor precisión.',
-  //     hasGoodQuality ? 'success' : 'warning'
-  //   );
-  // },
-
-  // signalSuccess: (message: string) => {
-  //   FeedbackService.playSound('success');
-  //   FeedbackService.showToast('¡Éxito!', message, 'success');
-  // },
-
-  // signalError: (message: string) => {
-  //   FeedbackService.playSound('error');
-  //   FeedbackService.showToast('Error', message, 'error');
-  // },
+  signalMeasurementComplete: (hasGoodQuality: boolean) => {
+    if (hasGoodQuality) {
+      FeedbackService.vibrate([100, 30, 100, 30, 100]);
+      FeedbackService.playSound('success');
+      FeedbackService.showToast(
+        'Medición completada', 
+        'Medición finalizada con éxito', 
+        'success'
+      );
+    } else {
+      FeedbackService.vibrate([100, 50, 100]);
+      FeedbackService.playSound('notification');
+      FeedbackService.showToast(
+        'Medición completada', 
+        'Calidad de señal baja. Intente nuevamente para mayor precisión.',
+        'warning'
+      );
+    }
+  }
 };
 
 export default FeedbackService;

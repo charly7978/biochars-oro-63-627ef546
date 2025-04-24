@@ -38,8 +38,7 @@ const Index = () => {
     processSignal: processHeartBeat, 
     startProcessing: startHeartBeatMonitoring,
     stopProcessing: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor,
-    beatEvents
+    reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
   const { 
@@ -402,7 +401,6 @@ const Index = () => {
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
               arrhythmiaWindows={ArrhythmiaDetectionService.getArrhythmiaWindows()}
-              beatEvents={beatEvents}
             />
           </div>
           <AppTitle />

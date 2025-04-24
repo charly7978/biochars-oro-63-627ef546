@@ -3,9 +3,9 @@ export class HeartBeatProcessor {
   WINDOW_SIZE = 60;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.8;
+  SIGNAL_THRESHOLD = 0.60;
   MIN_CONFIDENCE = 0.50;
-  DERIVATIVE_THRESHOLD = -0.05;
+  DERIVATIVE_THRESHOLD = -0.03;
   MIN_PEAK_TIME_MS = 300; // Reducido para permitir detección más frecuente
   WARMUP_TIME_MS = 2000; // Reducido para comenzar antes
 
@@ -333,8 +333,8 @@ export class HeartBeatProcessor {
     // en lugar de detectar cruce por cero del derivado
     const isPotentialPeak = 
       normalizedValue > this.SIGNAL_THRESHOLD && 
-      derivative < this.DERIVATIVE_THRESHOLD && // Más estricto
-      Math.abs(this.lastValue - normalizedValue) > 0.1; // Pico claro
+      derivative < 0 && // Estamos justo después del pico (pendiente negativa)
+      this.lastValue < normalizedValue; // El valor actual es mayor que el anterior
       
     // Verificar que ha pasado suficiente tiempo desde el último pico
     const sufficientTimePassed = 
