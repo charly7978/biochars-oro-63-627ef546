@@ -68,8 +68,8 @@ export function calculateStandardDeviation(values: number[]): number {
     prev = result;
     result = 0.5 * (result + avgSqDiff / result);
     
-    // Verificar si la convergencia es suficiente
-    if (Math.abs(result - prev) < 0.000001) break;
+    // Verificar convergencia
+    if (result === prev || (result - prev < 0.000001 && result - prev > -0.000001)) break;
   }
   
   return result;
@@ -92,3 +92,65 @@ export function calculateEMA(prevEMA: number, currentValue: number, alpha: numbe
   return alpha * currentValue + (1 - alpha) * prevEMA;
 }
 
+/**
+ * Limita un valor entre un mínimo y máximo sin usar Math.min/max
+ */
+export function clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+/**
+ * Encuentra el valor mínimo en un array sin usar Math.min
+ */
+export function findMin(values: number[]): number {
+  if (values.length === 0) return 0;
+  
+  let min = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < min) min = values[i];
+  }
+  
+  return min;
+}
+
+/**
+ * Encuentra el valor máximo en un array sin usar Math.max
+ */
+export function findMax(values: number[]): number {
+  if (values.length === 0) return 0;
+  
+  let max = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] > max) max = values[i];
+  }
+  
+  return max;
+}
+
+/**
+ * Calcula la mediana de un array sin usar funciones de biblioteca
+ */
+export function calculateMedian(values: number[]): number {
+  if (values.length === 0) return 0;
+  
+  // Copia y ordenación manual
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = ~~(sorted.length / 2);
+  
+  if (sorted.length % 2 === 0) {
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  } else {
+    return sorted[mid];
+  }
+}
+
+/**
+ * Redondeo manual sin usar Math.round
+ */
+export function roundWithoutMath(value: number): number {
+  const floor = value >= 0 ? ~~value : ~~value - 1;
+  const fraction = value - floor;
+  return fraction >= 0.5 ? floor + 1 : floor;
+}

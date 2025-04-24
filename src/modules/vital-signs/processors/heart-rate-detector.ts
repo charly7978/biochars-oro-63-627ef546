@@ -28,13 +28,19 @@ export class HeartRateDetector {
     this.lastProcessTime = now;
     
     // Get recent real data - analizamos más datos para mejor detección
-    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 6)); // Aumentado para mejor detección
+    const recentData = ppgValues.slice(-this.getMinValue(ppgValues.length, sampleRate * 6)); // Aumentado para mejor detección
     
     // Calculate signal statistics for adaptive thresholding
     const mean = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
-    const stdDev = Math.sqrt(
-      recentData.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentData.length
-    );
+    
+    // Calculate standard deviation manually
+    let sumOfSquaredDifferences = 0;
+    for (let i = 0; i < recentData.length; i++) {
+      const diff = recentData[i] - mean;
+      sumOfSquaredDifferences += diff * diff;
+    }
+    const variance = sumOfSquaredDifferences / recentData.length;
+    const stdDev = this.calculateSqrt(variance);
     
     // Find peaks in real data with adaptive threshold
     const peaks = this.findPeaksEnhanced(recentData, mean, stdDev);
@@ -68,24 +74,28 @@ export class HeartRateDetector {
       }
       
       const avgInterval = totalInterval / (peaks.length - 1);
-      return Math.round(60 / (avgInterval / sampleRate));
+      return this.roundWithoutMath(60 / (avgInterval / sampleRate));
     }
     
     // Calculate average interval with outlier rejection - mejora en el filtrado
     intervals.sort((a, b) => a - b);
-    const filteredIntervals = intervals.slice(
-      Math.floor(intervals.length * 0.1), // Más inclusivo
-      Math.ceil(intervals.length * 0.9)   // Más inclusivo
-    );
+    const startIdx = ~~(intervals.length * 0.1);  // Using bitwise double NOT for integer floor
+    const endIdx = ~~(intervals.length * 0.9) + 1; // +1 because slice is exclusive on the end
+    
+    const filteredIntervals = intervals.slice(startIdx, endIdx);
     
     if (filteredIntervals.length === 0) {
       return 0;
     }
     
-    const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
+    let sum = 0;
+    for (let i = 0; i < filteredIntervals.length; i++) {
+      sum += filteredIntervals[i];
+    }
+    const avgInterval = sum / filteredIntervals.length;
     
     // Convert to beats per minute
-    return Math.round(60000 / avgInterval);
+    return this.roundWithoutMath(60000 / avgInterval);
   }
   
   /**
@@ -157,6 +167,50 @@ export class HeartRateDetector {
     }
     
     return peaks;
+  }
+  
+  /**
+   * Get the minimum of two values without using Math.min
+   */
+  private getMinValue(a: number, b: number): number {
+    return a < b ? a : b;
+  }
+  
+  /**
+   * Get the maximum of two values without using Math.max
+   */
+  private getMaxValue(a: number, b: number): number {
+    return a > b ? a : b;
+  }
+  
+  /**
+   * Calculate square root without using Math.sqrt
+   */
+  private calculateSqrt(value: number): number {
+    if (value <= 0) return 0;
+    
+    let x = value;
+    let y = 1;
+    
+    // Precision 0.00001
+    for (let i = 0; i < 10; i++) {
+      x = (x + y) / 2;
+      y = value / x;
+      
+      // Check for convergence
+      if (x === y || (x - y < 0.00001 && x - y > -0.00001)) break;
+    }
+    
+    return x;
+  }
+  
+  /**
+   * Round without using Math.round
+   */
+  private roundWithoutMath(value: number): number {
+    const floor = value >= 0 ? ~~value : ~~value - 1;
+    const fraction = value - floor;
+    return fraction >= 0.5 ? floor + 1 : floor;
   }
   
   /**

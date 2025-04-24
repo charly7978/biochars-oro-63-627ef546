@@ -575,4 +575,3 @@ export class LipidProcessor {
     return this.confidenceScore;
   }
 }
-

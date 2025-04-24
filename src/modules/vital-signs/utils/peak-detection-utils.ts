@@ -20,7 +20,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
     ) {
-      const localMin = Math.min(values[i - 1], values[i + 1]);
+      const localMin = values[i - 1] < values[i + 1] ? values[i - 1] : values[i + 1];
       if (v - localMin > 0.02) {
         peakIndices.push(i);
       }
@@ -30,7 +30,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05
     ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
+      const localMax = values[i - 1] > values[i + 1] ? values[i - 1] : values[i + 1];
       if (localMax - v > 0.02) {
         valleyIndices.push(i);
       }
@@ -57,7 +57,7 @@ export function calculateAmplitude(
     let minDistance = Number.MAX_VALUE;
     
     for (const valleyIdx of valleyIndices) {
-      const distance = Math.abs(peakIdx - valleyIdx);
+      const distance = peakIdx > valleyIdx ? peakIdx - valleyIdx : valleyIdx - peakIdx;
       if (distance < minDistance) {
         minDistance = distance;
         closestValleyIdx = valleyIdx;
@@ -75,5 +75,9 @@ export function calculateAmplitude(
   if (amps.length === 0) return 0;
 
   // Calcular la media con datos reales
-  return amps.reduce((a, b) => a + b, 0) / amps.length;
+  let sum = 0;
+  for (let i = 0; i < amps.length; i++) {
+    sum += amps[i];
+  }
+  return sum / amps.length;
 }
