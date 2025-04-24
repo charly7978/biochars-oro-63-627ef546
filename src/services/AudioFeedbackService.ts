@@ -1,4 +1,3 @@
-
 /**
  * Centralized service for audio and haptic feedback
  * Only uses real data - no simulation
@@ -118,12 +117,17 @@ class AudioFeedbackService {
     }
 
     try {
+      let pattern;
       if (type === 'normal') {
-        navigator.vibrate(60);
-        console.log('Vibración normal activada');
+        pattern = 60;
+        console.log('Intentando vibrar (normal):', pattern);
+        const ok = navigator.vibrate(pattern);
+        console.log('Resultado vibración normal:', ok);
       } else if (type === 'arrhythmia') {
-        navigator.vibrate([70, 50, 140]);
-        console.log('Vibración de arritmia activada');
+        pattern = [70, 50, 140];
+        console.log('Intentando vibrar (arritmia):', pattern);
+        const ok = navigator.vibrate(pattern);
+        console.log('Resultado vibración arritmia:', ok);
       }
     } catch (error) {
       console.error('Error al activar vibración:', error);
