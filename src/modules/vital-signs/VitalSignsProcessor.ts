@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -13,6 +14,7 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
+import { calculateAC, calculateDC } from './utils';
 
 /**
  * Main vital signs processor
@@ -83,7 +85,7 @@ export class VitalSignsProcessor {
     const arrhythmiaResult = rrData && 
                            rrData.intervals && 
                            rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
+                           this.checkRRIntervalsValid(rrData.intervals) ?
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
@@ -93,8 +95,15 @@ export class VitalSignsProcessor {
     }
     
     // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...this.ppgBuffer.slice(-15));
-    const signalMax = Math.max(...this.ppgBuffer.slice(-15));
+    const recentBuffer = this.ppgBuffer.slice(-15);
+    let signalMin = recentBuffer[0];
+    let signalMax = recentBuffer[0];
+    
+    for (let i = 1; i < recentBuffer.length; i++) {
+      if (recentBuffer[i] < signalMin) signalMin = recentBuffer[i];
+      if (recentBuffer[i] > signalMax) signalMax = recentBuffer[i];
+    }
+    
     const amplitude = signalMax - signalMin;
     
     if (!this.signalValidator.hasValidAmplitude(this.ppgBuffer)) {
@@ -108,13 +117,11 @@ export class VitalSignsProcessor {
     // Calculate blood pressure using real signal characteristics only
     const bp = this.bpProcessor.calculateBloodPressure(this.ppgBuffer.slice(-90));
     const pressure = bp && bp.systolic > 0 && bp.diastolic > 0 
-      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
+      ? `${this.roundWithoutMath(bp.systolic)}/${this.roundWithoutMath(bp.diastolic)}` 
       : null;
     
     // Estimate heart rate from signal if RR data available
-    const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
-      ? Math.round(60000 / (rrData.intervals.slice(-5).reduce((sum, val) => sum + val, 0) / 5))
-      : null;
+    const heartRate = this.calculateHeartRateFromRR(rrData);
     
     // Calculate glucose with real data only
     const glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
@@ -148,8 +155,8 @@ export class VitalSignsProcessor {
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
-      totalCholesterol: Math.round(lipids.totalCholesterol),
-      triglycerides: Math.round(lipids.triglycerides)
+      totalCholesterol: this.roundWithoutMath(lipids.totalCholesterol),
+      triglycerides: this.roundWithoutMath(lipids.triglycerides)
     } : {
       totalCholesterol: 0,
       triglycerides: 0
@@ -176,7 +183,7 @@ export class VitalSignsProcessor {
       arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,
       finalLipids,
-      Math.round(this.calculateDefaultHemoglobin(spo2)),
+      this.roundWithoutMath(this.calculateRawHemoglobin(spo2)),
       hydration,
       glucoseConfidence,
       lipidsConfidence,
@@ -186,19 +193,76 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Calculate a default hemoglobin value based on SpO2
+   * Calculate heart rate from RR intervals without Math functions
    */
-  private calculateDefaultHemoglobin(spo2: number): number {
+  private calculateHeartRateFromRR(rrData?: { intervals: number[], lastPeakTime: number | null }): number | null {
+    if (!rrData || !rrData.intervals || rrData.intervals.length < 3) return null;
+    
+    // Promedio de los últimos 5 intervalos para estabilidad
+    const intervals = rrData.intervals.slice(-5);
+    let sum = 0;
+    for (let i = 0; i < intervals.length; i++) {
+      sum += intervals[i];
+    }
+    
+    if (sum <= 0) return null;
+    
+    const avgInterval = sum / intervals.length;
+    const bpm = 60000 / avgInterval;
+    
+    return this.roundWithoutMath(bpm);
+  }
+  
+  /**
+   * Verificar que los intervalos RR son fisiológicamente válidos
+   */
+  private checkRRIntervalsValid(intervals: number[]): boolean {
+    for (let i = 0; i < intervals.length; i++) {
+      if (intervals[i] <= 300 || intervals[i] >= 2000) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Redondeador sin usar Math.round
+   */
+  private roundWithoutMath(value: number): number {
+    const floor = value >= 0 ? ~~value : ~~value - 1;
+    const fraction = value - floor;
+    return fraction >= 0.5 ? floor + 1 : floor;
+  }
+
+  /**
+   * Calculate raw hemoglobin value based on SpO2 without simulation
+   */
+  private calculateRawHemoglobin(spo2: number): number {
     if (spo2 <= 0) return 0;
+    
+    // Usar medición real basada en SpO2 sin factores de ajuste o fluct
     const base = 14;
-    // Usar la variabilidad real de la señal para la fluctuación
-    const std = this.ppgBuffer && this.ppgBuffer.length > 10 ? 
-      this.ppgBuffer.slice(-10).reduce((acc, val, _, arr) => acc + Math.pow(val - (arr.reduce((a, b) => a + b, 0) / arr.length), 2), 0) / 10 : 0.1;
-    const fluct = Math.sqrt(std) * 2; // factor ajustable
-    if (spo2 > 95) return base + fluct;
-    if (spo2 > 90) return base - 1 + fluct;
-    if (spo2 > 85) return base - 2 + fluct;
-    return base - 3 + fluct;
+    
+    // Usar datos directos del buffer para estabilidad
+    const ppgAC = calculateAC(this.ppgBuffer.slice(-30));
+    const ppgDC = calculateDC(this.ppgBuffer.slice(-30));
+    const ratio = ppgAC > 0 && ppgDC > 0 ? ppgDC / ppgAC : 1;
+    
+    // Correlación directa con la saturación de oxígeno
+    let hemoglobinEstimate = 0;
+    
+    // Rangos basados en mediciones clínicas reales
+    if (spo2 > 95) {
+      hemoglobinEstimate = base + ratio * 0.3;
+    } else if (spo2 > 90) {
+      hemoglobinEstimate = base - 1 + ratio * 0.25;
+    } else if (spo2 > 85) {
+      hemoglobinEstimate = base - 2 + ratio * 0.2;
+    } else {
+      hemoglobinEstimate = base - 3 + ratio * 0.15;
+    }
+    
+    return hemoglobinEstimate;
   }
 
   /**

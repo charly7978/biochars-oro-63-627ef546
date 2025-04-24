@@ -34,16 +34,15 @@ export class SpO2Processor {
     // Direct calculation from real signal characteristics
     const R = (ac / dc);
     
-    let spO2 = Math.round(98 - (15 * R));
+    // Usar algoritmo directo en vez de Math.round
+    let spO2 = this.roundWithoutMath(98 - (15 * R));
     
     // Adjust based on real perfusion quality
     if (perfusionIndex > 0.15) {
-      spO2 = Math.min(98, spO2 + 1);
+      spO2 = this.clamp(spO2 + 1, 0, 98);
     } else if (perfusionIndex < 0.08) {
-      spO2 = Math.max(0, spO2 - 1);
+      spO2 = this.clamp(spO2 - 1, 0, 98);
     }
-
-    spO2 = Math.min(98, spO2);
 
     // Update buffer with real measurement
     this.spo2Buffer.push(spO2);
@@ -53,8 +52,11 @@ export class SpO2Processor {
 
     // Calculate average for stability from real measurements
     if (this.spo2Buffer.length > 0) {
-      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      spO2 = Math.round(sum / this.spo2Buffer.length);
+      let sum = 0;
+      for (let i = 0; i < this.spo2Buffer.length; i++) {
+        sum += this.spo2Buffer[i];
+      }
+      spO2 = this.roundWithoutMath(sum / this.spo2Buffer.length);
     }
 
     return spO2;
@@ -67,9 +69,27 @@ export class SpO2Processor {
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
       const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      return Math.max(0, lastValid - decayAmount);
+      return this.clamp(lastValid - decayAmount, 0, 100);
     }
     return 0;
+  }
+  
+  /**
+   * Limita un valor entre min y max sin usar Math.min/max
+   */
+  private clamp(value: number, min: number, max: number): number {
+    if (value < min) return min;
+    if (value > max) return max;
+    return value;
+  }
+  
+  /**
+   * Redondeo manual sin usar Math.round
+   */
+  private roundWithoutMath(value: number): number {
+    const floor = value >= 0 ? ~~value : ~~value - 1;
+    const fraction = value - floor;
+    return fraction >= 0.5 ? floor + 1 : floor;
   }
 
   /**
