@@ -3,9 +3,6 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Remove or comment out the problematic import
-// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
-
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
   maxWeakSignalCount?: number;
@@ -13,7 +10,7 @@ interface SignalQualityOptions {
 
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
- * Solo procesamiento directo, sin simulaciones
+ * Solo procesamiento directo, sin simulaciones ni funciones Math
  */
 export function checkWeakSignal(
   value: number,
@@ -24,15 +21,18 @@ export function checkWeakSignal(
   const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
   const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
   
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  // Usa comparaciones directas sin Math.abs
+  const isCurrentValueWeak = (value < LOW_SIGNAL_THRESHOLD && value > -LOW_SIGNAL_THRESHOLD);
   
   // Update consecutive weak signals counter
   let updatedWeakSignalsCount = isCurrentValueWeak 
     ? currentWeakSignalCount + 1 
     : 0;
   
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  // Limit to max - implementación manual sin Math.min
+  if (updatedWeakSignalsCount > MAX_WEAK_SIGNALS) {
+    updatedWeakSignalsCount = MAX_WEAK_SIGNALS;
+  }
   
   // Signal is considered weak if we have enough consecutive weak readings
   const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
@@ -42,6 +42,7 @@ export function checkWeakSignal(
 
 /**
  * Verifica si se debe procesar una medición según la intensidad de la señal
+ * Sin usar funciones Math
  */
 export function shouldProcessMeasurement(
   value: number,
