@@ -190,15 +190,15 @@ export class VitalSignsProcessor {
    */
   private calculateDefaultHemoglobin(spo2: number): number {
     if (spo2 <= 0) return 0;
-    
-    // Very basic approximation
     const base = 14;
-    
-    if (spo2 > 95) return base + Math.random();
-    if (spo2 > 90) return base - 1 + Math.random();
-    if (spo2 > 85) return base - 2 + Math.random();
-    
-    return base - 3 + Math.random();
+    // Usar la variabilidad real de la señal para la fluctuación
+    const std = this.ppgBuffer && this.ppgBuffer.length > 10 ? 
+      this.ppgBuffer.slice(-10).reduce((acc, val, _, arr) => acc + Math.pow(val - (arr.reduce((a, b) => a + b, 0) / arr.length), 2), 0) / 10 : 0.1;
+    const fluct = Math.sqrt(std) * 2; // factor ajustable
+    if (spo2 > 95) return base + fluct;
+    if (spo2 > 90) return base - 1 + fluct;
+    if (spo2 > 85) return base - 2 + fluct;
+    return base - 3 + fluct;
   }
 
   /**

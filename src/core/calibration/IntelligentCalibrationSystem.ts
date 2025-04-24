@@ -802,25 +802,21 @@ export class IntelligentCalibrationSystem {
     // Ajustar factores de corrección basado en estabilidad
     // Si las lecturas son estables, ajustes menores; si inestables, ajustes mayores
     const adjustRange = 0.02 * this.config.aggressiveness;
-    
-    if (heartRateStability < 0.1) {
-      // Mediciones estables, ajuste fino
-      this.correctionFactors.heartRate *= (1 + (Math.random() * 2 - 1) * adjustRange * 0.5);
-    } else {
-      // Mediciones inestables, ajuste mayor
-      this.correctionFactors.heartRate *= (1 + (Math.random() * 2 - 1) * adjustRange);
+
+    // Fluctuación real basada en la variabilidad de las últimas 10 mediciones
+    function fluct(arr: number[]) {
+      if (!arr || arr.length < 3) return 0.01;
+      const last = arr.slice(-10);
+      const mean = last.reduce((a, b) => a + b, 0) / last.length;
+      const std = Math.sqrt(last.reduce((a, v) => a + Math.pow(v - mean, 2), 0) / last.length);
+      return std * 0.5;
     }
-    
-    // Aplicar lógica similar para otros parámetros
-    // SpO2 es más crítico, menor variación permitida
-    this.correctionFactors.spo2 *= (1 + (Math.random() * 2 - 1) * adjustRange * (spo2Stability < 0.05 ? 0.3 : 0.6));
-    
-    // Presión arterial
-    this.correctionFactors.systolic *= (1 + (Math.random() * 2 - 1) * adjustRange * (systolicStability < 0.1 ? 0.4 : 0.8));
-    this.correctionFactors.diastolic *= (1 + (Math.random() * 2 - 1) * adjustRange * (diastolicStability < 0.1 ? 0.4 : 0.8));
-    
-    // Glucosa
-    this.correctionFactors.glucose *= (1 + (Math.random() * 2 - 1) * adjustRange * (glucoseStability < 0.15 ? 0.5 : 1.0));
+
+    this.correctionFactors.heartRate *= (1 + fluct(recentData.map(d => d.heartRate)) * adjustRange * (heartRateStability < 0.1 ? 0.5 : 1));
+    this.correctionFactors.spo2 *= (1 + fluct(recentData.map(d => d.spo2)) * adjustRange * (spo2Stability < 0.05 ? 0.3 : 0.6));
+    this.correctionFactors.systolic *= (1 + fluct(recentData.map(d => d.systolic)) * adjustRange * (systolicStability < 0.1 ? 0.4 : 0.8));
+    this.correctionFactors.diastolic *= (1 + fluct(recentData.map(d => d.diastolic)) * adjustRange * (diastolicStability < 0.1 ? 0.4 : 0.8));
+    this.correctionFactors.glucose *= (1 + fluct(recentData.map(d => d.glucose)) * adjustRange * (glucoseStability < 0.15 ? 0.5 : 1.0));
     
     // Mantener correcciones en límites razonables
     this.constrainCorrectionFactors();
