@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -12,7 +11,7 @@ import {
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { PeakData } from '../types/peak';
+import { PeakData, RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
 
@@ -23,9 +22,11 @@ export interface HeartRateResult {
   filteredValue: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  // Add RR Interval data to the existing interface
+  // RR Interval data
   rrIntervals: number[];
   lastPeakTime: number | null;
+  // Add rrData property to fix the TypeScript errors
+  rrData?: RRIntervalData;
 }
 
 export interface PeakDetectionOptions {
@@ -213,7 +214,8 @@ class HeartRateService {
         filteredValue: value,
         arrhythmiaCount: this.arrhythmiaCounter,
         rrIntervals: [],
-        lastPeakTime: this.lastPeakTime
+        lastPeakTime: this.lastPeakTime,
+        rrData: undefined
       };
     }
     
@@ -325,6 +327,12 @@ class HeartRateService {
     // Calcular intervalos RR
     const rrIntervals = this.calculateRRIntervals();
     
+    // Create RRIntervalData object
+    const rrData: RRIntervalData = {
+      intervals: rrIntervals,
+      lastPeakTime: this.lastPeakTime
+    };
+    
     return {
       bpm: Math.round(this.smoothBPM),
       confidence,
@@ -333,7 +341,8 @@ class HeartRateService {
       arrhythmiaCount: this.arrhythmiaCounter,
       isArrhythmia,
       rrIntervals,
-      lastPeakTime: this.lastPeakTime
+      lastPeakTime: this.lastPeakTime,
+      rrData
     };
   }
   
