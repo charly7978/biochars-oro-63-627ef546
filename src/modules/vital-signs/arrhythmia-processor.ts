@@ -1,4 +1,3 @@
-
 import { ArrhythmiaPatternDetector } from './arrhythmia/pattern-detector';
 import { calculateRMSSD, calculateRRVariation } from './arrhythmia/calculations';
 import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
@@ -57,8 +56,8 @@ export class ArrhythmiaProcessor {
     const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
-          rmssd: calculateRMSSD(this.rrIntervals.slice(-8)),
-          rrVariation: calculateRRVariation(this.rrIntervals.slice(-8))
+          rmssd: calculateRMSSD(this.rrIntervals.slice(-12)),
+          rrVariation: calculateRRVariation(this.rrIntervals.slice(-12))
         } 
       : null;
     
@@ -94,49 +93,66 @@ export class ArrhythmiaProcessor {
     // Get the last real interval
     const lastRR = validIntervals[validIntervals.length - 1];
     
-    // Calculate real percentage variation
-    const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
+    // Calculate real percentage variation, avoid division by zero
+    const variation = avgRR !== 0 ? Math.abs(lastRR - avgRR) / avgRR * 100 : 0;
     
-    // Update pattern buffer with real data
+    // Update pattern buffer with real data (normalized variation)
     this.patternDetector.updatePatternBuffer(variation / 100);
     
-    // Detect premature beat based on variation threshold
+    // Detect premature beat based on simple variation threshold
     const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
     
     // Update consecutive anomalies counter
     if (prematureBeat) {
       this.consecutiveAbnormalBeats++;
       
-      // Log detection
-      console.log("ArrhythmiaProcessor: Possible premature beat detected", {
-        percentageVariation: variation,
-        threshold: this.MIN_VARIATION_PERCENT,
-        consecutive: this.consecutiveAbnormalBeats,
-        avgRR,
-        lastRR,
-        timestamp: currentTime
-      });
+      // Log detection (optional - can be uncommented for debugging)
+      // console.log("ArrhythmiaProcessor: Possible premature beat detected", {
+      //   percentageVariation: variation,
+      //   threshold: this.MIN_VARIATION_PERCENT,
+      //   consecutive: this.consecutiveAbnormalBeats,
+      //   avgRR,
+      //   lastRR,
+      //   timestamp: currentTime
+      // });
     } else {
-      this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 1);
+      // Decrease counter if beat is not premature, but don't go below zero
+      this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 1); 
     }
     
-    // Check if arrhythmia is confirmed with real data
+    // Check if arrhythmia should be confirmed
     const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     const patternDetected = this.patternDetector.detectArrhythmiaPattern();
+
+    // *** MODIFIED CONFIRMATION LOGIC ***
+    // Require pattern detection AND *some* consecutive abnormal beats (e.g., 40% of original threshold)
+    const requiredConsecutiveForPattern = Math.max(1, Math.floor(this.CONSECUTIVE_THRESHOLD * 0.4));
+    const isArrhythmiaConfirmed = canDetectNewArrhythmia && patternDetected && this.consecutiveAbnormalBeats >= requiredConsecutiveForPattern;
     
-    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected) {
+    // Original condition (for comparison, now commented out):
+    // const isArrhythmiaConfirmed = this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected;
+
+    if (isArrhythmiaConfirmed) {
       this.arrhythmiaCount++;
-      this.arrhythmiaDetected = true;
+      this.arrhythmiaDetected = true; // Mark as detected for the result object
       this.lastArrhythmiaTime = currentTime;
-      this.consecutiveAbnormalBeats = 0;
-      this.patternDetector.resetPatternBuffer();
+      // Reset counters after confirmation to avoid immediate re-triggering
+      this.consecutiveAbnormalBeats = 0; 
+      this.patternDetector.resetPatternBuffer(); 
       
       console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
         arrhythmiaCount: this.arrhythmiaCount,
+        requiredConsecutive: requiredConsecutiveForPattern, // Log the threshold used
+        actualConsecutive: this.consecutiveAbnormalBeats, // This will be 0 now, log before reset?
         timeSinceLast: timeSinceLastArrhythmia,
+        patternDetected: patternDetected, // Log pattern status
         timestamp: currentTime
       });
+    } else {
+      // If not confirmed, ensure arrhythmiaDetected reflects the current state (it might have been true previously)
+      // We only keep arrhythmiaDetected = true for the *moment* of confirmation to populate lastArrhythmiaData
+      this.arrhythmiaDetected = false;
     }
   }
 
