@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -52,6 +51,14 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
+
+  const {
+    startProcessing: startSignalProcessing,
+    stopProcessing: stopSignalProcessing,
+    processFrame,
+    lastSignal,
+    error: processingError
+  } = useSignalProcessor();
 
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
@@ -446,7 +453,6 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     
     if (points.length > 1) {
-      // Dibujar líneas del PPG
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const currentPoint = points[i];
@@ -473,7 +479,6 @@ const PPGSignalMeter = memo(({
         renderCtx.stroke();
       }
       
-      // Dibujar picos y sus valores
       peaksRef.current.forEach(peak => {
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = canvas.height / 2 - 50 - peak.value;
@@ -485,27 +490,23 @@ const PPGSignalMeter = memo(({
           
           const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
-          // Dibujar círculo del pico
           renderCtx.beginPath();
           renderCtx.arc(x, y, isPeakArrhythmia ? 7 : 5, 0, Math.PI * 2);
           renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
           
           if (isPeakArrhythmia) {
-            // Círculo exterior para arritmias
             renderCtx.beginPath();
             renderCtx.arc(x, y, 12, 0, Math.PI * 2);
             renderCtx.strokeStyle = '#FEF7CD';
             renderCtx.lineWidth = 3;
             renderCtx.stroke();
             
-            // Texto "ARRITMIA"
             renderCtx.font = 'bold 18px Inter';
             renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 25);
             
-            // Efecto de resplandor para arritmias
             renderCtx.beginPath();
             renderCtx.arc(x, y, 20, 0, Math.PI * 2);
             const gradient = renderCtx.createRadialGradient(x, y, 5, x, y, 20);
@@ -515,7 +516,6 @@ const PPGSignalMeter = memo(({
             renderCtx.fill();
           }
           
-          // Valor numérico sobre el pico
           renderCtx.font = 'bold 16px Inter';
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
@@ -543,7 +543,7 @@ const PPGSignalMeter = memo(({
     renderSignal();
     
     return () => {
-      cancelAnimationFrame(animationFrameRef.current!);
+      cancelAnimationFrame(animationFrameRef.current);
     };
   }, [renderSignal]);
 
