@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -190,10 +191,14 @@ class HeartRateService {
     
     // Activar vibración si está disponible
     if (this.vibrationEnabled) {
-      if (isArrhythmia) {
-        FeedbackService.vibrateArrhythmia();
-      } else {
-        FeedbackService.vibrate(80); // Vibración corta para pulso normal
+      try {
+        if (isArrhythmia) {
+          FeedbackService.vibrateArrhythmia();
+        } else {
+          FeedbackService.vibrate(80); // Vibración corta para pulso normal
+        }
+      } catch (error) {
+        console.error("HeartRateService: Error during vibration", error);
       }
     }
     
@@ -215,7 +220,10 @@ class HeartRateService {
         arrhythmiaCount: this.arrhythmiaCounter,
         rrIntervals: [],
         lastPeakTime: this.lastPeakTime,
-        rrData: undefined
+        rrData: {
+          intervals: [],
+          lastPeakTime: this.lastPeakTime
+        }
       };
     }
     
