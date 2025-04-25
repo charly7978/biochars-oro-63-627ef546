@@ -1,5 +1,4 @@
-
-import { calculateAmplitude, findPeaksAndValleys } from './utils';
+import { calculateAmplitude, findPeaksAndValleys } from './shared-signal-utils';
 
 export class BloodPressureProcessor {
   // Buffers para almacenar datos históricos reales
