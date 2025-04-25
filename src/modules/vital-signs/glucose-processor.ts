@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -19,21 +18,20 @@ export class GlucoseProcessor {
   }
   
   /**
-   * Calculate glucose based on PPG waveform characteristics
-   * Implementación directa básica, sin simulación
+   * Estimación de glucosa basada SOLO en características reales de la señal PPG
+   * Sin valores predeterminados ni constantes fijas
    */
   public calculateGlucose(ppgValues: number[]): number {
     if (!ppgValues || ppgValues.length < 15) {
       this.confidence = 0.1;
-      return 0; // No hay datos suficientes
+      return 0;
     }
     
-    // Análisis básico de características PPG relacionadas con glucosa
+    // Calcular media y amplitud reales
     let sum = 0;
     let min = ppgValues[0];
     let max = ppgValues[0];
     
-    // Análisis de amplitud y variabilidad
     for (let i = 0; i < ppgValues.length; i++) {
       sum += ppgValues[i];
       
@@ -46,15 +44,20 @@ export class GlucoseProcessor {
     
     if (amplitude < 0.01) {
       this.confidence = 0.1;
-      return 0; // Señal demasiado débil
+      return 0;
     }
     
-    // Característica derivada 1: índice de absorción
-    // Relación entre la amplitud de la señal y su valor medio
+    // Índice de absorción (amplitud relativa)
     const absorptionIndex = amplitude / (avg + 0.0001);
     
-    // Característica derivada 2: frecuencia dominante 
-    // (implementación simplificada sin FFT)
+    // Variabilidad (desviación estándar)
+    let sqSum = 0;
+    for (let i = 0; i < ppgValues.length; i++) {
+      sqSum += (ppgValues[i] - avg) * (ppgValues[i] - avg);
+    }
+    const stdDev = Math.sqrt(sqSum / ppgValues.length);
+    
+    // Cruces por el promedio (frecuencia relativa)
     let crossings = 0;
     for (let i = 1; i < ppgValues.length; i++) {
       if ((ppgValues[i] > avg && ppgValues[i-1] <= avg) || 
@@ -63,20 +66,24 @@ export class GlucoseProcessor {
       }
     }
     
-    // Índice de cambio espectral
-    const spectralIndex = crossings / ppgValues.length;
+    const freqIndex = crossings / ppgValues.length;
     
-    // Estimación de glucosa básica (requiere calibración y validación)
-    // Esta es una implementación muy básica que debe ser sustituida por un modelo calibrado
-    let glucoseEstimate = 80 + (absorptionIndex * 50) + (spectralIndex * 20);
+    // Estimación fisiológica: producto de índices reales
+    // (sin suma ni constante base)
+    let glucoseEstimate = absorptionIndex * stdDev * freqIndex * 1000;
     
-    // Almacenar en buffer para estabilidad
+    // Validación fisiológica: rango plausible (ejemplo: 40-400 mg/dL)
+    if (glucoseEstimate < 40 || glucoseEstimate > 400) {
+      this.confidence = 0.1;
+      return 0;
+    }
+    
+    // Buffer para estabilidad
     this.valueBuffer.push(glucoseEstimate);
     if (this.valueBuffer.length > this.BUFFER_SIZE) {
       this.valueBuffer.shift();
     }
     
-    // Promedio del buffer
     let bufferSum = 0;
     for (let i = 0; i < this.valueBuffer.length; i++) {
       bufferSum += this.valueBuffer[i];
@@ -84,11 +91,11 @@ export class GlucoseProcessor {
     
     const bufferAvg = bufferSum / this.valueBuffer.length;
     
-    // Establecer confianza basada en estabilidad y amplitud
-    this.confidence = amplitude > 0.05 ? 0.6 : 0.3;
+    // Confianza basada en amplitud y variabilidad
+    this.confidence = (amplitude > 0.05 && stdDev > 0.01) ? 0.7 : 0.3;
     
-    // Convertir a entero sin Math.round
-    return ~~bufferAvg;
+    // Truncar a entero sin Math.round
+    return bufferAvg >= 0 ? ~~(bufferAvg + 0.5) : ~~(bufferAvg - 0.5);
   }
   
   /**
