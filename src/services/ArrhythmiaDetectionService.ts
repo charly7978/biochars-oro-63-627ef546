@@ -335,7 +335,7 @@ class ArrhythmiaDetectionService {
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
     // Ventana más grande para asegurar visualización
-    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 3));
+    const windowWidth = realMax(1000, realMin(1800, avgInterval * 3));
     
     const arrhythmiaWindow = {
       start: currentTime - windowWidth/2,
