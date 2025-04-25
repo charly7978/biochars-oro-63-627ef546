@@ -1,6 +1,5 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { ArrhythmiaWindow } from './types';
 import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
 import ArrhythmiaDetectionService from '../../services/ArrhythmiaDetectionService';
 

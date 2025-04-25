@@ -4,7 +4,6 @@ import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AudioFeedbackService from '../services/AudioFeedbackService';
 import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
 import { ArrhythmiaWindow } from '../hooks/vital-signs/types';
-import { PeakData } from '@/types/peak';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -85,13 +84,7 @@ const PPGSignalMeter = memo(({
       return false;
     }
     
-    const peakData: PeakData = {
-      timestamp: now,
-      value: volume,
-      isArrhythmia: isArrhythmic
-    };
-    
-    AudioFeedbackService.queuePeak(peakData);
+    AudioFeedbackService.playBeep(isArrhythmic ? 'arrhythmia' : 'normal', volume);
     lastBeepTimeRef.current = now;
     return true;
   }, [MIN_BEEP_INTERVAL_MS]);

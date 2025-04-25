@@ -1,8 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { ArrhythmiaWindow } from '@/hooks/vital-signs/types';
 import { calculateRMSSD, calculateRRVariation } from '@/modules/vital-signs/arrhythmia/calculations';
 import AudioFeedbackService from './AudioFeedbackService';
 import { toast } from "@/hooks/use-toast";
@@ -349,7 +350,7 @@ class ArrhythmiaDetectionService {
     this.arrhythmiaCount++;
     this.lastArrhythmiaTriggeredTime = currentTime;
     
-    // Trigger special feedback for arrhythmia - usando el nuevo método
+    // Trigger special feedback for arrhythmia
     AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
     
     // Limitar número de notificaciones

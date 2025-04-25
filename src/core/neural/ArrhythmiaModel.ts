@@ -1,6 +1,5 @@
 
-import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
-// We'll use our internal Tensor1D type, not the TensorFlow one
+import { BaseNeuralModel } from './NeuralNetworkBase';
 
 /**
  * Modelo neuronal para detección de arritmias
@@ -8,36 +7,11 @@ import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
  */
 export class ArrhythmiaNeuralModel extends BaseNeuralModel {
   constructor() {
-    super(
-      'ArrhythmiaDetection', 
-      [100, 1],  // inputShape: Vector de 100 puntos de señal PPG
-      [3],       // outputShape: 3 posibles clasificaciones
-      '1.0.3'    // version
-    );
-  }
-  
-  /**
-   * Implementación requerida de predict - retorna un Tensor1D para compatibilidad con BaseNeuralModel
-   */
-  public predict(input: Tensor1D): Tensor1D {
-    // La detección real ya está implementada en ArrhythmiaDetectionService
-    console.log('ArrhythmiaNeuralModel: predict called with direct tensor');
-    // Convertir el resultado a un tensor para mantener la compatibilidad
-    return input; // Simplificado para evitar errores
-  }
-  
-  /**
-   * Propiedad requerida para el conteo de parámetros
-   */
-  public get parameterCount(): number {
-    return 540000; // Aproximación del número de parámetros del modelo
-  }
-  
-  /**
-   * Propiedad requerida para la arquitectura
-   */
-  public get architecture(): string {
-    return 'CNN+BiLSTM';
+    super({
+      name: 'ArrhythmiaDetection',
+      version: '1.0.3',
+      architecture: 'CNN+BiLSTM'
+    });
   }
   
   /**
@@ -49,6 +23,7 @@ export class ArrhythmiaNeuralModel extends BaseNeuralModel {
     category?: string;
   }> {
     // La detección real ya está implementada en ArrhythmiaDetectionService
+    // Este modelo neuronal es un wrapper para ese servicio
     console.log('ArrhythmiaNeuralModel: Delegating to ArrhythmiaDetectionService');
     
     return {
