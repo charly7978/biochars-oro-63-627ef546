@@ -1,4 +1,3 @@
-
 /**
  * Configuration settings for HeartBeatProcessor
  */
@@ -8,7 +7,7 @@ export const HeartBeatConfig = {
   WINDOW_SIZE: 60,
   MIN_BPM: 40,
   MAX_BPM: 200,
-  SIGNAL_THRESHOLD: 0.60,
+  SIGNAL_THRESHOLD: 0.55,
   MIN_CONFIDENCE: 0.50,
   DERIVATIVE_THRESHOLD: -0.03,
   MIN_PEAK_TIME_MS: 300,
@@ -18,7 +17,7 @@ export const HeartBeatConfig = {
   MEDIAN_FILTER_WINDOW: 3,
   MOVING_AVERAGE_WINDOW: 5,
   EMA_ALPHA: 0.3,
-  BASELINE_FACTOR: 0.995,
+  BASELINE_FACTOR: 0.990,
 
   // Audio settings
   BEEP_PRIMARY_FREQUENCY: 880,
