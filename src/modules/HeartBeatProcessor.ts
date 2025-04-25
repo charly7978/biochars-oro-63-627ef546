@@ -54,14 +54,6 @@ export class HeartBeatProcessor {
   MIN_PEAK_PROMINENCE_RATIO = 0.35; // Prominencia mínima como ratio del umbral adaptativo
   PROMINENCE_WINDOW_FACTOR = 0.6; // Ventana para buscar valles = 60% del periodo cardiaco
 
-  // Nuevas constantes para Validación Robusta RR y Template Matching
-  RR_MEDIAN_WINDOW = 10; // Usar últimos 10 intervalos para mediana/MAD
-  RR_MAD_FACTOR = 2.5;   // Aceptar intervalo si está en mediana +/- 2.5 * MAD
-  TEMPLATE_BUFFER_SIZE = 5; // Mantener 5 plantillas de picos buenos
-  TEMPLATE_WINDOW_SAMPLES = 15; // +/- 15 muestras alrededor del pico para plantilla
-  MIN_TEMPLATE_CORRELATION = 0.70; // Correlación mínima requerida con la plantilla
-  TEMPLATE_CONFIDENCE_THRESHOLD = 0.80; // Confianza mínima para que un pico actualice la plantilla
-
   // --- Estados Internos ---
   private isMonitoring = false;
   signalBuffer: number[] = [];
@@ -94,8 +86,6 @@ export class HeartBeatProcessor {
   lowSignalCount = 0;
   snrProxy = 0.5; // Estado para SNR estimado
   adaptiveSignalThreshold = this.SIGNAL_THRESHOLD; // Umbral adaptativo
-  peakTemplates: number[][] = []; // Buffer para plantillas de picos
-  currentTemplate: number[] | null = null; // Plantilla promedio actual
 
   constructor() {
     this.initAudio();
@@ -154,8 +144,6 @@ export class HeartBeatProcessor {
     this.adaptiveSignalThreshold = this.SIGNAL_THRESHOLD; // Resetear umbral adaptativo
     this.baseline = 0;
     this.smoothedValue = 0;
-    this.peakTemplates = []; // Limpiar plantillas
-    this.currentTemplate = null;
     if (this.audioContext && this.audioContext.state === 'suspended') {
       this.audioContext.resume().catch(err => {
         console.error("HeartBeatProcessor: Error resuming audio context during reset", err);
@@ -180,11 +168,10 @@ export class HeartBeatProcessor {
     isMotionDetected: boolean;
     isQualityUnstable: boolean;
     bpmStabilityScore: number;
-    arrhythmiaCount: number;
   } {
     // Paso 0: Verificar monitoreo y warmup
     if (!this.isMonitoring) {
-      return { bpm: 0, confidence: 0, isPeak: false, filteredValue: 0, enhancedValue: undefined, isMotionDetected: false, isQualityUnstable: true, bpmStabilityScore: 0, arrhythmiaCount: 0 };
+      return { bpm: 0, confidence: 0, isPeak: false, filteredValue: 0, enhancedValue: undefined, isMotionDetected: false, isQualityUnstable: true, bpmStabilityScore: 0 };
     }
     if (this.startTime === 0) this.startTime = Date.now(); // Asegurar que startTime esté inicializado
     const warmingUp = this.isInWarmup();
@@ -225,7 +212,7 @@ export class HeartBeatProcessor {
     if (this.signalBuffer.length < 30 || warmingUp) {
        // Calcular BPM final incluso en warmup para actualizar estabilidad
        const bpmDuringWarmup = Math.round(this.getFinalBPM());
-       return { bpm: bpmDuringWarmup, confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected, isQualityUnstable: this.isQualityUnstable, bpmStabilityScore: this.bpmStabilityScore, arrhythmiaCount: 0 };
+       return { bpm: bpmDuringWarmup, confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected, isQualityUnstable: this.isQualityUnstable, bpmStabilityScore: this.bpmStabilityScore };
     }
 
     // Resetear estados de pico si señal baja
@@ -243,93 +230,54 @@ export class HeartBeatProcessor {
     let currentConfidence = initialConfidence;
     if (this.isMotionDetected) currentConfidence *= this.MOTION_PENALTY;
 
-    // Paso 9: Validación Avanzada (Forma, Consistencia, Prominencia, **Plantilla**)
+    // Paso 9: Validación Avanzada (Forma, Consistencia, Prominencia)
     let meetsShapeCriteria = false;
     let meetsConsistencyCriteria = false;
     let meetsProminenceCriteria = false;
-    let meetsTemplateCriteria = true; // Asumir verdadero si no hay plantilla
     let shapeScore = 0;
-    let consistencyScore = 0;
-    let prominenceScore = 0;
-    let templateScore = 0.5; // Default score
     let finalPeakConfidence = 0;
     let isConfirmedPeak = false;
-    let peakIndexInBuffer = this.signalBuffer.length -1; // Índice aproximado del pico actual
 
     if (isPotentialPeak && currentConfidence > this.MIN_CONFIDENCE * 0.1) {
-        // 9a: Validar Forma
         const shapeResult = this.validatePeakShape(this.signalBuffer);
         meetsShapeCriteria = shapeResult.isValid;
         shapeScore = shapeResult.score;
 
-        // 9b: Validar Consistencia (Amplitud e Intervalo)
         const consistencyResult = this.validatePeakConsistency(normalizedValue, Date.now());
         meetsConsistencyCriteria = consistencyResult.isConsistent;
-        consistencyScore = consistencyResult.score;
 
-        // 9c: Validar Prominencia
         const prominenceResult = this.validatePeakProminence(normalizedValue, this.signalBuffer, currentBPMForFilter);
         meetsProminenceCriteria = prominenceResult.isProminent;
-        prominenceScore = prominenceResult.score;
 
-        // 9d: Validar Coincidencia con Plantilla
-        if (this.currentTemplate) {
-            const candidateWindow = this.extractSignalWindow(this.signalBuffer, peakIndexInBuffer, this.TEMPLATE_WINDOW_SAMPLES);
-            if (candidateWindow && candidateWindow.length === this.currentTemplate.length) {
-                templateScore = this.calculateCrossCorrelation(candidateWindow, this.currentTemplate);
-                meetsTemplateCriteria = templateScore >= this.MIN_TEMPLATE_CORRELATION;
-            } else {
-                meetsTemplateCriteria = false; // No se pudo extraer ventana o tamaño incorrecto
-                templateScore = 0;
-            }
-        } else {
-             meetsTemplateCriteria = true; // No hay plantilla, no se puede validar
-             templateScore = 0.5; // Puntuación neutral
-        }
-
-        // 9e: Aplicar Requisitos Estrictos (si aplica)
         const isLowAmplitude = Math.abs(normalizedValue) < this.adaptiveSignalThreshold * this.LOW_AMPLITUDE_FACTOR;
         const requiredShapeScore = isLowAmplitude ? this.STRICT_SHAPE_SCORE : this.MIN_SHAPE_SCORE;
         const requiredConsistency = isLowAmplitude ? consistencyResult.meetsStrictCriteria : true;
-        const requiredTemplateScore = isLowAmplitude ? this.MIN_TEMPLATE_CORRELATION * 1.1 : this.MIN_TEMPLATE_CORRELATION; // Más estricto para baja amplitud
+        const requiredProminence = true; // Siempre requerir prominencia mínima
 
-        // 9f: Decisión de Confirmación Final
         if (meetsShapeCriteria && shapeScore >= requiredShapeScore &&
             meetsConsistencyCriteria && requiredConsistency &&
-            meetsProminenceCriteria && // Prominencia siempre requerida
-            meetsTemplateCriteria && templateScore >= requiredTemplateScore)
+            meetsProminenceCriteria && requiredProminence)
         {
             isConfirmedPeak = true;
-            // Confianza final: combinación ponderada de todas las validaciones
-            finalPeakConfidence = currentConfidence * 0.20 +
-                                shapeScore * 0.15 +
-                                consistencyScore * 0.15 +
-                                prominenceScore * 0.15 +
-                                templateScore * 0.35; // Dar más peso a la plantilla
+            // Confianza final: combinación ponderada
+            finalPeakConfidence = currentConfidence * 0.35 + // Conf inicial (ya penalizada por mov/calidad)
+                                shapeScore * 0.25 +          // Forma
+                                consistencyResult.score * 0.20 + // Consistencia Amp/Int
+                                prominenceResult.score * 0.20;   // Prominencia
             finalPeakConfidence *= this.bpmStabilityScore; // Modular por estabilidad BPM
             finalPeakConfidence = Math.max(0, Math.min(1.0, finalPeakConfidence));
 
-            // 9g: Actualizar historial de amplitud y **plantilla** si la confianza es alta
-            if(finalPeakConfidence > this.TEMPLATE_CONFIDENCE_THRESHOLD) {
+            if(finalPeakConfidence > 0.5) {
                 this.peakAmplitudeHistory.push(Math.abs(normalizedValue));
                 if(this.peakAmplitudeHistory.length > this.MEAN_AMPLITUDE_HISTORY_SIZE) {
                     this.peakAmplitudeHistory.shift();
                 }
-                // Actualizar plantilla
-                const newTemplateWindow = this.extractSignalWindow(this.signalBuffer, peakIndexInBuffer, this.TEMPLATE_WINDOW_SAMPLES);
-                if (newTemplateWindow) {
-                    this.updatePeakTemplate(newTemplateWindow);
-                }
             }
         } else {
-             // Pico rechazado por alguna validación
              isConfirmedPeak = false;
-             // Reportar qué falló (opcional, para depuración)
-             // console.log(`Peak rejected: Shape(${meetsShapeCriteria}/${shapeScore.toFixed(2)}), Cons(${meetsConsistencyCriteria}/${consistencyScore.toFixed(2)}), Prom(${meetsProminenceCriteria}/${prominenceScore.toFixed(2)}), Temp(${meetsTemplateCriteria}/${templateScore.toFixed(2)})`);
-             finalPeakConfidence = currentConfidence * 0.05; // Confianza muy baja
+             finalPeakConfidence = currentConfidence * 0.1; // Confianza muy baja si falla validación
         }
     } else {
-         // No fue un pico potencial o confianza inicial muy baja
          isConfirmedPeak = false;
          finalPeakConfidence = 0;
     }
@@ -347,7 +295,6 @@ export class HeartBeatProcessor {
 
     // Paso 11: Actualizar BPM (si pico confirmado Y confianza final es suficiente)
     if (isConfirmedPeak && finalPeakConfidence >= this.FINAL_CONFIDENCE_THRESHOLD_FOR_BPM) {
-        // updateBPMInternal ahora usa Mediana/MAD
         if (this.updateBPMInternal(currentTimestamp)) { 
             this.previousPeakTime = this.lastPeakTime;
             this.lastPeakTime = currentTimestamp;
@@ -373,8 +320,7 @@ export class HeartBeatProcessor {
       enhancedValue: enhancedValueResult, // Valor post-realce
       isMotionDetected: this.isMotionDetected,
       isQualityUnstable: this.isQualityUnstable,
-      bpmStabilityScore: this.bpmStabilityScore,
-      arrhythmiaCount: 0 // Añadir para compatibilidad con tipo HeartBeatResult
+      bpmStabilityScore: this.bpmStabilityScore
     };
   }
 
@@ -704,6 +650,88 @@ export class HeartBeatProcessor {
         return { isProminent, score };
    }
 
+   private updateBPMInternal(currentTimestamp: number): boolean {
+      if (this.lastPeakTime === null) {
+          return false;
+      }
+      const currentInterval = currentTimestamp - this.lastPeakTime;
+
+      // Calcular intervalo esperado y límites más estrictos
+      const expectedInterval = this.smoothBPM > 0 ? 60000 / this.smoothBPM : 800; // 800ms = 75 BPM default
+      const minValidIntervalStrict = expectedInterval * (1 - this.INTERVAL_DEVIATION_ALLOWED);
+      const maxValidIntervalStrict = expectedInterval * (1 + this.INTERVAL_DEVIATION_ALLOWED);
+
+      // Aplicar límites fisiológicos absolutos también
+      const minPhysiological = (60000 / this.MAX_BPM) * 0.8;
+      const maxPhysiological = (60000 / this.MIN_BPM) * 1.2;
+
+      if (currentInterval < Math.max(minValidIntervalStrict, minPhysiological) ||
+          currentInterval > Math.min(maxValidIntervalStrict, maxPhysiological))
+      {
+          console.log(`HeartBeatProcessor: Discarding interval ${currentInterval}ms (expected ~${expectedInterval.toFixed(0)}ms)`);
+          return false; // Intervalo fuera de límites estrictos o fisiológicos
+      }
+
+      // Si el intervalo es válido, proceder
+      const instantBPM = 60000 / currentInterval;
+      this.bpmHistory.push(instantBPM);
+      if (this.bpmHistory.length > 8) this.bpmHistory.shift();
+      this.rrIntervals.push(currentInterval);
+      if (this.rrIntervals.length > 30) this.rrIntervals.shift();
+      return true;
+   }
+
+  private getSmoothBPM(): number {
+    if (this.bpmHistory.length < 3) {
+      this.bpmStabilityScore = Math.max(0, this.bpmStabilityScore * 0.9); // Decaer estabilidad
+      return this.smoothBPM > 0 ? this.smoothBPM : 75;
+    }
+    const meanBPM = this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
+    let varianceBPM = 0;
+    for(const bpm of this.bpmHistory) {
+        varianceBPM += Math.pow(bpm - meanBPM, 2);
+    }
+    varianceBPM = Math.max(0, varianceBPM);
+    const stdDevBPM = Math.sqrt(varianceBPM / this.bpmHistory.length);
+    // Actualizar score de estabilidad
+    this.bpmStabilityScore = Math.max(0, 1.0 - Math.min(1.0, (stdDevBPM / this.BPM_STABILITY_THRESHOLD)**0.8 ));
+    const sortedBPMs = [...this.bpmHistory].sort((a, b) => a - b);
+    const medianBPM = sortedBPMs[Math.floor(sortedBPMs.length / 2)];
+    const newSmoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + medianBPM * this.BPM_ALPHA;
+    this.smoothBPM = Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, newSmoothBPM));
+    if (isNaN(this.smoothBPM)) this.smoothBPM = 75;
+    return this.smoothBPM;
+  }
+
+   public getFinalBPM(): number {
+     const currentSmoothBPM = this.getSmoothBPM(); // Asegura actualización de estabilidad
+     if (this.isInWarmup() || this.bpmHistory.length < 3) {
+       return 75;
+     }
+     return currentSmoothBPM;
+   }
+
+   // Nuevo: Estimar SNR proxy
+   private estimateSNRProxy(): number {
+       const noiseScore = Math.min(1, this.motionScore / (this.MOTION_STD_DEV_THRESHOLD * 2 + 1e-6)); // Normalizar motion score
+       // Combinar calidad de señal (buena) y bajo ruido
+       const snr = (this.lastQualityScore + (1.0 - noiseScore)) / 2.0;
+       return Math.max(0, Math.min(1.0, snr)); // Clamp 0-1
+   }
+
+   // Nuevo: Calcular umbral adaptativo
+   private calculateAdaptiveThreshold(snr: number): number {
+       let adjustmentFactor = 1.0;
+       if (snr < this.SNR_LOW_THRESHOLD) {
+           adjustmentFactor = this.THRESHOLD_ADJUST_LOW_SNR;
+       } else if (snr > this.SNR_HIGH_THRESHOLD) {
+           adjustmentFactor = this.THRESHOLD_ADJUST_HIGH_SNR;
+       }
+       // Aplicar ajuste y asegurar que no sea negativo
+       return Math.max(0.01, this.SIGNAL_THRESHOLD * adjustmentFactor);
+   }
+
+   // Nuevo: Valida la forma del pico
    private validatePeakShape(buffer: number[]): { isValid: boolean, score: number } {
        const peakIndex = buffer.length - 1; // Asumimos que el pico es el último valor en el buffer corto `values`
                                            // NO, esto es incorrecto. Necesitamos pasar la ventana correcta.
@@ -751,6 +779,7 @@ export class HeartBeatProcessor {
        return { isValid: score >= this.MIN_SHAPE_SCORE, score };
    }
 
+   // Nuevo: Valida la consistencia de amplitud e intervalo
    private validatePeakConsistency(normalizedAmplitude: number, currentTimestamp: number): 
        { isConsistent: boolean, meetsStrictCriteria: boolean, score: number } 
    {
@@ -801,186 +830,4 @@ export class HeartBeatProcessor {
 
        return { isConsistent: isOverallConsistent, meetsStrictCriteria: meetsOverallStrict, score: consistencyScore };
    }
-
-   // **NUEVO**: Funciones auxiliares para Mediana/MAD
-   private calculateMedian(values: number[]): number {
-       if (values.length === 0) return 0;
-       const sorted = [...values].sort((a, b) => a - b);
-       const mid = Math.floor(sorted.length / 2);
-       return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-   }
-
-   private calculateMAD(values: number[], median: number): number {
-       if (values.length === 0) return 0;
-       const deviations = values.map(val => Math.abs(val - median));
-       return this.calculateMedian(deviations);
-   }
-
-   // **MODIFICADO**: Usa Mediana/MAD para validar intervalo RR
-   private updateBPMInternal(currentTimestamp: number): boolean {
-       if (this.lastPeakTime === null) {
-           // No se puede calcular intervalo si es el primer pico detectado
-           return false;
-       }
-       const currentInterval = currentTimestamp - this.lastPeakTime;
-
-       // Límites fisiológicos absolutos
-       const minPhysiological = (60000 / this.MAX_BPM) * 0.8;
-       const maxPhysiological = (60000 / this.MIN_BPM) * 1.2;
-       if (currentInterval < minPhysiological || currentInterval > maxPhysiological) {
-           console.log(`HeartBeatProcessor: Discarding interval ${currentInterval}ms (outside physiological limits [${minPhysiological.toFixed(0)} - ${maxPhysiological.toFixed(0)}])`);
-           return false;
-       }
-
-       // Validación robusta con Mediana/MAD si hay suficientes datos
-       if (this.rrIntervals.length >= this.RR_MEDIAN_WINDOW / 2) { // Necesitamos al menos unos pocos intervalos
-           const recentIntervals = this.rrIntervals.slice(-this.RR_MEDIAN_WINDOW);
-           const medianInterval = this.calculateMedian(recentIntervals);
-           const madInterval = this.calculateMAD(recentIntervals, medianInterval);
-
-           const lowerBoundMAD = medianInterval - this.RR_MAD_FACTOR * madInterval;
-           const upperBoundMAD = medianInterval + this.RR_MAD_FACTOR * madInterval;
-
-           if (currentInterval < lowerBoundMAD || currentInterval > upperBoundMAD) {
-                console.log(`HeartBeatProcessor: Discarding interval ${currentInterval}ms (outside robust limits [${lowerBoundMAD.toFixed(0)} - ${upperBoundMAD.toFixed(0)}], median=${medianInterval.toFixed(0)}, MAD=${madInterval.toFixed(2)})`);
-                return false; // Intervalo fuera de límites robustos
-           }
-       }
-       // Si no hay suficientes datos para MAD o si pasa la validación MAD, procede.
-
-       // El intervalo es válido, proceder a actualizar historial
-       const instantBPM = 60000 / currentInterval;
-       this.bpmHistory.push(instantBPM);
-       if (this.bpmHistory.length > 8) this.bpmHistory.shift(); // Mantener historial corto para cálculo de smoothBPM
-
-       // Guardar intervalo válido para futura validación MAD
-       this.rrIntervals.push(currentInterval);
-       if (this.rrIntervals.length > this.RR_MEDIAN_WINDOW * 2) { // Mantener un historial razonable para MAD
-           this.rrIntervals.shift();
-       }
-       return true;
-    }
-
-   // **NUEVO**: Funciones auxiliares para Template Matching
-   private extractSignalWindow(buffer: number[], centerIndex: number, windowRadius: number): number[] | null {
-       const startIndex = centerIndex - windowRadius;
-       const endIndex = centerIndex + windowRadius;
-
-       if (startIndex < 0 || endIndex >= buffer.length) {
-           return null; // No se puede extraer la ventana completa
-       }
-       return buffer.slice(startIndex, endIndex + 1);
-   }
-
-   private updatePeakTemplate(newWindow: number[]): void {
-       if (newWindow.length !== (2 * this.TEMPLATE_WINDOW_SAMPLES + 1)) {
-           console.warn("Template window has incorrect size");
-           return;
-       }
-
-       this.peakTemplates.push(newWindow);
-       if (this.peakTemplates.length > this.TEMPLATE_BUFFER_SIZE) {
-           this.peakTemplates.shift();
-       }
-
-       // Recalcular plantilla promedio
-       if (this.peakTemplates.length > 0) {
-           const templateLength = this.peakTemplates[0].length;
-           this.currentTemplate = new Array(templateLength).fill(0);
-           for (let i = 0; i < templateLength; i++) {
-               let sum = 0;
-               for (const template of this.peakTemplates) {
-                   sum += template[i];
-               }
-               this.currentTemplate[i] = sum / this.peakTemplates.length;
-           }
-           // Normalizar plantilla promedio (opcional, pero puede ayudar)
-           const meanTemplate = this.currentTemplate.reduce((a, b) => a + b, 0) / templateLength;
-           let stdDevTemplate = 0;
-           for(const val of this.currentTemplate) { stdDevTemplate += Math.pow(val - meanTemplate, 2); }
-           stdDevTemplate = Math.sqrt(stdDevTemplate / templateLength);
-           if (stdDevTemplate > 1e-6) {
-               this.currentTemplate = this.currentTemplate.map(v => (v - meanTemplate) / stdDevTemplate);
-           }
-       }
-   }
-
-   private calculateCrossCorrelation(signal1: number[], signal2: number[]): number {
-       if (signal1.length !== signal2.length || signal1.length === 0) {
-           return 0;
-       }
-       const n = signal1.length;
-       const mean1 = signal1.reduce((a, b) => a + b, 0) / n;
-       const mean2 = signal2.reduce((a, b) => a + b, 0) / n;
-
-       let variance1 = 0;
-       let variance2 = 0;
-       let covariance = 0;
-
-       for (let i = 0; i < n; i++) {
-           const diff1 = signal1[i] - mean1;
-           const diff2 = signal2[i] - mean2;
-           variance1 += diff1 * diff1;
-           variance2 += diff2 * diff2;
-           covariance += diff1 * diff2;
-       }
-
-       const stdDev1 = Math.sqrt(variance1 / n);
-       const stdDev2 = Math.sqrt(variance2 / n);
-
-       if (stdDev1 < 1e-6 || stdDev2 < 1e-6) {
-           return 0; // Evitar división por cero si una señal es constante
-       }
-
-       const correlation = covariance / (n * stdDev1 * stdDev2);
-       return Math.max(-1.0, Math.min(1.0, correlation)); // Clamp a [-1, 1]
-   }
-
-   private estimateSNRProxy(): number {
-       const noiseScore = Math.min(1, this.motionScore / (this.MOTION_STD_DEV_THRESHOLD * 2 + 1e-6)); // Normalizar motion score
-       // Combinar calidad de señal (buena) y bajo ruido
-       const snr = (this.lastQualityScore + (1.0 - noiseScore)) / 2.0;
-       return Math.max(0, Math.min(1.0, snr)); // Clamp 0-1
-   }
-
-   private calculateAdaptiveThreshold(snr: number): number {
-       let adjustmentFactor = 1.0;
-       if (snr < this.SNR_LOW_THRESHOLD) {
-           adjustmentFactor = this.THRESHOLD_ADJUST_LOW_SNR;
-       } else if (snr > this.SNR_HIGH_THRESHOLD) {
-           adjustmentFactor = this.THRESHOLD_ADJUST_HIGH_SNR;
-       }
-       // Aplicar ajuste y asegurar que no sea negativo
-       return Math.max(0.01, this.SIGNAL_THRESHOLD * adjustmentFactor);
-   }
-
-   private getSmoothBPM(): number {
-     if (this.bpmHistory.length < 3) {
-       this.bpmStabilityScore = Math.max(0, this.bpmStabilityScore * 0.9); // Decaer estabilidad
-       return this.smoothBPM > 0 ? this.smoothBPM : 75;
-     }
-     const meanBPM = this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
-     let varianceBPM = 0;
-     for(const bpm of this.bpmHistory) {
-         varianceBPM += Math.pow(bpm - meanBPM, 2);
-     }
-     varianceBPM = Math.max(0, varianceBPM);
-     const stdDevBPM = Math.sqrt(varianceBPM / this.bpmHistory.length);
-     // Actualizar score de estabilidad
-     this.bpmStabilityScore = Math.max(0, 1.0 - Math.min(1.0, (stdDevBPM / this.BPM_STABILITY_THRESHOLD)**0.8 ));
-     const sortedBPMs = [...this.bpmHistory].sort((a, b) => a - b);
-     const medianBPM = sortedBPMs[Math.floor(sortedBPMs.length / 2)];
-     const newSmoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + medianBPM * this.BPM_ALPHA;
-     this.smoothBPM = Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, newSmoothBPM));
-     if (isNaN(this.smoothBPM)) this.smoothBPM = 75;
-     return this.smoothBPM;
-   }
-
-   public getFinalBPM(): number {
-      const currentSmoothBPM = this.getSmoothBPM(); // Asegura actualización de estabilidad
-      if (this.isInWarmup() || this.bpmHistory.length < 3) {
-        return 75;
-      }
-      return currentSmoothBPM;
-    }
 }
