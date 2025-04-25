@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor.ts';
+import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult, UseHeartBeatReturn, RRIntervalData } from './types';
 import { checkWeakSignal, updateLastValidBpm, processLowConfidenceResult } from './signal-processing';
 import { handlePeakDetection, shouldProcessMeasurement, createWeakSignalResult } from './peak-detection';
