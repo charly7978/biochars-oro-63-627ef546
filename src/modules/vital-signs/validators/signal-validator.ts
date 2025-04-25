@@ -15,6 +15,9 @@ function realAbs(x: number): number { return x < 0 ? -x : x; }
 function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
 function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
 
+// Agregar función determinista para máximo de dos valores
+function realMax2(a: number, b: number): number { return a > b ? a : b; }
+
 export class SignalValidator {
   // Thresholds for physiological detection
   private readonly MIN_SIGNAL_AMPLITUDE: number;
@@ -129,7 +132,7 @@ export class SignalValidator {
     
     if (variance < this.MIN_SIGNAL_VARIANCE) {
       // Signal variance too low - likely not a physiological signal
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
       return;
     }
     
@@ -150,7 +153,7 @@ export class SignalValidator {
           current.value > prev2.value * 1.2 &&
           current.value > next1.value * 1.2 && 
           current.value > next2.value * 1.2 &&
-          Math.abs(current.value) > peakThreshold) {
+          realAbs(current.value) > peakThreshold) {
         peaks.push(current.time);
       }
     }
@@ -170,7 +173,7 @@ export class SignalValidator {
       
       if (validIntervals.length < realFloor(intervals.length * 0.7)) {
         // If less than 70% of intervals are physiologically plausible, reject the pattern
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
         return;
       }
       
@@ -204,11 +207,11 @@ export class SignalValidator {
         }
       } else {
         // Reduce counter if pattern not consistent
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
       }
     } else {
       // Decrement pattern count if we don't have enough peaks
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
     }
   }
   
