@@ -220,60 +220,56 @@ class ArrhythmiaDetectionService {
     // Detección de arritmia potencial basada en RMSSD
     const potentialArrhythmia = rmssd > this.RMSSD_THRESHOLD;
     
-    // Procesamiento para confirmar arritmia - lógica de confirmación existente
+    // Procesamiento para confirmar arritmia
     let confirmedArrhythmia = false;
-    let category: ArrhythmiaDetectionResult['category'] = 'normal'; // Inicializar categoría
+    let category: ArrhythmiaDetectionResult['category'] = 'normal';
     
     if (potentialArrhythmia) {
-      // Si es un nuevo evento potencial de arritmia
-      if (!this.currentBeatIsArrhythmia) {
+      // Si es un nuevo evento potencial y no estábamos en arritmia confirmada previamente
+      if (!this.currentBeatIsArrhythmia) { 
         this.arrhythmiaConfirmationCounter++;
-        
-        // Verificar si hemos acumulado suficientes confirmaciones
         if (this.arrhythmiaConfirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
           confirmedArrhythmia = true;
-          this.arrhythmiaConfirmationCounter = 0;
+          // No resetear contador aquí, se resetea abajo si no se confirma arritmia relevante
         } else {
-          // Todavía no confirmada, pero seguimos registrando
           console.log(`Potential arrhythmia detected (RMSSD=${rmssd.toFixed(1)}), confirmation ${this.arrhythmiaConfirmationCounter}/${this.REQUIRED_CONFIRMATIONS}`);
         }
       }
-      // Si ya estábamos en arritmia, no incrementamos contador pero mantenemos el estado potencial
-    } else {
-      // Si el RMSSD está por debajo del umbral, reseteamos el contador si ha pasado tiempo
-      if (currentTime - this.lastArrhythmiaTriggeredTime > this.CONFIRMATION_WINDOW_MS) {
-        this.arrhythmiaConfirmationCounter = 0;
-      }
-      // También podríamos resetear si vemos varios latidos normales seguidos, pero mantengamos simple por ahora
-    }
-    
+      // Si ya estábamos en arritmia, potentialArrhythmia sigue siendo true, pero no incrementamos contador ni confirmamos de nuevo.
+    } 
+    // // Lógica anterior de reset basada en tiempo - Eliminada a favor de resetear si no hay confirmación abajo.
+    // else {
+    //   if (currentTime - this.lastArrhythmiaTriggeredTime > this.CONFIRMATION_WINDOW_MS) {
+    //     this.arrhythmiaConfirmationCounter = 0;
+    //   }
+    // }
+
     // Determinar la categoría si hay una arritmia confirmada o potencial
-    // para poder decidir si es una "alarma real" (no taquicardia)
     if (confirmedArrhythmia || potentialArrhythmia) { 
         category = this.categorizeArrhythmia(validIntervals);
     }
 
-    // Actualizar estado de arritmia - SOLO si está confirmada Y NO es taquicardia
+    // Guardar estado previo para comparación
     this.lastIsArrhythmia = this.currentBeatIsArrhythmia;
+    let isNowConsideredArrhythmia = false; // Variable local para el estado actual
     
     if (confirmedArrhythmia && category !== 'tachycardia') {
-      // Es una arritmia confirmada y relevante (no solo taquicardia)
-      this.currentBeatIsArrhythmia = true;
+      // Arritmia confirmada y relevante
+      isNowConsideredArrhythmia = true;
       const variationRatioForInfo = calculateRRVariation(validIntervals);
-      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatioForInfo, this.RMSSD_THRESHOLD, category);
-    } else {
-       // No está confirmada, o es taquicardia confirmada, o RMSSD está bajo
-       // Asegurarse de que el estado refleje que no hay arritmia *activa* para alertas.
-       // Si solo fue taquicardia confirmada, no ponemos currentBeatIsArrhythmia a true.
-      if (!potentialArrhythmia) { // Solo resetear si RMSSD está bajo
-         this.currentBeatIsArrhythmia = false; 
-      } else if (confirmedArrhythmia && category === 'tachycardia') { 
-         // Si es taquicardia confirmada, no la marcamos como arritmia activa
-         this.currentBeatIsArrhythmia = false;
-         console.log(`Tachycardia detected (RMSSD=${rmssd.toFixed(1)}), but not treated as critical arrhythmia.`);
+      // Llamar a handle solo si es una nueva detección (estado anterior era false)
+      if (!this.lastIsArrhythmia) {
+          this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatioForInfo, this.RMSSD_THRESHOLD, category);
       }
-      // Si es potencial pero no confirmada, currentBeatIsArrhythmia no cambia (podría ser true de un ciclo anterior)
+    } 
+    // Si no se confirmó una arritmia relevante este ciclo, el estado vuelve a ser no-arrítmico
+    // y reseteamos el contador de confirmación para el próximo evento potencial.
+    if (!isNowConsideredArrhythmia) { 
+        this.arrhythmiaConfirmationCounter = 0; 
     }
+    
+    // Actualizar el estado persistente de la clase
+    this.currentBeatIsArrhythmia = isNowConsideredArrhythmia;
     
     // Calcular rrVariation para devolverlo, aunque no se use para detección primaria
     const finalRRVariation = calculateRRVariation(validIntervals);
@@ -282,10 +278,9 @@ class ArrhythmiaDetectionService {
       rmssd, 
       rrVariation: finalRRVariation, 
       timestamp: currentTime,
-      // Devolver true solo si es confirmada y no taquicardia
       isArrhythmia: this.currentBeatIsArrhythmia, 
-      // Devolver la categoría calculada (puede ser 'tachycardia' aunque isArrhythmia sea false)
-      category: this.currentBeatIsArrhythmia ? category : (potentialArrhythmia ? category : 'normal')
+      // Devolver categoría correcta incluso si no es una arritmia activa
+      category: this.currentBeatIsArrhythmia ? category : (potentialArrhythmia ? category : 'normal') 
     };
   }
   
