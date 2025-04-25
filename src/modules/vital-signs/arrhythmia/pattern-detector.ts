@@ -13,7 +13,7 @@ export class ArrhythmiaPatternDetector {
   private readonly PATTERN_BUFFER_SIZE = 25; // Increased for better pattern analysis
   private readonly ANOMALY_HISTORY_SIZE = 35;
   private readonly MIN_ANOMALY_PATTERN_LENGTH = 6; // Increased from 5 to 6 para mayor exigencia
-  private readonly PATTERN_MATCH_THRESHOLD = 0.80; // Decreased from 0.85 to 0.80 para mejorar sensibilidad
+  private readonly PATTERN_MATCH_THRESHOLD = 0.82; // Incremented slightly from 0.80
   private readonly SIGNAL_DECLINE_THRESHOLD = 0.3;
 
   // Tracking time-based pattern consistency

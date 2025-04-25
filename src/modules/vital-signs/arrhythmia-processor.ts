@@ -125,12 +125,15 @@ export class ArrhythmiaProcessor {
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     const patternDetected = this.patternDetector.detectArrhythmiaPattern();
 
-    // *** MODIFIED CONFIRMATION LOGIC ***
-    // Require pattern detection AND *some* consecutive abnormal beats (e.g., 40% of original threshold)
-    const requiredConsecutiveForPattern = Math.max(1, Math.floor(this.CONSECUTIVE_THRESHOLD * 0.4));
-    const isArrhythmiaConfirmed = canDetectNewArrhythmia && patternDetected && this.consecutiveAbnormalBeats >= requiredConsecutiveForPattern;
+    // *** EXPERIMENTAL CONFIRMATION LOGIC ***
+    // Rely ONLY on the pattern detector's output and the time delay
+    const isArrhythmiaConfirmed = canDetectNewArrhythmia && patternDetected;
     
     // Original condition (for comparison, now commented out):
+    // const requiredConsecutiveForPattern = Math.max(1, Math.floor(this.CONSECUTIVE_THRESHOLD * 0.4));
+    // const isArrhythmiaConfirmed = canDetectNewArrhythmia && patternDetected && this.consecutiveAbnormalBeats >= requiredConsecutiveForPattern;
+    
+    // Previous condition (also commented out):
     // const isArrhythmiaConfirmed = this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected;
 
     if (isArrhythmiaConfirmed) {
@@ -138,13 +141,13 @@ export class ArrhythmiaProcessor {
       this.arrhythmiaDetected = true; // Mark as detected for the result object
       this.lastArrhythmiaTime = currentTime;
       // Reset counters after confirmation to avoid immediate re-triggering
+      // No need to reset consecutiveAbnormalBeats if we are not using it for confirmation anymore?
+      // Let's keep resetting it for now, might be used elsewhere or in future logic.
       this.consecutiveAbnormalBeats = 0; 
       this.patternDetector.resetPatternBuffer(); 
       
       console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED", {
         arrhythmiaCount: this.arrhythmiaCount,
-        requiredConsecutive: requiredConsecutiveForPattern, // Log the threshold used
-        actualConsecutive: this.consecutiveAbnormalBeats, // This will be 0 now, log before reset?
         timeSinceLast: timeSinceLastArrhythmia,
         patternDetected: patternDetected, // Log pattern status
         timestamp: currentTime
