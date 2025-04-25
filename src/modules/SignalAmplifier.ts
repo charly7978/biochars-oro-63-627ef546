@@ -8,11 +8,13 @@
 export class SignalAmplifier {
   // Amplification parameters
   private readonly MIN_GAIN = 1.2;
-  private readonly MAX_GAIN = 4.5;
+  private readonly MAX_GAIN = 6.0;
   private readonly NOISE_THRESHOLD = 0.15;
   private readonly SIGNAL_BUFFER_SIZE = 20;
   private readonly LONG_BUFFER_SIZE = 60;
   private readonly ADAPTATION_RATE = 0.08;
+  private readonly SIGNAL_VARIATION_FACTOR = 0.25;
+  private readonly BASELINE_WINDOW_SIZE = 15;
   private readonly FREQUENCY_BANDS = [0.8, 1.0, 1.3, 1.6, 2.0, 2.3, 2.6];
   private readonly QUALITY_THRESHOLDS = {
     LOW: 0.3,
@@ -93,13 +95,24 @@ export class SignalAmplifier {
   }
 
   /**
-   * Update baseline with slow adaptation
+   * Update baseline using a moving minimum filter for robustness
    */
   private updateBaseline(value: number): void {
-    if (this.baselineValue === 0) {
-      this.baselineValue = value;
+    if (this.signalBuffer.length < this.BASELINE_WINDOW_SIZE) {
+      if (this.baselineValue === 0) {
+        this.baselineValue = value;
+      } else {
+        this.baselineValue = this.baselineValue * 0.99 + value * 0.01;
+      }
     } else {
-      const adaptationRate = 0.005; // Very slow for stability
+      const window = this.signalBuffer.slice(-this.BASELINE_WINDOW_SIZE);
+      let minVal = window[0];
+      for (let i = 1; i < window.length; i++) {
+        if (window[i] < minVal) {
+          minVal = window[i];
+        }
+      }
+      const adaptationRate = 0.005;
       this.baselineValue = this.baselineValue * (1 - adaptationRate) + value * adaptationRate;
     }
   }
@@ -250,27 +263,34 @@ export class SignalAmplifier {
   }
 
   /**
-   * Dynamically adjust gain based on signal quality
+   * Dynamically adjust gain based on signal quality and variation
    */
   private adjustGain(quality: number): void {
-    // If quality is very low, increase gain
-    // If quality is good, we can reduce gain
     let targetGain = this.currentGain;
-    
-    if (quality < this.QUALITY_THRESHOLDS.LOW) {
-      // Low quality, gradually increase gain
-      targetGain = Math.min(this.MAX_GAIN, this.currentGain * 1.05);
-    } else if (quality < this.QUALITY_THRESHOLDS.MEDIUM) {
-      // Medium quality, slightly increase
-      targetGain = Math.min(this.MAX_GAIN, this.currentGain * 1.01);
-    } else if (quality > this.QUALITY_THRESHOLDS.HIGH) {
-      // High quality, reduce to avoid saturation
-      targetGain = Math.max(this.MIN_GAIN, this.currentGain * 0.99);
+
+    let stdDev = 0;
+    if (this.signalBuffer.length >= 10) {
+        const mean = this.signalBuffer.reduce((a, b) => a + b, 0) / this.signalBuffer.length;
+        const variance = this.signalBuffer.reduce((a, v) => a + (v - mean) ** 2, 0) / this.signalBuffer.length;
+        stdDev = Math.sqrt(variance);
     }
-    
-    // Apply smoothed change
-    this.currentGain = this.currentGain * (1 - this.ADAPTATION_RATE) + 
-                      targetGain * this.ADAPTATION_RATE;
+
+    const maxExpectedStdDev = 0.5;
+    const normalizedStdDev = Math.min(1.0, stdDev / maxExpectedStdDev);
+
+    if (quality < this.QUALITY_THRESHOLDS.LOW) {
+      targetGain = this.currentGain * 1.05;
+    } else if (quality < this.QUALITY_THRESHOLDS.MEDIUM) {
+      targetGain = this.currentGain * 1.01;
+    } else if (quality > this.QUALITY_THRESHOLDS.HIGH) {
+      targetGain = this.currentGain * 0.99;
+    }
+
+    targetGain = targetGain * (1 - this.SIGNAL_VARIATION_FACTOR * normalizedStdDev);
+
+    targetGain = Math.max(this.MIN_GAIN, Math.min(this.MAX_GAIN, targetGain));
+
+    this.currentGain = this.currentGain * (1 - this.ADAPTATION_RATE) + targetGain * this.ADAPTATION_RATE;
   }
 
   /**

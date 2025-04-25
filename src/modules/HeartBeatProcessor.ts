@@ -2,7 +2,7 @@ import { HeartBeatConfig } from './heart-beat/config'; // Asegúrate de que la r
 
 export class HeartBeatProcessor {
   SAMPLE_RATE = HeartBeatConfig.SAMPLE_RATE; // Usar config
-  WINDOW_SIZE = HeartBeatConfig.WINDOW_SIZE;
+  WINDOW_SIZE = 150; // Aumentar tamaño de ventana para soportar retrasos armónicos más largos
   MIN_BPM = HeartBeatConfig.MIN_BPM;
   MAX_BPM = HeartBeatConfig.MAX_BPM;
   SIGNAL_THRESHOLD = HeartBeatConfig.SIGNAL_THRESHOLD;
@@ -68,6 +68,11 @@ export class HeartBeatProcessor {
   audioContext = null;
   lastBeepTime = 0;
   startTime = 0;
+
+  // Ganancias para la mejora armónica (decrecientes)
+  HARMONIC_GAIN = 0.4;     // Ganancia del 1er armónico (retraso de 1 período)
+  HARMONIC_GAIN_2ND = 0.25;  // Ganancia del 2do armónico (retraso de 2 períodos)
+  HARMONIC_GAIN_3RD = 0.15;  // Ganancia del 3er armónico (retraso de 3 períodos)
 
   constructor() {
     this.initAudio();
@@ -273,7 +278,8 @@ export class HeartBeatProcessor {
     confidence: number;
     isPeak: boolean;
     filteredValue: number;
-    isMotionDetected: boolean; // Añadido
+    enhancedValue?: number;
+    isMotionDetected: boolean;
   } {
     if (!this.isMonitoring) {
       return { bpm: 0, confidence: 0, isPeak: false, filteredValue: 0, isMotionDetected: false };
@@ -281,14 +287,13 @@ export class HeartBeatProcessor {
 
     if (this.startTime === 0) {
       this.startTime = Date.now();
-      // No iniciar audio aquí, se hace en setMonitoring o playBeep
     }
 
-    // 1. Detección de Movimiento (usando señal cruda)
+    // 1. Detección de Movimiento
     this.updateMotionDetection(rawValue);
 
     // 2. Filtrado con Ventanas Adaptables
-    const currentBPM = this.smoothBPM > 0 ? this.smoothBPM : 75; // Usar BPM suavizado o 75 por defecto
+    const currentBPM = this.smoothBPM > 0 ? this.smoothBPM : 75;
     const medianWindow = this.getAdaptiveWindowSize(this.BASE_MEDIAN_WINDOW, this.MAX_MEDIAN_WINDOW, currentBPM);
     const movingAvgWindow = this.getAdaptiveWindowSize(this.BASE_MOVING_AVG_WINDOW, this.MAX_MOVING_AVG_WINDOW, currentBPM);
 
@@ -297,32 +302,74 @@ export class HeartBeatProcessor {
     const smoothed = this.calculateEMA(movAvgVal);
 
     this.signalBuffer.push(smoothed);
+    // Asegurar que el buffer no exceda WINDOW_SIZE (ahora más grande)
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
 
-    if (this.signalBuffer.length < 30) { // Necesita datos suficientes para baseline y picos
-      return { bpm: Math.round(this.getFinalBPM()), confidence: 0, isPeak: false, filteredValue: smoothed, isMotionDetected: this.isMotionDetected };
+    let valueForPeakDetection = smoothed;
+    let enhancedValueResult: number | undefined = undefined;
+
+    // 3. Mejora Armónica Múltiple
+    if (currentBPM >= this.MIN_BPM && currentBPM <= this.MAX_BPM) {
+        const periodSeconds = 60.0 / currentBPM;
+        const periodSamples = Math.round(periodSeconds * this.SAMPLE_RATE);
+        const bufferIndex = this.signalBuffer.length - 1;
+
+        let enhancement = 0;
+
+        // 1er Armónico
+        if (this.HARMONIC_GAIN > 0) {
+            const delayedIndex1 = bufferIndex - periodSamples;
+            if (delayedIndex1 >= 0) {
+                enhancement += this.HARMONIC_GAIN * this.signalBuffer[delayedIndex1];
+            }
+        }
+
+        // 2do Armónico
+        if (this.HARMONIC_GAIN_2ND > 0) {
+            const delayedIndex2 = bufferIndex - 2 * periodSamples;
+            if (delayedIndex2 >= 0) {
+                enhancement += this.HARMONIC_GAIN_2ND * this.signalBuffer[delayedIndex2];
+            }
+        }
+
+        // 3er Armónico
+        if (this.HARMONIC_GAIN_3RD > 0) {
+            const delayedIndex3 = bufferIndex - 3 * periodSamples;
+            if (delayedIndex3 >= 0) {
+                enhancement += this.HARMONIC_GAIN_3RD * this.signalBuffer[delayedIndex3];
+            }
+        }
+
+        // Solo aplicar si se calculó alguna mejora válida
+        if (enhancement !== 0) {
+           valueForPeakDetection = smoothed + enhancement;
+           enhancedValueResult = valueForPeakDetection;
+        }
     }
 
-    // 3. Actualización de Línea Base (mejorada)
+    // 4. Actualización de Línea Base (basada en señal pre-realce)
     if (this.signalBuffer.length > 10) {
-        const recentValues = this.signalBuffer.slice(-15);
-        let minRecent = recentValues[0];
-        for(let i = 1; i < recentValues.length; i++) {
-            if (recentValues[i] < minRecent) minRecent = recentValues[i];
+        const recentValuesForBaseline = this.signalBuffer.slice(-15).map(v => v);
+        let minRecent = recentValuesForBaseline.length > 0 ? recentValuesForBaseline[0] : this.baseline;
+        for(let i = 1; i < recentValuesForBaseline.length; i++) {
+            if (recentValuesForBaseline[i] < minRecent) minRecent = recentValuesForBaseline[i];
         }
         this.baseline = this.baseline * 0.9 + minRecent * 0.1;
     } else if (this.signalBuffer.length > 0) {
         this.baseline = this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
     }
 
+    if (this.signalBuffer.length < 30) { // Aún necesita calentamiento inicial
+      return { bpm: Math.round(this.getFinalBPM()), confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected };
+    }
 
-    // 4. Normalización y Derivada
-    const normalizedValue = smoothed - this.baseline;
+    // 5. Normalización y Derivada (usando señal realzada o no)
+    const normalizedValue = valueForPeakDetection - this.baseline;
     this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
 
-    this.values.push(smoothed); // Usar smoothed para derivada, más estable
+    this.values.push(valueForPeakDetection);
     if (this.values.length > 3) {
       this.values.shift();
     }
@@ -333,37 +380,30 @@ export class HeartBeatProcessor {
       smoothDerivative = this.values[1] - this.values[0];
     }
 
-
-    // 5. Detección de Pico
+    // 6. Detección de Pico
     let { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
 
-    // 6. Penalización por Movimiento
+    // 7. Penalización por Movimiento
     if (this.isMotionDetected) {
-        confidence *= this.MOTION_PENALTY; // Reducir confianza si hay movimiento
-        // Podríamos incluso forzar isPeak a false si el movimiento es muy alto
-        // if (this.motionScore > this.MOTION_STD_DEV_THRESHOLD * 1.5) {
-        //     isPeak = false;
-        // }
+        confidence *= this.MOTION_PENALTY;
     }
 
     const currentTimestamp = Date.now();
-    // Beep inmediato en pico detectado (si la confianza es suficiente DESPUÉS de la penalización por movimiento)
+    // Beep inmediato
     if (isPeak && confidence > this.MIN_CONFIDENCE * 0.5 && currentTimestamp - this.lastBeepTime > this.MIN_BEEP_INTERVAL_MS) {
-        this.playBeep(confidence * this.BEEP_VOLUME); // Usar confianza potencialmente reducida
+        this.playBeep(confidence * this.BEEP_VOLUME);
         this.lastBeepTime = currentTimestamp;
     }
 
-
-    // 7. Confirmación de Pico (usando lógica mejorada de peak-detector.ts)
+    // 8. Confirmación de Pico
     const confirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-    this.lastValue = normalizedValue; // Actualizar el último valor normalizado
+    this.lastValue = normalizedValue;
 
-    // 8. Actualización de BPM (solo si no hay movimiento detectado)
+    // 9. Actualización de BPM
     if (confirmedPeak && !this.isMotionDetected) {
-        this.updateBPM(); // Actualizar BPM y tiempos de pico
+        this.updateBPM();
 
-        // Guardar intervalo RR si es válido
         if (this.previousPeakTime !== null && this.lastPeakTime !== null) {
             const rrInterval = this.lastPeakTime - this.previousPeakTime;
             if (rrInterval > 250 && rrInterval < 2000) {
@@ -371,22 +411,19 @@ export class HeartBeatProcessor {
                 if (this.rrIntervals.length > 30) this.rrIntervals.shift();
             }
         }
-        // Actualizar tiempos para el siguiente cálculo
         this.previousPeakTime = this.lastPeakTime;
-        this.lastPeakTime = currentTimestamp; // Usar el tiempo actual como tiempo del pico confirmado
+        this.lastPeakTime = currentTimestamp;
     } else if (confirmedPeak && this.isMotionDetected) {
-        // Si se confirma un pico pero hay movimiento, resetear el estado de confirmación
-        // para evitar usar este pico ruidoso en el siguiente cálculo de intervalo
         this.lastConfirmedPeak = false;
     }
 
-
-    // 9. Retornar Resultados
+    // 10. Retornar Resultados
     return {
       bpm: Math.round(this.getFinalBPM()),
-      confidence: this.isMotionDetected ? confidence : (confirmedPeak ? confidence : 0), // Mostrar confianza reducida si hay mov. o 0 si no es pico confirmado
-      isPeak: confirmedPeak && !this.isInWarmup() && !this.isMotionDetected, // No marcar como pico si hay movimiento
+      confidence: this.isMotionDetected ? confidence : (confirmedPeak ? confidence : 0),
+      isPeak: confirmedPeak && !this.isInWarmup() && !this.isMotionDetected,
       filteredValue: smoothed,
+      enhancedValue: enhancedValueResult,
       isMotionDetected: this.isMotionDetected
     };
   }
@@ -553,7 +590,7 @@ export class HeartBeatProcessor {
     this.peakConfirmationBuffer = [];
     this.bpmHistory = [];
     this.values = [];
-    this.smoothBPM = 75; // Resetear a valor por defecto
+    this.smoothBPM = 75;
     this.lastPeakTime = null;
     this.previousPeakTime = null;
     this.lastConfirmedPeak = false;
@@ -561,11 +598,16 @@ export class HeartBeatProcessor {
     this.baseline = 0;
     this.lastValue = 0;
     this.smoothedValue = 0;
-    this.startTime = this.isMonitoring ? Date.now() : 0; // Reiniciar warmup si está monitoreando
+    this.startTime = this.isMonitoring ? Date.now() : 0;
     this.lowSignalCount = 0;
     this.rrIntervals = [];
     this.motionScore = 0;
     this.isMotionDetected = false;
+
+    // Reiniciar explícitamente la línea base al resetear
+    this.baseline = 0;
+    // Reiniciar smoothedValue explícitamente
+    this.smoothedValue = 0;
 
     if (this.audioContext && this.audioContext.state === 'suspended') {
       this.audioContext.resume().catch(err => {
