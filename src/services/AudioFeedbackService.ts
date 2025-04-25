@@ -1,16 +1,12 @@
 
-/**
- * Centralized service for audio and haptic feedback
- * Only uses real data - no simulation
- */
-
-import { HeartbeatFeedbackType } from "@/hooks/useHeartbeatFeedback";
+import { PeakData } from '@/types/peak';
 
 class AudioFeedbackService {
   private static instance: AudioFeedbackService;
   private audioContext: AudioContext | null = null;
   private lastTriggerTime: number = 0;
-  private readonly MIN_TRIGGER_INTERVAL_MS: number = 150;
+  private readonly MIN_TRIGGER_INTERVAL_MS: number = 250;
+  private pendingPeaks: PeakData[] = [];
   
   // Audio settings
   private readonly NORMAL_BEEP_FREQUENCY: number = 880;
@@ -38,72 +34,75 @@ class AudioFeedbackService {
     }
   }
 
-  public triggerHeartbeatFeedback(type: HeartbeatFeedbackType = 'normal'): boolean {
-    if (!this.audioContext) {
-      this.initAudioContext();
-      if (!this.audioContext) {
-        console.error("AudioFeedbackService: No audio context available");
-        this.vibrateOnly(type);
-        return false;
-      }
-    }
+  public queuePeak(peakData: PeakData): void {
+    this.pendingPeaks.push(peakData);
+    this.processPendingPeaks();
+  }
+
+  private async processPendingPeaks(): Promise<void> {
+    if (!this.pendingPeaks.length) return;
 
     const now = Date.now();
-    if (now - this.lastTriggerTime < this.MIN_TRIGGER_INTERVAL_MS) {
-      return false;
-    }
-    
-    this.lastTriggerTime = now;
+    if (now - this.lastTriggerTime < this.MIN_TRIGGER_INTERVAL_MS) return;
 
-    // Activate haptic feedback
-    this.vibrate(type);
+    const peak = this.pendingPeaks[0];
+    const timeSincePeak = now - peak.timestamp;
+
+    // Only play peaks that are recent (within last 500ms)
+    if (timeSincePeak <= 500) {
+      await this.playBeep(peak.isArrhythmia ? 'arrhythmia' : 'normal');
+      this.lastTriggerTime = now;
+    }
+
+    this.pendingPeaks.shift();
     
-    // Generate audio feedback
-    this.playBeep(type);
-    
+    // Process next peak if enough time has passed
+    if (this.pendingPeaks.length) {
+      setTimeout(() => this.processPendingPeaks(), this.MIN_TRIGGER_INTERVAL_MS);
+    }
+  }
+
+  // Método necesario para compatibilidad con código existente
+  public triggerHeartbeatFeedback(type: 'normal' | 'arrhythmia' = 'normal', volume: number = 0.7): boolean {
+    const peakData: PeakData = {
+      timestamp: Date.now(),
+      value: volume,
+      isArrhythmia: type === 'arrhythmia'
+    };
+    this.queuePeak(peakData);
     return true;
   }
 
-  public playBeep(type: HeartbeatFeedbackType = 'normal', volume: number = 0.7): boolean {
+  public async playBeep(type: 'normal' | 'arrhythmia' = 'normal', volume: number = 0.7): Promise<boolean> {
+    if (!this.audioContext) {
+      await this.initAudioContext();
+      if (!this.audioContext) return false;
+    }
+
     try {
-      if (!this.audioContext) {
-        this.initAudioContext();
-        if (!this.audioContext) return false;
-      }
-
       if (this.audioContext.state !== 'running') {
-        this.audioContext.resume().catch(err => {
-          console.error('Error resuming audio context:', err);
-        });
+        await this.audioContext.resume();
       }
 
-      const ctx = this.audioContext;
-      const gainNode = ctx.createGain();
-      const oscillator = ctx.createOscillator();
+      const frequency = type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_FREQUENCY : this.NORMAL_BEEP_FREQUENCY;
+      const duration = type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_DURATION_MS : this.NORMAL_BEEP_DURATION_MS;
+
+      const oscillator = this.audioContext.createOscillator();
+      const gainNode = this.audioContext.createGain();
 
       oscillator.type = type === 'arrhythmia' ? 'triangle' : 'sine';
-      oscillator.frequency.setValueAtTime(
-        type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_FREQUENCY : this.NORMAL_BEEP_FREQUENCY,
-        ctx.currentTime
-      );
+      oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
 
-      gainNode.gain.setValueAtTime(0, ctx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(
-        volume, 
-        ctx.currentTime + 0.01
-      );
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.01, 
-        ctx.currentTime + ((type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_DURATION_MS : this.NORMAL_BEEP_DURATION_MS) / 1000)
-      );
+      gainNode.gain.setValueAtTime(0, this.audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + 0.01);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + duration / 1000);
 
       oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
+      gainNode.connect(this.audioContext.destination);
 
-      oscillator.start();
-      oscillator.stop(ctx.currentTime + ((type === 'arrhythmia' ? this.ARRHYTHMIA_BEEP_DURATION_MS : this.NORMAL_BEEP_DURATION_MS) / 1000) + 0.02);
+      oscillator.start(this.audioContext.currentTime);
+      oscillator.stop(this.audioContext.currentTime + duration / 1000 + 0.02);
 
-      console.log(`AudioFeedbackService: Beep de ${type} reproducido exitosamente`);
       return true;
     } catch (error) {
       console.error("AudioFeedbackService: Error playing beep:", error);
@@ -111,30 +110,8 @@ class AudioFeedbackService {
     }
   }
 
-  private vibrate(type: HeartbeatFeedbackType = 'normal'): void {
-    if (!('vibrate' in navigator)) {
-      console.log('Vibración no soportada en este dispositivo');
-      return;
-    }
-
-    try {
-      if (type === 'normal') {
-        navigator.vibrate(60);
-        console.log('Vibración normal activada');
-      } else if (type === 'arrhythmia') {
-        navigator.vibrate([70, 50, 140]);
-        console.log('Vibración de arritmia activada');
-      }
-    } catch (error) {
-      console.error('Error al activar vibración:', error);
-    }
-  }
-
-  private vibrateOnly(type: HeartbeatFeedbackType = 'normal'): void {
-    this.vibrate(type);
-  }
-
   public cleanUp(): void {
+    this.pendingPeaks = [];
     if (this.audioContext && this.audioContext.state !== 'closed') {
       this.audioContext.close().catch(err => {
         console.error('Error closing audio context:', err);
