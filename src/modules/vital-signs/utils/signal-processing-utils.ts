@@ -5,6 +5,8 @@
 
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
+  
+  // Sin usar Math.min/Math.max
   let max = values[0];
   let min = values[0];
   
@@ -41,7 +43,17 @@ export function calculateStandardDeviation(values: number[]): number {
     sumSqDiff += diff * diff;
   }
   
-  return sumSqDiff / n;
+  // Raíz cuadrada con aproximación simple en lugar de Math.sqrt
+  let result = sumSqDiff / n;
+  if (result === 0) return 0;
+  
+  // Método de Newton para raíz cuadrada
+  let x = result;
+  for (let i = 0; i < 10; i++) {
+    x = 0.5 * (x + result / x);
+  }
+  
+  return x;
 }
 
 export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {

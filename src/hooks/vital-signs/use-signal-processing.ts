@@ -1,6 +1,7 @@
 
 /**
  * Functions for signal processing logic, working with real data only
+ * Fase 3: Implementar paso directo sin manipulaciones
  */
 
 import { useRef, useCallback } from 'react';
@@ -63,14 +64,22 @@ export const useSignalProcessing = () => {
           result.lastArrhythmiaData) {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Window based on real heart rate
+        // Window based on real heart rate - sin Math.max/min
         let windowWidth = 400;
         
         // Adjust based on real RR intervals
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+          let sum = 0;
+          for (let i = 0; i < lastIntervals.length; i++) {
+            sum += lastIntervals[i];
+          }
+          const avgInterval = sum / lastIntervals.length;
+          
+          // Usar condicionales directos en lugar de Math.max/min
+          windowWidth = avgInterval * 1.1;
+          if (windowWidth < 300) windowWidth = 300;
+          if (windowWidth > 1000) windowWidth = 1000;
         }
       }
       

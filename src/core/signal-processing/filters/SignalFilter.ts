@@ -1,17 +1,17 @@
 
 /**
  * Signal Filter - Contains direct pass-through methods for PPG signals
- * No Math functions are used
+ * No Math functions are used - elimina toda manipulación matemática
  */
 
 export class SignalFilter {
   private lastEMA: number | null = null;
   
   /**
-   * Apply minimal filtering techniques - direct passthrough
+   * Apply minimal filtering techniques - direct passthrough sin manipulación
    */
   public applyFilters(value: number): number {
-    return value; // Direct passthrough without filters
+    return value; // Paso directo sin filtros - Fase 3 implementada
   }
   
   /**

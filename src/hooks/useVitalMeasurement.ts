@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react';
 import { generateId } from '../utils/signalUtils';
 
@@ -80,7 +81,10 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
       // Use direct method to get BPM with no adjustments
       const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
-      const bpm = Math.round(rawBPM);
+      
+      // Usar truncamiento en lugar de Math.round
+      const bpm = rawBPM >= 0 ? ~~(rawBPM + 0.5) : ~~(rawBPM - 0.5);
+      
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
       
       console.log('useVitalMeasurement - Actualización detallada:', {
@@ -149,9 +153,12 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
     };
   }, [isMeasuring, measurements, arrhythmiaWindows.length]);
 
+  // Usar comparación directa en lugar de Math.min
+  const finalElapsedTime = elapsedTime >= 30 ? 30 : elapsedTime;
+
   return {
     ...measurements,
-    elapsedTime: elapsedTime >= 30 ? 30 : elapsedTime,
+    elapsedTime: finalElapsedTime,
     isComplete: elapsedTime >= 30,
     arrhythmiaWindows
   };

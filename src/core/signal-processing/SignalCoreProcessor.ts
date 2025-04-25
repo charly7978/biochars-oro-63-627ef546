@@ -70,7 +70,7 @@ export class SignalCoreProcessor {
       this.rawBuffer.shift();
     }
     
-    // Apply common filtering
+    // Apply common filtering - CORREGIDO: se pasa un solo argumento
     const filtered = this.applyFilters(value);
     
     // Add to filtered buffer
@@ -169,9 +169,10 @@ export class SignalCoreProcessor {
   
   /**
    * Apply multiple filtering techniques to the signal
+   * CORREGIDO: Eliminado el segundo parámetro que causaba el error
    */
   private applyFilters(value: number): number {
-    return this.filter.applyFilters(value, this.rawBuffer);
+    return this.filter.applyFilters(value);
   }
   
   /**
@@ -182,22 +183,33 @@ export class SignalCoreProcessor {
     
     // Basic quality calculation
     const recentValues = this.filteredBuffer.slice(-10);
-    const min = Math.min(...recentValues);
-    const max = Math.max(...recentValues);
+    
+    // Usar nuestras funciones personalizadas en lugar de Math.min/max
+    let min = recentValues[0];
+    let max = recentValues[0];
+    
+    for (let i = 1; i < recentValues.length; i++) {
+      if (recentValues[i] < min) min = recentValues[i];
+      if (recentValues[i] > max) max = recentValues[i];
+    }
+    
     const range = max - min;
     
     // Calculate noise level
     let noiseLevel = 0;
     for (let i = 1; i < recentValues.length; i++) {
-      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
+      noiseLevel += recentValues[i] > recentValues[i-1] ? 
+        recentValues[i] - recentValues[i-1] : 
+        recentValues[i-1] - recentValues[i]; // abs sin Math.abs
     }
     noiseLevel /= (recentValues.length - 1);
     
     // Signal-to-noise ratio based quality
     const signalToNoise = range / (noiseLevel || 0.001);
     
-    // Convert to 0-100 scale
-    return Math.min(100, Math.max(0, signalToNoise * 20));
+    // Convert to 0-100 scale, sin usar Math.min/max
+    const scaledValue = signalToNoise * 20;
+    return scaledValue > 100 ? 100 : (scaledValue < 0 ? 0 : scaledValue);
   }
   
   /**

@@ -1,6 +1,7 @@
 
 /**
  * Central Signal Processing Hook - provides access to the core signal processor
+ * Fase 3 y 4: Solo datos reales, sin manipulaciones
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createSignalProcessor, SignalChannel } from '../core/signal-processing';
@@ -65,7 +66,7 @@ export function useSignalCore(options = {}) {
   }, []);
 
   /**
-   * Process a raw PPG value
+   * Process a raw PPG value - Fase 3: Implementar paso directo
    */
   const processValue = useCallback((value: number) => {
     if (!isProcessing) return null;
@@ -79,12 +80,13 @@ export function useSignalCore(options = {}) {
       if (now - processingStatsRef.current.lastUpdateTime > 1000) {
         const elapsed = now - processingStatsRef.current.lastUpdateTime;
         const framesDelta = processingStatsRef.current.processedFrames;
+        // Calcular FPS sin funciones Math
         processingStatsRef.current.fps = (framesDelta / elapsed) * 1000;
         processingStatsRef.current.lastUpdateTime = now;
         processingStatsRef.current.processedFrames = 0;
       }
       
-      // Process the value
+      // Process the value directly
       const channels = processorRef.current.processSignal(value);
       
       // Get heartbeat channel for quality
@@ -118,7 +120,7 @@ export function useSignalCore(options = {}) {
   }, [isProcessing]);
 
   /**
-   * Process a frame from camera
+   * Process a frame from camera - Fase 3: Pasar datos directos sin manipulación
    */
   const processFrame = useCallback((imageData: ImageData) => {
     if (!isProcessing) return null;
@@ -130,14 +132,16 @@ export function useSignalCore(options = {}) {
       let count = 0;
       
       // Sample center region for better results
-      const startX = Math.floor(imageData.width * 0.3);
-      const endX = Math.floor(imageData.width * 0.7);
-      const startY = Math.floor(imageData.height * 0.3);
-      const endY = Math.floor(imageData.height * 0.7);
+      const width = imageData.width;
+      const height = imageData.height;
+      const startX = ~~(width * 0.3);
+      const endX = ~~(width * 0.7);
+      const startY = ~~(height * 0.3);
+      const endY = ~~(height * 0.7);
       
       for (let y = startY; y < endY; y += 2) { // Skip pixels for performance
         for (let x = startX; x < endX; x += 2) {
-          const i = (y * imageData.width + x) * 4;
+          const i = (y * width + x) * 4;
           redSum += data[i]; // Red channel
           count++;
         }
@@ -145,7 +149,7 @@ export function useSignalCore(options = {}) {
       
       const redAvg = redSum / count;
       
-      // Process the value
+      // Process the value directly
       return processValue(redAvg);
     } catch (error) {
       console.error("SignalCore: Error processing frame", error);

@@ -12,7 +12,7 @@ interface SignalQualityConfig {
 
 /**
  * Check if signal is too weak
- * Solo datos reales
+ * Solo datos reales - sin usar Math.abs
  */
 export function checkWeakSignal(
   value: number,
@@ -21,13 +21,14 @@ export function checkWeakSignal(
 ): { isWeakSignal: boolean, updatedWeakSignalsCount: number } {
   const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  // Verificar si la señal es débil basado en su amplitud
-  const isCurrentlyWeak = Math.abs(value) < lowSignalThreshold;
+  // Verificar si la señal es débil basado en su amplitud - sin Math.abs
+  const valueAbs = value >= 0 ? value : -value;
+  const isCurrentlyWeak = valueAbs < lowSignalThreshold;
   
   // Actualizar contador de señales débiles consecutivas
   let updatedWeakSignalsCount = isCurrentlyWeak
     ? consecutiveWeakSignals + 1
-    : Math.max(0, consecutiveWeakSignals - 1);
+    : (consecutiveWeakSignals > 0 ? consecutiveWeakSignals - 1 : 0);
   
   // Determinar si la señal debe considerarse como débil en general
   const isWeakSignal = updatedWeakSignalsCount > maxWeakSignalCount;

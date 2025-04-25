@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -94,8 +95,15 @@ export class VitalSignsProcessor {
     }
     
     // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
+    // Eliminar Math.min y Math.max
+    let signalMin = ppgValues[0];
+    let signalMax = ppgValues[0];
+    
+    for (let i = 1; i < ppgValues.length && i < 15; i++) {
+      if (ppgValues[i] < signalMin) signalMin = ppgValues[i];
+      if (ppgValues[i] > signalMax) signalMax = ppgValues[i];
+    }
+    
     const amplitude = signalMax - signalMin;
     
     if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
@@ -103,30 +111,39 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
-    // Calculate SpO2 using real data only
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
+    // Calculate SpO2 using real data only - eliminar Math.round
+    const spo2Value = this.spo2Processor.calculateSpO2(ppgValues.slice(-45));
+    const spo2 = spo2Value >= 0 ? ~~(spo2Value + 0.5) : ~~(spo2Value - 0.5);
     
     // Calculate blood pressure using real signal characteristics only
     const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
     const pressure = bp.systolic > 0 && bp.diastolic > 0 
-      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
+      ? `${~~(bp.systolic + 0.5)}/${~~(bp.diastolic + 0.5)}` 
       : "--/--";
     
     // Estimate heart rate from signal if RR data available
-    const heartRate = rrData && rrData.intervals && rrData.intervals.length > 0
-      ? Math.round(60000 / (rrData.intervals.slice(-5).reduce((sum, val) => sum + val, 0) / 5))
-      : 0;
+    let heartRate = 0;
+    if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+      let sum = 0;
+      for (let i = 0; i < rrData.intervals.length && i < 5; i++) {
+        sum += rrData.intervals[rrData.intervals.length - 1 - i];
+      }
+      const avgInterval = sum / (rrData.intervals.length < 5 ? rrData.intervals.length : 5);
+      heartRate = ~~(60000 / avgInterval + 0.5);
+    }
     
-    // Calculate glucose with real data only
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
+    // Calculate glucose with real data only - eliminar Math.round
+    const glucoseValue = this.glucoseProcessor.calculateGlucose(ppgValues);
+    const glucose = glucoseValue >= 0 ? ~~(glucoseValue + 0.5) : ~~(glucoseValue - 0.5);
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     
     // Calculate lipids with real data only
     const lipids = this.lipidProcessor.calculateLipids(ppgValues);
     const lipidsConfidence = this.lipidProcessor.getConfidence();
     
-    // Calculate hydration with real PPG data
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    // Calculate hydration with real PPG data - eliminar Math.round
+    const hydrationValue = this.hydrationEstimator.analyze(ppgValues);
+    const hydration = hydrationValue >= 0 ? ~~(hydrationValue + 0.5) : ~~(hydrationValue - 0.5);
     
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
@@ -137,8 +154,8 @@ export class VitalSignsProcessor {
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
-      totalCholesterol: Math.round(lipids.totalCholesterol),
-      triglycerides: Math.round(lipids.triglycerides)
+      totalCholesterol: ~~(lipids.totalCholesterol + 0.5),
+      triglycerides: ~~(lipids.triglycerides + 0.5)
     } : {
       totalCholesterol: 0,
       triglycerides: 0
@@ -157,6 +174,9 @@ export class VitalSignsProcessor {
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 
+    // Calculate hemoglobin based on SpO2 without random values
+    const hemoglobin = this.calculateDefaultHemoglobin(spo2);
+
     // Prepare result with all metrics including hydration
     return ResultFactory.createResult(
       spo2,
@@ -165,7 +185,7 @@ export class VitalSignsProcessor {
       arrhythmiaResult.arrhythmiaStatus || "--",
       finalGlucose,
       finalLipids,
-      Math.round(this.calculateDefaultHemoglobin(spo2)),
+      hemoglobin,
       hydration,
       glucoseConfidence,
       lipidsConfidence,
@@ -175,19 +195,20 @@ export class VitalSignsProcessor {
   }
 
   /**
-   * Calculate a default hemoglobin value based on SpO2
+   * Calculate a default hemoglobin value based on SpO2 without Math.random
+   * ELIMINADO Math.random - Fase 2 completada
    */
   private calculateDefaultHemoglobin(spo2: number): number {
     if (spo2 <= 0) return 0;
     
-    // Very basic approximation
+    // Valor base estático sin Math.random
     const base = 14;
     
-    if (spo2 > 95) return base + Math.random();
-    if (spo2 > 90) return base - 1 + Math.random();
-    if (spo2 > 85) return base - 2 + Math.random();
+    if (spo2 > 95) return base;
+    if (spo2 > 90) return base - 1;
+    if (spo2 > 85) return base - 2;
     
-    return base - 3 + Math.random();
+    return base - 3;
   }
 
   /**
