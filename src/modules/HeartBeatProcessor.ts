@@ -3,7 +3,7 @@ export class HeartBeatProcessor {
   WINDOW_SIZE = 60;
   MIN_BPM = 40;
   MAX_BPM = 200;
-  SIGNAL_THRESHOLD = 0.45; // Reducido de 0.60 para detectar más picos
+  SIGNAL_THRESHOLD = 0.60;
   MIN_CONFIDENCE = 0.50;
   DERIVATIVE_THRESHOLD = -0.03;
   MIN_PEAK_TIME_MS = 300; // Reducido para permitir detección más frecuente
@@ -329,106 +329,29 @@ export class HeartBeatProcessor {
     isPeak: boolean;
     confidence: number;
   } {
-    // Verificar si ha pasado suficiente tiempo desde el último pico
+    // Detectamos un pico cuando hay un máximo local (valor alto) 
+    // en lugar de detectar cruce por cero del derivado
+    const isPotentialPeak = 
+      normalizedValue > this.SIGNAL_THRESHOLD && 
+      derivative < 0 && // Estamos justo después del pico (pendiente negativa)
+      this.lastValue < normalizedValue; // El valor actual es mayor que el anterior
+      
+    // Verificar que ha pasado suficiente tiempo desde el último pico
     const sufficientTimePassed = 
       this.lastPeakTime === null || 
       (Date.now() - this.lastPeakTime) > this.MIN_PEAK_TIME_MS;
       
-    if (!sufficientTimePassed) {
-      return { isPeak: false, confidence: 0 };
-    }
-
-    // Primera etapa: detección de pico potencial
-    const isPotentialPeak = 
-      normalizedValue > this.SIGNAL_THRESHOLD && 
-      derivative < 0 && 
-      this.lastValue < normalizedValue;
-      
-    if (!isPotentialPeak) {
-      return { isPeak: false, confidence: 0 };
-    }
-
-    // Segunda etapa: validación de forma y amplitud
-    const shapeConfidence = this.calculateShapeConfidence(normalizedValue);
-    const amplitudeConfidence = this.calculateAmplitudeConfidence(normalizedValue);
-    const intervalConfidence = this.calculateIntervalConfidence();
-
-    // Calcular confianza ponderada
-    const weightedConfidence = 
-      (shapeConfidence * 0.4) + 
-      (amplitudeConfidence * 0.4) + 
-      (intervalConfidence * 0.2);
-
-    // Requisitos más estrictos para señales débiles
-    const minConfidence = normalizedValue < this.SIGNAL_THRESHOLD * 1.5 
-      ? this.MIN_CONFIDENCE * 1.2 
-      : this.MIN_CONFIDENCE;
-
-    const isPeak = weightedConfidence >= minConfidence;
-
-    return {
-      isPeak,
-      confidence: weightedConfidence
-    };
-  }
-
-  private calculateShapeConfidence(currentValue: number): number {
-    if (this.peakConfirmationBuffer.length < 5) return 0;
-
-    // Analizar forma usando últimos 5 valores
-    const values = [...this.peakConfirmationBuffer];
-    const maxVal = Math.max(...values);
-    const normalizedShape = values.map(v => v / maxVal);
-
-    // Forma ideal de un pico cardíaco (aproximada)
-    const idealShape = [0.4, 0.7, 1.0, 0.7, 0.4];
+    const isPeak = isPotentialPeak && sufficientTimePassed;
     
-    // Calcular similitud con forma ideal
-    let similarity = 0;
-    for (let i = 0; i < normalizedShape.length; i++) {
-      similarity += 1 - Math.abs(normalizedShape[i] - idealShape[i]);
+    // Calcular confianza basado en la amplitud del pico
+    let confidence = 0;
+    if (isPeak) {
+      // La confianza aumenta con la amplitud normalizada
+      confidence = Math.min(1.0, normalizedValue / (this.SIGNAL_THRESHOLD * 1.5));
+      confidence = Math.max(this.MIN_CONFIDENCE, confidence);
     }
     
-    return similarity / normalizedShape.length;
-  }
-
-  private calculateAmplitudeConfidence(value: number): number {
-    // Confianza basada en amplitud relativa al umbral
-    const relativeAmplitude = value / this.SIGNAL_THRESHOLD;
-    return Math.min(1, Math.max(0, (relativeAmplitude - 1) / 2));
-  }
-
-  private calculateIntervalConfidence(): number {
-    if (this.lastPeakTime === null) return 1;
-
-    const currentInterval = Date.now() - this.lastPeakTime;
-    
-    // Verificar si el intervalo está en rango fisiológico
-    if (currentInterval < 250 || currentInterval > 1500) {
-      return 0;
-    }
-
-    // Mayor confianza para intervalos más estables
-    const expectedInterval = this.getAverageInterval();
-    if (!expectedInterval) return 0.5;
-
-    const deviation = Math.abs(currentInterval - expectedInterval);
-    return Math.max(0, 1 - (deviation / expectedInterval));
-  }
-
-  private getAverageInterval(): number | null {
-    if (this.bpmHistory.length < 2) return null;
-    
-    const intervals = [];
-    for (let i = 1; i < this.bpmHistory.length; i++) {
-      const interval = 60000 / this.bpmHistory[i];
-      if (interval >= 250 && interval <= 1500) {
-        intervals.push(interval);
-      }
-    }
-    
-    if (intervals.length === 0) return null;
-    return intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    return { isPeak, confidence };
   }
 
   autoResetIfSignalIsLow(amplitude) {
