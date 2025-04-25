@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -17,10 +16,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const isMonitoringRef = useRef<boolean>(false);
   const initializedRef = useRef<boolean>(false);
   const lastProcessedPeakTimeRef = useRef<number>(0);
-  const lastPeakTimeRef = useRef<number | null>(null);
-  const lastValidBpmRef = useRef<number>(0);
-  const lastSignalQualityRef = useRef<number>(0);
-  const consecutiveWeakSignalsRef = useRef<number>(0);
   
   // Hooks para procesamiento y detección
   const {
@@ -29,6 +24,15 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBeatIsArrhythmiaRef,
     reset: resetArrhythmiaDetector
   } = useArrhythmiaDetector();
+  
+  const {
+    reset: resetSignalProcessor,
+    lastPeakTimeRef,
+    lastValidBpmRef,
+    lastSignalQualityRef,
+    consecutiveWeakSignalsRef,
+    MAX_CONSECUTIVE_WEAK_SIGNALS
+  } = useSignalProcessor();
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
@@ -81,7 +85,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
-        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -105,9 +108,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     if (lastRRIntervalsRef.current.length >= 3) {
       const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       result.isArrhythmia = arrhythmiaResult.isArrhythmia;
-    } else if (!result.isArrhythmia) {
-      // Ensure isArrhythmia property exists with default value
-      result.isArrhythmia = false;
     }
 
     return result;
@@ -138,16 +138,11 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     setConfidence(0);
     
     resetArrhythmiaDetector();
-    
-    // Reset additional signal processor state
-    lastPeakTimeRef.current = null;
-    lastValidBpmRef.current = 0;
-    lastSignalQualityRef.current = 0;
-    consecutiveWeakSignalsRef.current = 0;
+    resetSignalProcessor();
     
     missedBeepsCounter.current = 0;
     lastProcessedPeakTimeRef.current = 0;
-  }, [resetArrhythmiaDetector]);
+  }, [resetArrhythmiaDetector, resetSignalProcessor]);
 
   const startMonitoring = useCallback(() => {
     console.log('useHeartBeatProcessor: Starting monitoring');
