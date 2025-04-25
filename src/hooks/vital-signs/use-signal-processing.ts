@@ -40,7 +40,7 @@ export const useSignalProcessing = () => {
       console.log("useSignalProcessing: Weak signal detected, pero continuamos procesando");
     }
     
-    // Logging for diagnostics - incrementamos la frecuencia
+    // Enhanced logging for diagnostics
     if (processedSignals.current % 5 === 0 || processedSignals.current < 10) {
       console.log("useSignalProcessing: Processing signal DIRECTLY", {
         inputValue: value,
@@ -54,24 +54,34 @@ export const useSignalProcessing = () => {
       // Process signal directly - no simulation
       let result = processorRef.current.processSignal(value, rrData);
       
-      // Log ALL results for debugging
-      console.log("useSignalProcessing: Processed result", {
+      // Comprehensive logging for ALL vital signs
+      console.log("useSignalProcessing: Processed complete result", {
         frame: processedSignals.current,
         heartRate: result.heartRate,
         spo2: result.spo2,
         pressure: result.pressure,
         glucose: result.glucose,
         hydration: result.hydration,
-        lipids: result.lipids,
-        hemoglobin: result.hemoglobin
+        lipids: result.lipids ? {
+          totalCholesterol: result.lipids.totalCholesterol,
+          triglycerides: result.lipids.triglycerides
+        } : "no lipid data",
+        hemoglobin: result.hemoglobin,
+        arrhythmiaStatus: result.arrhythmiaStatus
       });
       
-      // Add null checks for arrhythmia status
+      // Handle arrhythmia detection with enhanced logging
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
+        
+        console.log("useSignalProcessing: Arrhythmia detected", {
+          status: result.arrhythmiaStatus,
+          data: result.lastArrhythmiaData
+        });
+        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
@@ -93,15 +103,17 @@ export const useSignalProcessing = () => {
         }
       }
       
-      // Log processed signals
-      signalLog.current.push({
-        timestamp: Date.now(),
-        value,
-        result
-      });
-      
-      if (signalLog.current.length > 100) {
-        signalLog.current = signalLog.current.slice(-100);
+      // Log every 10th processed signal for diagnostics
+      if (processedSignals.current % 10 === 0) {
+        signalLog.current.push({
+          timestamp: Date.now(),
+          value,
+          result
+        });
+        
+        if (signalLog.current.length > 100) {
+          signalLog.current = signalLog.current.slice(-100);
+        }
       }
       
       // Always return real result

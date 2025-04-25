@@ -29,22 +29,40 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // Determinar si hay un valor real para mostrar (no null, no undefined, no cero, no "--")
+  // Determine if there is a real value to display (not null, undefined, zero, or "--")
   const hasValue = value !== undefined && value !== null && value !== 0 && value !== "--";
   
-  // Función para formatear los valores numéricos
+  // Format function to handle all types of values properly
   const formattedValue = () => {
-    // Si el valor es numérico y mayor que cero, mostrarlo
+    // Handle numeric values (both integers and floats)
     if (typeof value === 'number' && value > 0) {
+      // For most vital signs, show integers (no decimals)
+      if (label === "HIDRATACIÓN" || label === "SPO2") {
+        // These are percentages, so round to whole number
+        return Math.round(value);
+      } else if (label === "HEMOGLOBINA") {
+        // For hemoglobin, show one decimal place
+        return (Math.round(value * 10) / 10).toFixed(1);
+      }
       return value;
     }
-    // Si es una string y no está vacía ni es "--", mostrarla
+    
+    // Handle string values that are not empty or placeholders
     if (typeof value === 'string' && value && value !== "--") {
       return value;
     }
-    // En cualquier otro caso, mostrar "--"
+    
+    // Default placeholder
     return "--";
   };
+  
+  // Debug logging for troubleshooting display issues
+  console.log(`VitalSign rendering: ${label}`, {
+    rawValue: value,
+    formattedValue: formattedValue(),
+    hasValue,
+    valueType: typeof value
+  });
 
   return (
     <div 
