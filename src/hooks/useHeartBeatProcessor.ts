@@ -105,6 +105,9 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     if (lastRRIntervalsRef.current.length >= 3) {
       const arrhythmiaResult = detectArrhythmia(lastRRIntervalsRef.current);
       result.isArrhythmia = arrhythmiaResult.isArrhythmia;
+    } else if (!result.isArrhythmia) {
+      // Ensure isArrhythmia property exists with default value
+      result.isArrhythmia = false;
     }
 
     return result;

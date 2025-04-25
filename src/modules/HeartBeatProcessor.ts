@@ -222,6 +222,7 @@ export class HeartBeatProcessor {
     confidence: number;
     isPeak: boolean;
     arrhythmiaCount: number;
+    isArrhythmia: boolean;
     rrData: {
       intervals: number[];
       lastPeakTime: number | null;
@@ -234,6 +235,7 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
+        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -265,6 +267,7 @@ export class HeartBeatProcessor {
         confidence: 0,
         isPeak: false,
         arrhythmiaCount: 0,
+        isArrhythmia: false,
         rrData: {
           intervals: [],
           lastPeakTime: null
@@ -332,6 +335,7 @@ export class HeartBeatProcessor {
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
       arrhythmiaCount: 0,
+      isArrhythmia: false,
       rrData: {
         intervals: [...this.rrIntervals],
         lastPeakTime: this.lastPeakTime

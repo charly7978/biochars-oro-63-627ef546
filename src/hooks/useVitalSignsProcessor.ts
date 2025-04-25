@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -11,6 +10,7 @@ import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
+import { PPGProcessor } from '../core/signal/PPGProcessor';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -73,6 +73,27 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     };
   }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
   
+  // Initialize PPG processor for frame processing
+  const ppgProcessorRef = useRef<PPGProcessor | null>(null);
+
+  useEffect(() => {
+    // Initialize PPG processor for frame processing
+    ppgProcessorRef.current = new PPGProcessor((signal) => {
+      // Process signal when ready
+      if (signal && signal.filteredValue && signal.fingerDetected) {
+        processSignal(signal.filteredValue);
+      }
+    });
+    
+    ppgProcessorRef.current.initialize();
+    
+    return () => {
+      if (ppgProcessorRef.current) {
+        ppgProcessorRef.current.stop();
+      }
+    };
+  }, []);
+
   /**
    * Process PPG signal directly
    * No simulation or reference values
@@ -264,6 +285,24 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     clearLog();
   };
 
+  /**
+   * Process video frame and extract PPG signal
+   * @param imageData Raw image data from camera
+   * @returns Processed signal data or null if not ready
+   */
+  const processFrame = (imageData: ImageData) => {
+    try {
+      if (ppgProcessorRef.current) {
+        ppgProcessorRef.current.processFrame(imageData);
+        return ppgProcessorRef.current;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error processing frame:", error);
+      return null;
+    }
+  };
+
   return {
     processSignal,
     reset,
@@ -271,6 +310,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     arrhythmiaCounter: getArrhythmiaCounter(),
     lastValidResults, // Return last valid results
     arrhythmiaWindows,
-    debugInfo: getDebugInfo()
+    debugInfo: getDebugInfo(),
+    processFrame // Add the processFrame function to the return object
   };
 };
