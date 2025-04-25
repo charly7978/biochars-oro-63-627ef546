@@ -39,6 +39,9 @@ class ArrhythmiaDetectionServiceClass {
       };
     }
 
+    // Store the intervals for consistency
+    this.updateRRIntervals(rrIntervals);
+    
     const currentTime = Date.now();
     
     const result = this.arrhythmiaProcessor.processRRData({
@@ -49,6 +52,8 @@ class ArrhythmiaDetectionServiceClass {
     const isArrhythmiaDetected = result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED");
     
     if (isArrhythmiaDetected) {
+      this.arrhythmiaCount = this.arrhythmiaProcessor.getArrhythmiaCount();
+      
       // Register arrhythmia window
       const windowStart = currentTime - 2000; // 2 seconds before detection
       const windowEnd = currentTime + 3000;   // 3 seconds after detection
