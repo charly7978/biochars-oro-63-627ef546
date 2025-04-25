@@ -161,3 +161,11 @@ export function evaluateSignalQuality(
     snr
   };
 }
+
+/**
+ * Restablece el estado de detección de señal
+ * Sin usar funciones Math
+ */
+export function resetSignalQualityState(): number {
+  return 0; // Reset the weak signals counter
+}
