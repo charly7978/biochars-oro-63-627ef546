@@ -305,7 +305,7 @@ const PPGSignalMeter = memo(({
       return;
     }
     
-    combinedWindows.forEach((window, index) => {
+    combinedWindows.forEach(window => {
       const windowStartTime = window.start;
       const windowEndTime = window.end;
       
@@ -319,13 +319,13 @@ const PPGSignalMeter = memo(({
         const adjustedStartX = Math.max(0, startX);
         const adjustedWidth = Math.min(width, ctx.canvas.width - adjustedStartX);
         
-        ctx.fillStyle = 'rgba(220, 38, 38, 0.20)';
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
         ctx.fillRect(adjustedStartX, 0, adjustedWidth, ctx.canvas.height);
         
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(220, 38, 38, 0.6)';
-        ctx.lineWidth = 3;
-        ctx.setLineDash([8, 4]);
+        ctx.strokeStyle = 'rgba(220, 38, 38, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
         
         if (adjustedStartX >= 0 && adjustedStartX <= ctx.canvas.width) {
           ctx.moveTo(adjustedStartX, 0);
@@ -339,34 +339,6 @@ const PPGSignalMeter = memo(({
         
         ctx.stroke();
         ctx.setLineDash([]);
-        
-        if (adjustedWidth > 50) {
-          const textX = adjustedStartX + adjustedWidth/2;
-          
-          ctx.fillStyle = '#DC2626';
-          ctx.font = 'bold 24px Inter';
-          ctx.textAlign = 'center';
-          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-          ctx.shadowBlur = 4;
-          ctx.fillText('ARRITMIA', textX, 40);
-          ctx.shadowBlur = 0;
-          
-          ctx.beginPath();
-          ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
-          const symbolSize = 22;
-          const symbolX = textX;
-          const symbolY = 70;
-          ctx.moveTo(symbolX, symbolY - symbolSize);
-          ctx.lineTo(symbolX + symbolSize, symbolY + symbolSize);
-          ctx.lineTo(symbolX - symbolSize, symbolY + symbolSize);
-          ctx.closePath();
-          ctx.fill();
-          
-          ctx.fillStyle = '#FFFFFF';
-          ctx.font = 'bold 20px Inter';
-          ctx.textAlign = 'center';
-          ctx.fillText('!', symbolX, symbolY + symbolSize - 2);
-        }
       }
     });
   }, [WINDOW_WIDTH_MS, arrhythmiaWindows]);
@@ -465,7 +437,7 @@ const PPGSignalMeter = memo(({
         
         renderCtx.beginPath();
         renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
-        renderCtx.lineWidth = isInArrhythmiaZone ? 3 : 2;
+        renderCtx.lineWidth = isInArrhythmiaZone ? 2 : 1.5;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
         renderCtx.stroke();
@@ -483,25 +455,25 @@ const PPGSignalMeter = memo(({
           const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
           renderCtx.beginPath();
-          renderCtx.arc(x, y, isPeakArrhythmia ? 7 : 5, 0, Math.PI * 2);
+          renderCtx.arc(x, y, isPeakArrhythmia ? 6 : 4, 0, Math.PI * 2);
           renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9';
           renderCtx.fill();
           
-          renderCtx.font = 'bold 16px Inter';
+          renderCtx.font = 'bold 14px Inter';
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / VERTICAL_SCALE).toFixed(2), x, y - 15);
           
           if (isPeakArrhythmia) {
-            renderCtx.font = 'bold 18px Inter';
+            renderCtx.font = 'bold 16px Inter';
             renderCtx.fillStyle = '#DC2626';
             renderCtx.textAlign = 'center';
             renderCtx.fillText('ARRITMIA', x, y - 35);
             
             renderCtx.beginPath();
-            renderCtx.arc(x, y, 12, 0, Math.PI * 2);
+            renderCtx.arc(x, y, 10, 0, Math.PI * 2);
             renderCtx.strokeStyle = '#FEF7CD';
-            renderCtx.lineWidth = 3;
+            renderCtx.lineWidth = 2;
             renderCtx.stroke();
           }
         }
