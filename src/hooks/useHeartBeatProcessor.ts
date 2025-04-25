@@ -9,7 +9,7 @@ interface HeartBeatResult {
   rrData?: {
     intervals: number[];
     averageInterval: number;
-    lastPeakTime: number; // Added to match the required interface
+    lastPeakTime: number;
   };
 }
 
@@ -283,7 +283,7 @@ export function useHeartBeatProcessor() {
       rrData = {
         intervals: [...recentIntervals],
         averageInterval: avgInterval,
-        lastPeakTime: lastPeakTimeRef.current || currentTime // Add lastPeakTime
+        lastPeakTime: lastPeakTimeRef.current || currentTime
       };
     }
 
