@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -275,7 +274,7 @@ export class VitalSignsProcessor {
   /**
    * Get the last valid results if available, otherwise empty results
    */
-  public getLastValidResults(): VitalSignsResult {
+  public getLastValidResults(): VitalSignsResult | null {
     if (this.lastValidResult) {
       console.log("VitalSignsProcessor: Returning last valid result", this.lastValidResult);
       return this.lastValidResult;
@@ -307,13 +306,6 @@ export class VitalSignsProcessor {
    */
   public getArrhythmiaCounter(): number {
     return this.arrhythmiaProcessor.getArrhythmiaCount();
-  }
-  
-  /**
-   * Get the last valid results
-   */
-  public getLastValidResults(): VitalSignsResult | null {
-    return this.lastValidResult;
   }
   
   /**
