@@ -3,7 +3,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor.ts';
+import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult, UseHeartBeatReturn, RRIntervalData } from './types';
 import { checkWeakSignal, updateLastValidBpm, processLowConfidenceResult } from './signal-processing';
 import { handlePeakDetection, shouldProcessMeasurement, createWeakSignalResult } from './peak-detection';
@@ -41,11 +41,6 @@ export const useHeartBeatProcessor = () => {
   const [artifactDetected, setArtifactDetected] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   const [stressLevel, setStressLevel] = useState(0);
-  const [isArrhythmiaDetectedState, setIsArrhythmiaDetectedState] = useState(false); // Estado para la arritmia
-  const arrhythmiaCountRef = useRef(0); // Contador local de arritmias
-
-  // Usar el hook de detección de arritmias
-  const { detectArrhythmia, reset: resetArrhythmiaDetector } = useArrhythmiaDetector();
 
   // Inicialización del procesador de latidos cardíacos
   useEffect(() => {
@@ -72,71 +67,54 @@ export const useHeartBeatProcessor = () => {
         return null;
       }
 
+      // Verificar si el valor de la señal es un número
       if (typeof value !== 'number') {
         console.error("Valor de señal inválido:", value);
         return null;
       }
 
+      // Actualizar la última señal válida
       lastValidSignalRef.current = value;
 
-      // Procesar con HeartBeatProcessor (versión .ts)
-      const processorResult = processorRef.current.processSignal(value);
+      // Simular el procesamiento de la señal y obtener los resultados
+      const result = processorRef.current.processSignal(value);
 
-      // Obtener Intervalos RR del procesador
-      const rrData = processorRef.current.getRRIntervals();
-      const currentRRIntervals = rrData.intervals || [];
-      setRrIntervals(currentRRIntervals); // Actualizar estado de intervalos
+      // Actualizar el estado con los resultados del procesamiento
+      setHeartBeatResult(result);
 
-      // **Detectar Arritmia usando el detector dedicado**
-      let arrhythmiaResult: { isArrhythmia: boolean, rmssd: number, rrVariation: number, timestamp: number, category?: any } = {
-           isArrhythmia: false, rmssd: 0, rrVariation: 0, timestamp: Date.now(), category: 'normal'
-       };
-      if (currentRRIntervals.length > 0) {
-        arrhythmiaResult = detectArrhythmia(currentRRIntervals);
-        setIsArrhythmiaDetectedState(arrhythmiaResult.isArrhythmia);
+      // Actualizar datos adicionales de análisis
+      updateAnalysisData(value, result);
 
-        // Actualizar contador si se detecta nueva arritmia
-        if (arrhythmiaResult.isArrhythmia) {
-            // Lógica simple para incrementar el contador (podría necesitar debounce)
-            arrhythmiaCountRef.current += 1;
-        }
-      }
-
-      // Combinar resultados del procesador y detector de arritmia
-      const finalResult: HeartBeatResult = {
-          ...processorResult,
-          isArrhythmia: arrhythmiaResult.isArrhythmia,
-          arrhythmiaCount: arrhythmiaCountRef.current, // Usar contador local
-          rrData: rrData // Incluir rrData si otros módulos lo necesitan
-      };
-
-      setHeartBeatResult(finalResult);
-      updateAnalysisData(value, finalResult, arrhythmiaResult); // Pasar resultado de arritmia
-
-      return finalResult;
+      // Devolver los resultados
+      return result;
     },
-    [detectArrhythmia] // Añadir dependencia
+    []
   );
 
-  // Función para actualizar datos de análisis (modificada)
-  const updateAnalysisData = useCallback((value: number, result: HeartBeatResult, arrhythmiaResult: any) => {
+  // Función para actualizar datos de análisis
+  const updateAnalysisData = useCallback((value: number, result: any) => {
+    // Actualizar calidad de señal (simplificado)
     setSignalQuality(result.confidence * 100);
     
-    // Actualizar estado de arritmia basado en el detector
+    // Actualizar detección de arritmias
     if (result.isArrhythmia) {
-        // Usar categoría del detector si existe
-        const category = arrhythmiaResult.category || 'POSIBLE';
-        setArrhythmiaStatus(`ARRITMIA ${category.toUpperCase()}|${result.arrhythmiaCount}`);
+      setArrhythmiaStatus(`ARRITMIA DETECTADA|${result.arrhythmiaCount || 0}`);
     } else {
-        setArrhythmiaStatus(`NORMAL|${result.arrhythmiaCount}`);
+      setArrhythmiaStatus(`NO ARRITMIAS|${result.arrhythmiaCount || 0}`);
     }
     
-    // Detección de artefactos (sin cambios)
+    // Actualizar datos RR si están disponibles
+    if (processorRef.current) {
+      const rrData = processorRef.current.getRRIntervals();
+      setRrIntervals(rrData.intervals || []);
+    }
+    
+    // Detección de artefactos (simplificada)
     const lowQuality = result.confidence < 0.3;
     const isArtifact = lowQuality && Math.abs(value) > 5;
     setArtifactDetected(isArtifact);
     
-    // Actualizar buffer PPG (sin cambios)
+    // Actualizar buffer PPG
     setPpgData(prev => {
       const newData = [...prev, value];
       if (newData.length > 200) {
@@ -145,62 +123,70 @@ export const useHeartBeatProcessor = () => {
       return newData;
     });
     
-    // Estimar nivel de estrés y HRV (sin cambios en la lógica, usa rrIntervals del estado)
+    // Estimar nivel de estrés (simplificado)
     if (rrIntervals.length > 10) {
+      // Cálculo básico basado en variabilidad
       const sum = rrIntervals.reduce((a, b) => a + b, 0);
       const mean = sum / rrIntervals.length;
       let varianceSum = 0;
+      
       for (const interval of rrIntervals) {
         varianceSum += Math.pow(interval - mean, 2);
       }
+      
       const stdDev = Math.sqrt(varianceSum / rrIntervals.length);
       const stressEstimate = Math.max(0, Math.min(100, 100 - (stdDev / mean) * 1000));
+      
       setStressLevel(stressEstimate);
       setHrvData({
         sdnn: stdDev,
-        rmssd: arrhythmiaResult.rmssd || stdDev * 0.9, // Usar RMSSD real si está disponible
-        pnn50: 50 - stressEstimate / 2
+        rmssd: stdDev * 0.9, // Simplificado
+        pnn50: 50 - stressEstimate / 2 // Simplificado
       });
     }
-  }, [rrIntervals]); // Depender de rrIntervals del estado
+  }, [rrIntervals]);
 
-  // Función para iniciar el procesamiento (sin cambios)
+  // Función para iniciar el procesamiento
   const startProcessing = useCallback(() => {
     setIsProcessing(true);
     isProcessingRef.current = true;
+    
     if (processorRef.current) {
       processorRef.current.setMonitoring(true);
     }
+    
     console.log("Iniciando procesamiento de señal...", {
       sessionId: sessionIdRef.current,
       timestamp: new Date().toISOString()
     });
   }, []);
 
-  // Función para detener el procesamiento (sin cambios)
+  // Función para detener el procesamiento
   const stopProcessing = useCallback(() => {
     setIsProcessing(false);
     isProcessingRef.current = false;
+    
     if (processorRef.current) {
       processorRef.current.setMonitoring(false);
     }
+    
     console.log("Deteniendo procesamiento de señal...", {
       sessionId: sessionIdRef.current,
       timestamp: new Date().toISOString()
     });
   }, []);
 
-  // Función para resetear (modificada para resetear detector de arritmias)
+  // Función para resetear el procesador
   const reset = useCallback(() => {
     console.warn("Reseteando el procesador y los estados...", {
       sessionId: sessionIdRef.current,
       timestamp: new Date().toISOString()
     });
+    
     if (processorRef.current) {
       processorRef.current.reset();
     }
-    resetArrhythmiaDetector(); // Resetear el detector de arritmias
-    arrhythmiaCountRef.current = 0; // Resetear contador local
+    
     setHeartBeatResult(null);
     artifactCounterRef.current = 0;
     setIsCalibrating(false);
@@ -211,8 +197,7 @@ export const useHeartBeatProcessor = () => {
     setHrvData({});
     setPpgData([]);
     setStressLevel(0);
-    setIsArrhythmiaDetectedState(false);
-  }, [resetArrhythmiaDetector]); // Añadir dependencia
+  }, []);
 
   // Funciones de calibración simuladas
   const startCalibration = useCallback(() => {
@@ -279,13 +264,6 @@ export const useHeartBeatProcessor = () => {
     reset,
     arrhythmiaStatus,
     hrvData,
-    ppgData,
-    isArrhythmia: isArrhythmiaDetectedState // Exponer estado de arritmia
+    ppgData
   };
-};
-
-// Configuración de calidad de señal
-const signalQualityConfig = {
-  lowSignalThreshold: 0.01,
-  maxWeakSignalCount: 10,
 };
