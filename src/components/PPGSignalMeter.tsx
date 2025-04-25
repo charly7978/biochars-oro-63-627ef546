@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -485,34 +484,26 @@ const PPGSignalMeter = memo(({
           
           renderCtx.beginPath();
           renderCtx.arc(x, y, isPeakArrhythmia ? 7 : 5, 0, Math.PI * 2);
-          renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#0EA5E9';
+          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9';
           renderCtx.fill();
-          
-          if (isPeakArrhythmia) {
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 12, 0, Math.PI * 2);
-            renderCtx.strokeStyle = '#FEF7CD';
-            renderCtx.lineWidth = 3;
-            renderCtx.stroke();
-            
-            renderCtx.font = 'bold 18px Inter';
-            renderCtx.fillStyle = '#F97316';
-            renderCtx.textAlign = 'center';
-            renderCtx.fillText('ARRITMIA', x, y - 25);
-            
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, 20, 0, Math.PI * 2);
-            const gradient = renderCtx.createRadialGradient(x, y, 5, x, y, 20);
-            gradient.addColorStop(0, 'rgba(220, 38, 38, 0.8)');
-            gradient.addColorStop(1, 'rgba(220, 38, 38, 0)');
-            renderCtx.fillStyle = gradient;
-            renderCtx.fill();
-          }
           
           renderCtx.font = 'bold 16px Inter';
           renderCtx.fillStyle = '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(Math.abs(peak.value / VERTICAL_SCALE).toFixed(2), x, y - 15);
+          
+          if (isPeakArrhythmia) {
+            renderCtx.font = 'bold 18px Inter';
+            renderCtx.fillStyle = '#DC2626';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText('ARRITMIA', x, y - 35);
+            
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 12, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
+            renderCtx.stroke();
+          }
         }
       });
     }
