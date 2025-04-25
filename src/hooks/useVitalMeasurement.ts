@@ -24,6 +24,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   const sessionId = useRef<string>(generateId());
+  const lastBpmRef = useRef<number>(0);
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -73,26 +74,27 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       const processor = (window as any).heartBeatProcessor;
       if (!processor) {
         console.warn('VitalMeasurement: No se encontró el procesador', {
-          windowObject: Object.keys(window),
+          windowObject: Object.keys(window).filter(k => typeof window[k as any] === 'object'),
           timestamp: new Date().toISOString()
         });
         return;
       }
 
-      // Use direct method to get BPM with no adjustments
+      // Get processor state
       const rawBPM = processor.calculateCurrentBPM ? processor.calculateCurrentBPM() : 0;
-      
-      // Usar truncamiento en lugar de Math.round
-      const bpm = rawBPM >= 0 ? ~~(rawBPM + 0.5) : ~~(rawBPM - 0.5);
-      
+      const bpm = rawBPM > 0 ? ~~(rawBPM + 0.5) : 0;
       const arrhythmias = processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0;
+      
+      // Solo actualizar bpm si es válido
+      if (bpm > 0) {
+        lastBpmRef.current = bpm;
+      }
       
       console.log('useVitalMeasurement - Actualización detallada:', {
         processor: !!processor,
-        processorType: processor ? typeof processor : 'undefined',
-        processorMethods: processor ? Object.getOwnPropertyNames(processor.__proto__) : [],
         rawBPM,
         bpm,
+        lastBpm: lastBpmRef.current,
         arrhythmias,
         timestamp: new Date().toISOString()
       });
@@ -101,17 +103,17 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
       if (processor.getArrhythmiaWindows && typeof processor.getArrhythmiaWindows === 'function') {
         const windows = processor.getArrhythmiaWindows();
         if (windows && Array.isArray(windows) && windows.length > 0) {
+          console.log('useVitalMeasurement - Arrhythmia windows:', windows);
           setArrhythmiaWindows(windows);
         }
       }
 
-      // Update measurements directly without preserving previous values
-      setMeasurements({
-        heartRate: bpm,
-        spo2: 0, // These will be updated by the VitalSignsProcessor
-        pressure: "--/--",
+      // Update measurements with valid BPM
+      setMeasurements(prev => ({
+        ...prev,
+        heartRate: bpm > 0 ? bpm : prev.heartRate,
         arrhythmiaCount: arrhythmias
-      });
+      }));
     };
 
     updateMeasurements();

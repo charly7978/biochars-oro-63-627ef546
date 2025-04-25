@@ -113,27 +113,71 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results - CORREGIDO: Verificar cada campo individualmente
+      // Guardar resultados - MEJORA: verificación individual más clara
       if (result) {
         let hasValidData = false;
+        let logDetails = {
+          hasHeartRate: false,
+          hasSpo2: false,
+          hasPressure: false,
+          hasGlucose: false,
+          hasLipids: false,
+          hasHemoglobin: false,
+          hasHydration: false,
+          result: {} as any
+        };
         
-        // Check if any vital sign has valid data
-        if (result.heartRate > 0) hasValidData = true;
-        if (result.spo2 > 0) hasValidData = true;
-        if (result.pressure !== "--/--") hasValidData = true;
-        if (result.glucose > 0) hasValidData = true;
-        if (result.lipids.totalCholesterol > 0 || result.lipids.triglycerides > 0) hasValidData = true;
-        if (result.hemoglobin > 0) hasValidData = true;
-        if (result.hydration > 0) hasValidData = true;
+        // Verificar cada signo vital individualmente
+        if (result.heartRate > 0) {
+          hasValidData = true;
+          logDetails.hasHeartRate = true;
+        }
+        
+        if (result.spo2 > 0) {
+          hasValidData = true;
+          logDetails.hasSpo2 = true;
+        }
+        
+        if (result.pressure && result.pressure !== "--/--") {
+          hasValidData = true;
+          logDetails.hasPressure = true;
+        }
+        
+        if (result.glucose > 0) {
+          hasValidData = true;
+          logDetails.hasGlucose = true;
+        }
+        
+        if ((result.lipids && result.lipids.totalCholesterol > 0) || 
+            (result.lipids && result.lipids.triglycerides > 0)) {
+          hasValidData = true;
+          logDetails.hasLipids = true;
+        }
+        
+        if (result.hemoglobin > 0) {
+          hasValidData = true;
+          logDetails.hasHemoglobin = true;
+        }
+        
+        if (result.hydration > 0) {
+          hasValidData = true;
+          logDetails.hasHydration = true;
+        }
+        
+        logDetails.result = {
+          heartRate: result.heartRate,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose,
+          hydration: result.hydration,
+          lipids: result.lipids,
+          hemoglobin: result.hemoglobin
+        };
+        
+        console.log("useVitalSignsProcessor: Validating results", logDetails);
         
         if (hasValidData) {
-          console.log("useVitalSignsProcessor: Setting valid results", {
-            heartRate: result.heartRate,
-            spo2: result.spo2,
-            pressure: result.pressure,
-            glucose: result.glucose,
-            hydration: result.hydration
-          });
+          console.log("useVitalSignsProcessor: Guardando resultado válido", result);
           setLastValidResults(result);
         }
       }
@@ -143,7 +187,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error that include heartRate
+      // Return safe fallback values on error
       return {
         spo2: 0,
         heartRate: 0,

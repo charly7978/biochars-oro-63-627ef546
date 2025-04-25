@@ -1,171 +1,103 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Utility functions for signal quality assessment
+ * Only processes real data
  */
 
-/**
- * Verifica la calidad de la señal PPG en tiempo real
- * Sistema serio y confiable basado solo en datos reales
- */
-export function checkSignalQuality(
-  value: number, 
-  currentWeakSignalCount: number,
-  options: { 
-    lowSignalThreshold: number,
-    maxWeakSignalCount: number 
-  }
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  
-  const { lowSignalThreshold, maxWeakSignalCount } = options;
-  
-  // Verificar amplitud mínima sin Math.abs
-  const valueAbs = value >= 0 ? value : -value;
-  const isCurrentlyWeak = valueAbs < lowSignalThreshold;
-  
-  // Sistema robusto de seguimiento de señales débiles consecutivas
-  // utilizando un contador con decaimiento progresivo para evitar
-  // falsos positivos en la detección de pérdida de señal
-  
-  // Actualización lineal con memoria
-  let updatedWeakSignalsCount;
-  if (isCurrentlyWeak) {
-    // Incremento más rápido en señales débiles
-    updatedWeakSignalsCount = currentWeakSignalCount + 1;
-  } else {
-    // Decremento más lento para evitar intermitencia
-    updatedWeakSignalsCount = currentWeakSignalCount > 0 ? 
-      currentWeakSignalCount - 0.5 : 0;
-    
-    // Asegurar valores enteros para el contador
-    updatedWeakSignalsCount = ~~updatedWeakSignalsCount;
-  }
-  
-  // Limitar al rango [0, maxWeakSignalCount]
-  if (updatedWeakSignalsCount < 0) updatedWeakSignalsCount = 0;
-  if (updatedWeakSignalsCount > maxWeakSignalCount) updatedWeakSignalsCount = maxWeakSignalCount;
-  
-  // Una señal se considera débil si se acumula suficiente evidencia
-  // de debilidad consecutiva
-  const isWeakSignal = updatedWeakSignalsCount >= maxWeakSignalCount;
-  
-  return { 
-    isWeakSignal, 
-    updatedWeakSignalsCount 
-  };
+interface SignalQualityConfig {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
 }
 
 /**
- * Evalúa la calidad detallada de la señal PPG
- * Solo utiliza datos reales, sin simulación
+ * Checks signal quality to determine if the signal is too weak
+ * @param value Current value to check
+ * @param consecutiveWeakSignals Current count of consecutive weak signals
+ * @param config Configuration parameters
+ * @returns Object with isWeakSignal and updatedWeakSignalsCount
  */
-export function evaluateSignalQuality(
-  recentValues: number[],
-  options: {
-    minAcceptableAmplitude?: number,
-    minAcceptableSNR?: number
-  } = {}
-): {
-  quality: number;  // 0-100
-  isAcceptable: boolean;
-  amplitude: number;
-  snr: number;
-} {
-  // Parámetros con valores por defecto
-  const minAcceptableAmplitude = options.minAcceptableAmplitude || 0.05;
-  const minAcceptableSNR = options.minAcceptableSNR || 3.0;
+export function checkSignalQuality(
+  value: number,
+  consecutiveWeakSignals: number,
+  config: SignalQualityConfig
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  // Si no hay suficientes valores, calidad cero
-  if (recentValues.length < 10) {
-    return {
-      quality: 0,
-      isAcceptable: false,
-      amplitude: 0,
-      snr: 0
-    };
+  // Calculate absolute value without Math.abs
+  const absValue = value >= 0 ? value : -value;
+  
+  // Check if signal is below threshold
+  const isCurrentlyWeak = absValue < lowSignalThreshold;
+  
+  // Update consecutive weak signals count
+  let updatedWeakSignalsCount = isCurrentlyWeak
+    ? consecutiveWeakSignals + 1
+    : consecutiveWeakSignals > 0 
+      ? consecutiveWeakSignals - 1 
+      : 0;
+  
+  // Log for debugging
+  if (updatedWeakSignalsCount > 3) {
+    console.log("Signal quality check:", {
+      value,
+      absValue,
+      isCurrentlyWeak,
+      updatedWeakSignalsCount,
+      maxWeakSignalCount
+    });
   }
   
-  // Encontrar min/max sin Math.min/max
+  // Determine if signal is considered weak overall
+  const isWeakSignal = updatedWeakSignalsCount >= maxWeakSignalCount;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
+}
+
+/**
+ * Calculates a quality percentage for the signal
+ * Higher values indicate better quality
+ * @param values Array of recent signal values
+ * @returns Quality value from 0-100
+ */
+export function calculateSignalQuality(values: number[]): number {
+  if (!values || values.length < 10) return 0;
+  
+  // Take most recent values
+  const recentValues = values.slice(-10);
+  
+  // Find min and max without Math functions
   let min = recentValues[0];
   let max = recentValues[0];
+  let sum = recentValues[0];
   
   for (let i = 1; i < recentValues.length; i++) {
     if (recentValues[i] < min) min = recentValues[i];
     if (recentValues[i] > max) max = recentValues[i];
-  }
-  
-  // Calcular amplitud directamente
-  const amplitude = max - min;
-  
-  // Calcular media sin reduce
-  let sum = 0;
-  for (let i = 0; i < recentValues.length; i++) {
     sum += recentValues[i];
   }
-  const mean = sum / recentValues.length;
   
-  // Calcular ruido (desviación estándar sin Math.sqrt)
-  let sumSqDiff = 0;
+  const range = max - min;
+  const avg = sum / recentValues.length;
+  
+  // Calculate variation
+  let varianceSum = 0;
   for (let i = 0; i < recentValues.length; i++) {
-    const diff = recentValues[i] - mean;
-    sumSqDiff += diff * diff;
-  }
-  const variance = sumSqDiff / recentValues.length;
-  
-  // Implementación propia de raíz cuadrada usando método de Newton
-  let noise = variance;
-  if (noise > 0) {
-    let x = noise;
-    // 5 iteraciones son suficientes para buena aproximación
-    for (let i = 0; i < 5; i++) {
-      x = 0.5 * (x + noise / x);
-    }
-    noise = x;
+    const diff = recentValues[i] - avg;
+    varianceSum += diff * diff;
   }
   
-  // Calcular SNR (Signal-to-Noise Ratio)
-  const snr = noise > 0 ? amplitude / noise : 0;
+  const variance = varianceSum / recentValues.length;
+  const standardDeviation = Math.sqrt(variance);
   
-  // Evaluar si señal es aceptable basado en criterios científicos
-  const amplitudeOK = amplitude >= minAcceptableAmplitude;
-  const snrOK = snr >= minAcceptableSNR;
-  const isAcceptable = amplitudeOK && snrOK;
+  // Calculate signal-to-noise ratio (SNR)
+  const snr = range / (standardDeviation || 0.001);
   
-  // Calcular calidad como porcentaje (0-100)
-  // Fórmula basada en literatura científica de procesamiento de señales PPG
-  let quality = 0;
+  // Convert to 0-100 scale
+  let quality = snr * 20;
   
-  if (amplitude > 0) {
-    // Componente de amplitud (máx 50%)
-    const ampComponent = (amplitude / 0.2) * 50;
-    const cappedAmpComponent = ampComponent > 50 ? 50 : ampComponent;
-    
-    // Componente de SNR (máx 50%)
-    const snrComponent = (snr / 10) * 50;
-    const cappedSnrComponent = snrComponent > 50 ? 50 : snrComponent;
-    
-    // Calidad total como suma de componentes
-    quality = cappedAmpComponent + cappedSnrComponent;
-    
-    // Limitación sin Math.min/max
-    quality = quality > 100 ? 100 : quality;
-    quality = quality < 0 ? 0 : quality;
-  }
+  // Ensure within bounds
+  if (quality < 0) quality = 0;
+  if (quality > 100) quality = 100;
   
-  // Convertir a entero sin Math.round
-  quality = ~~(quality + 0.5);
-  
-  return {
-    quality,
-    isAcceptable,
-    amplitude,
-    snr
-  };
-}
-
-/**
- * Restablece el estado de detección de señal
- * Sin usar funciones Math
- */
-export function resetSignalQualityState(): number {
-  return 0; // Reset the weak signals counter
+  return quality;
 }

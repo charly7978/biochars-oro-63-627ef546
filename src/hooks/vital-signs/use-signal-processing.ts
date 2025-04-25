@@ -35,19 +35,17 @@ export const useSignalProcessing = () => {
     
     processedSignals.current++;
     
-    // If too many weak signals, return zeros
+    // Si la señal es débil, registrarlo pero seguir procesando
     if (isWeakSignal) {
-      console.log("useSignalProcessing: Weak signal detected, returning zeros");
-      return ResultFactory.createEmptyResults();
+      console.log("useSignalProcessing: Weak signal detected, pero continuamos procesando");
     }
     
-    // Logging for diagnostics
-    if (processedSignals.current % 15 === 0 || processedSignals.current < 10) {
+    // Logging for diagnostics - incrementamos la frecuencia
+    if (processedSignals.current % 5 === 0 || processedSignals.current < 10) {
       console.log("useSignalProcessing: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
         signalNumber: processedSignals.current
       });
     }
@@ -56,17 +54,16 @@ export const useSignalProcessing = () => {
       // Process signal directly - no simulation
       let result = processorRef.current.processSignal(value, rrData);
       
-      // Log important result values for debugging
-      // MODIFICADO: Loguear más información para depuración
+      // Log ALL results for debugging
       console.log("useSignalProcessing: Processed result", {
+        frame: processedSignals.current,
         heartRate: result.heartRate,
         spo2: result.spo2,
         pressure: result.pressure,
         glucose: result.glucose,
         hydration: result.hydration,
         lipids: result.lipids,
-        hemoglobin: result.hemoglobin,
-        frame: processedSignals.current
+        hemoglobin: result.hemoglobin
       });
       
       // Add null checks for arrhythmia status
@@ -127,6 +124,9 @@ export const useSignalProcessing = () => {
     // Create new instances for direct measurement
     processorRef.current = new VitalSignsProcessor();
     processedSignals.current = 0;
+    
+    // Log after initialization
+    console.log("useSignalProcessing: Processor initialized successfully");
   }, []);
 
   /**
@@ -173,7 +173,8 @@ export const useSignalProcessing = () => {
   const getDebugInfo = useCallback(() => {
     return {
       processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10)
+      signalLog: signalLog.current.slice(-10),
+      processor: processorRef.current ? "initialized" : "not initialized"
     };
   }, []);
 

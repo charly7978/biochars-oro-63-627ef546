@@ -29,8 +29,22 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // MODIFICADO: Determinar si hay un valor real para mostrar
+  // Determinar si hay un valor real para mostrar (no null, no undefined, no cero, no "--")
   const hasValue = value !== undefined && value !== null && value !== 0 && value !== "--";
+  
+  // Función para formatear los valores numéricos
+  const formattedValue = () => {
+    // Si el valor es numérico y mayor que cero, mostrarlo
+    if (typeof value === 'number' && value > 0) {
+      return value;
+    }
+    // Si es una string y no está vacía ni es "--", mostrarla
+    if (typeof value === 'string' && value && value !== "--") {
+      return value;
+    }
+    // En cualquier otro caso, mostrar "--"
+    return "--";
+  };
 
   return (
     <div 
@@ -64,8 +78,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
         }}
       >
         <span className="inline-flex items-center">
-          {/* Display raw value directly without any processing */}
-          {value}
+          {formattedValue()}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
         {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
