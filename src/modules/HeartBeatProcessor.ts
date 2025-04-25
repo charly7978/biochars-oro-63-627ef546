@@ -180,10 +180,11 @@ export class HeartBeatProcessor {
     isMotionDetected: boolean;
     isQualityUnstable: boolean;
     bpmStabilityScore: number;
+    arrhythmiaCount: number;
   } {
     // Paso 0: Verificar monitoreo y warmup
     if (!this.isMonitoring) {
-      return { bpm: 0, confidence: 0, isPeak: false, filteredValue: 0, enhancedValue: undefined, isMotionDetected: false, isQualityUnstable: true, bpmStabilityScore: 0 };
+      return { bpm: 0, confidence: 0, isPeak: false, filteredValue: 0, enhancedValue: undefined, isMotionDetected: false, isQualityUnstable: true, bpmStabilityScore: 0, arrhythmiaCount: 0 };
     }
     if (this.startTime === 0) this.startTime = Date.now(); // Asegurar que startTime esté inicializado
     const warmingUp = this.isInWarmup();
@@ -224,7 +225,7 @@ export class HeartBeatProcessor {
     if (this.signalBuffer.length < 30 || warmingUp) {
        // Calcular BPM final incluso en warmup para actualizar estabilidad
        const bpmDuringWarmup = Math.round(this.getFinalBPM());
-       return { bpm: bpmDuringWarmup, confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected, isQualityUnstable: this.isQualityUnstable, bpmStabilityScore: this.bpmStabilityScore };
+       return { bpm: bpmDuringWarmup, confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected, isQualityUnstable: this.isQualityUnstable, bpmStabilityScore: this.bpmStabilityScore, arrhythmiaCount: 0 };
     }
 
     // Resetear estados de pico si señal baja
@@ -372,7 +373,8 @@ export class HeartBeatProcessor {
       enhancedValue: enhancedValueResult, // Valor post-realce
       isMotionDetected: this.isMotionDetected,
       isQualityUnstable: this.isQualityUnstable,
-      bpmStabilityScore: this.bpmStabilityScore
+      bpmStabilityScore: this.bpmStabilityScore,
+      arrhythmiaCount: 0 // Añadir para compatibilidad con tipo HeartBeatResult
     };
   }
 
