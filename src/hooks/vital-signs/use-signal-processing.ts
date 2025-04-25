@@ -29,7 +29,7 @@ export const useSignalProcessing = () => {
     isWeakSignal: boolean = false
   ): VitalSignsResult => {
     if (!processorRef.current) {
-      console.log("useVitalSignsProcessor: Processor not initialized");
+      console.log("useSignalProcessing: Processor not initialized");
       return ResultFactory.createEmptyResults();
     }
     
@@ -37,12 +37,13 @@ export const useSignalProcessing = () => {
     
     // If too many weak signals, return zeros
     if (isWeakSignal) {
+      console.log("useSignalProcessing: Weak signal detected, returning zeros");
       return ResultFactory.createEmptyResults();
     }
     
     // Logging for diagnostics
-    if (processedSignals.current % 45 === 0) {
-      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
+    if (processedSignals.current % 15 === 0 || processedSignals.current < 10) {
+      console.log("useSignalProcessing: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
@@ -53,8 +54,18 @@ export const useSignalProcessing = () => {
     
     try {
       // Process signal directly - no simulation
-      // Important: We've changed this to handle sync processing only, avoiding Promise issues
       let result = processorRef.current.processSignal(value, rrData);
+      
+      // Log important result values for debugging
+      if (processedSignals.current % 30 === 0 || result.heartRate > 0) {
+        console.log("useSignalProcessing: Processed result", {
+          heartRate: result.heartRate,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose,
+          hydration: result.hydration
+        });
+      }
       
       // Add null checks for arrhythmia status
       if (result && 
@@ -64,7 +75,7 @@ export const useSignalProcessing = () => {
           result.lastArrhythmiaData) {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Window based on real heart rate - sin Math.max/min
+        // Window based on real heart rate
         let windowWidth = 400;
         
         // Adjust based on real RR intervals
@@ -109,12 +120,11 @@ export const useSignalProcessing = () => {
    * Direct measurement only
    */
   const initializeProcessor = useCallback(() => {
-    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
-      timestamp: new Date().toISOString()
-    });
+    console.log("useSignalProcessing: Initializing processor for DIRECT MEASUREMENT ONLY");
     
     // Create new instances for direct measurement
     processorRef.current = new VitalSignsProcessor();
+    processedSignals.current = 0;
   }, []);
 
   /**
@@ -124,11 +134,11 @@ export const useSignalProcessing = () => {
   const reset = useCallback(() => {
     if (!processorRef.current) return null;
     
-    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode only");
+    console.log("useSignalProcessing: Reset initiated");
     
     processorRef.current.reset();
     
-    console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
+    console.log("useSignalProcessing: Reset completed");
     return null;
   }, []);
   
@@ -139,13 +149,13 @@ export const useSignalProcessing = () => {
   const fullReset = useCallback(() => {
     if (!processorRef.current) return;
     
-    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode only");
+    console.log("useSignalProcessing: Full reset initiated");
     
     processorRef.current.fullReset();
     processedSignals.current = 0;
     signalLog.current = [];
     
-    console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
+    console.log("useSignalProcessing: Full reset complete");
   }, []);
 
   /**

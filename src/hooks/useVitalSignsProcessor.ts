@@ -77,6 +77,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
+    console.log("useVitalSignsProcessor: Processing signal with value", { value, hasRRData: !!rrData });
+    
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
@@ -113,6 +115,12 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Save valid results
       if (result && result.heartRate > 0) {
+        console.log("useVitalSignsProcessor: Setting valid results", {
+          heartRate: result.heartRate,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose
+        });
         setLastValidResults(result);
       }
       

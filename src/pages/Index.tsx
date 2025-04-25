@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -25,6 +26,7 @@ const Index = () => {
   const measurementTimer = useRef<NodeJS.Timeout | null>(null);
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
+  const debugFrameCountRef = useRef(0);
 
   const {
     startProcessing: startSignalProcessing,
@@ -64,6 +66,7 @@ const Index = () => {
 
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
+      console.log("Index: Setting vital signs from lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -71,6 +74,7 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
+      debugFrameCountRef.current++;
       const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
@@ -80,8 +84,28 @@ const Index = () => {
           setHeartRate(heartBeatResult.bpm);
           
           try {
+            // Log de depuración para cada ciclo de procesamiento de señales 
+            if (debugFrameCountRef.current % 30 === 0) {
+              console.log("Index: Processing vital signs", {
+                filteredValue: lastSignal.filteredValue,
+                hasRRData: !!heartBeatResult.rrData,
+                rrIntervals: heartBeatResult.rrData?.intervals?.length || 0,
+                frameCount: debugFrameCountRef.current
+              });
+            }
+            
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            
             if (vitals) {
+              console.log("Index: Received vitals update", {
+                heartRate: vitals.heartRate,
+                spo2: vitals.spo2,
+                pressure: vitals.pressure,
+                glucose: vitals.glucose,
+                hydration: vitals.hydration
+              });
+              
+              // IMPORTANTE: Actualizar state de vitalSigns con los resultados completos
               setVitalSigns(vitals);
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
             }
@@ -335,7 +359,7 @@ const Index = () => {
               <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
               <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
               <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="HEMOGLOBINA" value={Math.round(vitalSigns.hemoglobin) || "--"} unit="g/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="HEMOGLOBINA" value={vitalSigns.hemoglobin || "--"} unit="g/dL" highlighted={showResults} compact={false} />
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
