@@ -261,9 +261,21 @@ export class HeartBeatProcessor {
       };
     }
 
-    // Actualizar línea base
-    this.baseline =
-      this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
+    // Actualizar línea base usando el mínimo del buffer reciente para seguir los valles
+    if (this.signalBuffer.length > 10) { // Asegurar suficientes datos
+        const recentValues = this.signalBuffer.slice(-15); // Tomar últimos 15 valores (ajustable)
+        let minRecent = recentValues[0];
+        for(let i = 1; i < recentValues.length; i++) {
+            if (recentValues[i] < minRecent) {
+                minRecent = recentValues[i];
+            }
+        }
+        // Suavizar la actualización de la línea base ligeramente
+        this.baseline = this.baseline * 0.9 + minRecent * 0.1; 
+    } else if (this.signalBuffer.length > 0) {
+        // Fallback simple si el buffer es pequeño
+        this.baseline = this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
+    }
 
     // Normalizar señal
     const normalizedValue = smoothed - this.baseline;
