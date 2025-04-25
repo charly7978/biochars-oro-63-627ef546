@@ -27,6 +27,7 @@ const Index = () => {
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
   const debugFrameCountRef = useRef(0);
+  const processedFrameCountRef = useRef(0); // NUEVO: contador de frames procesados
 
   const {
     startProcessing: startSignalProcessing,
@@ -76,12 +77,15 @@ const Index = () => {
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       debugFrameCountRef.current++;
-      const minQualityThreshold = 40;
+      processedFrameCountRef.current++;
+      const minQualityThreshold = 30; // MODIFICADO: umbral de calidad reducido
       
+      // MODIFICADO: Procesamos incluso con calidad un poco más baja
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult.confidence > 0.4) {
+        // MODIFICADO: Requisito de confianza reducido
+        if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
           try {
@@ -91,28 +95,44 @@ const Index = () => {
                 filteredValue: lastSignal.filteredValue,
                 hasRRData: !!heartBeatResult.rrData,
                 rrIntervals: heartBeatResult.rrData?.intervals?.length || 0,
-                frameCount: debugFrameCountRef.current
+                frameCount: debugFrameCountRef.current,
+                signalQuality: lastSignal.quality
               });
             }
             
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             
             if (vitals) {
-              // MODIFICADO: Log más detallado
-              console.log("Index: Received vitals update", {
-                heartRate: vitals.heartRate,
-                spo2: vitals.spo2,
-                pressure: vitals.pressure,
-                glucose: vitals.glucose,
-                hydration: vitals.hydration,
-                lipids: vitals.lipids,
-                hemoglobin: vitals.hemoglobin,
-                frameCount: debugFrameCountRef.current
-              });
+              // MODIFICADO: Log más detallado cada 30 frames
+              if (processedFrameCountRef.current % 30 === 0) {
+                console.log("Index: Received vitals update", {
+                  heartRate: vitals.heartRate,
+                  spo2: vitals.spo2, 
+                  pressure: vitals.pressure,
+                  glucose: vitals.glucose,
+                  hydration: vitals.hydration,
+                  lipids: vitals.lipids,
+                  hemoglobin: vitals.hemoglobin,
+                  frameCount: processedFrameCountRef.current
+                });
+              }
               
-              // MODIFICADO: Actualización incondicional de vitalSigns
+              // MODIFICADO: Siempre actualizamos los signos vitales, para asegurar que se muestran
               setVitalSigns(vitals);
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
+              
+              // MODIFICADO: Debug de los datos que se reciben
+              if (processedFrameCountRef.current % 60 === 0) {
+                console.log("Current values on screen:", {
+                  heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
+                  spo2: vitals.spo2,
+                  pressure: vitals.pressure,
+                  glucose: vitals.glucose,
+                  hydration: vitals.hydration,
+                  lipids: vitals.lipids,
+                  hemoglobin: vitals.hemoglobin
+                });
+              }
             }
           } catch (error) {
             console.error("Error processing vital signs:", error);
@@ -153,6 +173,7 @@ const Index = () => {
     bpmCache.current = [];
     setIsCameraOn(true);
     setIsMonitoring(true);
+    processedFrameCountRef.current = 0; // NUEVO: Reiniciar contador de frames
     startSignalProcessing();
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
@@ -164,6 +185,7 @@ const Index = () => {
   const finalizeMeasurement = () => {
     if (!isMonitoring) return;
     console.log("Finalizing measurement...");
+    // MODIFICADO: Mostramos los resultados al finalizar
     setShowResults(true);
     stopMonitoring();
   };
@@ -191,6 +213,7 @@ const Index = () => {
     setSignalQuality(0);
     setIsArrhythmia(false);
     setShowResults(false);
+    processedFrameCountRef.current = 0; // NUEVO: Reiniciar contador de frames
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
   };
 

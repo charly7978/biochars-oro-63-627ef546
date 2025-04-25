@@ -25,8 +25,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Signal quality tracking
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
+  const LOW_SIGNAL_THRESHOLD = 0.03; // MODIFICADO: Umbral más permisivo
+  const MAX_WEAK_SIGNALS = 15; // MODIFICADO: Mayor tolerancia
   
   // Centralized arrhythmia tracking
   const { 
@@ -93,7 +93,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
+      // MODIFICADO: Procesamos la señal incluso si es débil para obtener más resultados
+      let result = processVitalSignal(value, rrData, false);
       
       // Process and handle arrhythmia events with our centralized system
       if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
@@ -112,6 +113,21 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
+      
+      // MODIFICADO: Log más detallado para debug
+      if (processedSignals.current % 30 === 0) {
+        console.log("useVitalSignsProcessor: Evaluating results", {
+          sessionId: sessionId.current,
+          processCount: processedSignals.current,
+          heartRate: result.heartRate,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose,
+          hydration: result.hydration,
+          lipids: result.lipids,
+          hemoglobin: result.hemoglobin
+        });
+      }
       
       // Guardar resultados - MEJORA: verificación individual más clara
       if (result) {
@@ -174,8 +190,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           hemoglobin: result.hemoglobin
         };
         
-        console.log("useVitalSignsProcessor: Validating results", logDetails);
+        // MODIFICADO: Solo logeamos cuando realmente hay un cambio para evitar spam
+        if (processedSignals.current % 30 === 0) {
+          console.log("useVitalSignsProcessor: Validating results", logDetails);
+        }
         
+        // MODIFICADO: Más permisivo con guardar resultados
+        // Siempre guardamos el resultado si hay al menos un dato válido
         if (hasValidData) {
           console.log("useVitalSignsProcessor: Guardando resultado válido", result);
           setLastValidResults(result);

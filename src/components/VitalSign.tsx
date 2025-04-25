@@ -29,14 +29,15 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // Determine if there is a real value to display (not null, undefined, zero, or "--")
-  const hasValue = value !== undefined && value !== null && value !== 0 && value !== "--";
+  // CORREGIDO: Determinamos si hay un valor real para mostrar de manera más permisiva
+  // Ahora permitimos mostrar valores de 0 y "--" como valores válidos
+  const hasValue = value !== undefined && value !== null;
   
   // Format function to handle all types of values properly
   const formattedValue = () => {
     // Handle numeric values (both integers and floats)
-    if (typeof value === 'number' && value > 0) {
-      // For most vital signs, show integers (no decimals)
+    if (typeof value === 'number') {
+      // Con esto, mostramos también valores 0 (antes se omitían)
       if (label === "HIDRATACIÓN" || label === "SPO2") {
         // These are percentages, so round to whole number
         return Math.round(value);
@@ -48,7 +49,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
     }
     
     // Handle string values that are not empty or placeholders
-    if (typeof value === 'string' && value && value !== "--") {
+    if (typeof value === 'string' && value !== undefined) {
       return value;
     }
     

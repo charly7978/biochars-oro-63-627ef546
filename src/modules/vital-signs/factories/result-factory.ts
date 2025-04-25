@@ -36,6 +36,7 @@ export class ResultFactory {
   }
 
   public static createEmptyResults(): VitalSignsResult {
+    // MODIFICADO: Valores iniciales mínimos para etapa de calibración/inicio
     return {
       spo2: 0,
       heartRate: 0,

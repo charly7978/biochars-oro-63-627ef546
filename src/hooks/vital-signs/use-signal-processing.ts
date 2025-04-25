@@ -55,20 +55,22 @@ export const useSignalProcessing = () => {
       let result = processorRef.current.processSignal(value, rrData);
       
       // Comprehensive logging for ALL vital signs
-      console.log("useSignalProcessing: Processed complete result", {
-        frame: processedSignals.current,
-        heartRate: result.heartRate,
-        spo2: result.spo2,
-        pressure: result.pressure,
-        glucose: result.glucose,
-        hydration: result.hydration,
-        lipids: result.lipids ? {
-          totalCholesterol: result.lipids.totalCholesterol,
-          triglycerides: result.lipids.triglycerides
-        } : "no lipid data",
-        hemoglobin: result.hemoglobin,
-        arrhythmiaStatus: result.arrhythmiaStatus
-      });
+      if (processedSignals.current % 20 === 0) { // MODIFICADO: Reducido para no llenar la consola
+        console.log("useSignalProcessing: Processed complete result", {
+          frame: processedSignals.current,
+          heartRate: result.heartRate,
+          spo2: result.spo2,
+          pressure: result.pressure,
+          glucose: result.glucose,
+          hydration: result.hydration,
+          lipids: result.lipids ? {
+            totalCholesterol: result.lipids.totalCholesterol,
+            triglycerides: result.lipids.triglycerides
+          } : "no lipid data",
+          hemoglobin: result.hemoglobin,
+          arrhythmiaStatus: result.arrhythmiaStatus
+        });
+      }
       
       // Handle arrhythmia detection with enhanced logging
       if (result && 
@@ -103,16 +105,16 @@ export const useSignalProcessing = () => {
         }
       }
       
-      // Log every 10th processed signal for diagnostics
-      if (processedSignals.current % 10 === 0) {
+      // Log processed signal for diagnostics
+      if (processedSignals.current % 60 === 0) { // MODIFICADO: Reducido para no llenar la consola
         signalLog.current.push({
           timestamp: Date.now(),
           value,
           result
         });
         
-        if (signalLog.current.length > 100) {
-          signalLog.current = signalLog.current.slice(-100);
+        if (signalLog.current.length > 60) { // MODIFICADO: Reducido tamaño del buffer
+          signalLog.current = signalLog.current.slice(-60);
         }
       }
       
