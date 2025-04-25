@@ -62,6 +62,17 @@ class AudioFeedbackService {
     }
   }
 
+  // Método necesario para compatibilidad con código existente
+  public triggerHeartbeatFeedback(type: 'normal' | 'arrhythmia' = 'normal', volume: number = 0.7): boolean {
+    const peakData: PeakData = {
+      timestamp: Date.now(),
+      value: volume,
+      isArrhythmia: type === 'arrhythmia'
+    };
+    this.queuePeak(peakData);
+    return true;
+  }
+
   public async playBeep(type: 'normal' | 'arrhythmia' = 'normal', volume: number = 0.7): Promise<boolean> {
     if (!this.audioContext) {
       await this.initAudioContext();

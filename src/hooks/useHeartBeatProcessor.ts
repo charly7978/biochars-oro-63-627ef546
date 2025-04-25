@@ -81,8 +81,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Simplified requestBeep that uses our centralized service
-  const requestBeep = useCallback((value: number): boolean => {
+  // Corregido para devolver async boolean
+  const requestBeep = useCallback(async (value: number): Promise<boolean> => {
     if (!isMonitoringRef.current) {
       return false;
     }
@@ -92,7 +92,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     // Only play beep if signal quality is good enough
     if (signalQuality > 0.3 || weakSignals < MAX_CONSECUTIVE_WEAK_SIGNALS) {
-      return AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2));
+      return await AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2));
     }
     
     return false;

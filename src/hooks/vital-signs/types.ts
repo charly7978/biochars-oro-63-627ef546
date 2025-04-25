@@ -4,6 +4,7 @@ import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-re
 
 export interface UseVitalSignsProcessorReturn {
   processSignal: (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }) => VitalSignsResult;
+  processFrame: (frame: ImageData) => VitalSignsResult;
   reset: () => VitalSignsResult | null;
   fullReset: () => void;
   arrhythmiaCounter: number;
@@ -14,3 +15,5 @@ export interface UseVitalSignsProcessorReturn {
     signalLog: { timestamp: number, value: number, result: any }[];
   };
 }
+
+export { ArrhythmiaWindow };

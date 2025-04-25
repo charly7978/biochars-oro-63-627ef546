@@ -349,7 +349,7 @@ class ArrhythmiaDetectionService {
     this.arrhythmiaCount++;
     this.lastArrhythmiaTriggeredTime = currentTime;
     
-    // Trigger special feedback for arrhythmia
+    // Trigger special feedback for arrhythmia - usando el nuevo método
     AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
     
     // Limitar número de notificaciones
