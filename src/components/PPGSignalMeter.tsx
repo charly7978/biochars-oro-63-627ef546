@@ -298,14 +298,13 @@ const PPGSignalMeter = memo(({
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
   const drawArrhythmiaZones = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    const serviceWindows = HeartRateService.getArrhythmiaWindows();
-    const combinedWindows = [...(arrhythmiaWindows || []), ...serviceWindows];
+    const currentWindows = arrhythmiaWindows || []; 
     
-    if (!combinedWindows || combinedWindows.length === 0) {
+    if (!currentWindows || currentWindows.length === 0) {
       return;
     }
     
-    combinedWindows.forEach(window => {
+    currentWindows.forEach(window => {
       const windowStartTime = window.start;
       const windowEndTime = window.end;
       
