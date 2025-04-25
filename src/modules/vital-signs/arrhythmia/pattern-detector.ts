@@ -123,7 +123,8 @@ export class ArrhythmiaPatternDetector {
               const lastIdx = this.heartRateIntervals.length - 1;
               const currentInterval = this.heartRateIntervals[lastIdx];
               const prevInterval = this.heartRateIntervals[lastIdx - 1];
-              const variation = Math.abs(currentInterval - prevInterval) / prevInterval;
+              // Evitar división por cero si prevInterval es 0 (aunque improbable aquí)
+              const variation = prevInterval !== 0 ? Math.abs(currentInterval - prevInterval) / prevInterval : 0;
               
               this.variationTrend.push(variation);
               if (this.variationTrend.length > this.TREND_BUFFER_SIZE) {
@@ -131,7 +132,7 @@ export class ArrhythmiaPatternDetector {
               }
             }
             
-            // Nueva lógica para identificar latidos normales
+            // Lógica para identificar latidos normales
             this.detectNormalBeat(interval, currentTime);
           }
         }
@@ -146,7 +147,7 @@ export class ArrhythmiaPatternDetector {
   }
   
   /**
-   * Nueva función para detectar latidos normales
+   * Función para detectar latidos normales
    */
   private detectNormalBeat(interval: number, currentTime: number): void {
     // Verificar si el intervalo está en el rango normal
@@ -160,13 +161,14 @@ export class ArrhythmiaPatternDetector {
       
       // Solo considerar variabilidad si no ha pasado demasiado tiempo
       if (timeSinceLastNormal < 2500) { // Máximo 2.5 segundos entre latidos normales
-        const normalVariation = Math.abs(timeSinceLastNormal - interval) / interval;
+        // Evitar división por cero
+        const normalVariation = interval !== 0 ? Math.abs(timeSinceLastNormal - interval) / interval : 0;
         isNormalVariation = normalVariation <= this.NORMAL_VARIATION_THRESHOLD;
       }
     }
     
     // Calcular frecuencia cardíaca actual en BPM
-    const currentBPM = Math.round(60000 / interval);
+    const currentBPM = interval > 0 ? Math.round(60000 / interval) : 0;
     
     if (isNormalInterval && isNormalVariation) {
       this.consecutiveNormalBeats++;
@@ -179,12 +181,12 @@ export class ArrhythmiaPatternDetector {
         this.normalHeartRateBuffer.shift();
       }
       
-      // Podemos mostrar información sobre latidos normales consecutivos si es relevante
-      if (this.consecutiveNormalBeats >= 5 && this.consecutiveNormalBeats % 5 === 0) {
-        console.log(`Detected ${this.consecutiveNormalBeats} consecutive normal beats at ${currentBPM} BPM`);
-      }
+      // Log opcional para depuración
+      // if (this.consecutiveNormalBeats >= 5 && this.consecutiveNormalBeats % 5 === 0) {
+      //   console.log(`Detected ${this.consecutiveNormalBeats} consecutive normal beats at ${currentBPM} BPM`);
+      // }
     } else {
-      // Reiniciar contador de latidos normales consecutivos
+      // Reiniciar contador de latidos normales consecutivos si el latido actual no es normal
       this.consecutiveNormalBeats = 0;
     }
   }
@@ -206,8 +208,10 @@ export class ArrhythmiaPatternDetector {
     this.variationTrend = []; // Limpiar tendencia de variación
     
     // Reiniciar variables de latidos normales
+    this.normalBeatsCount = 0; // Reiniciar conteo total también
     this.consecutiveNormalBeats = 0;
     this.lastNormalHeartbeatTime = 0;
+    this.normalHeartRateBuffer = []; // Limpiar buffer de HR normal
   }
   
   /**
@@ -246,14 +250,6 @@ export class ArrhythmiaPatternDetector {
       return false;
     }
     
-    // Nueva verificación: si tenemos muchos latidos normales consecutivos, es menos probable que sea arritmia
-    if (this.consecutiveNormalBeats >= 8) {
-      const normalRatio = this.normalBeatsCount / (this.normalBeatsCount + this.detectionCount + 1);
-      if (normalRatio > 0.75) { // Si más del 75% de los latidos han sido normales
-        return false;
-      }
-    }
-    
     // Analyze rhythm consistency for natural heartbeat detection
     let arrhythmiaDetected = false;
     
@@ -261,19 +257,20 @@ export class ArrhythmiaPatternDetector {
       const avgInterval = this.heartRateIntervals.reduce((sum, val) => sum + val, 0) / this.heartRateIntervals.length;
       
       // Calculate rhythm consistency (natural heartbeats have consistent timing)
-      let consistentIntervals = 0;
+      let inconsistentIntervals = 0; // Renombrado desde consistentIntervals para mayor claridad
       for (let i = 0; i < this.heartRateIntervals.length; i++) {
-        const deviation = Math.abs(this.heartRateIntervals[i] - avgInterval) / avgInterval;
+        // Evitar división por cero si avgInterval es 0
+        const deviation = avgInterval !== 0 ? Math.abs(this.heartRateIntervals[i] - avgInterval) / avgInterval : 0;
         if (deviation > 0.30) { // Decreased from 0.32 to 0.30 para mayor sensibilidad
-          consistentIntervals++;
+          inconsistentIntervals++;
         }
       }
       
-      const inconsistencyRatio = consistentIntervals / this.heartRateIntervals.length;
+      const inconsistencyRatio = this.heartRateIntervals.length > 0 ? inconsistentIntervals / this.heartRateIntervals.length : 0;
       
       // For arrhythmia, we want inconsistent intervals
       if (inconsistencyRatio > 0.5 && avgInterval >= 380 && avgInterval <= 1600) { // Ajustados los límites para mejorar detección
-        const estimatedBPM = Math.round(60000 / avgInterval);
+        const estimatedBPM = avgInterval > 0 ? Math.round(60000 / avgInterval) : 0;
         
         // Verificación adicional: los intervalos deben ser muy variables
         let validIntervalCount = 0;
@@ -282,7 +279,9 @@ export class ArrhythmiaPatternDetector {
         for (let i = 1; i < this.heartRateIntervals.length; i++) {
           const prevInterval = this.heartRateIntervals[i-1];
           const currInterval = this.heartRateIntervals[i];
-          const variation = Math.abs(currInterval - prevInterval) / ((currInterval + prevInterval) / 2);
+          const avgPairInterval = (currInterval + prevInterval) / 2;
+          // Evitar división por cero
+          const variation = avgPairInterval !== 0 ? Math.abs(currInterval - prevInterval) / avgPairInterval : 0;
           
           if (variation > 0.25) { // Decreased from 0.28 to 0.25 para mayor sensibilidad
             validIntervalCount++;
@@ -307,8 +306,9 @@ export class ArrhythmiaPatternDetector {
               alternatingCount++;
             }
           }
-          
-          alternatingPattern = alternatingCount >= (this.heartRateIntervals.length - 2) * 0.4;
+          // Evitar división por cero si no hay suficientes intervalos para comparar
+          const comparisonBase = this.heartRateIntervals.length - 2;
+          alternatingPattern = comparisonBase > 0 && alternatingCount >= comparisonBase * 0.4;
         }
         
         // Analizar tendencia de variación para patrón progresivo
@@ -317,18 +317,24 @@ export class ArrhythmiaPatternDetector {
           // Contar cuántas variaciones consecutivas aumentan
           let increasingCount = 0;
           for (let i = 1; i < this.variationTrend.length; i++) {
-            if (this.variationTrend[i] > this.variationTrend[i-1] * 1.1) {
+            // Añadir pequeña tolerancia para considerar aumentos
+            if (this.variationTrend[i] > this.variationTrend[i-1] * 1.05) { // Ajustado de 1.1 a 1.05
               increasingCount++;
             }
           }
-          progressivePattern = increasingCount >= this.variationTrend.length * 0.5;
+          progressivePattern = this.variationTrend.length > 0 && increasingCount >= this.variationTrend.length * 0.5;
         }
         
+        const avgTotalVariation = validIntervalCount > 0 ? totalVariation / validIntervalCount : 0;
+        
         if ((validIntervalCount >= this.heartRateIntervals.length * 0.4 && // Decreased from 0.45 to 0.4
-            totalVariation / validIntervalCount > 0.3) || // Decreased from 0.33 to 0.3
+            avgTotalVariation > 0.3) || // Decreased from 0.33 to 0.3
             alternatingPattern || progressivePattern) { // Nuevas condiciones para detectar más patrones
           
-          console.log(`Arrhythmic pattern confirmed: ${estimatedBPM} BPM with ${Math.round(inconsistencyRatio*100)}% inconsistency`);
+          // Solo loguear si hay BPM estimado válido
+          if (estimatedBPM > 0) {
+            console.log(`Arrhythmic pattern confirmed (Rhythm Analysis): ${estimatedBPM} BPM with ${Math.round(inconsistencyRatio*100)}% inconsistency`);
+          }
           arrhythmiaDetected = true;
         }
       }
@@ -339,7 +345,7 @@ export class ArrhythmiaPatternDetector {
     
     // Feature 1: Significant variations in real data
     const significantVariations = recentPattern.filter(v => v > 0.48).length; // Decreased from 0.52 to 0.48
-    const variationRatio = significantVariations / recentPattern.length;
+    const variationRatio = recentPattern.length > 0 ? significantVariations / recentPattern.length : 0;
     
     // Feature 2: Pattern consistency in real data
     const highAnomalyScores = this.anomalyScores.filter(score => score > 0).length;
@@ -348,13 +354,16 @@ export class ArrhythmiaPatternDetector {
     
     // Feature 3: Check for irregular oscillation pattern
     let oscillationCount = 0;
-    for (let i = 1; i < recentPattern.length - 1; i++) {
-      if ((recentPattern[i] > recentPattern[i-1] && recentPattern[i] > recentPattern[i+1]) ||
-          (recentPattern[i] < recentPattern[i-1] && recentPattern[i] < recentPattern[i+1])) {
-        oscillationCount++;
+    if (recentPattern.length > 2) { // Asegurar que hay al menos 3 puntos para oscilación
+      for (let i = 1; i < recentPattern.length - 1; i++) {
+        if ((recentPattern[i] > recentPattern[i-1] && recentPattern[i] > recentPattern[i+1]) ||
+            (recentPattern[i] < recentPattern[i-1] && recentPattern[i] < recentPattern[i+1])) {
+          oscillationCount++;
+        }
       }
     }
-    const oscillationRatio = oscillationCount / (recentPattern.length - 2);
+    const oscillationBase = recentPattern.length - 2;
+    const oscillationRatio = oscillationBase > 0 ? oscillationCount / oscillationBase : 0;
     
     // Feature 4: Peak timing irregularity (arrhythmic beats have inconsistent timing)
     let timingIrregularityScore = 0;
@@ -364,12 +373,17 @@ export class ArrhythmiaPatternDetector {
         intervals.push(this.peakTimestamps[i] - this.peakTimestamps[i-1]);
       }
       
-      const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-      const intervalVariations = intervals.map(i => Math.abs(i - avgInterval) / avgInterval);
-      const avgVariation = intervalVariations.reduce((sum, val) => sum + val, 0) / intervalVariations.length;
-      
-      // Higher variation is better for arrhythmia detection
-      timingIrregularityScore = Math.min(1, avgVariation * 2.2); // Increased multiplier from 2 to 2.2
+      const intervalsLength = intervals.length;
+      if (intervalsLength > 0) {
+        const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervalsLength;
+        if (avgInterval > 0) { // Evitar división por cero
+          const intervalVariations = intervals.map(i => Math.abs(i - avgInterval) / avgInterval);
+          const avgVariation = intervalVariations.reduce((sum, val) => sum + val, 0) / intervalVariations.length;
+          
+          // Higher variation is better for arrhythmia detection
+          timingIrregularityScore = Math.min(1, avgVariation * 2.2); // Increased multiplier from 2 to 2.2
+        }
+      }
     }
     
     // Nueva característica: Detección de grupos (clustering) de intervalos
@@ -392,7 +406,9 @@ export class ArrhythmiaPatternDetector {
       
       // Calcular puntuación basada en la presencia de gaps significativos
       const avgInterval = this.heartRateIntervals.reduce((sum, val) => sum + val, 0) / this.heartRateIntervals.length;
-      clusteringScore = Math.min(1, maxGap / (avgInterval * 0.5));
+      // Evitar división por cero
+      const clusteringDivisor = avgInterval * 0.5;
+      clusteringScore = clusteringDivisor !== 0 ? Math.min(1, maxGap / clusteringDivisor) : 0;
     }
     
     // Combine features with weighted scoring - increased weights for more reliable features
@@ -405,24 +421,11 @@ export class ArrhythmiaPatternDetector {
     // La detección basada en patrones debe cumplir un umbral más estricto
     const patternDetected = patternScore > this.PATTERN_MATCH_THRESHOLD;
     
-    // Combinar todas las fuentes de detección - ahora OR lógico en lugar de AND para mayor sensibilidad
+    // Combinar todas las fuentes de detección - OR lógico para mayor sensibilidad
     const finalDetection = arrhythmiaDetected || (patternDetected && this.heartRateIntervals.length >= 3);
     
-    // Reducir probabilidad de detección si se han detectado muchos latidos normales recientemente
-    let adjustedDetection = finalDetection;
-    if (finalDetection && this.consecutiveNormalBeats >= 6) {
-      // Reducir probabilidad basada en proporción de latidos normales
-      const randomFactor = Math.random();
-      const normalBeatRatio = this.consecutiveNormalBeats / (this.consecutiveNormalBeats + 5);
-      
-      if (randomFactor < normalBeatRatio * 0.7) {
-        console.log(`Potential false positive avoided due to ${this.consecutiveNormalBeats} consecutive normal beats`);
-        adjustedDetection = false;
-      }
-    }
-    
-    // Actualizar historial de detecciones
-    this.detectionHistory.push(adjustedDetection);
+    // Actualizar historial de detecciones usando el resultado determinista
+    this.detectionHistory.push(finalDetection); 
     if (this.detectionHistory.length > this.DETECTION_HISTORY_SIZE) {
       this.detectionHistory.shift();
     }
@@ -475,8 +478,8 @@ export class ArrhythmiaPatternDetector {
     const avgInterval = this.heartRateIntervals.reduce((sum, val) => sum + val, 0) / 
                         this.heartRateIntervals.length;
     
-    // Convert to BPM
-    return Math.round(60000 / avgInterval);
+    // Convert to BPM, avoid division by zero
+    return avgInterval > 0 ? Math.round(60000 / avgInterval) : 0;
   }
   
   /**
@@ -489,12 +492,15 @@ export class ArrhythmiaPatternDetector {
     const avgInterval = this.heartRateIntervals.reduce((sum, val) => sum + val, 0) / 
                         this.heartRateIntervals.length;
                         
+    if (avgInterval === 0) return 0; // Evitar división por cero
+                        
     let totalDeviation = 0;
     for (const interval of this.heartRateIntervals) {
       totalDeviation += Math.abs(interval - avgInterval) / avgInterval;
     }
     
-    return totalDeviation / this.heartRateIntervals.length;
+    // Evitar NaN si no hay intervalos
+    return this.heartRateIntervals.length > 0 ? totalDeviation / this.heartRateIntervals.length : 0;
   }
   
   /**
@@ -503,12 +509,14 @@ export class ArrhythmiaPatternDetector {
    */
   public getNormalHeartRate(): number {
     if (this.normalHeartRateBuffer.length < 3) {
-      return this.getEstimatedHeartRate(); // Si no tenemos suficientes latidos normales, usar estimación estándar
+      // Si no hay suficientes latidos normales, usar estimación estándar, pero asegurar que sea válida
+      const estimatedHr = this.getEstimatedHeartRate();
+      return estimatedHr > 0 ? estimatedHr : 0;
     }
     
     // Calcular promedio de frecuencias cardíacas normales
     const sum = this.normalHeartRateBuffer.reduce((sum, val) => sum + val, 0);
-    return Math.round(sum / this.normalHeartRateBuffer.length);
+    return this.normalHeartRateBuffer.length > 0 ? Math.round(sum / this.normalHeartRateBuffer.length) : 0;
   }
   
   /**
@@ -532,6 +540,7 @@ export class ArrhythmiaPatternDetector {
    * Nueva función: Determinar si el ritmo actual es predominantemente normal
    */
   public isPredominantlyNormalRhythm(): boolean {
-    return this.consecutiveNormalBeats >= 6 && this.getNormalBeatsRatio() > 0.8;
+    // Usar un umbral más conservador y requerir más latidos normales
+    return this.consecutiveNormalBeats >= 10 && this.getNormalBeatsRatio() > 0.85;
   }
 }
