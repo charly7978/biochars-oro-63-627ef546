@@ -1,4 +1,3 @@
-
 export interface RRIntervalData {
   intervals: number[];
   lastPeakTime: number | null;
@@ -11,5 +10,5 @@ export interface RRIntervalData {
 export interface PeakData {
   timestamp: number;
   value: number;
-  isArrhythmia: boolean;
+  isArrhythmia?: boolean;
 }

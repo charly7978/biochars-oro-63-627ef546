@@ -51,7 +51,7 @@ class ArrhythmiaDetectionService {
   private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.28; // Increased from 0.25 to 0.28
+  private readonly DETECTION_THRESHOLD: number = 0.32; // Increased from 0.28
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
   private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
@@ -243,7 +243,7 @@ class ArrhythmiaDetectionService {
     }
     
     // Detection of arrhythmia (real data only)
-    const potentialArrhythmia = isIrregular && this.stabilityCounter < 18; // Changed from 20 to 18
+    const potentialArrhythmia = isIrregular && this.stabilityCounter < 20; // Changed from 18 to 20
     
     // Update HRV data
     this.heartRateVariability.push(variationRatio);

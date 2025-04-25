@@ -20,12 +20,8 @@ export interface HeartRateResult {
   confidence: number;
   isPeak: boolean;
   filteredValue: number;
-  arrhythmiaCount: number;
-  isArrhythmia?: boolean;
-  // RR Interval data
   rrIntervals: number[];
   lastPeakTime: number | null;
-  // Add rrData property to fix the TypeScript errors
   rrData?: RRIntervalData;
 }
 
@@ -88,11 +84,9 @@ class HeartRateService {
   private peakCandidateIndex: number | null = null;
   private peakCandidateValue: number = 0;
   private isMonitoring: boolean = false;
-  private arrhythmiaCounter: number = 0;
   private lowSignalCount: number = 0;
   private peakListeners: Array<(data: PeakData) => void> = [];
   private vibrationEnabled: boolean = true;
-  private arrhythmiaWindows: Array<{ start: number, end: number }> = [];
   
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
@@ -216,7 +210,6 @@ class HeartRateService {
         confidence: 0,
         isPeak: false,
         filteredValue: value,
-        arrhythmiaCount: this.arrhythmiaCounter,
         rrIntervals: [],
         lastPeakTime: this.lastPeakTime,
         rrData: {
@@ -280,8 +273,6 @@ class HeartRateService {
     this.lastConfirmedPeak = updatedLastConfirmedPeak;
     
     // Process confirmed peak
-    let isArrhythmia = false;
-    
     if (isConfirmedPeak) {
       this.previousPeakTime = this.lastPeakTime;
       this.lastPeakTime = now;
@@ -289,38 +280,15 @@ class HeartRateService {
       // Update BPM history
       this.bpmHistory = this.updateBPMHistory(now);
       
-      // Verificar arritmia basado en irregularidad de intervalos RR
-      if (this.bpmHistory.length >= 3) {
-        isArrhythmia = this.checkForArrhythmia();
-        
-        if (isArrhythmia) {
-          this.arrhythmiaCounter++;
-          
-          // Registrar ventana de arritmia
-          const arrhythmiaWindow = { 
-            start: now, 
-            end: now + 1000 // 1 segundo de duración para visualización
-          };
-          
-          this.arrhythmiaWindows.push(arrhythmiaWindow);
-          
-          // Limitar el número de ventanas almacenadas
-          if (this.arrhythmiaWindows.length > 10) {
-            this.arrhythmiaWindows.shift();
-          }
-        }
-      }
-      
-      // Activar retroalimentación si el monitoreo está activo y no estamos en periodo de calentamiento
+      // Activar retroalimentación si el monitoreo está activo
       if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
-        this.triggerHeartbeatFeedback(isArrhythmia, realMin(0.8, realAbs(normalizedValue) + 0.3));
+        this.triggerHeartbeatFeedback(false, realMin(0.8, realAbs(normalizedValue) + 0.3));
         this.lastProcessedPeakTime = now;
         
         // Notificar a los escuchadores
         this.notifyPeakListeners({
           timestamp: now,
           value: normalizedValue,
-          isArrhythmia
         });
       }
     }
@@ -345,8 +313,6 @@ class HeartRateService {
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
-      arrhythmiaCount: this.arrhythmiaCounter,
-      isArrhythmia,
       rrIntervals,
       lastPeakTime: this.lastPeakTime,
       rrData
@@ -466,34 +432,6 @@ class HeartRateService {
   }
   
   /**
-   * Verifica si hay arritmia basado en intervalos RR irregulares
-   */
-  private checkForArrhythmia(): boolean {
-    if (this.bpmHistory.length < 3) return false;
-    
-    // Calcular desviación estándar de los últimos 3 intervalos
-    const recentRR = this.calculateRRIntervals().slice(-3);
-    
-    if (recentRR.length < 3) return false;
-    
-    // Calcular media y desviación
-    const mean = recentRR.reduce((sum, val) => sum + val, 0) / recentRR.length;
-    
-    // Calcular desviación estándar
-    let sumSquaredDiff = 0;
-    for (const interval of recentRR) {
-      sumSquaredDiff += realPow(interval - mean, 2);
-    }
-    const stdDev = realSqrt(sumSquaredDiff / recentRR.length);
-    
-    // Calcular coeficiente de variación (CV)
-    const cv = (stdDev / mean) * 100;
-    
-    // CV > 20% indica posible arritmia
-    return cv > 20;
-  }
-  
-  /**
    * Calcula intervalos RR a partir del historial de BPM
    */
   private calculateRRIntervals(): number[] {
@@ -528,29 +466,9 @@ class HeartRateService {
     this.peakCandidateIndex = null;
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
-    this.arrhythmiaCounter = 0;
     this.lastProcessedPeakTime = 0;
-    this.arrhythmiaWindows = [];
     
     console.log("HeartRateService: Reset complete - all values at zero");
-  }
-  
-  /**
-   * Obtiene las ventanas actuales de arritmias para visualización
-   */
-  public getArrhythmiaWindows(): Array<{ start: number, end: number }> {
-    // Limpiar ventanas antiguas (más de 10 segundos)
-    const now = Date.now();
-    this.arrhythmiaWindows = this.arrhythmiaWindows.filter(window => now - window.end < 10000);
-    
-    return [...this.arrhythmiaWindows];
-  }
-  
-  /**
-   * Obtener contador de arritmias
-   */
-  public getArrhythmiaCounter(): number {
-    return this.arrhythmiaCounter;
   }
 }
 
