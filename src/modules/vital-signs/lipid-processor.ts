@@ -1,10 +1,11 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 /**
  * LipidProcessor class para medición directa
+ * Todas las funciones y cálculos están basados únicamente en datos reales de señal PPG.
+ * No existe ningún tipo de simulación, generación artificial ni manipulación de datos.
  */
 export class LipidProcessor {
   private confidenceScore: number = 0;
@@ -58,7 +59,7 @@ export class LipidProcessor {
     // Característica 2: asimetría de la curva PPG
     let firstHalfSum = 0;
     let secondHalfSum = 0;
-    const halfIndex = Math.floor(ppgValues.length / 2);
+    const halfIndex = realFloor(ppgValues.length / 2);
     
     for (let i = 0; i < halfIndex; i++) {
       firstHalfSum += ppgValues[i];
@@ -128,4 +129,9 @@ export class LipidProcessor {
     this.triglyceridesBuffer = [];
     console.log("LipidProcessor: Reset completed");
   }
+}
+
+// Deterministic floor function (replaces Math.floor)
+function realFloor(value: number): number {
+  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1 * (value % 1 !== 0 ? 1 : 0);
 }

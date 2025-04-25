@@ -67,30 +67,19 @@ export class TensorUtils {
     if (input.length <= windowSize) {
       return input;
     }
-    
     const result = [];
     for (let i = 0; i < input.length; i++) {
       let sum = 0;
       let count = 0;
-      
       // Calcular ventana
       for (let j = Math.max(0, i - Math.floor(windowSize / 2)); 
            j <= Math.min(input.length - 1, i + Math.floor(windowSize / 2)); j++) {
         sum += input[j];
         count++;
       }
-      
       result.push(sum / count);
     }
-    
     return result;
-  }
-  
-  /**
-   * Aplica aumento de datos para mejorar la robustez del modelo
-   */
-  static augmentData(input: number[], noiseLevel: number = 0.01): number[] {
-    return input.map(x => x + (Math.random() * 2 - 1) * noiseLevel * x);
   }
   
   /**

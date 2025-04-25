@@ -467,18 +467,6 @@ class ArrhythmiaDetectionService {
   }
   
   /**
-   * Force add an arrhythmia window (for testing)
-   */
-  public forceAddArrhythmiaWindow(): void {
-    const now = Date.now();
-    this.addArrhythmiaWindow({
-      start: now - 500,
-      end: now + 500
-    });
-    console.log("Arrhythmia window FORCED for visualization");
-  }
-  
-  /**
    * Update RR intervals for detection
    */
   public updateRRIntervals(intervals: number[]): void {
