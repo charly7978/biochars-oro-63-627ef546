@@ -4,9 +4,6 @@
  * For use in processing real data without any mathematical library functions
  */
 
-/**
- * Returns the maximum value from an array without using Math.max
- */
 export function findMaximum(values: number[]): number {
   if (!values.length) return 0;
   
@@ -20,9 +17,6 @@ export function findMaximum(values: number[]): number {
   return max;
 }
 
-/**
- * Returns the minimum value from an array without using Math.min
- */
 export function findMinimum(values: number[]): number {
   if (!values.length) return 0;
   
@@ -36,16 +30,10 @@ export function findMinimum(values: number[]): number {
   return min;
 }
 
-/**
- * Returns the absolute value without using Math.abs
- */
 export function absoluteValue(value: number): number {
   return value >= 0 ? value : -value;
 }
 
-/**
- * Calculates the average of an array without using reduce
- */
 export function average(values: number[]): number {
   if (!values.length) return 0;
   
@@ -57,16 +45,10 @@ export function average(values: number[]): number {
   return sum / values.length;
 }
 
-/**
- * Rounds a number to the nearest integer without using Math.round
- */
 export function roundToInt(value: number): number {
   return value >= 0 ? ~~(value + 0.5) : ~~(value - 0.5);
 }
 
-/**
- * Square root approximation without using Math.sqrt (Newton's method)
- */
 export function squareRoot(value: number): number {
   if (value === 0) return 0;
   if (value < 0) return NaN;
@@ -79,9 +61,6 @@ export function squareRoot(value: number): number {
   return x;
 }
 
-/**
- * Constrains a value within a range without using Math.min or Math.max
- */
 export function clamp(value: number, min: number, max: number): number {
   if (value < min) return min;
   if (value > max) return max;
