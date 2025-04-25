@@ -49,6 +49,8 @@ class ArrhythmiaDetectionService {
   private arrhythmiaWindows: ArrhythmiaWindow[] = [];
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
+  private isMonitoring: boolean = false;
+  private timeGapTooLarge: boolean = false;
   
   // Arrhythmia detection constants
   private readonly DETECTION_THRESHOLD: number = 0.28; // Increased from 0.25 to 0.28
@@ -484,6 +486,26 @@ class ArrhythmiaDetectionService {
   public updateRRIntervals(intervals: number[]): void {
     this.lastRRIntervals = intervals;
   }
+
+  /**
+   * Set monitoring state
+   */
+  public setMonitoring(isActive: boolean): void {
+    this.isMonitoring = isActive;
+    console.log(`ArrhythmiaDetectionService: Monitoring ${isActive ? 'started' : 'stopped'}`);
+    
+    // Reset some state when monitoring is turned off
+    if (!isActive) {
+      this.timeGapTooLarge = false;
+    }
+  }
+
+  /**
+   * Get monitoring state
+   */
+  public getMonitoringState(): boolean {
+    return this.isMonitoring;
+  }
   
   /**
    * Reset all detection state
@@ -500,6 +522,8 @@ class ArrhythmiaDetectionService {
     this.falsePositiveCounter = 0;
     this.arrhythmiaConfirmationCounter = 0;
     this.lastArrhythmiaData = null;
+    this.isMonitoring = false;
+    this.timeGapTooLarge = false;
     
     console.log("ArrhythmiaDetectionService: All detection data reset");
   }

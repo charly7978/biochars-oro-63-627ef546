@@ -10,6 +10,7 @@ interface HeartBeatResult {
   rrData?: {
     intervals: number[];
     averageInterval: number;
+    lastPeakTime: number; // Added to match the required interface
   };
 }
 
@@ -48,13 +49,16 @@ export function useHeartBeatProcessor() {
   // Initialize ArrhythmiaDetectionService
   useEffect(() => {
     if (isProcessing) {
-      ArrhythmiaDetectionService.startMonitoring();
+      // Using setMonitoring instead of startMonitoring
+      ArrhythmiaDetectionService.setMonitoring(true);
     } else {
-      ArrhythmiaDetectionService.stopMonitoring();
+      // Using setMonitoring instead of stopMonitoring
+      ArrhythmiaDetectionService.setMonitoring(false);
     }
 
     return () => {
-      ArrhythmiaDetectionService.stopMonitoring();
+      // Using setMonitoring instead of stopMonitoring
+      ArrhythmiaDetectionService.setMonitoring(false);
     };
   }, [isProcessing]);
 
@@ -257,7 +261,8 @@ export function useHeartBeatProcessor() {
           }
           
           // Procesar con servicio de detección de arritmias
-          const isArrDetected = ArrhythmiaDetectionService.processRRInterval(rrInterval, currentTime);
+          // Using detectArrhythmia instead of processRRInterval
+          const isArrDetected = ArrhythmiaDetectionService.detectArrhythmia(rrIntervalsRef.current).isArrhythmia;
           setIsArrhythmia(isArrDetected);
         }
       }
@@ -281,7 +286,8 @@ export function useHeartBeatProcessor() {
       
       rrData = {
         intervals: [...recentIntervals],
-        averageInterval: avgInterval
+        averageInterval: avgInterval,
+        lastPeakTime: lastPeakTimeRef.current || currentTime // Add lastPeakTime
       };
     }
 
@@ -305,7 +311,8 @@ export function useHeartBeatProcessor() {
     baselineRef.current = 0;
     peakConfirmationBufferRef.current = [];
     lastConfirmedPeakRef.current = false;
-    ArrhythmiaDetectionService.startMonitoring();
+    // Using setMonitoring instead of startMonitoring
+    ArrhythmiaDetectionService.setMonitoring(true);
   }, []);
 
   /**
@@ -313,7 +320,8 @@ export function useHeartBeatProcessor() {
    */
   const stopMonitoring = useCallback(() => {
     setIsProcessing(false);
-    ArrhythmiaDetectionService.stopMonitoring();
+    // Using setMonitoring instead of stopMonitoring
+    ArrhythmiaDetectionService.setMonitoring(false);
   }, []);
 
   /**

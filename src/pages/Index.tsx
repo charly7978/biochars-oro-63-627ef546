@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -96,7 +95,15 @@ const Index = () => {
               });
             }
             
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            let rrData = heartBeatResult.rrData;
+            if (rrData && !('lastPeakTime' in rrData)) {
+              rrData = {
+                ...rrData,
+                lastPeakTime: Date.now()
+              };
+            }
+            
+            const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
             
             if (vitals) {
               if (processedFrameCountRef.current % 30 === 0) {
