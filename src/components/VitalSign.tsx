@@ -29,7 +29,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // CORREGIDO: Determinamos si hay un valor real para mostrar de manera más permisiva
+  // Determinamos si hay un valor real para mostrar de manera más permisiva
   // Ahora permitimos mostrar valores de 0 y "--" como valores válidos
   const hasValue = value !== undefined && value !== null;
   
@@ -37,13 +37,13 @@ const VitalSign: React.FC<VitalSignProps> = ({
   const formattedValue = () => {
     // Handle numeric values (both integers and floats)
     if (typeof value === 'number') {
-      // Con esto, mostramos también valores 0 (antes se omitían)
+      // Mostramos también valores 0
       if (label === "HIDRATACIÓN" || label === "SPO2") {
-        // These are percentages, so round to whole number
-        return Math.round(value);
+        // These are percentages, show as integers
+        return value;
       } else if (label === "HEMOGLOBINA") {
         // For hemoglobin, show one decimal place
-        return (Math.round(value * 10) / 10).toFixed(1);
+        return value.toFixed(1);
       }
       return value;
     }
