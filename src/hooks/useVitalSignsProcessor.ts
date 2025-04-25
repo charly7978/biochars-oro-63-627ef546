@@ -113,15 +113,29 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results
-      if (result && result.heartRate > 0) {
-        console.log("useVitalSignsProcessor: Setting valid results", {
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose
-        });
-        setLastValidResults(result);
+      // Save valid results - CORREGIDO: Verificar cada campo individualmente
+      if (result) {
+        let hasValidData = false;
+        
+        // Check if any vital sign has valid data
+        if (result.heartRate > 0) hasValidData = true;
+        if (result.spo2 > 0) hasValidData = true;
+        if (result.pressure !== "--/--") hasValidData = true;
+        if (result.glucose > 0) hasValidData = true;
+        if (result.lipids.totalCholesterol > 0 || result.lipids.triglycerides > 0) hasValidData = true;
+        if (result.hemoglobin > 0) hasValidData = true;
+        if (result.hydration > 0) hasValidData = true;
+        
+        if (hasValidData) {
+          console.log("useVitalSignsProcessor: Setting valid results", {
+            heartRate: result.heartRate,
+            spo2: result.spo2,
+            pressure: result.pressure,
+            glucose: result.glucose,
+            hydration: result.hydration
+          });
+          setLastValidResults(result);
+        }
       }
       
       // Return processed result
@@ -176,7 +190,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults, // Return last valid results
+    lastValidResults, // Return last valid results
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

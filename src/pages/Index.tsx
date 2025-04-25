@@ -64,6 +64,7 @@ const Index = () => {
     };
   }, []);
 
+  // MODIFICADO: Usar lastValidResults para mostrar resultados después de la medición
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       console.log("Index: Setting vital signs from lastValidResults", lastValidResults);
@@ -97,15 +98,19 @@ const Index = () => {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             
             if (vitals) {
+              // MODIFICADO: Log más detallado
               console.log("Index: Received vitals update", {
                 heartRate: vitals.heartRate,
                 spo2: vitals.spo2,
                 pressure: vitals.pressure,
                 glucose: vitals.glucose,
-                hydration: vitals.hydration
+                hydration: vitals.hydration,
+                lipids: vitals.lipids,
+                hemoglobin: vitals.hemoglobin,
+                frameCount: debugFrameCountRef.current
               });
               
-              // IMPORTANTE: Actualizar state de vitalSigns con los resultados completos
+              // MODIFICADO: Actualización incondicional de vitalSigns
               setVitalSigns(vitals);
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
             }
@@ -127,6 +132,7 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
+  // MODIFICADO: Mejorado manejo del heartRate
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
@@ -190,6 +196,7 @@ const Index = () => {
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
+    setStream(stream);
     
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);

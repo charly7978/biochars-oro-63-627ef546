@@ -36,6 +36,9 @@ export class VitalSignsProcessor {
   
   // Última medición válida
   private lastValidResult: VitalSignsResult | null = null;
+  
+  // Contador de señales y frames procesados
+  private processedFrameCount: number = 0;
 
   /**
    * Constructor that initializes all specialized processors
@@ -66,6 +69,19 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
+    // Incrementar contador de frames
+    this.processedFrameCount++;
+    
+    // Log específico para depurar flujo de datos
+    if (this.processedFrameCount % 30 === 0) {
+      console.log("VitalSignsProcessor: Processing frame", {
+        frameCount: this.processedFrameCount,
+        ppgValue,
+        hasRRData: !!rrData,
+        rrIntervals: rrData?.intervals?.length || 0
+      });
+    }
+    
     // Check for near-zero signal
     if (!this.signalValidator.isValidSignal(ppgValue)) {
       return this.getLastValidResultsOrEmpty();
@@ -152,14 +168,11 @@ export class VitalSignsProcessor {
       lipidsConfidence
     );
 
-    // Prepare final values
-    const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
-    const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
+    // Prepare final values - SIMPLIFICADO: No filtrar por umbral de confianza
+    const finalGlucose = glucose;
+    const finalLipids = {
       totalCholesterol: ~~(lipids.totalCholesterol + 0.5),
       triglycerides: ~~(lipids.triglycerides + 0.5)
-    } : {
-      totalCholesterol: 0,
-      triglycerides: 0
     };
 
     console.log("VitalSignsProcessor: Results calculated", {
@@ -169,7 +182,8 @@ export class VitalSignsProcessor {
       arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
       glucose: finalGlucose,
       lipids: finalLipids,
-      hydration
+      hydration,
+      frameCount: this.processedFrameCount
     });
 
     // Calculate hemoglobin based on SpO2 without random values
@@ -191,8 +205,8 @@ export class VitalSignsProcessor {
       arrhythmiaResult.lastArrhythmiaData
     );
     
-    // Store this as last valid result if it has valid heart rate
-    if (result.heartRate > 40 && result.heartRate < 200) {
+    // Store this as last valid result if it has valid heart rate or any other valid metric
+    if (result.heartRate > 0 || result.spo2 > 0 || result.glucose > 0 || result.hydration > 0) {
       this.lastValidResult = result;
     }
     
@@ -260,6 +274,7 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     this.lastValidResult = null;
+    this.processedFrameCount = 0;
     console.log("VitalSignsProcessor: Full reset completed - starting from zero");
   }
 }

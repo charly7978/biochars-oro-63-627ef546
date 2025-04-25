@@ -29,6 +29,9 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
+  // MODIFICADO: Determinar si hay un valor real para mostrar
+  const hasValue = value !== undefined && value !== null && value !== 0 && value !== "--";
+
   return (
     <div 
       className={cn(
@@ -52,12 +55,12 @@ const VitalSign: React.FC<VitalSignProps> = ({
         className={cn(
           getValueTextSize(),
           "font-bold transition-colors duration-300",
-          highlighted 
+          highlighted && hasValue
             ? "text-white" 
             : "text-gray-300"
         )}
         style={{ 
-          textShadow: highlighted ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
+          textShadow: highlighted && hasValue ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
         }}
       >
         <span className="inline-flex items-center">

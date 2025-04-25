@@ -57,15 +57,17 @@ export const useSignalProcessing = () => {
       let result = processorRef.current.processSignal(value, rrData);
       
       // Log important result values for debugging
-      if (processedSignals.current % 30 === 0 || result.heartRate > 0) {
-        console.log("useSignalProcessing: Processed result", {
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          hydration: result.hydration
-        });
-      }
+      // MODIFICADO: Loguear más información para depuración
+      console.log("useSignalProcessing: Processed result", {
+        heartRate: result.heartRate,
+        spo2: result.spo2,
+        pressure: result.pressure,
+        glucose: result.glucose,
+        hydration: result.hydration,
+        lipids: result.lipids,
+        hemoglobin: result.hemoglobin,
+        frame: processedSignals.current
+      });
       
       // Add null checks for arrhythmia status
       if (result && 
