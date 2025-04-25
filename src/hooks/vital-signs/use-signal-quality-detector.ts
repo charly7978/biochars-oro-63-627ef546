@@ -14,9 +14,9 @@ export const useSignalQualityDetector = () => {
   // Reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
-  // REDUCED thresholds to make detection MORE SENSITIVE
-  const WEAK_SIGNAL_THRESHOLD = 0.12; // Reduced from 0.25 to be more sensitive
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 4; // Reduced from 5
+  // Increased thresholds to reduce false positives
+  const WEAK_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5; // Increased from 4
   
   // Signal pattern detection for finger presence
   const signalHistoryRef = useRef<Array<{time: number, value: number}>>([]);
@@ -24,12 +24,12 @@ export const useSignalQualityDetector = () => {
   const detectedRhythmicPatternsRef = useRef<number>(0);
   const fingerDetectionConfirmedRef = useRef<boolean>(false);
   
-  // Constants for pattern detection - made MORE SENSITIVE
+  // Constants for pattern detection - made more strict
   const PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds window for pattern detection
-  const MIN_PEAKS_FOR_RHYTHM = 3; // Reduced from 4 - need fewer peaks
-  const PEAK_DETECTION_THRESHOLD = 0.15; // Reduced from 0.25
-  const REQUIRED_CONSISTENT_PATTERNS = 3; // Reduced from 4
-  const MIN_SIGNAL_VARIANCE = 0.02; // Reduced from 0.04 - accept lower variance
+  const MIN_PEAKS_FOR_RHYTHM = 4; // Increased from 3 - need more peaks
+  const PEAK_DETECTION_THRESHOLD = 0.25; // Increased from 0.2
+  const REQUIRED_CONSISTENT_PATTERNS = 4; // Increased from 3
+  const MIN_SIGNAL_VARIANCE = 0.04; // New: minimum variance threshold to reject noise
   
   /**
    * Detect peaks in the signal history
@@ -39,7 +39,7 @@ export const useSignalQualityDetector = () => {
     const recentSignals = signalHistoryRef.current
       .filter(point => now - point.time < PATTERN_DETECTION_WINDOW_MS);
     
-    if (recentSignals.length < 10) return false; // Need a reasonable number of points (reduced from 15)
+    if (recentSignals.length < 15) return false; // Need more data points (increased from 10)
     
     // Check for minimum signal variance (reject near-constant signals)
     const values = recentSignals.map(s => s.value);
@@ -64,11 +64,11 @@ export const useSignalQualityDetector = () => {
       const next2 = recentSignals[i + 2];
       
       // Check if this point is a peak (higher than surrounding points)
-      // Also require the peak to be significantly higher (reduced to 10% higher from 20%)
-      if (current.value > prev1.value * 1.1 && 
-          current.value > prev2.value * 1.1 &&
-          current.value > next1.value * 1.1 && 
-          current.value > next2.value * 1.1 &&
+      // Also require the peak to be significantly higher (20% higher)
+      if (current.value > prev1.value * 1.2 && 
+          current.value > prev2.value * 1.2 &&
+          current.value > next1.value * 1.2 && 
+          current.value > next2.value * 1.2 &&
           Math.abs(current.value) > PEAK_DETECTION_THRESHOLD) {
         peaks.push(current.time);
       }
@@ -82,14 +82,13 @@ export const useSignalQualityDetector = () => {
         intervals.push(peaks[i] - peaks[i - 1]);
       }
       
-      // Check for physiologically plausible heart rate (30-200 BPM) - expanded range
+      // Check for physiologically plausible heart rate (40-180 BPM)
       const validIntervals = intervals.filter(interval => 
-        interval >= 300 && interval <= 2000 // 30-200 BPM
+        interval >= 333 && interval <= 1500 // 40-180 BPM
       );
       
-      if (validIntervals.length < Math.floor(intervals.length * 0.5)) {
-        // If less than 50% of intervals are physiologically plausible, reject the pattern
-        // (reduced from 70% to be more permissive)
+      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+        // If less than 70% of intervals are physiologically plausible, reject the pattern
         detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 1);
         console.log("Intervals not physiologically plausible - rejecting pattern", { 
           validCount: validIntervals.length, 
@@ -100,7 +99,7 @@ export const useSignalQualityDetector = () => {
       
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 200; // Increased from 150ms - looser consistency check
+      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
@@ -132,12 +131,12 @@ export const useSignalQualityDetector = () => {
           return true;
         }
       } else {
-        // Reduce the counter if pattern is not consistent, but less aggressively
-        detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 0.5);
+        // Reduce the counter if pattern is not consistent
+        detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 1);
       }
     } else {
-      // Decrement pattern count if we don't have enough peaks, but less aggressively
-      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 0.5);
+      // Decrement pattern count if we don't have enough peaks
+      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 1);
     }
     
     return fingerDetectionConfirmedRef.current;
@@ -145,9 +144,8 @@ export const useSignalQualityDetector = () => {
   
   /**
    * Enhanced detection function with physiological pattern recognition
-   * @param value Current filtered PPG value
    */
-  const detectWeakSignal = useCallback((value: number): boolean => {
+  const detectWeakSignal = (value: number): boolean => {
     const now = Date.now();
     
     // Add current value to signal history
@@ -196,7 +194,7 @@ export const useSignalQualityDetector = () => {
       
       return consecutiveWeakSignalsRef.current >= MAX_CONSECUTIVE_WEAK_SIGNALS;
     }
-  }, [detectPeaks]);
+  };
   
   /**
    * Check if finger is detected based on rhythmic patterns
@@ -215,13 +213,13 @@ export const useSignalQualityDetector = () => {
   /**
    * Reset the signal quality detector
    */
-  const reset = useCallback(() => {
+  const reset = () => {
     consecutiveWeakSignalsRef.current = 0;
     signalHistoryRef.current = [];
     lastPeakTimesRef.current = [];
     detectedRhythmicPatternsRef.current = 0;
     fingerDetectionConfirmedRef.current = false;
-  }, []);
+  };
   
   return {
     detectWeakSignal,

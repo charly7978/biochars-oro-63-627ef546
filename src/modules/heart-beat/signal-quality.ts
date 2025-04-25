@@ -110,3 +110,4 @@ export function resetSignalQualityState(): number {
   // This function resets the signal quality tracking state to its initial value
   return 0;
 }
+

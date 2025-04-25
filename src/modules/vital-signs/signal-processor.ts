@@ -1,125 +1,106 @@
 
 /**
- * Signal Processor for Vital Signs
- * Processes PPG signals for vital signs extraction
- * NO SIMULATION OR MANIPULATION OF DATA IS ALLOWED
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
+import { SignalFilter } from '../../core/signal-processing/filters/SignalFilter';
+import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
+
+/**
+ * Procesador de señales PPG real sin simulaciones
+ * Este procesador SOLO utiliza datos reales de cámara,
+ * sin ningún tipo de generación sintética o simulación.
  */
 export class SignalProcessor {
-  private ppgValues: number[] = [];
-  private readonly MAX_BUFFER_SIZE = 100;
-  private threshold = 0.15; // Reduced from 0.2
-  private baselineValue = 0;
-
+  private readonly ppgValues: number[] = [];
+  private readonly signalFilter: SignalFilter;
+  private readonly waveletDenoiser: WaveletDenoiser;
+  
+  // Buffers para filtrado adaptativo
+  private readonly bufferSize = 200;
+  private readonly smaBuffer: number[] = [];
+  private readonly emaBuffer: number[] = [];
+  
   constructor() {
-    console.log("SignalProcessor: Initialized");
+    this.signalFilter = new SignalFilter();
+    this.waveletDenoiser = new WaveletDenoiser();
   }
-
+  
   /**
-   * Process a PPG signal value
-   * @param value The input PPG value to process
-   * @returns The processed PPG value
+   * Procesa el valor PPG con filtros adaptativos
+   * Solo utiliza datos reales sin simulación
    */
   public processPPG(value: number): number {
-    // Apply basic filtering (moving average for demonstration)
-    const filtered = this.applyBasicFilter(value);
+    // 1. Aplicar denoising wavelet para preservar componentes importantes
+    const denoisedValue = this.waveletDenoiser.denoise(value);
     
-    // Update baseline with slow adaptation
-    if (this.baselineValue === 0) {
-      this.baselineValue = filtered;
-    } else {
-      // More responsive baseline tracking for quicker adaptation
-      this.baselineValue = this.baselineValue * 0.97 + filtered * 0.03;
+    // 2. Aplicar filtro SMA para estabilizar señal real
+    this.smaBuffer.push(denoisedValue);
+    if (this.smaBuffer.length > 10) {
+      this.smaBuffer.shift();
     }
     
-    // Store in buffer
-    this.ppgValues.push(filtered);
-    if (this.ppgValues.length > this.MAX_BUFFER_SIZE) {
+    const smaFiltered = this.signalFilter.applySMAFilter(denoisedValue, this.smaBuffer);
+    
+    // 3. Aplicar filtro EMA para suavizado final preservando la forma de onda real
+    this.emaBuffer.push(smaFiltered);
+    if (this.emaBuffer.length > 10) {
+      this.emaBuffer.shift();
+    }
+    
+    // Determinar alpha basado en la calidad de señal real
+    let alpha = 0.3;
+    
+    // Si hay datos suficientes, calcular varianza para adaptar alpha
+    if (this.emaBuffer.length > 5) {
+      const mean = this.emaBuffer.reduce((sum, val) => sum + val, 0) / this.emaBuffer.length;
+      let variance = 0;
+      for (let i = 0; i < this.emaBuffer.length; i++) {
+        const diff = this.emaBuffer[i] - mean;
+        variance += diff * diff;
+      }
+      variance /= this.emaBuffer.length;
+      
+      // Adaptar alpha basado en varianza real de la señal
+      if (variance < 0.0001) alpha = 0.15;       // Señal muy estable
+      else if (variance < 0.001) alpha = 0.2;    // Señal estable
+      else if (variance < 0.01) alpha = 0.3;     // Señal normal
+      else alpha = 0.5;                          // Señal con cambios rápidos
+    }
+    
+    const emaFiltered = this.signalFilter.applyEMAFilter(smaFiltered, alpha);
+    
+    // Actualizar buffer principal de valores PPG
+    this.ppgValues.push(emaFiltered);
+    if (this.ppgValues.length > this.bufferSize) {
       this.ppgValues.shift();
     }
     
-    return filtered;
+    return emaFiltered;
   }
   
   /**
-   * Apply a simple filter to the PPG value
-   * @param value Input value
-   * @returns Filtered value
+   * Aplica filtro SMA directamente a un valor
    */
-  private applyBasicFilter(value: number): number {
-    // Simple low-pass filter
-    if (this.ppgValues.length < 3) {
-      return value;
-    }
-    
-    const lastThree = this.ppgValues.slice(-3);
-    const avg = lastThree.reduce((sum, val) => sum + val, 0) / 3;
-    
-    // More responsive filter (reduced smoothing)
-    return value * 0.75 + avg * 0.25;
+  public applySMAFilter(value: number): number {
+    return this.signalFilter.applySMAFilter(value, this.smaBuffer);
   }
   
   /**
-   * Get the current PPG values buffer
-   * @returns Array of PPG values
+   * Obtiene todos los valores PPG procesados
    */
   public getPPGValues(): number[] {
     return [...this.ppgValues];
   }
   
   /**
-   * Reset the signal processor
+   * Resetea todos los buffers y estados
    */
   public reset(): void {
-    this.ppgValues = [];
-    this.baselineValue = 0;
-    console.log("SignalProcessor: Reset");
-  }
-  
-  /**
-   * Check for finger presence based on signal characteristics
-   * @returns True if a finger is likely present
-   */
-  public isFingerPresent(): boolean {
-    // Need enough samples to determine
-    if (this.ppgValues.length < 10) {
-      return false;
-    }
-    
-    const recentValues = this.ppgValues.slice(-10);
-    
-    // 1. Calculate average signal strength
-    const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    
-    // 2. Calculate variation between samples
-    let variationSum = 0;
-    for (let i = 1; i < recentValues.length; i++) {
-      const variation = Math.abs(recentValues[i] - recentValues[i-1]);
-      variationSum += variation;
-    }
-    const averageVariation = variationSum / (recentValues.length - 1);
-    
-    // 3. Decision based on multiple factors:
-    //   - Higher variation indicates real cardiac activity (not constant signal)
-    //   - Signal should be above a certain absolute minimum
-    //   - Variations should not be extremely high (would indicate noise)
-    
-    const minVariationThreshold = 0.03;  // Reduced minimum variation requirement
-    const maxVariationThreshold = 1.2;   // Maximum allowed variation (noise rejection)
-    const minSignalThreshold = 0.1;      // Reduced minimum signal requirement
-    
-    const isFingerPresent = 
-      averageVariation > minVariationThreshold &&
-      averageVariation < maxVariationThreshold &&
-      Math.abs(avg - this.baselineValue) >= minSignalThreshold;
-    
-    if (isFingerPresent) {
-      console.log("Finger presence detected:", {
-        avgValue: avg,
-        baselineValue: this.baselineValue,
-        avgVariation: averageVariation
-      });
-    }
-    
-    return isFingerPresent;
+    this.ppgValues.length = 0;
+    this.smaBuffer.length = 0;
+    this.emaBuffer.length = 0;
+    this.signalFilter.reset();
+    this.waveletDenoiser.reset();
   }
 }

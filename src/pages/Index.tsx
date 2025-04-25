@@ -95,15 +95,7 @@ const Index = () => {
               });
             }
             
-            let rrData = heartBeatResult.rrData;
-            if (rrData && !('lastPeakTime' in rrData)) {
-              rrData = {
-                ...rrData,
-                lastPeakTime: Date.now()
-              };
-            }
-            
-            const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             
             if (vitals) {
               if (processedFrameCountRef.current % 30 === 0) {
@@ -173,7 +165,6 @@ const Index = () => {
     setIsCameraOn(true);
     setIsMonitoring(true);
     processedFrameCountRef.current = 0;
-    startHeartBeatMonitoring();
     startSignalProcessing();
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
@@ -193,7 +184,6 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopSignalProcessing();
-    stopHeartBeatMonitoring();
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
@@ -207,7 +197,6 @@ const Index = () => {
   const handleReset = () => {
     console.log("Resetting application state...");
     stopMonitoring();
-    resetHeartBeatProcessor();
     fullResetVitalSigns();
     setVitalSigns(ResultFactory.createEmptyResults());
     setHeartRate("--");
@@ -223,12 +212,6 @@ const Index = () => {
     setStream(stream);
     
     const videoTrack = stream.getVideoTracks()[0];
-    if (!videoTrack) {
-      console.error("No video track found in stream");
-      finalizeMeasurement();
-      return;
-    }
-    
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
@@ -248,7 +231,7 @@ const Index = () => {
     }
     
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000/15; // Reduced to improve stability
+    const targetFrameInterval = 1000/30;
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
     
@@ -266,28 +249,17 @@ const Index = () => {
       
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
-          const frame = await imageCapture.grabFrame().catch(err => {
-            console.error("Error grabbing frame:", err);
-            return null;
-          });
+          if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
           
-          if (!frame) {
-            console.error("Failed to grab frame");
-            requestAnimationFrame(processImage);
-            return;
-          }
+          const frame = await imageCapture.grabFrame();
           
-          const targetWidth = Math.min(frame.width, 320);
-          const targetHeight = Math.min(frame.height, 240);
+          const targetWidth = frame.width < 320 ? frame.width : 320;
+          const targetHeight = frame.height < 240 ? frame.height : 240;
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
           
-          if (!tempCtx) {
-            console.error("Canvas context lost");
-            requestAnimationFrame(processImage);
-            return;
-          }
+          if (!tempCtx) throw new Error("Canvas context lost");
           
           tempCtx.drawImage(
             frame, 
@@ -302,13 +274,19 @@ const Index = () => {
           lastProcessTime = now;
           
           if (now - lastFpsUpdateTime > 1000) {
-            // console.log(`Processing FPS: ${frameCount}`);
             frameCount = 0;
             lastFpsUpdateTime = now;
           }
         } catch (error) {
-          console.error("Error en processImage:", error);
-          // Intentar continuar a pesar del error
+          if (error instanceof DOMException && error.name === 'InvalidStateError') {
+            console.error("Error capturando frame: Track state is invalid. Stopping monitoring.", error);
+            finalizeMeasurement();
+            return;
+          } else {
+            console.error("Error capturando frame (other):", error);
+            finalizeMeasurement();
+            return;
+          }
         }
       }
       
@@ -321,11 +299,7 @@ const Index = () => {
       processImage();
     } else {
       console.error("Cannot start processing loop, video track is not live.");
-      videoTrack.addEventListener('ready', () => {
-        if (isMonitoring) {
-          processImage();
-        }
-      }, { once: true });
+      finalizeMeasurement();
     }
   };
 
