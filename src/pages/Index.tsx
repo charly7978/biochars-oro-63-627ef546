@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -26,7 +27,7 @@ const Index = () => {
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
   const debugFrameCountRef = useRef(0);
-  const processedFrameCountRef = useRef(0);
+  const processedFrameCountRef = useRef(0); // NUEVO: contador de frames procesados
 
   const {
     startProcessing: startSignalProcessing,
@@ -64,6 +65,7 @@ const Index = () => {
     };
   }, []);
 
+  // MODIFICADO: Usar lastValidResults para mostrar resultados después de la medición
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
       console.log("Index: Setting vital signs from lastValidResults", lastValidResults);
@@ -76,15 +78,18 @@ const Index = () => {
     if (lastSignal && isMonitoring) {
       debugFrameCountRef.current++;
       processedFrameCountRef.current++;
-      const minQualityThreshold = 30;
+      const minQualityThreshold = 30; // MODIFICADO: umbral de calidad reducido
       
+      // MODIFICADO: Procesamos incluso con calidad un poco más baja
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
+        // MODIFICADO: Requisito de confianza reducido
         if (heartBeatResult.confidence > 0.3) {
           setHeartRate(heartBeatResult.bpm);
           
           try {
+            // Log de depuración para cada ciclo de procesamiento de señales 
             if (debugFrameCountRef.current % 30 === 0) {
               console.log("Index: Processing vital signs", {
                 filteredValue: lastSignal.filteredValue,
@@ -98,6 +103,7 @@ const Index = () => {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             
             if (vitals) {
+              // MODIFICADO: Log más detallado cada 30 frames
               if (processedFrameCountRef.current % 30 === 0) {
                 console.log("Index: Received vitals update", {
                   heartRate: vitals.heartRate,
@@ -111,9 +117,11 @@ const Index = () => {
                 });
               }
               
+              // MODIFICADO: Siempre actualizamos los signos vitales, para asegurar que se muestran
               setVitalSigns(vitals);
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
               
+              // MODIFICADO: Debug de los datos que se reciben
               if (processedFrameCountRef.current % 60 === 0) {
                 console.log("Current values on screen:", {
                   heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
@@ -144,6 +152,7 @@ const Index = () => {
     }
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
+  // MODIFICADO: Mejorado manejo del heartRate
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
@@ -164,7 +173,7 @@ const Index = () => {
     bpmCache.current = [];
     setIsCameraOn(true);
     setIsMonitoring(true);
-    processedFrameCountRef.current = 0;
+    processedFrameCountRef.current = 0; // NUEVO: Reiniciar contador de frames
     startSignalProcessing();
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
@@ -176,6 +185,7 @@ const Index = () => {
   const finalizeMeasurement = () => {
     if (!isMonitoring) return;
     console.log("Finalizing measurement...");
+    // MODIFICADO: Mostramos los resultados al finalizar
     setShowResults(true);
     stopMonitoring();
   };
@@ -203,7 +213,7 @@ const Index = () => {
     setSignalQuality(0);
     setIsArrhythmia(false);
     setShowResults(false);
-    processedFrameCountRef.current = 0;
+    processedFrameCountRef.current = 0; // NUEVO: Reiniciar contador de frames
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
   };
 
@@ -319,6 +329,7 @@ const Index = () => {
   };
 
   return (
+    
     <div className="fixed inset-0 flex flex-col" style={{
       height: '100vh',
       width: '100vw',

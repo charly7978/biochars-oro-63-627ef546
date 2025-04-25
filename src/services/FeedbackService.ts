@@ -1,3 +1,4 @@
+
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -33,13 +34,6 @@ export const FeedbackService = {
       // En móviles, la primera vibración debe ocurrir en respuesta a un gesto del usuario
       console.log("FeedbackService: Vibration permission requested");
       FeedbackService.permissionRequested = true;
-      
-      // Intentar una vibración muy corta para establecer permisos
-      try {
-        navigator.vibrate(1);
-      } catch (err) {
-        console.log("Couldn't initialize vibration:", err);
-      }
     }
   },
 
@@ -51,14 +45,11 @@ export const FeedbackService = {
       try {
         navigator.vibrate(pattern);
         console.log('Vibración activada:', pattern);
-        return true;
       } catch (error) {
         console.error('Error al activar vibración:', error);
-        return false;
       }
     } else {
       console.log('Vibración no soportada en este dispositivo');
-      return false;
     }
   },
 
@@ -72,14 +63,11 @@ export const FeedbackService = {
         const pattern = [100, 50, 100, 50, 100, 300, 100];
         navigator.vibrate(pattern);
         console.log('Vibración de arritmia activada:', pattern);
-        return true;
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
-        return false;
       }
     } else {
       console.log('Vibración no soportada en este dispositivo');
-      return false;
     }
   },
 

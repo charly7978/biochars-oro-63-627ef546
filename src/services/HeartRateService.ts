@@ -12,7 +12,7 @@ import {
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { PeakData, RRIntervalData } from '../types/peak';
+import { PeakData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
 
@@ -23,11 +23,8 @@ export interface HeartRateResult {
   filteredValue: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  // RR Interval data
   rrIntervals: number[];
   lastPeakTime: number | null;
-  // Add rrData property to fix the TypeScript errors
-  rrData?: RRIntervalData;
 }
 
 export interface PeakDetectionOptions {
@@ -191,14 +188,10 @@ class HeartRateService {
     
     // Activar vibración si está disponible
     if (this.vibrationEnabled) {
-      try {
-        if (isArrhythmia) {
-          FeedbackService.vibrateArrhythmia();
-        } else {
-          FeedbackService.vibrate(80); // Vibración corta para pulso normal
-        }
-      } catch (error) {
-        console.error("HeartRateService: Error during vibration", error);
+      if (isArrhythmia) {
+        FeedbackService.vibrateArrhythmia();
+      } else {
+        FeedbackService.vibrate(80); // Vibración corta para pulso normal
       }
     }
     
@@ -219,11 +212,7 @@ class HeartRateService {
         filteredValue: value,
         arrhythmiaCount: this.arrhythmiaCounter,
         rrIntervals: [],
-        lastPeakTime: this.lastPeakTime,
-        rrData: {
-          intervals: [],
-          lastPeakTime: this.lastPeakTime
-        }
+        lastPeakTime: this.lastPeakTime
       };
     }
     
@@ -335,12 +324,6 @@ class HeartRateService {
     // Calcular intervalos RR
     const rrIntervals = this.calculateRRIntervals();
     
-    // Create RRIntervalData object
-    const rrData: RRIntervalData = {
-      intervals: rrIntervals,
-      lastPeakTime: this.lastPeakTime
-    };
-    
     return {
       bpm: Math.round(this.smoothBPM),
       confidence,
@@ -349,8 +332,7 @@ class HeartRateService {
       arrhythmiaCount: this.arrhythmiaCounter,
       isArrhythmia,
       rrIntervals,
-      lastPeakTime: this.lastPeakTime,
-      rrData
+      lastPeakTime: this.lastPeakTime
     };
   }
   
