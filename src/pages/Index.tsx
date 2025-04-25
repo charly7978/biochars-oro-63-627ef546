@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -96,44 +95,43 @@ const Index = () => {
               });
             }
             
-            // Ensure rrData is valid before processing
-            if (heartBeatResult.rrData && heartBeatResult.rrData.intervals) {
-              // Add lastPeakTime if missing
-              const rrData = {
-                intervals: heartBeatResult.rrData.intervals,
-                lastPeakTime: heartBeatResult.rrData.lastPeakTime || Date.now()
+            let rrData = heartBeatResult.rrData;
+            if (rrData && !('lastPeakTime' in rrData)) {
+              rrData = {
+                ...rrData,
+                lastPeakTime: Date.now()
               };
+            }
+            
+            const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
+            
+            if (vitals) {
+              if (processedFrameCountRef.current % 30 === 0) {
+                console.log("Index: Received vitals update", {
+                  heartRate: vitals.heartRate,
+                  spo2: vitals.spo2, 
+                  pressure: vitals.pressure,
+                  glucose: vitals.glucose,
+                  hydration: vitals.hydration,
+                  lipids: vitals.lipids,
+                  hemoglobin: vitals.hemoglobin,
+                  frameCount: processedFrameCountRef.current
+                });
+              }
               
-              const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
+              setVitalSigns(vitals);
+              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
               
-              if (vitals) {
-                if (processedFrameCountRef.current % 30 === 0) {
-                  console.log("Index: Received vitals update", {
-                    heartRate: vitals.heartRate,
-                    spo2: vitals.spo2, 
-                    pressure: vitals.pressure,
-                    glucose: vitals.glucose,
-                    hydration: vitals.hydration,
-                    lipids: vitals.lipids,
-                    hemoglobin: vitals.hemoglobin,
-                    frameCount: processedFrameCountRef.current
-                  });
-                }
-                
-                setVitalSigns(vitals);
-                setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
-                
-                if (processedFrameCountRef.current % 60 === 0) {
-                  console.log("Current values on screen:", {
-                    heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
-                    spo2: vitals.spo2,
-                    pressure: vitals.pressure,
-                    glucose: vitals.glucose,
-                    hydration: vitals.hydration,
-                    lipids: vitals.lipids,
-                    hemoglobin: vitals.hemoglobin
-                  });
-                }
+              if (processedFrameCountRef.current % 60 === 0) {
+                console.log("Current values on screen:", {
+                  heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
+                  spo2: vitals.spo2,
+                  pressure: vitals.pressure,
+                  glucose: vitals.glucose,
+                  hydration: vitals.hydration,
+                  lipids: vitals.lipids,
+                  hemoglobin: vitals.hemoglobin
+                });
               }
             }
           } catch (error) {
@@ -231,13 +229,6 @@ const Index = () => {
       return;
     }
     
-    // Create ImageCapture object only if API is available
-    if (typeof ImageCapture === 'undefined') {
-      console.error("ImageCapture API not available on this browser");
-      finalizeMeasurement();
-      return;
-    }
-    
     const imageCapture = new ImageCapture(videoTrack);
     
     if (videoTrack.getCapabilities()?.torch) {
@@ -275,26 +266,14 @@ const Index = () => {
       
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
-          // Using try-catch for each step to better isolate failures
-          let frame;
-          
-          try {
-            frame = await imageCapture.grabFrame();
-          } catch (grabError) {
-            console.error("Error grabbing frame:", grabError);
-            
-            // Try to continue anyway - don't immediately return
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
-            return;
-          }
+          const frame = await imageCapture.grabFrame().catch(err => {
+            console.error("Error grabbing frame:", err);
+            return null;
+          });
           
           if (!frame) {
-            console.error("Failed to grab frame but no exception was thrown");
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
+            console.error("Failed to grab frame");
+            requestAnimationFrame(processImage);
             return;
           }
           
@@ -306,43 +285,29 @@ const Index = () => {
           
           if (!tempCtx) {
             console.error("Canvas context lost");
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
+            requestAnimationFrame(processImage);
             return;
           }
           
-          try {
-            tempCtx.drawImage(
-              frame, 
-              0, 0, frame.width, frame.height, 
-              0, 0, targetWidth, targetHeight
-            );
-          } catch (drawError) {
-            console.error("Error drawing image to canvas:", drawError);
-            if (isMonitoring) {
-              requestAnimationFrame(processImage);
-            }
-            return;
-          }
+          tempCtx.drawImage(
+            frame, 
+            0, 0, frame.width, frame.height, 
+            0, 0, targetWidth, targetHeight
+          );
           
-          try {
-            const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-            processFrame(imageData);
-          } catch (processError) {
-            console.error("Error processing frame:", processError);
-          }
+          const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
+          processFrame(imageData);
           
           frameCount++;
           lastProcessTime = now;
           
           if (now - lastFpsUpdateTime > 1000) {
-            console.log(`Processing FPS: ${frameCount}`);
+            // console.log(`Processing FPS: ${frameCount}`);
             frameCount = 0;
             lastFpsUpdateTime = now;
           }
         } catch (error) {
-          console.error("Unhandled error in processImage:", error);
+          console.error("Error en processImage:", error);
           // Intentar continuar a pesar del error
         }
       }

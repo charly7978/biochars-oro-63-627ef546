@@ -15,7 +15,8 @@ export function useArrhythmiaDetector() {
    * Solo usa datos reales
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    // Add intervals to service directly, avoiding the updateRRIntervals call
+    // Update intervals in the service
+    ArrhythmiaDetectionService.updateRRIntervals(rrIntervals);
     lastRRIntervalsRef.current = rrIntervals;
     
     // Delegate detection to the centralized service
