@@ -1,6 +1,6 @@
 
-import { BaseNeuralModel } from './NeuralNetworkBase';
-import type { Tensor1D } from '@tensorflow/tfjs';
+import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
+// We'll use our internal Tensor1D type, not the TensorFlow one
 
 /**
  * Modelo neuronal para detección de arritmias
@@ -8,12 +8,12 @@ import type { Tensor1D } from '@tensorflow/tfjs';
  */
 export class ArrhythmiaNeuralModel extends BaseNeuralModel {
   constructor() {
-    super({
-      name: 'ArrhythmiaDetection',
-      version: '1.0.3',
-      architecture: 'CNN+BiLSTM',
-      inputShape: [100, 1]  // Vector de 100 puntos de señal PPG
-    });
+    super(
+      'ArrhythmiaDetection', 
+      [100, 1],  // inputShape: Vector de 100 puntos de señal PPG
+      [3],       // outputShape: 3 posibles clasificaciones
+      '1.0.3'    // version
+    );
   }
   
   /**
