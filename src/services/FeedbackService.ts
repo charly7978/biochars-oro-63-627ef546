@@ -25,22 +25,8 @@ const loadSound = (url: string): HTMLAudioElement => {
 };
 
 export const FeedbackService = {
-  // Estado interno para recordar si se solicitaron permisos
-  permissionRequested: false,
-
-  // Comprobar y solicitar permisos para vibración
-  checkVibrationPermission: () => {
-    if (!FeedbackService.permissionRequested && 'vibrate' in navigator) {
-      // En móviles, la primera vibración debe ocurrir en respuesta a un gesto del usuario
-      console.log("FeedbackService: Vibration permission requested");
-      FeedbackService.permissionRequested = true;
-    }
-  },
-
   // Retroalimentación háptica
   vibrate: (pattern: number | number[] = 200) => {
-    FeedbackService.checkVibrationPermission();
-    
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
@@ -55,8 +41,6 @@ export const FeedbackService = {
 
   // Retroalimentación háptica específica para arritmias
   vibrateArrhythmia: () => {
-    FeedbackService.checkVibrationPermission();
-    
     if ('vibrate' in navigator) {
       try {
         // Patrón distintivo para arritmias (triple pulso con pausa)

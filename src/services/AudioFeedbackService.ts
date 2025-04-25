@@ -13,11 +13,9 @@ class AudioFeedbackService {
   private readonly ARRHYTHMIA_BEEP_FREQUENCY: number = 440;
   private readonly NORMAL_BEEP_DURATION_MS: number = 100;
   private readonly ARRHYTHMIA_BEEP_DURATION_MS: number = 200;
-  private processingQueue: boolean = false;
 
   private constructor() {
     this.initAudioContext();
-    console.log("AudioFeedbackService: Instance created (singleton)");
   }
 
   public static getInstance(): AudioFeedbackService {
@@ -27,7 +25,7 @@ class AudioFeedbackService {
     return AudioFeedbackService.instance;
   }
 
-  private async initAudioContext(): Promise<void> {
+  private initAudioContext(): void {
     try {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       console.log("AudioFeedbackService: Audio context initialized successfully");
@@ -37,69 +35,34 @@ class AudioFeedbackService {
   }
 
   public queuePeak(peakData: PeakData): void {
-    const now = Date.now();
-    
-    // Evitar colas de reproducción demasiado grandes
-    if (this.pendingPeaks.length > 5) {
-      this.pendingPeaks = this.pendingPeaks.slice(-2);
-    }
-    
-    // Solo encolar picos recientes
-    const MAX_PEAK_AGE_MS = 800;
-    if (now - peakData.timestamp < MAX_PEAK_AGE_MS) {
-      console.log("AudioFeedbackService: Peak queued", {
-        timestamp: new Date(peakData.timestamp).toISOString(),
-        isArrhythmia: peakData.isArrhythmia,
-        pendingCount: this.pendingPeaks.length
-      });
-      
-      this.pendingPeaks.push(peakData);
-      
-      if (!this.processingQueue) {
-        this.processPendingPeaks();
-      }
-    }
+    this.pendingPeaks.push(peakData);
+    this.processPendingPeaks();
   }
 
   private async processPendingPeaks(): Promise<void> {
-    this.processingQueue = true;
+    if (!this.pendingPeaks.length) return;
+
+    const now = Date.now();
+    if (now - this.lastTriggerTime < this.MIN_TRIGGER_INTERVAL_MS) return;
+
+    const peak = this.pendingPeaks[0];
+    const timeSincePeak = now - peak.timestamp;
+
+    // Only play peaks that are recent (within last 500ms)
+    if (timeSincePeak <= 500) {
+      await this.playBeep(peak.isArrhythmia ? 'arrhythmia' : 'normal');
+      this.lastTriggerTime = now;
+    }
+
+    this.pendingPeaks.shift();
     
-    try {
-      if (!this.pendingPeaks.length) {
-        this.processingQueue = false;
-        return;
-      }
-
-      const now = Date.now();
-      if (now - this.lastTriggerTime < this.MIN_TRIGGER_INTERVAL_MS) {
-        setTimeout(() => this.processPendingPeaks(), this.MIN_TRIGGER_INTERVAL_MS);
-        return;
-      }
-
-      const peak = this.pendingPeaks[0];
-      const timeSincePeak = now - peak.timestamp;
-
-      // Solo reproducir picos que sean recientes
-      if (timeSincePeak <= 500) {
-        await this.playBeep(peak.isArrhythmia ? 'arrhythmia' : 'normal');
-        this.lastTriggerTime = now;
-      }
-
-      this.pendingPeaks.shift();
-      
-      // Procesar siguiente pico si el tiempo ha pasado
-      if (this.pendingPeaks.length) {
-        setTimeout(() => this.processPendingPeaks(), this.MIN_TRIGGER_INTERVAL_MS);
-      } else {
-        this.processingQueue = false;
-      }
-    } catch (error) {
-      console.error("AudioFeedbackService: Error processing peaks:", error);
-      this.processingQueue = false;
+    // Process next peak if enough time has passed
+    if (this.pendingPeaks.length) {
+      setTimeout(() => this.processPendingPeaks(), this.MIN_TRIGGER_INTERVAL_MS);
     }
   }
 
-  // Método para compatibilidad con código existente
+  // Método necesario para compatibilidad con código existente
   public triggerHeartbeatFeedback(type: 'normal' | 'arrhythmia' = 'normal', volume: number = 0.7): boolean {
     const peakData: PeakData = {
       timestamp: Date.now(),
@@ -139,8 +102,6 @@ class AudioFeedbackService {
 
       oscillator.start(this.audioContext.currentTime);
       oscillator.stop(this.audioContext.currentTime + duration / 1000 + 0.02);
-      
-      console.log(`AudioFeedbackService: Playing ${type} beep`);
 
       return true;
     } catch (error) {
