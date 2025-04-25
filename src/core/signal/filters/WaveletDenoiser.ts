@@ -5,7 +5,7 @@
  */
 export class WaveletDenoiser {
   private readonly levels = 3;
-  private readonly threshold = 0.1;
+  private threshold = 0.1; // Removed readonly modifier
   private lastValues: number[] = [];
   private readonly MAX_BUFFER = 8;
   
