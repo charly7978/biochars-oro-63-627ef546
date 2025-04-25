@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs';
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../../utils/non-math-utils';
 
 /**
  * Utilidades para adaptar tensores entre formatos
@@ -51,16 +52,11 @@ export class TensorUtils {
    */
   static normalizeInput(input: number[], min: number = 0, max: number = 1): number[] {
     if (input.length === 0) return [];
-    
-    const minVal = Math.min(...input);
-    const maxVal = Math.max(...input);
-    
-    // Evitar división por cero
+    const minVal = findMinimum(input);
+    const maxVal = findMaximum(input);
     if (maxVal === minVal) {
       return Array(input.length).fill((min + max) / 2);
     }
-    
-    // Normalizar al rango [min, max]
     return input.map(x => min + ((x - minVal) / (maxVal - minVal)) * (max - min));
   }
   
@@ -125,14 +121,15 @@ export class TensorUtils {
     if (arr.length === 0) {
       return { mean: 0, min: 0, max: 0, std: 0 };
     }
-    
     const mean = arr.reduce((sum, val) => sum + val, 0) / arr.length;
-    const min = Math.min(...arr);
-    const max = Math.max(...arr);
-    
-    const variance = arr.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / arr.length;
-    const std = Math.sqrt(variance);
-    
+    const min = findMinimum(arr);
+    const max = findMaximum(arr);
+    let variance = 0;
+    for (let i = 0; i < arr.length; i++) {
+      variance += (arr[i] - mean) * (arr[i] - mean);
+    }
+    variance = variance / arr.length;
+    let std = squareRoot(variance);
     return { mean, min, max, std };
   }
 }

@@ -1,3 +1,4 @@
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -47,7 +48,7 @@ export function calculateStandardDeviation(values: number[]): number {
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
+  return findMaximum(values) - findMinimum(values);
 }
 
 /**
@@ -63,8 +64,8 @@ export function calculateDC(values: number[]): number {
  */
 export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = findMinimum(values);
+  const max = findMaximum(values);
   if (max - min < SIGNAL_CONSTANTS.MIN_AMPLITUDE) return values.map(() => 0);
   return values.map(v => (v - min) / (max - min));
 }

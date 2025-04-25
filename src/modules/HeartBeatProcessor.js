@@ -8,6 +8,7 @@ import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
 import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
 import { HeartbeatAudioManager } from './heart-beat/audio-manager';
 import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality';
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot, clamp, average } from '../utils/non-math-utils';
 
 export class HeartBeatProcessor {
   // Import configuration from config module

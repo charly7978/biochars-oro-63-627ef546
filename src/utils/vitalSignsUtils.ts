@@ -1,3 +1,4 @@
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from './non-math-utils';
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -11,7 +12,7 @@
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
+  return findMaximum(values) - findMinimum(values);
 }
 
 /**

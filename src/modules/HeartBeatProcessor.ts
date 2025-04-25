@@ -1,4 +1,5 @@
 import { HeartBeatConfig } from './heart-beat/config';
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot, clamp } from '../utils/non-math-utils';
 
 export class HeartBeatProcessor {
   // --- Constantes y Configuraciones ---
@@ -214,7 +215,7 @@ export class HeartBeatProcessor {
     const smoothDerivative = this.calculateSmoothedDerivative(valueForPeakDetection); // Calcular derivada aquí
 
     // Paso 6: Evaluar calidad, SNR y umbral adaptativo
-    const currentQuality = this.calculateLocalSignalQuality(Math.abs(normalizedValue));
+    const currentQuality = this.calculateLocalSignalQuality(absoluteValue(normalizedValue));
     this.localQualityHistory.push(currentQuality);
     if (this.localQualityHistory.length > this.QUALITY_HISTORY_SIZE) this.localQualityHistory.shift();
     this.updateQualityStability(); // Actualiza this.isQualityUnstable
@@ -229,7 +230,7 @@ export class HeartBeatProcessor {
     }
 
     // Resetear estados de pico si señal baja
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
+    this.autoResetIfSignalIsLow(absoluteValue(normalizedValue));
 
     // Paso 7: Detectar Pico Inicial (usando umbral adaptativo)
     let { isPeak: isPotentialPeak, confidence: initialConfidence } = this.detectPeak(
@@ -288,7 +289,7 @@ export class HeartBeatProcessor {
         }
 
         // 9e: Aplicar Requisitos Estrictos (si aplica)
-        const isLowAmplitude = Math.abs(normalizedValue) < this.adaptiveSignalThreshold * this.LOW_AMPLITUDE_FACTOR;
+        const isLowAmplitude = absoluteValue(normalizedValue) < this.adaptiveSignalThreshold * this.LOW_AMPLITUDE_FACTOR;
         const requiredShapeScore = isLowAmplitude ? this.STRICT_SHAPE_SCORE : this.MIN_SHAPE_SCORE;
         const requiredConsistency = isLowAmplitude ? consistencyResult.meetsStrictCriteria : true;
         const requiredTemplateScore = isLowAmplitude ? this.MIN_TEMPLATE_CORRELATION * 1.1 : this.MIN_TEMPLATE_CORRELATION; // Más estricto para baja amplitud
@@ -311,7 +312,7 @@ export class HeartBeatProcessor {
 
             // 9g: Actualizar historial de amplitud y **plantilla** si la confianza es alta
             if(finalPeakConfidence > this.TEMPLATE_CONFIDENCE_THRESHOLD) {
-                this.peakAmplitudeHistory.push(Math.abs(normalizedValue));
+                this.peakAmplitudeHistory.push(absoluteValue(normalizedValue));
                 if(this.peakAmplitudeHistory.length > this.MEAN_AMPLITUDE_HISTORY_SIZE) {
                     this.peakAmplitudeHistory.shift();
                 }
@@ -609,7 +610,7 @@ export class HeartBeatProcessor {
 
    private autoResetIfSignalIsLow(amplitude: number) {
     // Usar valor absoluto para amplitud
-    const absAmplitude = Math.abs(amplitude);
+    const absAmplitude = absoluteValue(amplitude);
     if (absAmplitude < this.LOW_SIGNAL_THRESHOLD) {
       this.lowSignalCount++;
       if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
