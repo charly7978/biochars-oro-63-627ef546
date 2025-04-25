@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useRef, useEffect } from 'react';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import { useSignalQualityDetector } from './vital-signs/use-signal-quality-detector';
@@ -49,15 +48,12 @@ export function useHeartBeatProcessor() {
   // Initialize ArrhythmiaDetectionService
   useEffect(() => {
     if (isProcessing) {
-      // Using setMonitoring instead of startMonitoring
       ArrhythmiaDetectionService.setMonitoring(true);
     } else {
-      // Using setMonitoring instead of stopMonitoring
       ArrhythmiaDetectionService.setMonitoring(false);
     }
 
     return () => {
-      // Using setMonitoring instead of stopMonitoring
       ArrhythmiaDetectionService.setMonitoring(false);
     };
   }, [isProcessing]);
@@ -311,7 +307,6 @@ export function useHeartBeatProcessor() {
     baselineRef.current = 0;
     peakConfirmationBufferRef.current = [];
     lastConfirmedPeakRef.current = false;
-    // Using setMonitoring instead of startMonitoring
     ArrhythmiaDetectionService.setMonitoring(true);
   }, []);
 
@@ -320,7 +315,6 @@ export function useHeartBeatProcessor() {
    */
   const stopMonitoring = useCallback(() => {
     setIsProcessing(false);
-    // Using setMonitoring instead of stopMonitoring
     ArrhythmiaDetectionService.setMonitoring(false);
   }, []);
 
