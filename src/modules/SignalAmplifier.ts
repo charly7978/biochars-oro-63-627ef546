@@ -221,6 +221,50 @@ export class SignalAmplifier {
   }
 
   /**
+   * Calcular calidad de señal mejorada usando múltiples métricas
+   */
+  private calculateEnhancedSignalQuality(): number {
+    if (this.signalBuffer.length < 3) return 0;
+    
+    // Calcular varianza normalizada
+    const varianceQuality = Math.min(
+      1, 
+      Math.max(0, (this.signalVariance - this.VARIANCE_THRESHOLD.LOW) / 
+        (this.VARIANCE_THRESHOLD.MEDIUM - this.VARIANCE_THRESHOLD.LOW))
+    );
+    
+    // Calidad basada en fuerza de armónicos
+    const harmonicQuality = Math.min(1, this.harmonicStrength * 2);
+    
+    // Calidad basada en estabilidad de línea base
+    const baselineStability = this.calculateBaselineStability();
+    
+    // Combinar métricas con pesos
+    return (
+      varianceQuality * 0.4 + 
+      harmonicQuality * 0.4 + 
+      baselineStability * 0.2
+    );
+  }
+
+  /**
+   * Calcular estabilidad de línea base
+   */
+  private calculateBaselineStability(): number {
+    if (this.baselineHistory.length < 10) return 0;
+    
+    const recentBaseline = this.baselineHistory.slice(-10);
+    const baselineVariance = this.calculateVariance(recentBaseline);
+    
+    return Math.max(0, 1 - baselineVariance * 10);
+  }
+
+  private calculateVariance(values: number[]): number {
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    return values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+  }
+
+  /**
    * Reset amplifier state
    */
   public reset(): void {
