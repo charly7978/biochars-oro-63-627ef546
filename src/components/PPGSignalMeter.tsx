@@ -154,19 +154,6 @@ const PPGSignalMeter = memo(({
     }
   }, []);
 
-  useEffect(() => {
-    const serviceWindows = HeartRateService.getArrhythmiaWindows();
-    
-    if (serviceWindows.length > 0) {
-      console.log("PPGSignalMeter: Using arrhythmia windows from HeartRateService:", 
-      serviceWindows.map(w => ({
-        start: new Date(w.start).toISOString(),
-        end: new Date(w.end).toISOString(),
-        duration: w.end - w.start
-      })));
-    }
-  }, [value]);
-
   const getAverageQuality = useCallback(() => {
     if (qualityHistoryRef.current.length === 0) return 0;
     
