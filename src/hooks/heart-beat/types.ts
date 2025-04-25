@@ -12,7 +12,7 @@ export interface HeartBeatResult {
   isPeak: boolean;
   filteredValue?: number;
   arrhythmiaCount: number;
-  isArrhythmia: boolean;
+  isArrhythmia?: boolean;
   rrData?: RRIntervalData;
 }
 

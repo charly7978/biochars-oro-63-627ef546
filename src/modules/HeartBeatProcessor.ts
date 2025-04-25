@@ -1,5 +1,3 @@
-import { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService';
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -221,12 +219,8 @@ export class HeartBeatProcessor {
     bpm: number;
     confidence: number;
     isPeak: boolean;
+    filteredValue: number;
     arrhythmiaCount: number;
-    isArrhythmia: boolean;
-    rrData: {
-      intervals: number[];
-      lastPeakTime: number | null;
-    };
   } {
     // Si no está en modo de monitoreo, retornar valores por defecto
     if (!this.isMonitoring) {
@@ -234,12 +228,8 @@ export class HeartBeatProcessor {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        arrhythmiaCount: 0,
-        isArrhythmia: false,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        filteredValue: 0,
+        arrhythmiaCount: 0
       };
     }
     
@@ -266,12 +256,8 @@ export class HeartBeatProcessor {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        arrhythmiaCount: 0,
-        isArrhythmia: false,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
+        filteredValue: smoothed,
+        arrhythmiaCount: 0
       };
     }
 
@@ -334,12 +320,8 @@ export class HeartBeatProcessor {
       bpm: Math.round(this.getFinalBPM()),
       confidence,
       isPeak: confirmedPeak && !this.isInWarmup(),
-      arrhythmiaCount: 0,
-      isArrhythmia: false,
-      rrData: {
-        intervals: [...this.rrIntervals],
-        lastPeakTime: this.lastPeakTime
-      }
+      filteredValue: smoothed,
+      arrhythmiaCount: 0
     };
   }
 
