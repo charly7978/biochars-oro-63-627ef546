@@ -23,6 +23,7 @@ export interface HeartRateResult {
   filteredValue: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
+  // Add RR Interval data to the existing interface
   rrIntervals: number[];
   lastPeakTime: number | null;
 }
