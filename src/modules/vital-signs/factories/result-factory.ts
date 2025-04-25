@@ -36,19 +36,19 @@ export class ResultFactory {
   }
 
   public static createEmptyResults(): VitalSignsResult {
-    // Valores fijos para mantener la visualización
+    // Valores vacíos para representar ausencia de medición
     return {
-      spo2: 97,
-      heartRate: 75,
-      pressure: "120/80",
-      arrhythmiaStatus: "Normal",
-      glucose: 100,
+      spo2: 0,
+      heartRate: 0,
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
+      glucose: 0,
       lipids: {
-        totalCholesterol: 180,
-        triglycerides: 120
+        totalCholesterol: 0,
+        triglycerides: 0
       },
-      hemoglobin: 14.5,
-      hydration: 70
+      hemoglobin: 0,
+      hydration: 0
     };
   }
 }

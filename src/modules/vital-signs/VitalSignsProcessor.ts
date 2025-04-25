@@ -139,21 +139,56 @@ export class VitalSignsProcessor {
     
     const amplitude = signalMax - signalMin;
     
-    // Valores iniciales fijos para mostrar siempre resultados en pantalla
-    let spo2 = 97;
-    let pressure = "120/80";
-    let heartRate = 75;
-    let glucose = 100;
-    let hydration = 70;
-    let hemoglobin = 14.5;
-    let lipids = {
-      totalCholesterol: 180,
-      triglycerides: 120
-    };
+    // Procesamiento directo usando los valores reales
+    let heartRate = 0;
+    let spo2 = 0;
+    let pressure = "--/--";
+    let glucose = 0;
+    let hemoglobin = 0;
+    let hydration = 0;
+    let lipids = { totalCholesterol: 0, triglycerides: 0 };
+    
+    // Solo calculamos mediciones si tenemos suficientes datos
+    if (hasEnoughData && amplitude > 0.01) {
+      // Calcular SpO2 usando procesamiento directo
+      spo2 = this.spo2Processor.calculateSpO2(ppgValues);
+      
+      // Calcular presión arterial con datos directos
+      pressure = this.bpProcessor.calculateBloodPressure(ppgValues);
+      
+      // Calcular frecuencia cardíaca directa
+      if (rrData && rrData.intervals && rrData.intervals.length > 3) {
+        let sum = 0;
+        const lastFiveIntervals = rrData.intervals.slice(-5);
+        for (let i = 0; i < lastFiveIntervals.length; i++) {
+          sum += lastFiveIntervals[i];
+        }
+        const avgInterval = sum / lastFiveIntervals.length;
+        if (avgInterval > 0) {
+          heartRate = Math.round(60000 / avgInterval);
+          // Validar rango realista
+          if (heartRate < 40 || heartRate > 200) {
+            heartRate = 0;
+          }
+        }
+      }
+      
+      // Calcular glucosa con procesamiento directo
+      glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
+      
+      // Calcular perfil lipídico con datos directos
+      lipids = this.lipidProcessor.calculateLipids(ppgValues);
+      
+      // Calcular hemoglobina - valor provisional pendiente de implementación directa
+      hemoglobin = 0;
+      
+      // Calcular hidratación con medición directa
+      hydration = this.hydrationEstimator.analyze(ppgValues);
+    }
     
     // Log all vital signs for diagnostic purposes 
     if (this.processedFrameCount % 15 === 0 || this.processedFrameCount < 5) {
-      console.log("VitalSignsProcessor: All vital signs (valores fijos)", {
+      console.log("VitalSignsProcessor: Real measurements calculated", {
         spo2,
         heartRate,
         pressure,
@@ -163,9 +198,14 @@ export class VitalSignsProcessor {
         hemoglobin,
         hydration,
         frameCount: this.processedFrameCount,
+        signalAmplitude: amplitude,
         isStabilized: this.isStabilized
       });
     }
+    
+    // Calcular confidence de las mediciones
+    const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    const lipidsConfidence = this.lipidProcessor.getConfidence();
 
     // Prepare result with all metrics
     const result = ResultFactory.createResult(
@@ -177,14 +217,17 @@ export class VitalSignsProcessor {
       lipids,
       hemoglobin,
       hydration,
-      0.9, // Confianza fija para mostrar datos
-      0.9, // Confianza fija para mostrar datos
-      0.9, // Confianza fija para mostrar datos
+      glucoseConfidence, 
+      lipidsConfidence,
+      amplitude > 0.02 ? 0.7 : 0.3, // Confianza basada en amplitud de señal
       arrhythmiaResult.lastArrhythmiaData
     );
     
-    // Guardar como último resultado válido
-    this.lastValidResult = result;
+    // Guardar como último resultado válido solo si hay datos interesantes
+    if (spo2 > 0 || heartRate > 0 || glucose > 0 || hydration > 0 || 
+        lipids.totalCholesterol > 0 || lipids.triglycerides > 0) {
+      this.lastValidResult = result;
+    }
     
     // Always return the current result
     return result;
@@ -198,8 +241,8 @@ export class VitalSignsProcessor {
       console.log("VitalSignsProcessor: Returning last valid result", this.lastValidResult);
       return this.lastValidResult;
     }
-    console.log("VitalSignsProcessor: No valid result available, returning empty");
-    return ResultFactory.createEmptyResults();
+    console.log("VitalSignsProcessor: No valid result available, returning null");
+    return null;
   }
 
   /**

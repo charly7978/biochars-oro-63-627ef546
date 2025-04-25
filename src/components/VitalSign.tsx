@@ -22,22 +22,24 @@ const VitalSign: React.FC<VitalSignProps> = ({
   const getValueTextSize = () => {
     if (compact) return "text-xl";
     
-    // Adjust text size based on length without using Math functions
+    // Adjust text size based on length
     if (typeof value === 'string' && value.length > 5) {
       return "text-xl sm:text-2xl";
     }
     return "text-2xl sm:text-3xl";
   };
 
-  // Determinamos si hay un valor real para mostrar de manera más permisiva
-  // Ahora permitimos mostrar valores de 0 y "--" como valores válidos
-  const hasValue = value !== undefined && value !== null;
+  // Determinamos si hay un valor real para mostrar
+  // Solo consideramos valores reales > 0 o cadenas específicas de medición
+  const hasValue = value !== undefined && value !== null && 
+                  (typeof value === 'number' ? value > 0 : value !== '--' && value !== '--/--');
   
   // Format function to handle all types of values properly
   const formattedValue = () => {
-    // Handle numeric values (both integers and floats)
+    // Handle numeric values
     if (typeof value === 'number') {
-      // Mostramos también valores 0
+      if (value <= 0) return "--"; // Valor no medido o inválido
+      
       if (label === "HIDRATACIÓN" || label === "SPO2") {
         // These are percentages, show as integers
         return value;
@@ -48,7 +50,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
       return value;
     }
     
-    // Handle string values that are not empty or placeholders
+    // Handle string values
     if (typeof value === 'string' && value !== undefined) {
       return value;
     }
@@ -56,14 +58,6 @@ const VitalSign: React.FC<VitalSignProps> = ({
     // Default placeholder
     return "--";
   };
-  
-  // Debug logging for troubleshooting display issues
-  console.log(`VitalSign rendering: ${label}`, {
-    rawValue: value,
-    formattedValue: formattedValue(),
-    hasValue,
-    valueType: typeof value
-  });
 
   return (
     <div 
@@ -100,7 +94,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
           {formattedValue()}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
-        {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
+        {unit && hasValue && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
       </div>
     </div>
   );
