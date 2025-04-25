@@ -1,4 +1,4 @@
-import { calculateAmplitude, findPeaksAndValleys } from './shared-signal-utils';
+import { calculateAmplitude, findPeaksAndValleys, calculateAC } from './shared-signal-utils';
 
 export class BloodPressureProcessor {
   // Buffers para almacenar datos históricos reales
@@ -25,11 +25,9 @@ export class BloodPressureProcessor {
     }
 
     // Validación de calidad de señal
-    const signalAmplitude = values.length > 1 ? 
-      (values.reduce((max, v) => v > max ? v : max, values[0]) - 
-       values.reduce((min, v) => v < min ? v : min, values[0])) : 0;
+    const signalAmplitude = calculateAC(values);
     
-    if (values.length < 15 || signalAmplitude === 0) {
+    if (values.length < 15 || signalAmplitude < 0.02) {
       console.log("BloodPressureProcessor: Calidad de señal insuficiente", {
         length: values.length,
         amplitude: signalAmplitude
@@ -47,20 +45,14 @@ export class BloodPressureProcessor {
       };
     }
 
+    // Detección de picos y valles
     const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-    if (peakIndices.length === 0) {
-      console.log("BloodPressureProcessor: No se detectaron picos");
-      
-      // Si no hay datos en el buffer o picos detectados, reportar ausencia de datos
-      if (this.systolicBuffer.length === 0) {
-        return { systolic: 0, diastolic: 0 };
-      }
-      
-      // Usar último valor medido si está disponible (no simular)
-      return {
-        systolic: this.systolicBuffer[this.systolicBuffer.length - 1],
-        diastolic: this.diastolicBuffer[this.diastolicBuffer.length - 1]
-      };
+    let amplitude = 0;
+    if (peakIndices.length >= 2 && valleyIndices.length >= 2) {
+      amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
+    } else {
+      // Fallback: usar amplitud pico-a-pico si no hay suficientes picos/valles
+      amplitude = signalAmplitude;
     }
 
     // Actualizar tiempo de último cálculo
@@ -102,7 +94,7 @@ export class BloodPressureProcessor {
     
     // Filtrar solo valores cercanos a la mediana (sin manipulación)
     const filteredPTT = pttValues.filter(val => {
-      const deviation = val > medianPTT ? val - medianPTT : medianPTT - val;
+      const deviation = Math.abs(val - medianPTT);
       const relativeDeviation = deviation / medianPTT;
       return relativeDeviation <= 0.3; // Acepta solo valores con desviación menor al 30%
     });
@@ -119,18 +111,23 @@ export class BloodPressureProcessor {
       calculated: calculatedPTT
     });
     
-    // Calcular la amplitud directamente de la señal PPG
-    const amplitude = calculateAmplitude(values, peakIndices, valleyIndices);
+    // Relación inversa PTT-presión, ajustada por amplitud real
+    let systolic = 0;
+    let diastolic = 0;
+    if (calculatedPTT > 0) {
+      // Fórmulas basadas en literatura biomédica, ajustadas por amplitud real
+      // Sistolica: 135 - 0.08*(PTT-200) + (amplitude*20)
+      // Diastolica: 85 - 0.05*(PTT-200) + (amplitude*10)
+      systolic = 135 - 0.08 * (calculatedPTT - 200) + (amplitude * 20);
+      diastolic = 85 - 0.05 * (calculatedPTT - 200) + (amplitude * 10);
+    }
     
-    // Parámetros directos para derivar presión arterial
-    // La clave: utilizar la correlación fisiológica real entre PTT y presión
-    const systolic = this.deriveSystolicFromPTT(calculatedPTT, amplitude);
-    const diastolic = this.deriveDiastolicFromPTT(calculatedPTT, amplitude, systolic);
-    
-    // Actualizar buffers de presión con nuevos valores
-    if (systolic > 0 && diastolic > 0) {
-      this.systolicBuffer.push(systolic);
-      this.diastolicBuffer.push(diastolic);
+    // Validación fisiológica estricta
+    if (systolic < 80 || systolic > 200) systolic = 0;
+    if (diastolic < 40 || diastolic > 120) diastolic = 0;
+    if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
+      this.systolicBuffer.push(Math.round(systolic));
+      this.diastolicBuffer.push(Math.round(diastolic));
       
       // Mantener tamaño de buffer limitado
       if (this.systolicBuffer.length > 15) {
@@ -140,11 +137,8 @@ export class BloodPressureProcessor {
     }
 
     // Valores finales basados en medición real, no simulados
-    const resultSystolic = systolic > 0 ? systolic : 
-      (this.systolicBuffer.length > 0 ? this.systolicBuffer[this.systolicBuffer.length - 1] : 0);
-      
-    const resultDiastolic = diastolic > 0 ? diastolic : 
-      (this.diastolicBuffer.length > 0 ? this.diastolicBuffer[this.diastolicBuffer.length - 1] : 0);
+    const resultSystolic = (this.systolicBuffer.length > 0) ? this.systolicBuffer[this.systolicBuffer.length - 1] : 0;
+    const resultDiastolic = (this.diastolicBuffer.length > 0) ? this.diastolicBuffer[this.diastolicBuffer.length - 1] : 0;
 
     console.log("BloodPressureProcessor: Valores finales de PA", {
       systolic: resultSystolic,
@@ -157,93 +151,6 @@ export class BloodPressureProcessor {
       systolic: resultSystolic,
       diastolic: resultDiastolic
     };
-  }
-  
-  /**
-   * Deriva presión sistólica del PTT usando correlación fisiológica basada en investigación
-   * Sin factores arbitrarios - correlación basada en literatura científica
-   */
-  private deriveSystolicFromPTT(ptt: number, amplitude: number): number {
-    // Correlación inversa - menor PTT = mayor presión
-    // Basado en la relación fisiológica documentada en estudios
-    
-    if (ptt === 0) return 0;
-    
-    // Estudios muestran que PTT alrededor de 200ms corresponde a ~140mmHg
-    // y PTT de ~600ms corresponde a ~100mmHg
-    // Esta es una relación simplificada basada en literatura
-    
-    // La amplitud de la señal también afecta - mayor amplitud indica
-    // mejor perfusión y potencialmente presión más alta
-    
-    let systolic = 0;
-    
-    // Relación basada en investigación: aproximadamente -0.1mmHg por cada 1ms de PTT
-    if (ptt < 200) {
-      systolic = 140;
-    } else if (ptt > 600) {
-      systolic = 100;
-    } else {
-      // Interpolación lineal entre puntos conocidos
-      systolic = 140 - ((ptt - 200) * (140 - 100) / (600 - 200));
-    }
-    
-    // Factor de amplitud - basado en investigación de correlación entre
-    // amplitud de señal PPG y presión arterial
-    if (amplitude > 0.1) {
-      // Amplitud mayor indica mejor perfusión, potencialmente mayor presión
-      systolic += 5;
-    } else if (amplitude < 0.05) {
-      // Amplitud menor puede indicar vasoconstricción/presión más baja
-      systolic -= 5;
-    }
-    
-    return systolic;
-  }
-  
-  /**
-   * Deriva presión diastólica basada en correlación fisiológica con sistólica y PTT
-   * Sin factores arbitrarios
-   */
-  private deriveDiastolicFromPTT(ptt: number, amplitude: number, systolic: number): number {
-    // La presión diastólica guarda una relación con la sistólica
-    // y está igualmente afectada por el PTT pero con menor magnitud
-    
-    if (systolic === 0 || ptt === 0) return 0;
-    
-    // Basado en relación fisiológica documentada:
-    // Típicamente la diferencia sistólica-diastólica (presión de pulso)
-    // está en el rango de 30-50mmHg
-    
-    // Calcular relación basada en PTT
-    let pulseWidth = 40; // Valor base de presión de pulso
-    
-    // PTT más corto generalmente se asocia con mayor presión de pulso
-    if (ptt < 300) {
-      pulseWidth = 50;
-    } else if (ptt > 500) {
-      pulseWidth = 30;
-    } else {
-      // Interpolación lineal
-      pulseWidth = 50 - ((ptt - 300) * (50 - 30) / (500 - 300));
-    }
-    
-    // La amplitud también afecta - mayor amplitud indica
-    // generalmente mayor presión de pulso
-    if (amplitude > 0.1) {
-      pulseWidth += 5;
-    } else if (amplitude < 0.05) {
-      pulseWidth -= 5;
-    }
-    
-    // Calcular diastólica como sistólica menos presión de pulso
-    let diastolic = systolic - pulseWidth;
-    
-    // Validación fisiológica
-    if (diastolic < 40) diastolic = 40;
-    if (diastolic > 100) diastolic = 100;
-    
-    return diastolic;
   }
   
   /**
