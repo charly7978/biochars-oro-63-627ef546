@@ -1,6 +1,4 @@
-
 import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
-// We'll use our internal Tensor1D type, not the TensorFlow one
 
 /**
  * Modelo neuronal para detección de arritmias

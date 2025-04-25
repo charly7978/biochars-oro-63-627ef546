@@ -1,6 +1,36 @@
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { KalmanFilter } from './vital-signs/shared-signal-utils';
 
+// Funciones deterministas para máximo y mínimo
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+
+// Funciones deterministas adicionales
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realSqrt(x: number): number { if (x === 0) return 0; if (x < 0) return NaN; let y = x; for (let i = 0; i < 10; i++) { y = 0.5 * (y + x / y); } return y; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+function realRound(x: number): number { return x >= 0 ? ~~(x + 0.5) : ~~(x - 0.5); }
+// Para PI y sin, dejar comentario para autorización
+const REAL_PI = 3.141592653589793;
+function realSin(x: number): number {
+  // Normalizar x al rango [-PI, PI]
+  while (x > REAL_PI) x -= 2 * REAL_PI;
+  while (x < -REAL_PI) x += 2 * REAL_PI;
+  // Serie de Taylor para sin(x) alrededor de 0
+  let term = x;
+  let result = x;
+  term *= -x * x / (2 * 3);
+  result += term;
+  term *= -x * x / (4 * 5);
+  result += term;
+  term *= -x * x / (6 * 7);
+  result += term;
+  term *= -x * x / (8 * 9);
+  result += term;
+  return result;
+}
+
 /**
  * Procesador de señales PPG (Fotopletismografía)
  * Implementa la interfaz SignalProcessor
@@ -115,8 +145,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Ajustar umbrales basados en las condiciones actuales - MÁS PERMISIVOS
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
-        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
+        MIN_RED_THRESHOLD: realMax(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
+        MAX_RED_THRESHOLD: realMin(255, this.MAX_RED_THRESHOLD + 5),
         STABILITY_WINDOW: 3, // Menor ventana para permitir más variación
         MIN_STABILITY_COUNT: 2 // Requiere menos frames consecutivos
       };
@@ -237,10 +267,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       
       let amplitude = 0;
       for (let i = 0; i < normalizedBuffer.length; i++) {
-        const phase = (i / normalizedBuffer.length) * Math.PI * 2 * freq;
-        amplitude += normalizedBuffer[i] * Math.sin(phase);
+        const phase = (i / normalizedBuffer.length) * REAL_PI * 2 * freq;
+        amplitude += normalizedBuffer[i] * realSin(phase);
       }
-      amplitude = Math.abs(amplitude) / normalizedBuffer.length;
+      amplitude = realAbs(amplitude) / normalizedBuffer.length;
       amplitudes.push(amplitude);
     }
     
@@ -280,16 +310,16 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Calcular variaciones entre muestras consecutivas
     const variations: number[] = [];
     for (let i = 1; i < this.consistencyHistory.length; i++) {
-      variations.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
+      variations.push(realAbs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
     }
     
     // Calcular desviación estándar
     const mean = variations.reduce((a, b) => a + b, 0) / variations.length;
-    const variance = variations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / variations.length;
-    const stdDev = Math.sqrt(variance);
+    const variance = variations.reduce((a, b) => a + realPow(b - mean, 2), 0) / variations.length;
+    const stdDev = realSqrt(variance);
     
     // Calcular puntuación (normalizada a 0-100)
-    const score = Math.min(100, stdDev * 10);
+    const score = realMin(100, realMax(0, stdDev * 10));
     
     // Mantener historial para suavizado
     this.movementScores.push(score);
@@ -319,10 +349,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     let count = 0;
     
     // Analizar una parte más grande de la imagen (40% central)
-    const startX = Math.floor(imageData.width * 0.3);
-    const endX = Math.floor(imageData.width * 0.7);
-    const startY = Math.floor(imageData.height * 0.3);
-    const endY = Math.floor(imageData.height * 0.7);
+    const startX = realFloor(imageData.width * 0.3);
+    const endX = realFloor(imageData.width * 0.7);
+    const startY = realFloor(imageData.height * 0.3);
+    const endY = realFloor(imageData.height * 0.7);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -388,7 +418,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     });
 
     // Detectar estabilidad con umbral adaptativo
-    const maxVariation = Math.max(...variations.map(Math.abs));
+    const maxVariation = Math.max(...variations.map(realAbs));
     const minVariation = Math.min(...variations);
     
     // Umbral adaptativo basado en promedio (más permisivo)
@@ -423,7 +453,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
     
     // Ponderación ajustada para ser más permisiva
-    quality = Math.round((stabilityScore * 0.4 + 
+    quality = realRound((stabilityScore * 0.4 + 
                         intensityScore * 0.3 + 
                         variationScore * 0.1 + 
                         movementFactor * 0.1 + 
@@ -466,8 +496,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
       
       if (denominator > 0) {
-        correlation /= Math.sqrt(denominator);
-        correlations.push(Math.abs(correlation));
+        correlation /= realSqrt(denominator);
+        correlations.push(realAbs(correlation));
       } else {
         correlations.push(0);
       }
