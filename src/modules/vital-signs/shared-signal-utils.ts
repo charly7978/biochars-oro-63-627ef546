@@ -113,7 +113,7 @@ export function calculateAmplitude(
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = Math.min(peakIndices.length, valleyIndices.length);
+  const len = realMin(peakIndices.length, valleyIndices.length);
   
   for (let i = 0; i < len; i++) {
     const amp = values[peakIndices[i]] - values[valleyIndices[i]];
@@ -127,8 +127,8 @@ export function calculateAmplitude(
   // Calcular media robusta con datos reales
   amps.sort((a, b) => a - b);
   const trimmedAmps = amps.slice(
-    Math.floor(amps.length * 0.1),
-    Math.ceil(amps.length * 0.9)
+    realFloor(amps.length * 0.1),
+    realCeil(amps.length * 0.9)
   );
   
   return trimmedAmps.length > 0
@@ -207,7 +207,7 @@ export function evaluateSignalQuality(
     const normalizedVariation = diffVariation / avgDiff;
     
     peakRegularity = 100 - (normalizedVariation * 100);
-    peakRegularity = Math.max(0, Math.min(100, peakRegularity));
+    peakRegularity = realMax(0, realMin(100, peakRegularity));
   }
   
   // Puntuación basada en datos reales
@@ -222,7 +222,7 @@ export function evaluateSignalQuality(
   // Combinar puntuaciones de datos reales
   const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
   
-  return Math.min(100, qualityScore);
+  return realMin(100, qualityScore);
 }
 
 // Agregar utilidades deterministas locales si es necesario
