@@ -14,6 +14,7 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
+import { HemoglobinEstimator } from '../../core/analysis/HemoglobinEstimator';
 
 /**
  * Main vital signs processor
@@ -29,6 +30,7 @@ export class VitalSignsProcessor {
   private glucoseProcessor: GlucoseProcessor;
   private lipidProcessor: LipidProcessor;
   private hydrationEstimator: HydrationEstimator;
+  private hemoglobinEstimator: HemoglobinEstimator;
   
   // Validators and calculators
   private signalValidator: SignalValidator;
@@ -43,8 +45,8 @@ export class VitalSignsProcessor {
   // Flag to indicate if stabilization phase is complete
   private isStabilized: boolean = false;
   private stabilizationCounter: number = 0;
-  // Umbral para estabilización
-  private readonly STABILIZATION_THRESHOLD: number = 15;
+  // Umbral para estabilización - REDUCIDO para obtener datos más rápido
+  private readonly STABILIZATION_THRESHOLD: number = 10;
 
   /**
    * Constructor that initializes all specialized processors
@@ -61,6 +63,7 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     this.lipidProcessor = new LipidProcessor();
     this.hydrationEstimator = new HydrationEstimator();
+    this.hemoglobinEstimator = new HemoglobinEstimator();
     
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
@@ -106,7 +109,7 @@ export class VitalSignsProcessor {
     }
 
     // Aplicar filtrado a la señal PPG real, siempre procesar
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
+    const filtered = this.signalProcessor.processPPG(ppgValue);
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
@@ -118,19 +121,13 @@ export class VitalSignsProcessor {
     
     // Get PPG values for processing
     const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
     
-    // Limit the real data buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
-    
-    // Continue processing regardless of data quantity
-    let hasEnoughData = ppgValues.length >= 15;
+    // Continue processing regardless of data quantity - MODIFICADO para ser más permisivo
+    let hasEnoughData = ppgValues.length >= 10; // Reducido de 15 a 10 para obtener datos más rápido
     
     // Verificar amplitud - solo log, no retornamos
-    let signalMin = ppgValues[0];
-    let signalMax = ppgValues[0];
+    let signalMin = ppgValues.length > 0 ? ppgValues[0] : 0;
+    let signalMax = ppgValues.length > 0 ? ppgValues[0] : 0;
     
     for (let i = 1; i < ppgValues.length && i < 15; i++) {
       if (ppgValues[i] < signalMin) signalMin = ppgValues[i];
@@ -138,6 +135,18 @@ export class VitalSignsProcessor {
     }
     
     const amplitude = signalMax - signalMin;
+    
+    // Logging para debug
+    if (this.processedFrameCount % 50 === 0) {
+      console.log("VitalSignsProcessor: Signal analysis", {
+        amplitude,
+        signalMin,
+        signalMax,
+        ppgValuesLength: ppgValues.length,
+        hasEnoughData,
+        isStabilized: this.isStabilized
+      });
+    }
     
     // Procesamiento directo usando los valores reales
     let heartRate = 0;
@@ -148,8 +157,8 @@ export class VitalSignsProcessor {
     let hydration = 0;
     let lipids = { totalCholesterol: 0, triglycerides: 0 };
     
-    // Solo calculamos mediciones si tenemos suficientes datos
-    if (hasEnoughData && amplitude > 0.01) {
+    // Solo calculamos mediciones si tenemos suficientes datos - MODIFICADO: umbral más permisivo
+    if (hasEnoughData && amplitude > 0.005) { // Reducido de 0.01 a 0.005
       // Calcular SpO2 usando procesamiento directo
       spo2 = this.spo2Processor.calculateSpO2(ppgValues);
       
@@ -164,7 +173,7 @@ export class VitalSignsProcessor {
       }
       
       // Calcular frecuencia cardíaca directa
-      if (rrData && rrData.intervals && rrData.intervals.length > 3) {
+      if (rrData && rrData.intervals && rrData.intervals.length >= 2) { // Reducido a 2 para ser más permisivo
         let sum = 0;
         const lastFiveIntervals = rrData.intervals.slice(-5);
         for (let i = 0; i < lastFiveIntervals.length; i++) {
@@ -186,93 +195,86 @@ export class VitalSignsProcessor {
       // Calcular perfil lipídico con datos directos
       lipids = this.lipidProcessor.calculateLipids(ppgValues);
       
-      // Calcular hemoglobina - valor provisional pendiente de implementación directa
-      hemoglobin = 0; // Por ahora no hay implementación real, reportar ausencia
+      // Calcular hemoglobina con medición directa
+      hemoglobin = this.hemoglobinEstimator.estimateHemoglobin(ppgValues);
       
       // Calcular hidratación con medición directa
       hydration = this.hydrationEstimator.analyze(ppgValues);
-    } else {
-      // Si no hay suficientes datos, reportar ausencia de mediciones
-      console.log("VitalSignsProcessor: Datos insuficientes para medición", {
-        dataPoints: ppgValues.length,
-        amplitude: amplitude,
-        minRequired: 15
+      
+      // Log detallado cada cierto número de frames
+      if (this.processedFrameCount % 50 === 0) {
+        console.log("VitalSignsProcessor: Calculated values", {
+          heartRate,
+          spo2,
+          pressure,
+          glucose,
+          hemoglobin,
+          hydration,
+          lipids
+        });
+      }
+    } else if (this.processedFrameCount % 50 === 0) {
+      console.log("VitalSignsProcessor: Insufficient data for calculation", {
+        hasEnoughData,
+        amplitude,
+        ppgValuesLength: ppgValues.length
       });
     }
     
-    // Log all vital signs for diagnostic purposes 
-    if (this.processedFrameCount % 15 === 0 || this.processedFrameCount < 5) {
-      console.log("VitalSignsProcessor: Real measurements calculated", {
-        spo2,
-        heartRate,
-        pressure,
-        arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-        glucose,
-        lipids,
-        hemoglobin,
-        hydration,
-        frameCount: this.processedFrameCount,
-        signalAmplitude: amplitude,
-        isStabilized: this.isStabilized
-      });
-    }
-    
-    // Calcular confidence de las mediciones
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
-    const lipidsConfidence = this.lipidProcessor.getConfidence();
-    
-    // Determinar confiabilidad general basada en la calidad de señal real
-    let overallConfidence = 0;
-    if (amplitude > 0.02) {
-      overallConfidence = 0.7;
-    } else if (amplitude > 0.01) {
-      overallConfidence = 0.3;
-    } else {
-      overallConfidence = 0; // Sin confianza si la señal es muy débil
-    }
-
-    // Prepare result with all metrics
-    const result = ResultFactory.createResult(
-      spo2,
+    // Create result object with all measurements
+    const result: VitalSignsResult = {
       heartRate,
+      spo2,
       pressure,
-      arrhythmiaResult.arrhythmiaStatus || "--",
       glucose,
+      hydration,
       lipids,
       hemoglobin,
-      hydration,
-      glucoseConfidence, 
-      lipidsConfidence,
-      overallConfidence,
-      arrhythmiaResult.lastArrhythmiaData
-    );
+      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
+    };
     
-    // Guardar como último resultado válido solo si hay datos interesantes
-    if (spo2 > 0 || heartRate > 0 || glucose > 0 || hydration > 0 || 
-        lipids.totalCholesterol > 0 || lipids.triglycerides > 0) {
-      this.lastValidResult = result;
+    // Si tenemos al menos un valor válido, guardar como último válido
+    if (
+      result.heartRate > 0 ||
+      result.spo2 > 0 ||
+      result.glucose > 0 ||
+      result.hemoglobin > 0 ||
+      result.hydration > 0 ||
+      (result.lipids && (result.lipids.totalCholesterol > 0 || result.lipids.triglycerides > 0)) ||
+      (result.pressure && result.pressure !== "--/--")
+    ) {
+      this.lastValidResult = { ...result };
+      
+      // Log cuando guardamos un nuevo resultado válido
+      if (this.processedFrameCount % 50 === 0) {
+        console.log("VitalSignsProcessor: Valid result saved", result);
+      }
+    } else if (this.processedFrameCount % 50 === 0) {
+      console.log("VitalSignsProcessor: No valid values to save", result);
     }
     
-    // Always return the current result
     return result;
   }
-
+  
   /**
-   * Get the last valid results if available, otherwise empty results
+   * Get the last valid result if available
    */
-  public getLastValidResults(): VitalSignsResult | null {
-    if (this.lastValidResult) {
-      console.log("VitalSignsProcessor: Returning last valid result", this.lastValidResult);
-      return this.lastValidResult;
-    }
-    console.log("VitalSignsProcessor: No valid result available, returning null");
-    return null;
+  public getLastValidResult(): VitalSignsResult | null {
+    return this.lastValidResult;
   }
-
+  
   /**
-   * Reset the processor to ensure a clean state
+   * Get arrhythmia counter from processor
    */
-  public reset(): VitalSignsResult | null {
+  public getArrhythmiaCounter(): number {
+    return this.arrhythmiaProcessor.getArrhythmiaCounter();
+  }
+  
+  /**
+   * Reset all processors
+   */
+  public reset(): void {
     this.spo2Processor.reset();
     this.bpProcessor.reset();
     this.arrhythmiaProcessor.reset();
@@ -280,32 +282,19 @@ export class VitalSignsProcessor {
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
     this.hydrationEstimator.reset();
+    this.hemoglobinEstimator.reset();
+    this.lastValidResult = null;
     this.isStabilized = false;
     this.stabilizationCounter = 0;
-    console.log("VitalSignsProcessor: Reset complete - all processors at zero");
-    return null;
+    console.log("VitalSignsProcessor: All processors reset");
   }
   
   /**
-   * Get arrhythmia counter
-   */
-  public getArrhythmiaCounter(): number {
-    return this.arrhythmiaProcessor.getArrhythmiaCount();
-  }
-  
-  /**
-   * Completely reset the processor
-   * Ensures fresh start with no data carryover
+   * Full reset of all processors and internal state
    */
   public fullReset(): void {
     this.reset();
-    this.lastValidResult = null;
     this.processedFrameCount = 0;
-    this.isStabilized = false;
-    this.stabilizationCounter = 0;
-    console.log("VitalSignsProcessor: Full reset completed - starting from zero");
+    console.log("VitalSignsProcessor: Full reset completed");
   }
 }
-
-// Re-export the VitalSignsResult type
-export type { VitalSignsResult } from './types/vital-signs-result';

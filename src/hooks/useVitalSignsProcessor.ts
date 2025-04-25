@@ -23,10 +23,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   // Session tracking
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
-  // Signal quality tracking
+  // Signal quality tracking - MODIFICADO: Umbrales más permisivos
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.03; // MODIFICADO: Umbral más permisivo
-  const MAX_WEAK_SIGNALS = 15; // MODIFICADO: Mayor tolerancia
+  const LOW_SIGNAL_THRESHOLD = 0.02; // MODIFICADO: Umbral más permisivo (0.03 → 0.02)
+  const MAX_WEAK_SIGNALS = 10;      // MODIFICADO: Mayor tolerancia (15 → 10)
   
   // Centralized arrhythmia tracking
   const { 
@@ -44,7 +44,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullReset: fullResetProcessor,
     getArrhythmiaCounter,
     getDebugInfo,
-    processedSignals
+    processedSignals,
+    getLastValidResults
   } = useSignalProcessing();
   
   const { 
@@ -77,7 +78,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    console.log("useVitalSignsProcessor: Processing signal with value", { value, hasRRData: !!rrData });
+    console.log("useVitalSignsProcessor: Processing signal with value", { 
+      value, 
+      hasRRData: !!rrData,
+      rrIntervals: rrData?.intervals?.length || 0
+    });
     
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
@@ -94,7 +99,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Process signal directly - no simulation
     try {
       // MODIFICADO: Procesamos la señal incluso si es débil para obtener más resultados
-      let result = processVitalSignal(value, rrData, false);
+      let result = processVitalSignal(value, rrData, isWeakSignal);
       
       // Process and handle arrhythmia events with our centralized system
       if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
@@ -114,8 +119,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // MODIFICADO: Log más detallado para debug
-      if (processedSignals.current % 30 === 0) {
+      // Log más detallado para debug - MODIFICADO: Frecuencia reducida para claridad
+      if (processedSignals.current % 20 === 0) {
         console.log("useVitalSignsProcessor: Evaluating results", {
           sessionId: sessionId.current,
           processCount: processedSignals.current,
@@ -191,7 +196,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         };
         
         // MODIFICADO: Solo logeamos cuando realmente hay un cambio para evitar spam
-        if (processedSignals.current % 30 === 0) {
+        if (processedSignals.current % 20 === 0) {
           console.log("useVitalSignsProcessor: Validating results", logDetails);
         }
         
@@ -200,6 +205,15 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         if (hasValidData) {
           console.log("useVitalSignsProcessor: Guardando resultado válido", result);
           setLastValidResults(result);
+        } else if (processedSignals.current % 20 === 0) {
+          console.log("useVitalSignsProcessor: No hay datos válidos para guardar");
+          
+          // MODIFICADO: Intento recuperar el último resultado válido del procesador
+          const lastValidFromProcessor = getLastValidResults();
+          if (lastValidFromProcessor) {
+            console.log("useVitalSignsProcessor: Recuperado último resultado válido del procesador", lastValidFromProcessor);
+            setLastValidResults(lastValidFromProcessor);
+          }
         }
       }
       

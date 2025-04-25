@@ -29,10 +29,11 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // Determinamos si hay un valor real para mostrar
-  // Solo consideramos valores reales > 0 o cadenas específicas de medición
+  // MODIFICADO: Mejorada la detección de valores para mostrar
+  // Consideramos valores reales > 0 o cadenas que no son indicadores de falta de datos
   const hasValue = value !== undefined && value !== null && 
-                  (typeof value === 'number' ? value > 0 : value !== '--' && value !== '--/--');
+                  (typeof value === 'number' ? value > 0 : 
+                   (value !== '--' && value !== '--/--' && value !== ''));
   
   // Format function to handle all types of values properly
   const formattedValue = () => {
@@ -42,12 +43,12 @@ const VitalSign: React.FC<VitalSignProps> = ({
       
       if (label === "HIDRATACIÓN" || label === "SPO2") {
         // These are percentages, show as integers
-        return value;
+        return Math.round(value);
       } else if (label === "HEMOGLOBINA") {
         // For hemoglobin, show one decimal place
         return value.toFixed(1);
       }
-      return value;
+      return Math.round(value);
     }
     
     // Handle string values

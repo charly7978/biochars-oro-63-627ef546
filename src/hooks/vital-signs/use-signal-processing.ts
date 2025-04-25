@@ -41,7 +41,7 @@ export const useSignalProcessing = () => {
     }
     
     // Enhanced logging for diagnostics
-    if (processedSignals.current % 5 === 0 || processedSignals.current < 10) {
+    if (processedSignals.current % 50 === 0 || processedSignals.current < 10) {
       console.log("useSignalProcessing: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
@@ -55,7 +55,7 @@ export const useSignalProcessing = () => {
       let result = processorRef.current.processSignal(value, rrData);
       
       // Comprehensive logging for ALL vital signs
-      if (processedSignals.current % 20 === 0) { // MODIFICADO: Reducido para no llenar la consola
+      if (processedSignals.current % 20 === 0) {
         console.log("useSignalProcessing: Processed complete result", {
           frame: processedSignals.current,
           heartRate: result.heartRate,
@@ -106,14 +106,14 @@ export const useSignalProcessing = () => {
       }
       
       // Log processed signal for diagnostics
-      if (processedSignals.current % 60 === 0) { // MODIFICADO: Reducido para no llenar la consola
+      if (processedSignals.current % 60 === 0) {
         signalLog.current.push({
           timestamp: Date.now(),
           value,
           result
         });
         
-        if (signalLog.current.length > 60) { // MODIFICADO: Reducido tamaño del buffer
+        if (signalLog.current.length > 60) {
           signalLog.current = signalLog.current.slice(-60);
         }
       }
@@ -180,6 +180,14 @@ export const useSignalProcessing = () => {
   const getArrhythmiaCounter = useCallback(() => {
     return processorRef.current?.getArrhythmiaCounter() || 0;
   }, []);
+  
+  /**
+   * Get last valid results from processor
+   * AÑADIDO: Función para recuperar último resultado válido
+   */
+  const getLastValidResults = useCallback(() => {
+    return processorRef.current?.getLastValidResult() || null;
+  }, []);
 
   /**
    * Get debug information about signal processing
@@ -199,6 +207,7 @@ export const useSignalProcessing = () => {
     fullReset,
     getArrhythmiaCounter,
     getDebugInfo,
+    getLastValidResults, // AÑADIDO: Exposición de función para recuperar últimos resultados válidos
     processorRef,
     processedSignals,
     signalLog
