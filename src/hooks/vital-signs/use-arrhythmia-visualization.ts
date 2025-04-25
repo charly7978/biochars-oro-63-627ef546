@@ -1,4 +1,3 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrhythmiaWindow } from './types';
 import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
@@ -74,79 +73,9 @@ export const useArrhythmiaVisualization = () => {
    * Analyze RR intervals to detect arrhythmias
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (rrIntervals.length < 5) {
-      return {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: Date.now(),
-        isArrhythmia: false
-      };
-    }
-    
-    const lastIntervals = rrIntervals.slice(-5);
-    
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    const rmssd = calculateRMSSD(lastIntervals);
-    
-    // Calculate RR variation
-    const variationRatio = calculateRRVariation(lastIntervals);
-    
-    // Adjust threshold based on stability
-    let thresholdFactor = DETECTION_THRESHOLD;
-    if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.18; // Increased from 0.15 to 0.18
-    } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.28; // Increased from 0.25 to 0.28
-    }
-    
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    if (!isIrregular) {
-      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
-    } else {
-      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
-    }
-    
-    // Arrhythmia detection
-    const isArrhythmia = isIrregular && stabilityCounterRef.current < 22; // Changed from 25 to 22
-    
-    if (isArrhythmia) {
-      // Generate an arrhythmia window when detected
-      const currentTime = Date.now();
-      
-      // Solo generar ventana si ha pasado tiempo suficiente desde la última
-      if (currentTime - lastArrhythmiaTriggeredRef.current > 3000) {
-        const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-        // Ventana más ancha para mejor visualización
-        const windowWidth = Math.max(1000, Math.min(1500, avgInterval * 3.5));
-        
-        addArrhythmiaWindow(currentTime - windowWidth/2, currentTime + windowWidth/2);
-        
-        console.log("Arrhythmia detected in visualization", {
-          rmssd,
-          variationRatio,
-          threshold: thresholdFactor,
-          timestamp: new Date(currentTime).toISOString(),
-          rrIntervals: lastIntervals
-        });
-      }
-    }
-    
-    heartRateVariabilityRef.current.push(variationRatio);
-    if (heartRateVariabilityRef.current.length > 20) {
-      heartRateVariabilityRef.current.shift();
-    }
-    
-    lastIsArrhythmiaRef.current = isArrhythmia;
-    
-    return {
-      rmssd,
-      rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
-    };
-  }, [addArrhythmiaWindow]);
-  
+    return ArrhythmiaDetectionService.detectArrhythmia(rrIntervals);
+  }, []);
+
   /**
    * Process arrhythmia detection from signal processor results
    */

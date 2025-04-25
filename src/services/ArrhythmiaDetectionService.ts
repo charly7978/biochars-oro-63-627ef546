@@ -1,7 +1,5 @@
-
 /**
- * Centralized service for arrhythmia detection
- * Only uses real data - no simulation
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { ArrhythmiaWindow } from '@/hooks/vital-signs/types';
@@ -14,6 +12,7 @@ export interface ArrhythmiaDetectionResult {
   rmssd: number;
   rrVariation: number;
   timestamp: number;
+  category?: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
 }
 
 export interface ArrhythmiaStatus {
@@ -23,13 +22,18 @@ export interface ArrhythmiaStatus {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
+    category?: string;
   } | null;
 }
 
-type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
+interface UserProfile {
+  age?: number;
+  condition?: 'athlete' | 'hypertension' | 'diabetes';
+}
 
 class ArrhythmiaDetectionService {
   private static instance: ArrhythmiaDetectionService;
+  private userProfile: UserProfile = {};
   
   // Detection state
   private heartRateVariability: number[] = [];
@@ -41,12 +45,14 @@ class ArrhythmiaDetectionService {
   private lastArrhythmiaTriggeredTime: number = 0;
   private arrhythmiaWindows: ArrhythmiaWindow[] = [];
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
+  private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
   
   // Arrhythmia detection constants
   private readonly DETECTION_THRESHOLD: number = 0.28; // Increased from 0.25 to 0.28
   private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
   private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private readonly MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
+  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
+  private RR_VARIATION_THRESHOLD = 0.17;
   
   // False positive prevention
   private falsePositiveCounter: number = 0;
@@ -60,8 +66,8 @@ class ArrhythmiaDetectionService {
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   private constructor() {
-    // Configurar limpieza automática periódica
     this.setupAutomaticCleanup();
+    this.adjustThresholdsForProfile();
   }
 
   private setupAutomaticCleanup(): void {
@@ -106,6 +112,55 @@ class ArrhythmiaDetectionService {
   }
 
   /**
+   * Update user profile and adjust thresholds accordingly
+   */
+  public updateUserProfile(profile: UserProfile): void {
+    this.userProfile = profile;
+    this.adjustThresholdsForProfile();
+  }
+
+  private adjustThresholdsForProfile(): void {
+    const { age, condition } = this.userProfile;
+
+    // Adjust RR variation threshold based on age
+    if (age && age > 60) {
+      this.RR_VARIATION_THRESHOLD *= 0.85;
+    }
+
+    // Adjust for athletic or medical conditions
+    if (condition === 'athlete') {
+      this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL *= 1.2;
+    } else if (condition === 'hypertension' || condition === 'diabetes') {
+      this.RR_VARIATION_THRESHOLD *= 0.9;
+    }
+  }
+
+  /**
+   * Categorize arrhythmia based on RR intervals
+   */
+  private categorizeArrhythmia(intervals: number[]): ArrhythmiaDetectionResult['category'] {
+    if (intervals.length < 3) return 'possible-arrhythmia';
+
+    const lastRR = intervals[intervals.length - 1];
+    if (lastRR < 500) return 'tachycardia';
+    if (lastRR > 1200) return 'bradycardia';
+
+    // Detect bigeminy pattern
+    let hasBigeminyPattern = true;
+    for (let i = 1; i < intervals.length - 1; i += 2) {
+      const evenRR = intervals[i];
+      const oddRR = intervals[i - 1];
+      if (Math.abs(evenRR - oddRR) / oddRR < 0.4) {
+        hasBigeminyPattern = false;
+        break;
+      }
+    }
+    if (hasBigeminyPattern) return 'bigeminy';
+
+    return 'possible-arrhythmia';
+  }
+
+  /**
    * Detect arrhythmia based on RR interval variations
    * Only uses real data - no simulation
    */
@@ -118,7 +173,8 @@ class ArrhythmiaDetectionService {
         isArrhythmia: this.currentBeatIsArrhythmia,
         rmssd: 0,
         rrVariation: 0,
-        timestamp: currentTime
+        timestamp: currentTime,
+        category: 'normal'
       };
     }
     
@@ -130,7 +186,8 @@ class ArrhythmiaDetectionService {
         isArrhythmia: false,
         rmssd: 0,
         rrVariation: 0,
-        timestamp: currentTime
+        timestamp: currentTime,
+        category: 'normal'
       };
     }
     
@@ -152,7 +209,8 @@ class ArrhythmiaDetectionService {
         isArrhythmia: false,
         rmssd: 0,
         rrVariation: 0,
-        timestamp: currentTime
+        timestamp: currentTime,
+        category: 'normal'
       };
     }
     
@@ -230,7 +288,8 @@ class ArrhythmiaDetectionService {
       rmssd,
       rrVariation: variationRatio,
       timestamp: currentTime,
-      isArrhythmia: this.currentBeatIsArrhythmia
+      isArrhythmia: this.currentBeatIsArrhythmia,
+      category: this.categorizeArrhythmia(validIntervals)
     };
   }
   
@@ -260,6 +319,15 @@ class ArrhythmiaDetectionService {
       timestamp: new Date(currentTime).toISOString()
     });
     
+    const category = this.categorizeArrhythmia(intervals);
+    
+    this.lastArrhythmiaData = {
+      timestamp: currentTime,
+      rmssd,
+      rrVariation: variationRatio,
+      category
+    };
+
     // Create an arrhythmia window
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
@@ -284,23 +352,19 @@ class ArrhythmiaDetectionService {
     // Limitar número de notificaciones
     const shouldShowToast = this.arrhythmiaCount <= 3 || this.arrhythmiaCount % 3 === 0;
     
-    // Show toast notification (limitado para no saturar)
+    // Show more detailed toast based on category
     if (shouldShowToast) {
-      if (this.arrhythmiaCount === 1) {
-        toast({
-          title: '¡Atención!',
-          description: 'Se ha detectado una posible arritmia',
-          variant: 'destructive',
-          duration: 6000
-        });
-      } else {
-        toast({
-          title: 'Arritmia detectada',
-          description: `Se han detectado ${this.arrhythmiaCount} posibles arritmias`,
-          variant: 'destructive',
-          duration: 6000
-        });
-      }
+      const message = category === 'tachycardia' ? 'Ritmo cardíaco elevado detectado' :
+                     category === 'bradycardia' ? 'Ritmo cardíaco bajo detectado' :
+                     category === 'bigeminy' ? 'Patrón de arritmia bigeminal detectado' :
+                     'Posible arritmia detectada';
+                     
+      toast({
+        title: '¡Atención!',
+        description: message,
+        variant: 'destructive',
+        duration: 6000
+      });
     }
     
     // Auto-cleanup para evitar detecciones continuas
@@ -358,7 +422,8 @@ class ArrhythmiaDetectionService {
     const lastArrhythmiaData = this.currentBeatIsArrhythmia ? {
       timestamp: Date.now(),
       rmssd: calculateRMSSD(this.lastRRIntervals.slice(-5)),
-      rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5))
+      rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5)),
+      category: this.categorizeArrhythmia(this.lastRRIntervals.slice(-5))
     } : null;
     
     return {
@@ -431,6 +496,7 @@ class ArrhythmiaDetectionService {
     this.arrhythmiaWindows = [];
     this.falsePositiveCounter = 0;
     this.arrhythmiaConfirmationCounter = 0;
+    this.lastArrhythmiaData = null;
     
     console.log("ArrhythmiaDetectionService: All detection data reset");
   }
