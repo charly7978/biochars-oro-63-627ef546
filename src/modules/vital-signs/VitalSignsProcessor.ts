@@ -154,7 +154,9 @@ export class VitalSignsProcessor {
       spo2 = this.spo2Processor.calculateSpO2(ppgValues);
       
       // Calcular presión arterial con datos directos
-      pressure = this.bpProcessor.calculateBloodPressure(ppgValues);
+      // FIX: Aquí está el problema. Estamos recibiendo un objeto pero pressure es string
+      const bpResult = this.bpProcessor.calculateBloodPressure(ppgValues);
+      pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
       
       // Calcular frecuencia cardíaca directa
       if (rrData && rrData.intervals && rrData.intervals.length > 3) {
