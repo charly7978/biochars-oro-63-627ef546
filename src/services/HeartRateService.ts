@@ -87,6 +87,7 @@ class HeartRateService {
   private lowSignalCount: number = 0;
   private peakListeners: Array<(data: PeakData) => void> = [];
   private vibrationEnabled: boolean = true;
+  private rrIntervalHistory: number[] = [];
   
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
@@ -277,6 +278,16 @@ class HeartRateService {
       this.previousPeakTime = this.lastPeakTime;
       this.lastPeakTime = now;
       
+      if (this.previousPeakTime !== null) {
+        const newInterval = this.lastPeakTime - this.previousPeakTime;
+        if (newInterval >= this.MIN_PEAK_TIME_MS && newInterval <= 2000) {
+          this.rrIntervalHistory.push(newInterval);
+          if (this.rrIntervalHistory.length > 20) {
+            this.rrIntervalHistory.shift();
+          }
+        }
+      }
+
       // Update BPM history
       this.bpmHistory = this.updateBPMHistory(now);
       
@@ -299,12 +310,9 @@ class HeartRateService {
     // Apply smoothing
     this.smoothBPM = this.smoothBPM === 0 ? rawBPM : this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
     
-    // Calcular intervalos RR
-    const rrIntervals = this.calculateRRIntervals();
-    
-    // Create RRIntervalData object
+    // Create RRIntervalData object con el historial actualizado
     const rrData: RRIntervalData = {
-      intervals: rrIntervals,
+      intervals: [...this.rrIntervalHistory],
       lastPeakTime: this.lastPeakTime
     };
     
@@ -313,7 +321,7 @@ class HeartRateService {
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
-      rrIntervals,
+      rrIntervals: [...this.rrIntervalHistory],
       lastPeakTime: this.lastPeakTime,
       rrData
     };
@@ -432,18 +440,6 @@ class HeartRateService {
   }
   
   /**
-   * Calcula intervalos RR a partir del historial de BPM
-   */
-  private calculateRRIntervals(): number[] {
-    if (this.bpmHistory.length < 2) {
-      return [];
-    }
-    
-    // Convertir BPM a intervalos RR en ms
-    return this.bpmHistory.map(bpm => realRound(60000 / bpm));
-  }
-  
-  /**
    * Reinicia el procesador
    */
   public reset(): void {
@@ -467,6 +463,7 @@ class HeartRateService {
     this.peakCandidateValue = 0;
     this.lowSignalCount = 0;
     this.lastProcessedPeakTime = 0;
+    this.rrIntervalHistory = [];
     
     console.log("HeartRateService: Reset complete - all values at zero");
   }

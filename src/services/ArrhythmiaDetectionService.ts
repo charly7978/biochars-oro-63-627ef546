@@ -40,7 +40,6 @@ class ArrhythmiaDetectionService {
   
   // Detection state
   private heartRateVariability: number[] = [];
-  private stabilityCounter: number = 0;
   private lastRRIntervals: number[] = [];
   private lastIsArrhythmia: boolean = false;
   private currentBeatIsArrhythmia: boolean = false;
@@ -51,19 +50,17 @@ class ArrhythmiaDetectionService {
   private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
   
   // Arrhythmia detection constants
-  private readonly DETECTION_THRESHOLD: number = 0.32; // Increased from 0.28
-  private readonly MIN_INTERVAL: number = 300; // 300ms minimum (200 BPM max)
-  private readonly MAX_INTERVAL: number = 2000; // 2000ms maximum (30 BPM min)
-  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000; // Increased from 8000 to 10000ms
+  private readonly RMSSD_THRESHOLD: number = 70;
+  private readonly MIN_INTERVAL: number = 300;
+  private readonly MAX_INTERVAL: number = 2000;
+  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000;
   private RR_VARIATION_THRESHOLD = 0.17;
   
   // False positive prevention
-  private falsePositiveCounter: number = 0;
-  private readonly MAX_FALSE_POSITIVES: number = 3;
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 3; // Increased from 2 to 3 para mayor exigencia
-  private readonly CONFIRMATION_WINDOW_MS: number = 12000; // Increased from 10000 to 12000
+  private readonly REQUIRED_CONFIRMATIONS: number = 3;
+  private readonly CONFIRMATION_WINDOW_MS: number = 12000;
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -142,36 +139,37 @@ class ArrhythmiaDetectionService {
    * Categorize arrhythmia based on RR intervals
    */
   private categorizeArrhythmia(intervals: number[]): ArrhythmiaDetectionResult['category'] {
-    if (intervals.length < 3) return 'possible-arrhythmia';
-
-    const lastRR = intervals[intervals.length - 1];
+    const lastRR = intervals.length > 0 ? intervals[intervals.length - 1] : 0;
+    if (lastRR === 0) return 'possible-arrhythmia';
     if (lastRR < 500) return 'tachycardia';
     if (lastRR > 1200) return 'bradycardia';
 
     // Detect bigeminy pattern
-    let hasBigeminyPattern = true;
-    for (let i = 1; i < intervals.length - 1; i += 2) {
-      const evenRR = intervals[i];
-      const oddRR = intervals[i - 1];
-      if (realAbs(evenRR - oddRR) / oddRR < 0.4) {
-        hasBigeminyPattern = false;
-        break;
+    if (intervals.length >= 3) {
+      let hasBigeminyPattern = true;
+      for (let i = 1; i < intervals.length - 1; i += 2) {
+        const evenRR = intervals[i];
+        const oddRR = intervals[i - 1];
+        if (oddRR === 0 || realAbs(evenRR - oddRR) / oddRR < 0.4) {
+          hasBigeminyPattern = false;
+          break;
+        }
       }
+      if (hasBigeminyPattern) return 'bigeminy';
     }
-    if (hasBigeminyPattern) return 'bigeminy';
 
     return 'possible-arrhythmia';
   }
 
   /**
-   * Detect arrhythmia based on RR interval variations
+   * Detect arrhythmia based on RR interval variations (simplified using RMSSD)
    * Only uses real data - no simulation
    */
   public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
     const currentTime = Date.now();
     
     // Protección contra llamadas frecuentes - previene detecciones falsas por ruido
-    if (currentTime - this.lastDetectionTime < 250) { // Increased from 200 to 250ms
+    if (currentTime - this.lastDetectionTime < 250) {
       return {
         isArrhythmia: this.currentBeatIsArrhythmia,
         rmssd: 0,
@@ -194,20 +192,19 @@ class ArrhythmiaDetectionService {
       };
     }
     
-    // Get the 5 most recent intervals for analysis
-    const lastIntervals = rrIntervals.slice(-5);
+    // Get the intervals for analysis (puede ser más de 5 si queremos RMSSD más estable)
+    const intervalsForAnalysis = rrIntervals.slice(-15);
     
     // Verificar que los intervalos sean fisiológicamente válidos
-    const validIntervals = lastIntervals.filter(
+    const validIntervals = intervalsForAnalysis.filter(
       interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
     );
     
-    // Si menos del 80% de los intervalos son válidos, no es confiable
-    if (validIntervals.length < lastIntervals.length * 0.8) {
-      // Resetear detección para evitar falsos positivos por ruido
-      this.stabilityCounter = realMin(this.stabilityCounter + 1, 30);
+    // Si menos del 80% de los intervalos recientes son válidos, no es confiable
+    if (validIntervals.length < intervalsForAnalysis.length * 0.8 || validIntervals.length < 4) {
+      // Resetear contador de confirmación si la señal no es fiable
+      this.arrhythmiaConfirmationCounter = 0;
       this.currentBeatIsArrhythmia = false;
-      
       return {
         isArrhythmia: false,
         rmssd: 0,
@@ -217,41 +214,13 @@ class ArrhythmiaDetectionService {
       };
     }
     
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
+    // Calcular RMSSD (métrica principal ahora)
     const rmssd = calculateRMSSD(validIntervals);
     
-    // Calculate variation ratio (normalized variability)
-    const variationRatio = calculateRRVariation(validIntervals);
+    // Detección de arritmia potencial basada en RMSSD
+    const potentialArrhythmia = rmssd > this.RMSSD_THRESHOLD;
     
-    // Adjust threshold based on stability
-    let thresholdFactor = this.DETECTION_THRESHOLD;
-    if (this.stabilityCounter > 15) {
-      thresholdFactor = 0.23; // Increased from 0.20 to 0.23
-    } else if (this.stabilityCounter < 5) {
-      thresholdFactor = 0.33; // Increased from 0.30 to 0.33
-    }
-    
-    // Determine if rhythm is irregular
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    // Update stability counter
-    if (!isIrregular) {
-      this.stabilityCounter = realMin(30, this.stabilityCounter + 1);
-      this.falsePositiveCounter = realMax(0, this.falsePositiveCounter - 1);
-    } else {
-      this.stabilityCounter = realMax(0, this.stabilityCounter - 1);
-    }
-    
-    // Detection of arrhythmia (real data only)
-    const potentialArrhythmia = isIrregular && this.stabilityCounter < 20; // Changed from 18 to 20
-    
-    // Update HRV data
-    this.heartRateVariability.push(variationRatio);
-    if (this.heartRateVariability.length > 20) {
-      this.heartRateVariability.shift();
-    }
-    
-    // Procesamiento para confirmar arritmia - requiere confirmación múltiple
+    // Procesamiento para confirmar arritmia - lógica de confirmación existente
     let confirmedArrhythmia = false;
     
     if (potentialArrhythmia) {
@@ -265,14 +234,16 @@ class ArrhythmiaDetectionService {
           this.arrhythmiaConfirmationCounter = 0;
         } else {
           // Todavía no confirmada, pero seguimos registrando
-          console.log(`Potential arrhythmia detected, confirmation ${this.arrhythmiaConfirmationCounter}/${this.REQUIRED_CONFIRMATIONS}`);
+          console.log(`Potential arrhythmia detected (RMSSD=${rmssd.toFixed(1)}), confirmation ${this.arrhythmiaConfirmationCounter}/${this.REQUIRED_CONFIRMATIONS}`);
         }
       }
+      // Si ya estábamos en arritmia, no incrementamos contador pero mantenemos el estado potencial
     } else {
-      // Si ha pasado mucho tiempo sin confirmación, resetear contador
+      // Si el RMSSD está por debajo del umbral, reseteamos el contador si ha pasado tiempo
       if (currentTime - this.lastArrhythmiaTriggeredTime > this.CONFIRMATION_WINDOW_MS) {
         this.arrhythmiaConfirmationCounter = 0;
       }
+      // También podríamos resetear si vemos varios latidos normales seguidos, pero mantengamos simple por ahora
     }
     
     // Actualizar estado de arritmia
@@ -281,18 +252,23 @@ class ArrhythmiaDetectionService {
     // Solo actualizar a true si está confirmada
     if (confirmedArrhythmia) {
       this.currentBeatIsArrhythmia = true;
-      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatio, thresholdFactor);
+      // Llamar a handle con RMSSD y calcular variationRatio solo para info?
+      const variationRatioForInfo = calculateRRVariation(validIntervals);
+      this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatioForInfo, this.RMSSD_THRESHOLD);
     } else if (!potentialArrhythmia) {
-      // Resetear solo si no hay potencial arritmia
+      // Resetear si no hay potencial arritmia (RMSSD bajo)
       this.currentBeatIsArrhythmia = false;
     }
     
+    // Calcular rrVariation para devolverlo, aunque no se use para detección primaria
+    const finalRRVariation = calculateRRVariation(validIntervals);
+
     return {
       rmssd,
-      rrVariation: variationRatio,
+      rrVariation: finalRRVariation,
       timestamp: currentTime,
       isArrhythmia: this.currentBeatIsArrhythmia,
-      category: this.categorizeArrhythmia(validIntervals)
+      category: this.currentBeatIsArrhythmia ? this.categorizeArrhythmia(validIntervals) : 'normal'
     };
   }
   
@@ -302,7 +278,7 @@ class ArrhythmiaDetectionService {
   private handleArrhythmiaDetection(
     intervals: number[], 
     rmssd: number, 
-    variationRatio: number, 
+    variationRatio: number,
     threshold: number
   ): void {
     const currentTime = Date.now();
@@ -318,7 +294,6 @@ class ArrhythmiaDetectionService {
       rmssd,
       variationRatio,
       threshold,
-      stabilityCounter: this.stabilityCounter,
       timestamp: new Date(currentTime).toISOString()
     });
     
@@ -478,14 +453,12 @@ class ArrhythmiaDetectionService {
    */
   public reset(): void {
     this.heartRateVariability = [];
-    this.stabilityCounter = 0;
     this.lastRRIntervals = [];
     this.lastIsArrhythmia = false;
     this.currentBeatIsArrhythmia = false;
     this.arrhythmiaCount = 0;
     this.lastArrhythmiaTriggeredTime = 0;
     this.arrhythmiaWindows = [];
-    this.falsePositiveCounter = 0;
     this.arrhythmiaConfirmationCounter = 0;
     this.lastArrhythmiaData = null;
     
