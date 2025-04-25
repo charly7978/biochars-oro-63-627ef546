@@ -52,6 +52,14 @@ const PPGSignalMeter = memo(({
   const [resultsVisible, setResultsVisible] = useState(true);
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
 
+  const {
+    startProcessing: startSignalProcessing,
+    stopProcessing: stopSignalProcessing,
+    processFrame,
+    lastSignal,
+    error: processingError
+  } = useSignalProcessor();
+
   const WINDOW_WIDTH_MS = 4500;
   const CANVAS_WIDTH = 1100;
   const CANVAS_HEIGHT = 1200;
