@@ -1,11 +1,15 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
-import { HeartBeatResult } from '../../core/types';
+import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor.ts';
+import { HeartBeatResult, UseHeartBeatReturn, RRIntervalData } from './types';
+import { checkWeakSignal, updateLastValidBpm, processLowConfidenceResult } from './signal-processing';
+import { handlePeakDetection, shouldProcessMeasurement, createWeakSignalResult } from './peak-detection';
+import { useBeepProcessor } from './beep-processor';
+import { useArrhythmiaDetector } from './arrhythmia-detector';
+import AudioFeedbackService from '@/services/AudioFeedbackService';
 
 /**
  * Hook para el procesamiento de la señal del latido cardíaco

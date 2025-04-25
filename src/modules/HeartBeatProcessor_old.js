@@ -287,4 +287,4 @@ export class HeartBeatProcessor {
     
     console.log("HeartBeatProcessor: Reset complete - all values at zero");
   }
-}
+} 
