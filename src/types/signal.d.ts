@@ -9,16 +9,16 @@ export interface ProcessingError {
   code: string;
   message: string;
   details?: any;
-  timestamp?: number;  // Added timestamp property
+  timestamp?: number;
 }
 
 export interface ProcessedSignal {
   filteredValue: number;
   quality: number;
   timestamp: number;
-  rawValue?: number;   // Added rawValue property
+  rawValue?: number;
   fingerDetected?: boolean;
-  roi?: {  // Added roi property
+  roi?: {
     x: number;
     y: number;
     width: number;
@@ -28,7 +28,6 @@ export interface ProcessedSignal {
   spectrumData?: any;
 }
 
-// Added SignalProcessor interface
 export interface SignalProcessor {
   initialize(): Promise<void>;
   start(): void;
