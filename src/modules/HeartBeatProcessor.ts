@@ -1,5 +1,6 @@
 import { HeartBeatConfig } from './heart-beat/config';
 import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot, clamp } from '../utils/non-math-utils';
+import { applySMAFilter, KalmanFilter } from './vital-signs/shared-signal-utils';
 
 export class HeartBeatProcessor {
   // --- Constantes y Configuraciones ---
