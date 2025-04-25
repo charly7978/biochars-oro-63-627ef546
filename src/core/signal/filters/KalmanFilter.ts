@@ -1,28 +1,13 @@
 
 /**
- * No-op filter that passes through raw signal data without mathematical manipulations
+ * Direct signal pass-through without any manipulation
  */
 export class KalmanFilter {
-  /**
-   * Returns the raw measurement without filtering
-   * @param measurement Raw value from sensor
-   * @returns The same raw value, unmodified
-   */
   public filter(measurement: number): number {
-    return measurement; // Direct passthrough without Math functions
+    return measurement;
   }
 
-  /**
-   * No-op reset function
-   */
-  public reset(): void {
-    // No state to reset since we're not storing anything
-  }
+  public reset(): void {}
   
-  /**
-   * No-op parameters setter
-   */
-  public setParameters(processNoise: number, measurementNoise: number): void {
-    // No parameters to set since we're not using any
-  }
+  public setParameters(_processNoise: number, _measurementNoise: number): void {}
 }

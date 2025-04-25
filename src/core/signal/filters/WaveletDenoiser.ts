@@ -1,28 +1,13 @@
 
 /**
- * No-op wavelet filter that passes through raw signal data
+ * Direct signal pass-through without any manipulation
  */
 export class WaveletDenoiser {
-  /**
-   * Returns the raw value without any filtering
-   * @param value Raw sensor value
-   * @returns The same raw value, unmodified
-   */
   public denoise(value: number): number {
-    return value; // Direct passthrough without Math functions
+    return value;
   }
   
-  /**
-   * No-op reset function
-   */
-  public reset(): void {
-    // No state to reset
-  }
+  public reset(): void {}
   
-  /**
-   * No-op threshold setter
-   */
-  public setThreshold(threshold: number): void {
-    // No threshold to set
-  }
+  public setThreshold(_threshold: number): void {}
 }

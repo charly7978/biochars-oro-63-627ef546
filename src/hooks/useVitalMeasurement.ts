@@ -1,5 +1,5 @@
-
 import { useState, useEffect, useRef } from 'react';
+import { generateId } from '../utils/signalUtils';
 
 interface VitalMeasurements {
   heartRate: number;
@@ -22,7 +22,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
   });
   const [elapsedTime, setElapsedTime] = useState(0);
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const sessionId = useRef<string>(generateId());
 
   useEffect(() => {
     console.log('useVitalMeasurement - Estado detallado:', {
@@ -151,7 +151,7 @@ export const useVitalMeasurement = (isMeasuring: boolean) => {
 
   return {
     ...measurements,
-    elapsedTime: Math.min(elapsedTime, 30),
+    elapsedTime: elapsedTime >= 30 ? 30 : elapsedTime,
     isComplete: elapsedTime >= 30,
     arrhythmiaWindows
   };
