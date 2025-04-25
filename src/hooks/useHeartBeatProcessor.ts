@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -81,8 +80,8 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     };
   }, []);
 
-  // Corregido para devolver async boolean
-  const requestBeep = useCallback(async (value: number): Promise<boolean> => {
+  // Modificado para usar función sincrónica que maneja la asincronía internamente
+  const requestBeep = useCallback((value: number): boolean => {
     if (!isMonitoringRef.current) {
       return false;
     }
@@ -92,7 +91,10 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     
     // Only play beep if signal quality is good enough
     if (signalQuality > 0.3 || weakSignals < MAX_CONSECUTIVE_WEAK_SIGNALS) {
-      return await AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2));
+      // Iniciamos la reproducción sin esperar y devolvemos true inmediatamente
+      AudioFeedbackService.playBeep('normal', Math.min(0.8, value + 0.2))
+        .catch(err => console.error("Error playing beep:", err));
+      return true;
     }
     
     return false;

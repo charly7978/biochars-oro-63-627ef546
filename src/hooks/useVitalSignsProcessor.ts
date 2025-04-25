@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -238,6 +237,29 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       };
     }
   };
+  
+  /**
+   * Process frame - implementación requerida para compatibilidad con la interfaz
+   * Redirige al procesamiento de señal existente
+   */
+  const processFrame = (frame: ImageData): VitalSignsResult => {
+    console.log("useVitalSignsProcessor: Processing frame (redirecting to signal processing)");
+    // Extracting average green channel value from the frame as a simple PPG value
+    // This is a placeholder implementation that satisfies the interface
+    const pixelCount = frame.width * frame.height;
+    let sum = 0;
+    
+    // Extract green channel average (simple PPG extraction)
+    for (let i = 0; i < pixelCount * 4; i += 4) {
+      sum += frame.data[i + 1]; // Green channel
+    }
+    
+    const avgGreenValue = sum / pixelCount;
+    const normalizedValue = (avgGreenValue / 255) - 0.5; // Normalize to [-0.5, 0.5]
+    
+    // Process this value through our regular signal processor
+    return processSignal(normalizedValue);
+  };
 
   /**
    * Perform complete reset - start from zero
@@ -266,6 +288,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
 
   return {
     processSignal,
+    processFrame,
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),

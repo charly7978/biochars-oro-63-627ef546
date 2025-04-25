@@ -16,4 +16,5 @@ export interface UseVitalSignsProcessorReturn {
   };
 }
 
-export { ArrhythmiaWindow };
+// Using 'export type' for re-exports when isolatedModules is enabled
+export type { ArrhythmiaWindow };
