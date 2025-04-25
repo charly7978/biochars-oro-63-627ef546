@@ -30,9 +30,9 @@ export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
   if (n === 0) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const sqDiffs = values.map((v) => (v - mean) * (v - mean));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+  return squareRoot(avgSqDiff);
 }
 
 /**
@@ -50,7 +50,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
     ) {
-      const localMin = Math.min(values[i - 1], values[i + 1]);
+      const localMin = findMinimum([values[i - 1], values[i + 1]]);
       if (v - localMin > 0.02) {
         peakIndices.push(i);
       }
@@ -60,7 +60,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05
     ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
+      const localMax = findMaximum([values[i - 1], values[i + 1]]);
       if (localMax - v > 0.02) {
         valleyIndices.push(i);
       }
@@ -84,10 +84,10 @@ export function calculateAmplitude(
   // Relacionar picos y valles en datos reales
   for (const peakIdx of peakIndices) {
     let closestValleyIdx = -1;
-    let minDistance = Number.MAX_VALUE;
+    let minDistance = 1e12;
     
     for (const valleyIdx of valleyIndices) {
-      const distance = Math.abs(peakIdx - valleyIdx);
+      const distance = absoluteValue(peakIdx - valleyIdx);
       if (distance < minDistance) {
         minDistance = distance;
         closestValleyIdx = valleyIdx;
@@ -131,8 +131,8 @@ export function amplifySignal(value: number, recentValues: number[]): number {
   if (recentValues.length === 0) return value;
   
   // Calcular la amplitud reciente de datos reales
-  const recentMin = Math.min(...recentValues);
-  const recentMax = Math.max(...recentValues);
+  const recentMin = findMinimum(recentValues);
+  const recentMax = findMaximum(recentValues);
   const recentRange = recentMax - recentMin;
   
   // Factor de amplificación para señales reales

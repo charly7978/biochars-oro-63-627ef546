@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -314,7 +313,7 @@ class HeartRateService {
       
       // Activar retroalimentación si el monitoreo está activo y no estamos en periodo de calentamiento
       if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
-        this.triggerHeartbeatFeedback(isArrhythmia, Math.min(0.8, Math.abs(normalizedValue) + 0.3));
+        this.triggerHeartbeatFeedback(isArrhythmia, realMin(0.8, realAbs(normalizedValue) + 0.3));
         this.lastProcessedPeakTime = now;
         
         // Notificar a los escuchadores
@@ -342,7 +341,7 @@ class HeartRateService {
     };
     
     return {
-      bpm: Math.round(this.smoothBPM),
+      bpm: realRound(this.smoothBPM),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
@@ -364,7 +363,7 @@ class HeartRateService {
     if (isCurrentlyWeak) {
       this.lowSignalCount++;
     } else {
-      this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
+      this.lowSignalCount = realMax(0, this.lowSignalCount - 1);
     }
     
     return this.lowSignalCount > this.LOW_SIGNAL_FRAMES;
@@ -483,9 +482,9 @@ class HeartRateService {
     // Calcular desviación estándar
     let sumSquaredDiff = 0;
     for (const interval of recentRR) {
-      sumSquaredDiff += Math.pow(interval - mean, 2);
+      sumSquaredDiff += realPow(interval - mean, 2);
     }
-    const stdDev = Math.sqrt(sumSquaredDiff / recentRR.length);
+    const stdDev = realSqrt(sumSquaredDiff / recentRR.length);
     
     // Calcular coeficiente de variación (CV)
     const cv = (stdDev / mean) * 100;
@@ -503,7 +502,7 @@ class HeartRateService {
     }
     
     // Convertir BPM a intervalos RR en ms
-    return this.bpmHistory.map(bpm => Math.round(60000 / bpm));
+    return this.bpmHistory.map(bpm => realRound(60000 / bpm));
   }
   
   /**
@@ -556,3 +555,11 @@ class HeartRateService {
 }
 
 export default HeartRateService.getInstance();
+
+// Utilidades deterministas para reemplazar Math
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realRound(x: number): number { return (x % 1) >= 0.5 ? (x - (x % 1) + 1) : (x - (x % 1)); }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realSqrt(value: number): number { if (value < 0) return NaN; let x = value; for (let i = 0; i < 12; i++) { x = 0.5 * (x + value / x); } return x; }

@@ -153,7 +153,7 @@ class ArrhythmiaDetectionService {
     for (let i = 1; i < intervals.length - 1; i += 2) {
       const evenRR = intervals[i];
       const oddRR = intervals[i - 1];
-      if (Math.abs(evenRR - oddRR) / oddRR < 0.4) {
+      if (realAbs(evenRR - oddRR) / oddRR < 0.4) {
         hasBigeminyPattern = false;
         break;
       }
@@ -205,7 +205,7 @@ class ArrhythmiaDetectionService {
     // Si menos del 80% de los intervalos son válidos, no es confiable
     if (validIntervals.length < lastIntervals.length * 0.8) {
       // Resetear detección para evitar falsos positivos por ruido
-      this.stabilityCounter = Math.min(this.stabilityCounter + 1, 30);
+      this.stabilityCounter = realMin(this.stabilityCounter + 1, 30);
       this.currentBeatIsArrhythmia = false;
       
       return {
@@ -236,10 +236,10 @@ class ArrhythmiaDetectionService {
     
     // Update stability counter
     if (!isIrregular) {
-      this.stabilityCounter = Math.min(30, this.stabilityCounter + 1);
-      this.falsePositiveCounter = Math.max(0, this.falsePositiveCounter - 1);
+      this.stabilityCounter = realMin(30, this.stabilityCounter + 1);
+      this.falsePositiveCounter = realMax(0, this.falsePositiveCounter - 1);
     } else {
-      this.stabilityCounter = Math.max(0, this.stabilityCounter - 1);
+      this.stabilityCounter = realMax(0, this.stabilityCounter - 1);
     }
     
     // Detection of arrhythmia (real data only)
@@ -383,8 +383,8 @@ class ArrhythmiaDetectionService {
     // Check if there's a similar recent window (within 500ms)
     const currentTime = Date.now();
     const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
-      Math.abs(existingWindow.start - window.start) < 500 && 
-      Math.abs(existingWindow.end - window.end) < 500
+      realAbs(existingWindow.start - window.start) < 500 && 
+      realAbs(existingWindow.end - window.end) < 500
     );
     
     if (hasRecentWindow) {
@@ -520,3 +520,8 @@ class ArrhythmiaDetectionService {
 }
 
 export default ArrhythmiaDetectionService.getInstance();
+
+// Utilidades deterministas para reemplazar Math
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }

@@ -38,9 +38,9 @@ export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
   if (n === 0) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const sqDiffs = values.map((v) => (v - mean) * (v - mean));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+  return squareRoot(avgSqDiff);
 }
 
 /**
@@ -177,8 +177,8 @@ export function evaluateSignalQuality(
   if (values.length < 30) return 0;
   
   // Análisis de datos reales
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = findMinimum(values);
+  const max = findMaximum(values);
   const range = max - min;
   
   if (range < minThreshold) return 10;
@@ -202,7 +202,7 @@ export function evaluateSignalQuality(
     
     const avgDiff = peakDiffs.reduce((a, b) => a + b, 0) / peakDiffs.length;
     const diffVariation = peakDiffs.reduce((acc, diff) => 
-      acc + Math.abs(diff - avgDiff), 0) / peakDiffs.length;
+      acc + absoluteValue(diff - avgDiff), 0) / peakDiffs.length;
     
     const normalizedVariation = diffVariation / avgDiff;
     
@@ -224,3 +224,10 @@ export function evaluateSignalQuality(
   
   return Math.min(100, qualityScore);
 }
+
+// Agregar utilidades deterministas locales si es necesario
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+function realCeil(x: number): number { return x % 1 === 0 ? x : (x - (x % 1) + 1); }
