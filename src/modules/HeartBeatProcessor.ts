@@ -226,7 +226,7 @@ export class HeartBeatProcessor {
     // Salir si no hay suficientes datos para detección fiable aún
     if (this.signalBuffer.length < 30 || warmingUp) {
        // Calcular BPM final incluso en warmup para actualizar estabilidad
-       const bpmDuringWarmup = Math.round(this.getFinalBPM());
+       const bpmDuringWarmup = roundToInt(this.getFinalBPM());
        return { bpm: bpmDuringWarmup, confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected, isQualityUnstable: this.isQualityUnstable, bpmStabilityScore: this.bpmStabilityScore, arrhythmiaCount: 0 };
     }
 
@@ -309,7 +309,7 @@ export class HeartBeatProcessor {
                                 prominenceScore * 0.15 +
                                 templateScore * 0.35; // Dar más peso a la plantilla
             finalPeakConfidence *= this.bpmStabilityScore; // Modular por estabilidad BPM
-            finalPeakConfidence = Math.max(0, Math.min(1.0, finalPeakConfidence));
+            finalPeakConfidence = clamp(finalPeakConfidence, 0, 1.0);
 
             // 9g: Actualizar historial de amplitud y **plantilla** si la confianza es alta
             if(finalPeakConfidence > this.TEMPLATE_CONFIDENCE_THRESHOLD) {
@@ -364,7 +364,7 @@ export class HeartBeatProcessor {
     }
 
     // Paso 12: Calcular BPM final (actualiza bpmStabilityScore internamente)
-    const finalBPM = Math.round(this.getFinalBPM()); // Llama a getSmoothBPM -> calcula estabilidad
+    const finalBPM = roundToInt(this.getFinalBPM()); // Llama a getSmoothBPM -> calcula estabilidad
 
     // Paso 13: Retornar resultados
     return {
@@ -454,11 +454,11 @@ export class HeartBeatProcessor {
       if (bpm >= this.MAX_BPM) return base;
       const normalizedBPM = (bpm - this.MIN_BPM) / (this.MAX_BPM - this.MIN_BPM);
       const size = base + (max - base) * (1 - normalizedBPM);
-      let roundedSize = Math.round(size);
+      let roundedSize = roundToInt(size);
       if (roundedSize % 2 === 0) { // Asegurar que sea impar
-          roundedSize = Math.max(base, roundedSize - 1);
+          roundedSize = roundedSize - 1 > base ? roundedSize - 1 : base;
       }
-      return Math.min(max, Math.max(base, roundedSize)); // Clampear a límites
+      return clamp(roundedSize, base, max);
   }
 
   private medianFilter(value: number, windowSize: number) {
@@ -469,7 +469,7 @@ export class HeartBeatProcessor {
     const actualWindow = this.medianBuffer.slice(-windowSize);
     if (actualWindow.length === 0) return value;
     const sorted = [...actualWindow].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
+    return sorted[sorted.length >> 1];
   }
 
   private calculateMovingAverage(value: number, windowSize: number) {
@@ -505,10 +505,10 @@ export class HeartBeatProcessor {
       const mean = this.rawSignalBuffer.reduce((a, b) => a + b, 0) / this.MOTION_BUFFER_SIZE;
       let variance = 0;
       for (const val of this.rawSignalBuffer) {
-          variance += Math.pow(val - mean, 2);
+          variance += (val - mean) * (val - mean);
       }
-      variance = Math.max(0, variance);
-      const stdDev = Math.sqrt(variance / this.MOTION_BUFFER_SIZE);
+      variance = variance < 0 ? 0 : variance;
+      const stdDev = squareRoot(variance / this.MOTION_BUFFER_SIZE);
       this.motionScore = this.motionScore * 0.7 + stdDev * 0.3;
       this.isMotionDetected = this.motionScore > this.MOTION_STD_DEV_THRESHOLD;
   }
@@ -520,7 +520,7 @@ export class HeartBeatProcessor {
         currentBPM >= this.MIN_BPM && currentBPM <= this.MAX_BPM)
     {
       const periodSeconds = 60.0 / currentBPM;
-      const periodSamples = Math.round(periodSeconds * this.SAMPLE_RATE);
+      const periodSamples = roundToInt(periodSeconds * this.SAMPLE_RATE);
       const bufferIndex = this.signalBuffer.length - 1;
       let enhancement = 0;
       if (periodSamples > 0) { // Evitar división por cero o bucles infinitos si BPM es irreal
@@ -579,20 +579,18 @@ export class HeartBeatProcessor {
   }
 
   private calculateLocalSignalQuality(normalizedAmplitude: number): number {
-      const amplitudeScore = Math.min(1.0, Math.max(0, normalizedAmplitude / (this.SIGNAL_THRESHOLD * 1.5)));
+      const amplitudeScore = clamp(normalizedAmplitude / (this.SIGNAL_THRESHOLD * 1.5), 0, 1.0);
       let rrStabilityScore = 0.5;
       if (this.rrIntervals.length >= 5) {
           const meanRR = this.rrIntervals.reduce((a, b) => a + b, 0) / this.rrIntervals.length;
           let varianceRR = 0;
           for (const interval of this.rrIntervals) {
-              varianceRR += Math.pow(interval - meanRR, 2);
+              varianceRR += (interval - meanRR) * (interval - meanRR);
           }
-          if (this.rrIntervals.length > 0) {
-            varianceRR = Math.max(0, varianceRR);
-            const stdDevRR = Math.sqrt(varianceRR / this.rrIntervals.length);
-            const relativeStdDev = meanRR > 0 ? stdDevRR / meanRR : 1.0;
-            rrStabilityScore = Math.max(0, 1.0 - Math.min(1.0, relativeStdDev / 0.15));
-          }
+          varianceRR = varianceRR < 0 ? 0 : varianceRR;
+          const stdDevRR = squareRoot(varianceRR / this.rrIntervals.length);
+          const relativeStdDev = meanRR > 0 ? stdDevRR / meanRR : 1.0;
+          rrStabilityScore = 1.0 - clamp(relativeStdDev / 0.15, 0, 1.0);
       }
       const combinedQuality = amplitudeScore * 0.6 + rrStabilityScore * 0.4;
       this.lastQualityScore = this.lastQualityScore * 0.8 + combinedQuality * 0.2;
@@ -605,7 +603,7 @@ export class HeartBeatProcessor {
           return;
       }
       const firstQuality = this.localQualityHistory[0];
-      const qualityChange = Math.abs(this.lastQualityScore - firstQuality);
+      const qualityChange = absoluteValue(this.lastQualityScore - firstQuality);
       this.isQualityUnstable = qualityChange > this.QUALITY_CHANGE_THRESHOLD;
   }
 
@@ -656,10 +654,10 @@ export class HeartBeatProcessor {
 
     if (isPeak) {
         // Confianza basada en cuánto supera el umbral *adaptativo*
-        confidence = Math.min(1.0, Math.max(0, (normalizedValue - adaptiveThreshold) / (adaptiveThreshold * 1.0 + 1e-6)));
-        const derivativeFactor = Math.min(1.0, Math.abs(derivative) / (Math.abs(this.DERIVATIVE_THRESHOLD) * 2 + 1e-6));
+        confidence = clamp((normalizedValue - adaptiveThreshold) / (adaptiveThreshold * 1.0 + 1e-6), 0, 1.0);
+        const derivativeFactor = clamp(absoluteValue(derivative) / (absoluteValue(this.DERIVATIVE_THRESHOLD) * 2 + 1e-6), 0, 1.0);
         confidence = confidence * 0.7 + derivativeFactor * 0.3;
-        confidence = Math.max(0, Math.min(1.0, confidence));
+        confidence = clamp(confidence, 0, 1.0);
         if (isQualityUnstable) {
             confidence *= this.QUALITY_TRANSITION_PENALTY;
         }
@@ -672,12 +670,12 @@ export class HeartBeatProcessor {
    private validatePeakProminence(peakNormalizedValue: number, buffer: number[], currentBPM: number): { isProminent: boolean, score: number } {
         if (buffer.length < 10 || currentBPM <= 0) return { isProminent: false, score: 0 };
 
-        const periodSamples = Math.round((60 / currentBPM) * this.SAMPLE_RATE);
-        const windowSamples = Math.max(5, Math.floor(periodSamples * this.PROMINENCE_WINDOW_FACTOR)); // Ventana = ~60% del ciclo
+        const periodSamples = roundToInt((60 / currentBPM) * this.SAMPLE_RATE);
+        const windowSamples = periodSamples * this.PROMINENCE_WINDOW_FACTOR | 0;
         const currentIndex = buffer.length - 1;
 
-        const startIndex = Math.max(0, currentIndex - windowSamples);
-        const endIndex = Math.max(0, currentIndex - 1); // Excluir el pico actual
+        const startIndex = currentIndex - windowSamples > 0 ? currentIndex - windowSamples : 0;
+        const endIndex = currentIndex - 1 > 0 ? currentIndex - 1 : 0;
 
         if (startIndex >= endIndex) return { isProminent: true, score: 0.5 }; // No hay suficientes datos previos
 
@@ -688,7 +686,7 @@ export class HeartBeatProcessor {
                                   // Alternativa: Usar el mínimo de la ventana precedente como referencia
 
         if (precedingWindow.length > 0) {
-             minBefore = Math.min(...precedingWindow);
+             minBefore = findMinimum(precedingWindow);
         } else {
             minBefore = peakNormalizedValue; // No hay datos antes
         }
@@ -701,7 +699,7 @@ export class HeartBeatProcessor {
         const isProminent = prominence >= requiredProminence;
 
         // Calcular una puntuación de prominencia (0-1)
-        const score = Math.min(1.0, Math.max(0, prominence / (requiredProminence * 1.5 + 1e-6)));
+        const score = clamp(prominence / (requiredProminence * 1.5 + 1e-6), 0, 1.0);
 
         return { isProminent, score };
    }
@@ -743,12 +741,12 @@ export class HeartBeatProcessor {
        if (rise <= 0 || fall <= 0) return { isValid: false, score: 0.2 }; // Debe haber subida y bajada
 
        // 3. Calcular puntuación (más simétrico = mejor, ratios razonables)
-       const symmetry = 1.0 - Math.abs(rise - fall) / (rise + fall + 1e-6); // Evitar división por cero
+       const symmetry = 1.0 - absoluteValue(rise - fall) / (rise + fall + 1e-6);
        const steepness = (rise + fall) / (2 * windowRadius); // Pendiente promedio
 
        // Puntuación combinada (ejemplo simple)
-       let score = (symmetry * 0.5 + Math.min(1, steepness / 0.1) * 0.5); // Normalizar pendiente
-       score = Math.max(0, Math.min(1, score));
+       let score = (symmetry * 0.5 + clamp(steepness / 0.1, 0, 1) * 0.5);
+       score = clamp(score, 0, 1);
 
        return { isValid: score >= this.MIN_SHAPE_SCORE, score };
    }
@@ -780,7 +778,7 @@ export class HeartBeatProcessor {
        // Consistencia de Intervalo
        if (this.rrIntervals.length >= 3 && this.lastPeakTime !== null) {
            const currentInterval = currentTimestamp - this.lastPeakTime;
-           const meanInterval = this.rrIntervals.slice(-5).reduce((a, b) => a + b, 0) / Math.min(5, this.rrIntervals.length);
+           const meanInterval = this.rrIntervals.slice(-5).reduce((a, b) => a + b, 0) / (this.rrIntervals.length < 5 ? this.rrIntervals.length : 5);
            const lowerBound = meanInterval * (1 - this.INTERVAL_CONSISTENCY_FACTOR);
            const upperBound = meanInterval * (1 + this.INTERVAL_CONSISTENCY_FACTOR);
            intervalConsistent = currentInterval >= lowerBound && currentInterval <= upperBound;
@@ -808,13 +806,13 @@ export class HeartBeatProcessor {
    private calculateMedian(values: number[]): number {
        if (values.length === 0) return 0;
        const sorted = [...values].sort((a, b) => a - b);
-       const mid = Math.floor(sorted.length / 2);
+       const mid = sorted.length >> 1;
        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
    }
 
    private calculateMAD(values: number[], median: number): number {
        if (values.length === 0) return 0;
-       const deviations = values.map(val => Math.abs(val - median));
+       const deviations = values.map(val => absoluteValue(val - median));
        return this.calculateMedian(deviations);
    }
 
@@ -899,8 +897,8 @@ export class HeartBeatProcessor {
            // Normalizar plantilla promedio (opcional, pero puede ayudar)
            const meanTemplate = this.currentTemplate.reduce((a, b) => a + b, 0) / templateLength;
            let stdDevTemplate = 0;
-           for(const val of this.currentTemplate) { stdDevTemplate += Math.pow(val - meanTemplate, 2); }
-           stdDevTemplate = Math.sqrt(stdDevTemplate / templateLength);
+           for(const val of this.currentTemplate) { stdDevTemplate += (val - meanTemplate) * (val - meanTemplate); }
+           stdDevTemplate = squareRoot(stdDevTemplate / templateLength);
            if (stdDevTemplate > 1e-6) {
                this.currentTemplate = this.currentTemplate.map(v => (v - meanTemplate) / stdDevTemplate);
            }
@@ -927,22 +925,22 @@ export class HeartBeatProcessor {
            covariance += diff1 * diff2;
        }
 
-       const stdDev1 = Math.sqrt(variance1 / n);
-       const stdDev2 = Math.sqrt(variance2 / n);
+       const stdDev1 = squareRoot(variance1 / n);
+       const stdDev2 = squareRoot(variance2 / n);
 
        if (stdDev1 < 1e-6 || stdDev2 < 1e-6) {
            return 0; // Evitar división por cero si una señal es constante
        }
 
        const correlation = covariance / (n * stdDev1 * stdDev2);
-       return Math.max(-1.0, Math.min(1.0, correlation)); // Clamp a [-1, 1]
+       return clamp(correlation, -1.0, 1.0); // Clamp a [-1, 1]
    }
 
    private estimateSNRProxy(): number {
-       const noiseScore = Math.min(1, this.motionScore / (this.MOTION_STD_DEV_THRESHOLD * 2 + 1e-6)); // Normalizar motion score
+       const noiseScore = this.motionScore / (this.MOTION_STD_DEV_THRESHOLD * 2 + 1e-6) < 1 ? this.motionScore / (this.MOTION_STD_DEV_THRESHOLD * 2 + 1e-6) : 1;
        // Combinar calidad de señal (buena) y bajo ruido
        const snr = (this.lastQualityScore + (1.0 - noiseScore)) / 2.0;
-       return Math.max(0, Math.min(1.0, snr)); // Clamp 0-1
+       return clamp(snr, 0, 1.0); // Clamp 0-1
    }
 
    private calculateAdaptiveThreshold(snr: number): number {
@@ -953,27 +951,27 @@ export class HeartBeatProcessor {
            adjustmentFactor = this.THRESHOLD_ADJUST_HIGH_SNR;
        }
        // Aplicar ajuste y asegurar que no sea negativo
-       return Math.max(0.01, this.SIGNAL_THRESHOLD * adjustmentFactor);
+       return this.SIGNAL_THRESHOLD * adjustmentFactor > 0.01 ? this.SIGNAL_THRESHOLD * adjustmentFactor : 0.01;
    }
 
    private getSmoothBPM(): number {
      if (this.bpmHistory.length < 3) {
-       this.bpmStabilityScore = Math.max(0, this.bpmStabilityScore * 0.9); // Decaer estabilidad
+       this.bpmStabilityScore = this.bpmStabilityScore * 0.9 > 0 ? this.bpmStabilityScore * 0.9 : 0;
        return this.smoothBPM > 0 ? this.smoothBPM : 75;
      }
      const meanBPM = this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
      let varianceBPM = 0;
      for(const bpm of this.bpmHistory) {
-         varianceBPM += Math.pow(bpm - meanBPM, 2);
+         varianceBPM += (bpm - meanBPM) * (bpm - meanBPM);
      }
-     varianceBPM = Math.max(0, varianceBPM);
-     const stdDevBPM = Math.sqrt(varianceBPM / this.bpmHistory.length);
+     varianceBPM = varianceBPM < 0 ? 0 : varianceBPM;
+     const stdDevBPM = squareRoot(varianceBPM / this.bpmHistory.length);
      // Actualizar score de estabilidad
-     this.bpmStabilityScore = Math.max(0, 1.0 - Math.min(1.0, (stdDevBPM / this.BPM_STABILITY_THRESHOLD)**0.8 ));
+     this.bpmStabilityScore = 1.0 - clamp((stdDevBPM / this.BPM_STABILITY_THRESHOLD)**0.8, 0, 1.0);
      const sortedBPMs = [...this.bpmHistory].sort((a, b) => a - b);
-     const medianBPM = sortedBPMs[Math.floor(sortedBPMs.length / 2)];
+     const medianBPM = sortedBPMs[sortedBPMs.length >> 1];
      const newSmoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + medianBPM * this.BPM_ALPHA;
-     this.smoothBPM = Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, newSmoothBPM));
+     this.smoothBPM = clamp(newSmoothBPM, this.MIN_BPM, this.MAX_BPM);
      if (isNaN(this.smoothBPM)) this.smoothBPM = 75;
      return this.smoothBPM;
    }
