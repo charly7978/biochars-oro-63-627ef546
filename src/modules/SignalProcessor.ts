@@ -1,33 +1,5 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-
-/**
- * Implementación del filtro de Kalman para suavizar señales
- */
-class KalmanFilter {
-  private R: number = 0.01;  // Ruido de medición
-  private Q: number = 0.1;   // Ruido de proceso
-  private P: number = 1;     // Estimación de error
-  private X: number = 0;     // Valor estimado
-  private K: number = 0;     // Ganancia de Kalman
-
-  filter(measurement: number): number {
-    // Predicción
-    this.P = this.P + this.Q;
-    
-    // Actualización
-    this.K = this.P / (this.P + this.R);
-    this.X = this.X + this.K * (measurement - this.X);
-    this.P = (1 - this.K) * this.P;
-    
-    return this.X;
-  }
-
-  reset() {
-    this.X = 0;
-    this.P = 1;
-  }
-}
+import { KalmanFilter } from './vital-signs/shared-signal-utils';
 
 /**
  * Procesador de señales PPG (Fotopletismografía)
