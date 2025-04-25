@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,6 +7,9 @@ import { ArrhythmiaWindow } from '@/hooks/vital-signs/types';
 import { calculateRMSSD, calculateRRVariation } from '@/modules/vital-signs/arrhythmia/calculations';
 import AudioFeedbackService from './AudioFeedbackService';
 import { toast } from "@/hooks/use-toast";
+
+// Definición del listener para ventanas de arritmia
+export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
 
 export interface ArrhythmiaDetectionResult {
   isArrhythmia: boolean;
