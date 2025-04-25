@@ -2,7 +2,7 @@ import { HeartBeatConfig } from './heart-beat/config'; // Asegúrate de que la r
 
 export class HeartBeatProcessor {
   SAMPLE_RATE = HeartBeatConfig.SAMPLE_RATE; // Usar config
-  WINDOW_SIZE = HeartBeatConfig.WINDOW_SIZE;
+  WINDOW_SIZE = 150; // Aumentar tamaño de ventana para soportar retrasos armónicos más largos
   MIN_BPM = HeartBeatConfig.MIN_BPM;
   MAX_BPM = HeartBeatConfig.MAX_BPM;
   SIGNAL_THRESHOLD = HeartBeatConfig.SIGNAL_THRESHOLD;
@@ -69,8 +69,10 @@ export class HeartBeatProcessor {
   lastBeepTime = 0;
   startTime = 0;
 
-  // Ganancia para la mejora armónica (0 = desactivado)
-  HARMONIC_GAIN = 0.4; // Ajustable (0.3 - 0.6 es un buen punto de partida)
+  // Ganancias para la mejora armónica (decrecientes)
+  HARMONIC_GAIN = 0.4;     // Ganancia del 1er armónico (retraso de 1 período)
+  HARMONIC_GAIN_2ND = 0.25;  // Ganancia del 2do armónico (retraso de 2 períodos)
+  HARMONIC_GAIN_3RD = 0.15;  // Ganancia del 3er armónico (retraso de 3 períodos)
 
   constructor() {
     this.initAudio();
@@ -299,55 +301,74 @@ export class HeartBeatProcessor {
     const movAvgVal = this.calculateMovingAverage(medVal, movingAvgWindow);
     const smoothed = this.calculateEMA(movAvgVal);
 
-    // Almacenar valor filtrado (antes de realce) en el buffer principal
     this.signalBuffer.push(smoothed);
+    // Asegurar que el buffer no exceda WINDOW_SIZE (ahora más grande)
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
 
-    // Valor a usar para detección de picos (puede ser realzado)
     let valueForPeakDetection = smoothed;
-    let enhancedValueResult: number | undefined = undefined; // Para el retorno
+    let enhancedValueResult: number | undefined = undefined;
 
-    // 3. Mejora Armónica (si está activada y hay suficiente data)
-    if (this.HARMONIC_GAIN > 0 && currentBPM >= this.MIN_BPM && currentBPM <= this.MAX_BPM && this.signalBuffer.length >= this.WINDOW_SIZE * 0.8) {
+    // 3. Mejora Armónica Múltiple
+    if (currentBPM >= this.MIN_BPM && currentBPM <= this.MAX_BPM) {
         const periodSeconds = 60.0 / currentBPM;
         const periodSamples = Math.round(periodSeconds * this.SAMPLE_RATE);
-        const bufferIndex = this.signalBuffer.length - 1; // Índice actual
-        const delayedIndex = bufferIndex - periodSamples;
+        const bufferIndex = this.signalBuffer.length - 1;
 
-        // Asegurarse de que el índice retrasado es válido
-        if (delayedIndex >= 0 && delayedIndex < this.signalBuffer.length) {
-            const delayedSmoothedValue = this.signalBuffer[delayedIndex];
-            valueForPeakDetection = smoothed + this.HARMONIC_GAIN * delayedSmoothedValue;
-            enhancedValueResult = valueForPeakDetection;
+        let enhancement = 0;
+
+        // 1er Armónico
+        if (this.HARMONIC_GAIN > 0) {
+            const delayedIndex1 = bufferIndex - periodSamples;
+            if (delayedIndex1 >= 0) {
+                enhancement += this.HARMONIC_GAIN * this.signalBuffer[delayedIndex1];
+            }
+        }
+
+        // 2do Armónico
+        if (this.HARMONIC_GAIN_2ND > 0) {
+            const delayedIndex2 = bufferIndex - 2 * periodSamples;
+            if (delayedIndex2 >= 0) {
+                enhancement += this.HARMONIC_GAIN_2ND * this.signalBuffer[delayedIndex2];
+            }
+        }
+
+        // 3er Armónico
+        if (this.HARMONIC_GAIN_3RD > 0) {
+            const delayedIndex3 = bufferIndex - 3 * periodSamples;
+            if (delayedIndex3 >= 0) {
+                enhancement += this.HARMONIC_GAIN_3RD * this.signalBuffer[delayedIndex3];
+            }
+        }
+
+        // Solo aplicar si se calculó alguna mejora válida
+        if (enhancement !== 0) {
+           valueForPeakDetection = smoothed + enhancement;
+           enhancedValueResult = valueForPeakDetection;
         }
     }
 
-    // Mover la actualización de la línea base aquí, DESPUÉS del posible realce
-    // para que la línea base siga la señal que se usará para la detección.
-    // 4. Actualización de Línea Base (usando valueForPeakDetection)
-    if (this.signalBuffer.length > 10) { // Usar signalBuffer.length como indicador de madurez
-        const recentValuesForBaseline = this.signalBuffer.slice(-15).map(v => v); // Usar valores del buffer (pre-realce)
-        let minRecent = recentValuesForBaseline[0];
+    // 4. Actualización de Línea Base (basada en señal pre-realce)
+    if (this.signalBuffer.length > 10) {
+        const recentValuesForBaseline = this.signalBuffer.slice(-15).map(v => v);
+        let minRecent = recentValuesForBaseline.length > 0 ? recentValuesForBaseline[0] : this.baseline;
         for(let i = 1; i < recentValuesForBaseline.length; i++) {
             if (recentValuesForBaseline[i] < minRecent) minRecent = recentValuesForBaseline[i];
         }
-        // La línea base debe seguir los valles de la señal original (pre-realce)
         this.baseline = this.baseline * 0.9 + minRecent * 0.1;
     } else if (this.signalBuffer.length > 0) {
         this.baseline = this.baseline * this.BASELINE_FACTOR + smoothed * (1 - this.BASELINE_FACTOR);
     }
 
-    if (this.signalBuffer.length < 30) { // Aún esperando suficientes datos para detección fiable
+    if (this.signalBuffer.length < 30) { // Aún necesita calentamiento inicial
       return { bpm: Math.round(this.getFinalBPM()), confidence: 0, isPeak: false, filteredValue: smoothed, enhancedValue: enhancedValueResult, isMotionDetected: this.isMotionDetected };
     }
 
-    // 5. Normalización y Derivada (usando valueForPeakDetection)
+    // 5. Normalización y Derivada (usando señal realzada o no)
     const normalizedValue = valueForPeakDetection - this.baseline;
-    this.autoResetIfSignalIsLow(Math.abs(normalizedValue)); // Basado en señal normalizada
+    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
 
-    // Usar valueForPeakDetection para la derivada, ya que buscamos picos en esta señal
     this.values.push(valueForPeakDetection);
     if (this.values.length > 3) {
       this.values.shift();
@@ -359,7 +380,7 @@ export class HeartBeatProcessor {
       smoothDerivative = this.values[1] - this.values[0];
     }
 
-    // 6. Detección de Pico (usando señal normalizada y derivada)
+    // 6. Detección de Pico
     let { isPeak, confidence } = this.detectPeak(normalizedValue, smoothDerivative);
 
     // 7. Penalización por Movimiento
@@ -375,12 +396,11 @@ export class HeartBeatProcessor {
     }
 
     // 8. Confirmación de Pico
-    // Usar el valor normalizado (realzado o no) para la confirmación
     const confirmedPeak = this.confirmPeak(isPeak, normalizedValue, confidence);
 
-    this.lastValue = normalizedValue; // Actualizar último valor normalizado
+    this.lastValue = normalizedValue;
 
-    // 9. Actualización de BPM (solo si no hay movimiento y se confirma pico)
+    // 9. Actualización de BPM
     if (confirmedPeak && !this.isMotionDetected) {
         this.updateBPM();
 
@@ -402,8 +422,8 @@ export class HeartBeatProcessor {
       bpm: Math.round(this.getFinalBPM()),
       confidence: this.isMotionDetected ? confidence : (confirmedPeak ? confidence : 0),
       isPeak: confirmedPeak && !this.isInWarmup() && !this.isMotionDetected,
-      filteredValue: smoothed, // Devolver valor post-EMA
-      enhancedValue: enhancedValueResult, // Devolver valor realzado si se calculó
+      filteredValue: smoothed,
+      enhancedValue: enhancedValueResult,
       isMotionDetected: this.isMotionDetected
     };
   }
