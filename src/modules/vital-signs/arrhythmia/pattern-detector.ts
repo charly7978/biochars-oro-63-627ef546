@@ -13,7 +13,7 @@ export class ArrhythmiaPatternDetector {
   private readonly PATTERN_BUFFER_SIZE = 25; // Increased for better pattern analysis
   private readonly ANOMALY_HISTORY_SIZE = 35;
   private readonly MIN_ANOMALY_PATTERN_LENGTH = 6; // Increased from 5 to 6 para mayor exigencia
-  private readonly PATTERN_MATCH_THRESHOLD = 0.82; // Incremented slightly from 0.80
+  private readonly PATTERN_MATCH_THRESHOLD = 0.85; // Back to 0.85 (more conservative)
   private readonly SIGNAL_DECLINE_THRESHOLD = 0.3;
 
   // Tracking time-based pattern consistency
@@ -261,15 +261,15 @@ export class ArrhythmiaPatternDetector {
       for (let i = 0; i < this.heartRateIntervals.length; i++) {
         // Evitar división por cero si avgInterval es 0
         const deviation = avgInterval !== 0 ? Math.abs(this.heartRateIntervals[i] - avgInterval) / avgInterval : 0;
-        if (deviation > 0.30) { // Decreased from 0.32 to 0.30 para mayor sensibilidad
+        if (deviation > 0.32) { // Increased from 0.30 to 0.32
           inconsistentIntervals++;
         }
       }
       
       const inconsistencyRatio = this.heartRateIntervals.length > 0 ? inconsistentIntervals / this.heartRateIntervals.length : 0;
       
-      // For arrhythmia, we want inconsistent intervals
-      if (inconsistencyRatio > 0.5 && avgInterval >= 380 && avgInterval <= 1600) { // Ajustados los límites para mejorar detección
+      // For arrhythmia, we want inconsistent intervals - Increased threshold
+      if (inconsistencyRatio > 0.6 && avgInterval >= 380 && avgInterval <= 1600) { // Threshold increased from 0.5 to 0.6
         const estimatedBPM = avgInterval > 0 ? Math.round(60000 / avgInterval) : 0;
         
         // Verificación adicional: los intervalos deben ser muy variables
@@ -283,7 +283,7 @@ export class ArrhythmiaPatternDetector {
           // Evitar división por cero
           const variation = avgPairInterval !== 0 ? Math.abs(currInterval - prevInterval) / avgPairInterval : 0;
           
-          if (variation > 0.25) { // Decreased from 0.28 to 0.25 para mayor sensibilidad
+          if (variation > 0.28) { // Increased from 0.25 to 0.28
             validIntervalCount++;
             totalVariation += variation;
           }
@@ -411,12 +411,12 @@ export class ArrhythmiaPatternDetector {
       clusteringScore = clusteringDivisor !== 0 ? Math.min(1, maxGap / clusteringDivisor) : 0;
     }
     
-    // Combine features with weighted scoring - increased weights for more reliable features
-    const patternScore = (variationRatio * 0.2) + 
+    // Combine features with weighted scoring - Adjusted weights
+    const patternScore = (variationRatio * 0.25) + // Increased weight
                          (anomalyRatio * 0.15) + 
-                         (oscillationRatio * 0.2) + 
-                         (timingIrregularityScore * 0.3) +
-                         (clusteringScore * 0.15); // Nueva característica añadida
+                         (oscillationRatio * 0.25) + // Increased weight
+                         (timingIrregularityScore * 0.25) + // Decreased weight
+                         (clusteringScore * 0.1); // Decreased weight
     
     // La detección basada en patrones debe cumplir un umbral más estricto
     const patternDetected = patternScore > this.PATTERN_MATCH_THRESHOLD;
@@ -430,9 +430,9 @@ export class ArrhythmiaPatternDetector {
       this.detectionHistory.shift();
     }
     
-    // Para confirmar arritmia, necesitamos varias detecciones positivas
+    // Para confirmar arritmia, necesitamos varias detecciones positivas - Increased threshold
     const positiveCount = this.detectionHistory.filter(d => d).length;
-    const finalResult = positiveCount >= this.DETECTION_HISTORY_SIZE * 0.6; // Decreased from 0.65 to 0.6
+    const finalResult = positiveCount >= this.DETECTION_HISTORY_SIZE * 0.8; // Require 4 out of 5 (increased from 0.6)
     
     if (finalResult) {
       this.detectionCount++;
