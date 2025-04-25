@@ -101,3 +101,13 @@ export function calculateSignalQuality(values: number[]): number {
   
   return quality;
 }
+
+/**
+ * Resets the signal quality state
+ * @returns The reset value for signal quality counter (0)
+ */
+export function resetSignalQualityState(): number {
+  // This function resets the signal quality tracking state to its initial value
+  return 0;
+}
+
