@@ -1,24 +1,14 @@
 
-import { 
-  BaseNeuralModel, 
-  DenseLayer, 
-  Conv1DLayer, 
-  ResidualBlock,
-  BatchNormLayer,
-  TensorUtils,
-  Tensor1D 
-} from './NeuralNetworkBase';
+import { BaseNeuralModel, DenseLayer, Conv1DLayer, ResidualBlock, BatchNormLayer, TensorUtils, Tensor1D } from './NeuralNetworkBase';
 
 /**
  * Modelo neuronal especializado en la estimación de presión arterial
  * 
- * Arquitectura:
- * 1. Capas convolucionales profundas para análisis de forma de onda
- * 2. Bloques residuales para mejorar el aprendizaje de características
- * 3. Salida dual para presión sistólica y diastólica
+ * IMPORTANTE: Este modelo solo trabaja con datos reales, sin simulación.
+ * NO utiliza Math.random() ni ninguna función que genere datos aleatorios.
  */
 export class BloodPressureNeuralModel extends BaseNeuralModel {
-  // Layers
+  // Capas
   private conv1: Conv1DLayer;
   private bn1: BatchNormLayer;
   private residualBlock1: ResidualBlock;
@@ -38,7 +28,7 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       'BloodPressureNeuralModel',
       [300], // 5 segundos de señal @ 60Hz
       [2],   // Salida: [sistólica, diastólica] en mmHg
-      '2.1.0'
+      '3.0.0' // Incrementada versión para indicar eliminación de simulación
     );
     
     // Feature extraction layers
@@ -62,13 +52,20 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
   
   /**
    * Predice presión arterial sistólica y diastólica
+   * SOLO procesa datos reales, sin simulación
    * @param input Señal PPG
-   * @returns [sistólica, diastólica] en mmHg
+   * @returns [sistólica, diastólica] en mmHg, o [0,0] si no hay estimación confiable
    */
   predict(input: Tensor1D): Tensor1D {
     const startTime = Date.now();
     
     try {
+      // Verificar datos de entrada
+      if (!input || input.length === 0) {
+        console.error('BloodPressureNeuralModel: Datos de entrada inválidos');
+        return [0, 0]; // Indicar que no hay medición
+      }
+      
       // Preprocesar entrada
       const processedInput = this.preprocessInput(input);
       
@@ -93,47 +90,74 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       diastolicOut = this.diastolicBranch2.forward(diastolicOut);
       diastolicOut = this.diastolicOutput.forward(diastolicOut);
       
-      // Aplicar restricciones fisiológicas
-      // Sistólica: 90-180 mmHg
-      const systolic = Math.max(90, Math.min(180, 115 + systolicOut[0]));
+      // Verificar si los resultados son fisiológicamente válidos
+      const systolic = systolicOut[0];
+      const diastolic = diastolicOut[0];
       
-      // Diastólica: 60-110 mmHg
-      const diastolic = Math.max(60, Math.min(110, 75 + diastolicOut[0]));
+      // Verificar si los resultados parecen válidos para publicar
+      if (isNaN(systolic) || isNaN(diastolic) || systolic <= 0 || diastolic <= 0) {
+        console.error('BloodPressureNeuralModel: Resultados inválidos', { systolic, diastolic });
+        return [0, 0]; // Indicar que no hay medición
+      }
       
-      // Asegurar que sistólica > diastólica por al menos 20 mmHg
-      const adjustedDiastolic = Math.min(diastolic, systolic - 20);
+      // Verificar que la sistólica es mayor que la diastólica
+      if (systolic <= diastolic) {
+        console.error('BloodPressureNeuralModel: Relación inválida entre sistólica y diastólica', { 
+          systolic, diastolic 
+        });
+        return [0, 0]; // Indicar que no hay medición
+      }
       
       this.updatePredictionTime(startTime);
-      return [Math.round(systolic), Math.round(adjustedDiastolic)];
+      
+      // Redondear a enteros para consistencia
+      return [Math.round(systolic), Math.round(diastolic)];
     } catch (error) {
       console.error('Error en BloodPressureNeuralModel.predict:', error);
       this.updatePredictionTime(startTime);
-      return [120, 80]; // Valores por defecto
+      return [0, 0]; // Indicar que no hay medición en caso de error
     }
   }
   
   /**
    * Preprocesa la señal para análisis de presión arterial
+   * Solo aplica filtrado y normalización, sin manipulación
    */
   private preprocessInput(input: Tensor1D): Tensor1D {
     // Ajustar longitud
+    let processedInput: Tensor1D;
     if (input.length < this.inputShape[0]) {
-      const padding = Array(this.inputShape[0] - input.length).fill(0);
-      input = [...input, ...padding];
+      // Padding con ceros si es más corta
+      processedInput = [...input];
+      for (let i = input.length; i < this.inputShape[0]; i++) {
+        processedInput.push(0);
+      }
     } else if (input.length > this.inputShape[0]) {
-      input = input.slice(-this.inputShape[0]);
+      // Tomar solo la parte final si es más larga
+      processedInput = input.slice(-this.inputShape[0]);
+    } else {
+      processedInput = [...input];
     }
     
     // Aplicar filtro
-    let processed = this.bandpassFilter(input);
+    processedInput = this.bandpassFilter(processedInput);
     
-    // Normalizar
-    const { min, max } = this.findMinMax(processed);
-    if (max > min) {
-      processed = processed.map(v => (v - min) / (max - min));
+    // Normalizar si hay un rango significativo
+    const { min, max } = this.findMinMax(processedInput);
+    const range = max - min;
+    
+    if (range > 0.001) { // Solo normalizar si hay un rango significativo
+      for (let i = 0; i < processedInput.length; i++) {
+        processedInput[i] = (processedInput[i] - min) / range;
+      }
+    } else {
+      // Si no hay rango, centrar en cero
+      for (let i = 0; i < processedInput.length; i++) {
+        processedInput[i] = 0;
+      }
     }
     
-    return processed;
+    return processedInput;
   }
   
   /**
@@ -163,7 +187,16 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       let sum = 0;
       let count = 0;
       
-      for (let j = Math.max(0, i - window); j <= Math.min(signal.length - 1, i + window); j++) {
+      // Índice inicial del promedio móvil
+      let startIdx = i - window;
+      if (startIdx < 0) startIdx = 0;
+      
+      // Índice final del promedio móvil
+      let endIdx = i + window;
+      if (endIdx >= signal.length) endIdx = signal.length - 1;
+      
+      // Calcular promedio
+      for (let j = startIdx; j <= endIdx; j++) {
         sum += signal[j];
         count++;
       }
@@ -175,15 +208,17 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
   }
   
   /**
-   * Find min and max values in an array
+   * Encuentra valores mínimo y máximo en un array
    */
   private findMinMax(array: Tensor1D): { min: number; max: number } {
-    let min = Infinity;
-    let max = -Infinity;
+    if (!array || array.length === 0) return { min: 0, max: 0 };
     
-    for (const value of array) {
-      if (value < min) min = value;
-      if (value > max) max = value;
+    let min = array[0];
+    let max = array[0];
+    
+    for (let i = 1; i < array.length; i++) {
+      if (array[i] < min) min = array[i];
+      if (array[i] > max) max = array[i];
     }
     
     return { min, max };

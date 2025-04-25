@@ -154,9 +154,14 @@ export class VitalSignsProcessor {
       spo2 = this.spo2Processor.calculateSpO2(ppgValues);
       
       // Calcular presión arterial con datos directos
-      // FIX: Aquí está el problema. Estamos recibiendo un objeto pero pressure es string
       const bpResult = this.bpProcessor.calculateBloodPressure(ppgValues);
-      pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
+      
+      // Solo asignar valores válidos, no valores por defecto
+      if (bpResult.systolic > 0 && bpResult.diastolic > 0) {
+        pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
+      } else {
+        pressure = "--/--"; // Indicar que no hay medición válida
+      }
       
       // Calcular frecuencia cardíaca directa
       if (rrData && rrData.intervals && rrData.intervals.length > 3) {
@@ -170,7 +175,7 @@ export class VitalSignsProcessor {
           heartRate = Math.round(60000 / avgInterval);
           // Validar rango realista
           if (heartRate < 40 || heartRate > 200) {
-            heartRate = 0;
+            heartRate = 0; // Indicar medición no válida
           }
         }
       }
@@ -182,10 +187,17 @@ export class VitalSignsProcessor {
       lipids = this.lipidProcessor.calculateLipids(ppgValues);
       
       // Calcular hemoglobina - valor provisional pendiente de implementación directa
-      hemoglobin = 0;
+      hemoglobin = 0; // Por ahora no hay implementación real, reportar ausencia
       
       // Calcular hidratación con medición directa
       hydration = this.hydrationEstimator.analyze(ppgValues);
+    } else {
+      // Si no hay suficientes datos, reportar ausencia de mediciones
+      console.log("VitalSignsProcessor: Datos insuficientes para medición", {
+        dataPoints: ppgValues.length,
+        amplitude: amplitude,
+        minRequired: 15
+      });
     }
     
     // Log all vital signs for diagnostic purposes 
@@ -208,6 +220,16 @@ export class VitalSignsProcessor {
     // Calcular confidence de las mediciones
     const glucoseConfidence = this.glucoseProcessor.getConfidence();
     const lipidsConfidence = this.lipidProcessor.getConfidence();
+    
+    // Determinar confiabilidad general basada en la calidad de señal real
+    let overallConfidence = 0;
+    if (amplitude > 0.02) {
+      overallConfidence = 0.7;
+    } else if (amplitude > 0.01) {
+      overallConfidence = 0.3;
+    } else {
+      overallConfidence = 0; // Sin confianza si la señal es muy débil
+    }
 
     // Prepare result with all metrics
     const result = ResultFactory.createResult(
@@ -221,7 +243,7 @@ export class VitalSignsProcessor {
       hydration,
       glucoseConfidence, 
       lipidsConfidence,
-      amplitude > 0.02 ? 0.7 : 0.3, // Confianza basada en amplitud de señal
+      overallConfidence,
       arrhythmiaResult.lastArrhythmiaData
     );
     
