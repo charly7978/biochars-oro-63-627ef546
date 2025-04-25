@@ -20,7 +20,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
+  const sessionId = useRef<string>(`session_${Date.now()}`);
   
   // Signal quality tracking - MODIFICADO: Umbrales más permisivos
   const weakSignalsCountRef = useRef<number>(0);
@@ -244,21 +244,16 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    */
   const processFrame = (frame: ImageData): VitalSignsResult => {
     console.log("useVitalSignsProcessor: Processing frame (redirecting to signal processing)");
-    // Extracting average green channel value from the frame as a simple PPG value
-    // This is a placeholder implementation that satisfies the interface
-    const pixelCount = frame.width * frame.height;
-    let sum = 0;
-    
-    // Extract green channel average (simple PPG extraction)
-    for (let i = 0; i < pixelCount * 4; i += 4) {
-      sum += frame.data[i + 1]; // Green channel
+    // Extraer valor real de la señal PPG usando el canal rojo (más representativo para PPG)
+    let redSum = 0;
+    let count = 0;
+    for (let i = 0; i < frame.data.length; i += 4) {
+      redSum += frame.data[i]; // Canal rojo
+      count++;
     }
-    
-    const avgGreenValue = sum / pixelCount;
-    const normalizedValue = (avgGreenValue / 255) - 0.5; // Normalize to [-0.5, 0.5]
-    
-    // Process this value through our regular signal processor
-    return processSignal(normalizedValue);
+    const avgRedValue = redSum / count;
+    // Procesar el valor real sin normalización artificial
+    return processSignal(avgRedValue);
   };
 
   /**
