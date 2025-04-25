@@ -1,4 +1,3 @@
-
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
@@ -69,11 +68,13 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection - fixed argument count
+      // Handle peak detection with all required parameters
       handlePeakDetection(
         result, 
-        lastPeakTimeRef, 
-        isMonitoringRef
+        lastPeakTimeRef,
+        requestImmediateBeep,
+        isMonitoringRef,
+        value
       );
       
       // Update last valid BPM if it's reasonable
@@ -81,7 +82,7 @@ export function useSignalProcessor() {
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result - fixed argument count
+      // Process result
       return processLowConfidenceResult(
         result, 
         currentBPM

@@ -42,13 +42,20 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 export function handlePeakDetection(
   result: any, 
   lastPeakTimeRef: React.MutableRefObject<number | null>,
-  isMonitoringRef: React.MutableRefObject<boolean>
+  requestBeepCallback: (value: number) => boolean,
+  isMonitoringRef: React.MutableRefObject<boolean>,
+  value: number
 ): void {
   const now = Date.now();
   
   // Actualizar tiempo del pico para cálculos de ritmo cardíaco
   if (result.isPeak && result.confidence > 0.05) {
     lastPeakTimeRef.current = now;
+    
+    // Solo solicitar beep si estamos monitoreando y la calidad es buena
+    if (isMonitoringRef.current && result.confidence > 0.4) {
+      requestBeepCallback(value);
+    }
     
     console.log("Peak-detection: Pico detectado", {
       confianza: result.confidence,
