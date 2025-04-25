@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -95,43 +96,44 @@ const Index = () => {
               });
             }
             
-            let rrData = heartBeatResult.rrData;
-            if (rrData && !('lastPeakTime' in rrData)) {
-              rrData = {
-                ...rrData,
-                lastPeakTime: Date.now()
+            // Ensure rrData is valid before processing
+            if (heartBeatResult.rrData && heartBeatResult.rrData.intervals) {
+              // Add lastPeakTime if missing
+              const rrData = {
+                intervals: heartBeatResult.rrData.intervals,
+                lastPeakTime: heartBeatResult.rrData.lastPeakTime || Date.now()
               };
-            }
-            
-            const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
-            
-            if (vitals) {
-              if (processedFrameCountRef.current % 30 === 0) {
-                console.log("Index: Received vitals update", {
-                  heartRate: vitals.heartRate,
-                  spo2: vitals.spo2, 
-                  pressure: vitals.pressure,
-                  glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin,
-                  frameCount: processedFrameCountRef.current
-                });
-              }
               
-              setVitalSigns(vitals);
-              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
+              const vitals = processVitalSigns(lastSignal.filteredValue, rrData);
               
-              if (processedFrameCountRef.current % 60 === 0) {
-                console.log("Current values on screen:", {
-                  heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
-                  spo2: vitals.spo2,
-                  pressure: vitals.pressure,
-                  glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin
-                });
+              if (vitals) {
+                if (processedFrameCountRef.current % 30 === 0) {
+                  console.log("Index: Received vitals update", {
+                    heartRate: vitals.heartRate,
+                    spo2: vitals.spo2, 
+                    pressure: vitals.pressure,
+                    glucose: vitals.glucose,
+                    hydration: vitals.hydration,
+                    lipids: vitals.lipids,
+                    hemoglobin: vitals.hemoglobin,
+                    frameCount: processedFrameCountRef.current
+                  });
+                }
+                
+                setVitalSigns(vitals);
+                setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
+                
+                if (processedFrameCountRef.current % 60 === 0) {
+                  console.log("Current values on screen:", {
+                    heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
+                    spo2: vitals.spo2,
+                    pressure: vitals.pressure,
+                    glucose: vitals.glucose,
+                    hydration: vitals.hydration,
+                    lipids: vitals.lipids,
+                    hemoglobin: vitals.hemoglobin
+                  });
+                }
               }
             }
           } catch (error) {

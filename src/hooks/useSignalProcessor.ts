@@ -15,7 +15,12 @@ export function useSignalProcessor() {
   const processorRef = useRef<PPGProcessor | null>(null);
   
   // Use our specialized signal quality detector
-  const { detectWeakSignal, isFingerDetected, reset: resetSignalDetector } = useSignalQualityDetector();
+  const { 
+    updateQuality, 
+    detectWeakSignal, 
+    isFingerDetected, 
+    reset: resetSignalDetector 
+  } = useSignalQualityDetector();
 
   // Initialize the processor once
   useEffect(() => {

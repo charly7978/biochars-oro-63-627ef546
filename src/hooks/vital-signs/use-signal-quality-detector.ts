@@ -1,3 +1,4 @@
+
 /**
  * Hook for detecting signal quality
  * Uses real data only - no simulation
@@ -14,6 +15,8 @@ export function useSignalQualityDetector() {
   const [fingerDetected, setFingerDetected] = useState<boolean>(false);
   const consecutiveDetectionsRef = useRef<number>(0);
   const requiredConsecutiveRef = useRef<number>(5);
+  const weakSignalCountRef = useRef<number>(0);
+  const MAX_WEAK_SIGNALS = 10;
 
   /**
    * Reset all quality detection
@@ -23,7 +26,30 @@ export function useSignalQualityDetector() {
     setFingerDetected(false);
     qualityBufferRef.current = [];
     consecutiveDetectionsRef.current = 0;
+    weakSignalCountRef.current = 0;
   }, []);
+
+  /**
+   * Detect if signal is weak based on value
+   */
+  const detectWeakSignal = useCallback((value: number): boolean => {
+    const isWeak = Math.abs(value) < 0.05;
+    
+    if (isWeak) {
+      weakSignalCountRef.current++;
+    } else {
+      weakSignalCountRef.current = Math.max(0, weakSignalCountRef.current - 1);
+    }
+    
+    return weakSignalCountRef.current >= MAX_WEAK_SIGNALS;
+  }, []);
+
+  /**
+   * Check if finger is currently detected
+   */
+  const isFingerDetected = useCallback((): boolean => {
+    return fingerDetected;
+  }, [fingerDetected]);
 
   /**
    * Update signal quality based on real data
@@ -76,6 +102,8 @@ export function useSignalQualityDetector() {
     signalQuality,
     fingerDetected,
     updateQuality,
+    detectWeakSignal,
+    isFingerDetected,
     reset
   };
 }

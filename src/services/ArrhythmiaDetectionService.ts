@@ -1,3 +1,4 @@
+
 /**
  * Service for detecting arrhythmias from real PPG signals
  * NO SIMULATION OR DATA MANIPULATION ALLOWED
@@ -10,10 +11,19 @@ class ArrhythmiaDetectionServiceClass {
   private isMonitoring: boolean = false;
   private arrhythmiaCount: number = 0;
   private arrhythmiaWindows: {start: number, end: number}[] = [];
+  private lastRRIntervals: number[] = [];
   
   constructor() {
     this.arrhythmiaProcessor = new ArrhythmiaProcessor();
     console.log("ArrhythmiaDetectionService: Initialized");
+  }
+
+  /**
+   * Update RR intervals for processing
+   */
+  public updateRRIntervals(rrIntervals: number[]) {
+    if (!rrIntervals || rrIntervals.length === 0) return;
+    this.lastRRIntervals = [...rrIntervals];
   }
 
   /**
@@ -90,6 +100,7 @@ class ArrhythmiaDetectionServiceClass {
     this.isMonitoring = false;
     this.arrhythmiaWindows = [];
     this.arrhythmiaCount = 0;
+    this.lastRRIntervals = [];
     this.arrhythmiaProcessor.reset();
   }
   
