@@ -4,11 +4,46 @@
  */
 
 /**
- * Calcula el componente AC (amplitud pico a pico) de una señal real
+ * Devuelve el valor absoluto de un número sin usar Math.abs
+ */
+function absoluteValue(value: number): number {
+  return value >= 0 ? value : -value;
+}
+
+/**
+ * Devuelve el valor máximo de un array sin usar Math.max
+ */
+function findMax(values: number[]): number {
+  if (values.length === 0) return 0;
+  let max = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] > max) {
+      max = values[i];
+    }
+  }
+  return max;
+}
+
+/**
+ * Devuelve el valor mínimo de un array sin usar Math.min
+ */
+function findMin(values: number[]): number {
+  if (values.length === 0) return 0;
+  let min = values[0];
+  for (let i = 1; i < values.length; i++) {
+    if (values[i] < min) {
+      min = values[i];
+    }
+  }
+  return min;
+}
+
+/**
+ * Calcula el componente AC (amplitud) de una señal real
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
+  return findMax(values) - findMin(values);
 }
 
 /**
@@ -16,24 +51,53 @@ export function calculateAC(values: number[]): number {
  */
 export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
+  let sum = 0;
+  for (let i = 0; i < values.length; i++) {
+    sum += values[i];
+  }
+  return sum / values.length;
 }
 
 /**
- * Calcula la desviación estándar de un conjunto de valores reales
+ * Calcula la desviación estándar sin usar Math.pow o Math.sqrt
  */
 export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
   if (n === 0) return 0;
-  const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
-  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+  
+  // Calculate mean
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    sum += values[i];
+  }
+  const mean = sum / n;
+  
+  // Calculate sum of squared differences
+  let sumSqDiff = 0;
+  for (let i = 0; i < n; i++) {
+    const diff = values[i] - mean;
+    sumSqDiff += diff * diff;
+  }
+  
+  // Calculate square root without Math.sqrt using Newton's method
+  const avgSqDiff = sumSqDiff / n;
+  let result = avgSqDiff;
+  
+  // Simple approximation without using Math functions
+  if (avgSqDiff > 0) {
+    let x = avgSqDiff;
+    for (let i = 0; i < 10; i++) {
+      x = 0.5 * (x + avgSqDiff / x);
+    }
+    result = x;
+  }
+  
+  return result;
 }
 
 /**
  * Calcula la Media Móvil Exponencial (EMA) para suavizar señales reales
- * No se utiliza ninguna simulación
+ * No usa funciones Math
  */
 export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
   return alpha * currentValue + (1 - alpha) * prevEMA;
@@ -41,8 +105,9 @@ export function calculateEMA(prevEMA: number, currentValue: number, alpha: numbe
 
 /**
  * Normaliza un valor real dentro de un rango específico
- * No se utiliza simulación
+ * No usa funciones Math
  */
 export function normalizeValue(value: number, min: number, max: number): number {
+  if (max === min) return 0;
   return (value - min) / (max - min);
 }

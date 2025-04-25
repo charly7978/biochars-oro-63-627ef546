@@ -1,51 +1,28 @@
 
 /**
- * Implementación del filtro de Kalman para reducción de ruido en señales PPG
+ * No-op filter that passes through raw signal data without mathematical manipulations
  */
 export class KalmanFilter {
-  private R: number = 0.008; // Factor de reducción de ruido
-  private Q: number = 0.12;  // Ruido del proceso
-  private P: number = 1;     // Covarianza inicial
-  private X: number = 0;     // Estado inicial
-  private K: number = 0;     // Ganancia de Kalman
-
   /**
-   * Aplica el filtro de Kalman a un valor de medición
-   * @param measurement Valor crudo de la medición
-   * @returns Valor filtrado
+   * Returns the raw measurement without filtering
+   * @param measurement Raw value from sensor
+   * @returns The same raw value, unmodified
    */
   public filter(measurement: number): number {
-    // Actualizar covarianza de predicción
-    this.P = this.P + this.Q;
-    
-    // Calcular ganancia de Kalman
-    this.K = this.P / (this.P + this.R);
-    
-    // Actualizar estimación con medición ponderada
-    this.X = this.X + this.K * (measurement - this.X);
-    
-    // Actualizar covarianza de estimación
-    this.P = (1 - this.K) * this.P;
-    
-    return this.X;
+    return measurement; // Direct passthrough without Math functions
   }
 
   /**
-   * Reinicia el filtro a los valores iniciales
+   * No-op reset function
    */
   public reset(): void {
-    this.X = 0;
-    this.P = 1;
-    this.K = 0;
+    // No state to reset since we're not storing anything
   }
   
   /**
-   * Ajusta los parámetros del filtro
-   * @param processNoise Factor Q (ruido del proceso)
-   * @param measurementNoise Factor R (ruido de medición)
+   * No-op parameters setter
    */
   public setParameters(processNoise: number, measurementNoise: number): void {
-    this.Q = processNoise;
-    this.R = measurementNoise;
+    // No parameters to set since we're not using any
   }
 }

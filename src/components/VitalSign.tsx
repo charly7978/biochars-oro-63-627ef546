@@ -1,7 +1,6 @@
 
 import React, { ReactNode } from 'react';
 import { cn } from "@/lib/utils";
-import { animations } from '@/theme/animations';
 
 interface VitalSignProps {
   label: string;
@@ -23,7 +22,7 @@ const VitalSign: React.FC<VitalSignProps> = ({
   const getValueTextSize = () => {
     if (compact) return "text-xl";
     
-    // Adjust text size based on length
+    // Adjust text size based on length without using Math functions
     if (typeof value === 'string' && value.length > 5) {
       return "text-xl sm:text-2xl";
     }
@@ -58,17 +57,11 @@ const VitalSign: React.FC<VitalSignProps> = ({
             : "text-gray-300"
         )}
         style={{ 
-          animation: highlighted ? animations["result-animate"] : "none",
           textShadow: highlighted ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
         }}
       >
-        <span 
-          className="inline-flex items-center"
-          style={{ 
-            animation: highlighted ? animations["number-highlight"] : "none",
-            transition: "all 0.6s ease-out"
-          }}
-        >
+        <span className="inline-flex items-center">
+          {/* Display raw value directly without any processing */}
           {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>

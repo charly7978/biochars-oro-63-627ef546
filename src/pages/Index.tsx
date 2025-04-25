@@ -83,7 +83,6 @@ const Index = () => {
             const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
               setVitalSigns(vitals);
-              
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
             }
           } catch (error) {
@@ -191,7 +190,6 @@ const Index = () => {
     const targetFrameInterval = 1000/30;
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
-    let processingFps = 0;
     
     const processImage = async () => {
       if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
@@ -211,8 +209,8 @@ const Index = () => {
           
           const frame = await imageCapture.grabFrame();
           
-          const targetWidth = Math.min(320, frame.width);
-          const targetHeight = Math.min(240, frame.height);
+          const targetWidth = frame.width < 320 ? frame.width : 320;
+          const targetHeight = frame.height < 240 ? frame.height : 240;
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
@@ -232,7 +230,6 @@ const Index = () => {
           lastProcessTime = now;
           
           if (now - lastFpsUpdateTime > 1000) {
-            processingFps = frameCount;
             frameCount = 0;
             lastFpsUpdateTime = now;
           }
@@ -278,6 +275,7 @@ const Index = () => {
   };
 
   return (
+    
     <div className="fixed inset-0 flex flex-col" style={{
       height: '100vh',
       width: '100vw',
