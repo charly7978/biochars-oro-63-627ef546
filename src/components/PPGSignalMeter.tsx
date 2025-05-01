@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -211,38 +210,28 @@ const PPGSignalMeter = memo(({
 
   // Dibujo del grid base sin simulación
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
-    
-    gradient.addColorStop(0, '#FFE8E8');
-    gradient.addColorStop(0.14, '#FFECDA');
-    gradient.addColorStop(0.28, '#FEF7CD');
-    gradient.addColorStop(0.42, '#E2FFDA');
-    gradient.addColorStop(0.56, '#D6F3FF');
-    gradient.addColorStop(0.70, '#E4DAFF');
-    gradient.addColorStop(0.84, '#F2D6FF');
-    gradient.addColorStop(1, '#3255a4');
-    
-    ctx.fillStyle = gradient;
+    // Cambio a fondo negro
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
     ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)';
         ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
       if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'center';
         ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
@@ -253,7 +242,7 @@ const PPGSignalMeter = memo(({
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
       if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'right';
         ctx.fillText(y.toString(), 15, y + 3);
@@ -262,7 +251,7 @@ const PPGSignalMeter = memo(({
     ctx.stroke();
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, CANVAS_HEIGHT / 2 - 50);
@@ -532,10 +521,10 @@ const PPGSignalMeter = memo(({
             peak.y >= PEAK_VISIBLE_MARGIN && 
             peak.y <= canvas.height - PEAK_VISIBLE_MARGIN) {
           
-          // Círculo del pico con contorno blanco para mejor visibilidad
+          // Unificar color de círculos para los picos detectados en tiempo real - ahora todos azul
           renderCtx.beginPath();
           renderCtx.arc(peak.x, peak.y, PEAK_DISPLAY_RADIUS - 1, 0, Math.PI * 2);
-          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#22C55E';
+          renderCtx.fillStyle = '#0EA5E9'; // Todos los picos detectados en tiempo real serán azules
           renderCtx.fill();
           renderCtx.strokeStyle = '#FFFFFF';
           renderCtx.lineWidth = 1.5;
@@ -550,7 +539,7 @@ const PPGSignalMeter = memo(({
           renderCtx.fillRect(peak.x - textWidth/2 - 3, peak.y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
           
           // Mostrar valor del pico
-          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#000000';
+          renderCtx.fillStyle = '#000000'; // Texto negro para mayor contraste
           renderCtx.textAlign = 'center';
           renderCtx.fillText(valueText, peak.x, peak.y - PEAK_TEXT_OFFSET);
         }
@@ -578,7 +567,7 @@ const PPGSignalMeter = memo(({
           // Círculo del pico con contorno blanco para mejorar contraste
           renderCtx.beginPath();
           renderCtx.arc(x, y, PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
-          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9';
+          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9'; // Amarillo para arritmias, azul para normales
           renderCtx.fill();
           renderCtx.strokeStyle = '#FFFFFF';
           renderCtx.lineWidth = 1.5;
@@ -670,7 +659,7 @@ const PPGSignalMeter = memo(({
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
-          <span className="text-lg font-bold text-black/80">PPG</span>
+          <span className="text-lg font-bold text-white/80">PPG</span>
           <div className="w-[180px]">
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
@@ -678,7 +667,7 @@ const PPGSignalMeter = memo(({
                 style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
               />
             </div>
-            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block text-white/80" 
                   style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
@@ -695,7 +684,7 @@ const PPGSignalMeter = memo(({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[8px] text-center font-medium text-black/80">
+          <span className="text-[8px] text-center font-medium text-white/80">
             {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
@@ -704,13 +693,13 @@ const PPGSignalMeter = memo(({
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
           onClick={onStartMeasurement}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+          className="bg-transparent text-white/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           INICIAR
         </button>
         <button 
           onClick={handleReset}
-          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+          className="bg-transparent text-white/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           RESET
         </button>
