@@ -1,9 +1,11 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 // import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector'; // Eliminado
 import HeartRateService from '@/services/HeartRateService';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
-import ArrhythmiaDetectionService, { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService'; // Importado
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService'; // Importado
+import type { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService'; // Import as type
 import { HeartRateResult } from '@/services/HeartRateService';
 
 export interface UseHeartBeatReturn {

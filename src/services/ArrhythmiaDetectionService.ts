@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -360,13 +361,6 @@ class ArrhythmiaDetectionService {
         duration: 6000
       });
     }
-    
-    // Auto-cleanup del estado activo después de un tiempo?
-    // OJO: Esto podría causar que isArrhythmia vuelva a false demasiado pronto.
-    // Quizás es mejor resetear solo si !potentialArrhythmia como ya hacemos.
-    // setTimeout(() => {
-    //   this.currentBeatIsArrhythmia = false;
-    // }, windowWidth);
   }
   
   /**
