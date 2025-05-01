@@ -54,9 +54,9 @@ const PPGSignalMeter = memo(({
   
   // Configuración optimizada para visualización de señal PPG
   const WINDOW_WIDTH_MS = 5500;
-  const CANVAS_WIDTH = 1000;
-  const CANVAS_HEIGHT = 900;
-  const GRID_SIZE_X = 5;
+  const CANVAS_WIDTH = 1500;
+  const CANVAS_HEIGHT = 1200;
+  const GRID_SIZE_X = 10;
   const GRID_SIZE_Y = 5;
   const VERTICAL_SCALE = 76.0;
   const SMOOTHING_FACTOR = 1.5;
