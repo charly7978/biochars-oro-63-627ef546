@@ -53,8 +53,8 @@ const PPGSignalMeter = memo(({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
   
   // Configuración optimizada para visualización de señal PPG
-  const WINDOW_WIDTH_MS = 5500;
-  const CANVAS_WIDTH = 500;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 700;
   const CANVAS_HEIGHT = 1000;
   const GRID_SIZE_X = 10;
   const GRID_SIZE_Y = 5;
