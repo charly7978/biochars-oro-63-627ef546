@@ -68,8 +68,8 @@ const PPGSignalMeter = memo(({
   const USE_OFFSCREEN_CANVAS = true;
   
   // Parámetros refinados para visualización precisa de picos
-  const PEAK_DISPLAY_RADIUS = 6;  // Tamaño del círculo para mejor visibilidad
-  const PEAK_TEXT_OFFSET = 18;    // Distancia optimizada para texto
+  const PEAK_DISPLAY_RADIUS = 5;  // Tamaño del círculo para mejor visibilidad
+  const PEAK_TEXT_OFFSET = 22;    // Distancia optimizada para texto
   const PEAK_VALUE_FONT = '11px Inter';  // Fuente legible
   const PEAK_VISIBLE_MARGIN = 10;  // Margen reducido para mantener visibilidad sin cortar picos
 
