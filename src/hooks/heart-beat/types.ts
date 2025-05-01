@@ -1,5 +1,5 @@
 
-import { RRAnalysisResult } from '../arrhythmia/types';
+import { RRAnalysisResult } from '../../modules/vital-signs/arrhythmia/types';
 
 export interface RRIntervalData {
   intervals: number[];
