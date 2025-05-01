@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -66,12 +65,11 @@ const PPGSignalMeter = memo(({
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  // Mejorados parámetros para la correcta visualización de picos
-  const PEAK_DISPLAY_RADIUS = 6;
-  const PEAK_TEXT_OFFSET = 18;
-  const PEAK_VALUE_FONT = 'bold 14px Inter';
-  const PEAK_VISIBLE_MARGIN = 60; // Margen ampliado para asegurar visibilidad
-  const PEAK_EMPHASIS_STROKE = 2; // Grosor del borde para enfatizar picos
+  // Parámetros optimizados para la visualización de picos
+  const PEAK_DISPLAY_RADIUS = 5;  // Tamaño del círculo reducido
+  const PEAK_TEXT_OFFSET = 15;    // Distancia del texto optimizada
+  const PEAK_VALUE_FONT = '11px Inter';  // Fuente más pequeña y legible
+  const PEAK_VISIBLE_MARGIN = 40;  // Margen revisado para mantener visibilidad
 
   useEffect(() => {
     const handlePeakDetection = (peakData: PeakData) => {
@@ -412,6 +410,9 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     
     if (points.length > 1) {
+      // Identificar los picos locales en la señal actual para una visualización más precisa
+      let localPeaks: {x: number, y: number, value: number, isArrhythmia: boolean}[] = [];
+      
       // Dibujar líneas de la forma de onda PPG
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
@@ -437,70 +438,114 @@ const PPGSignalMeter = memo(({
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
         renderCtx.stroke();
+        
+        // Detectar picos locales (donde el punto actual es más alto que los adyacentes)
+        if (i > 1 && i < points.length - 1) {
+          const nextPoint = points[i + 1];
+          // Un punto es un pico si es mayor que sus vecinos inmediatos
+          if (currentPoint.value > prevPoint.value && currentPoint.value > nextPoint.value) {
+            // Verificar que el pico tenga una amplitud mínima
+            const amplitude = Math.min(
+              currentPoint.value - prevPoint.value,
+              currentPoint.value - nextPoint.value
+            );
+            
+            if (amplitude > 5) { // Umbral de amplitud para considerar un pico significativo
+              localPeaks.push({
+                x: x2,
+                y: y2,
+                value: currentPoint.value / VERTICAL_SCALE,
+                isArrhythmia: isInArrhythmiaZone
+              });
+            }
+          }
+        }
       }
       
-      // Mejorada la visualización de picos en los latidos
+      // Dibujar los picos almacenados (recibidos del servicio)
       peaksRef.current.forEach(peak => {
         // Calculamos posición exacta del pico en el canvas
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
         const y = (canvas.height / 2 - 50) - peak.value;
         
-        // Verificamos que el pico esté dentro del área visible con margen adecuado
-        if (x >= PEAK_VISIBLE_MARGIN && x <= canvas.width - PEAK_VISIBLE_MARGIN) {
-          // Solo dibujamos si el punto está dentro de los límites verticales del canvas
-          if (y >= PEAK_VISIBLE_MARGIN && y <= canvas.height - PEAK_VISIBLE_MARGIN) {
-            const isInArrhythmiaZone = arrhythmiaWindows.some(window => 
-              peak.time >= window.start && peak.time <= window.end
-            );
+        // Solo dibujamos los picos que están dentro del área visible
+        if (x >= PEAK_VISIBLE_MARGIN && x <= canvas.width - PEAK_VISIBLE_MARGIN && 
+            y >= PEAK_VISIBLE_MARGIN && y <= canvas.height - PEAK_VISIBLE_MARGIN) {
+          
+          const isInArrhythmiaZone = arrhythmiaWindows.some(window => 
+            peak.time >= window.start && peak.time <= window.end
+          );
+          
+          const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
+          
+          // Círculo del pico con contorno blanco para mejorar contraste
+          renderCtx.beginPath();
+          renderCtx.arc(x, y, PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
+          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9';
+          renderCtx.fill();
+          renderCtx.strokeStyle = '#FFFFFF';
+          renderCtx.lineWidth = 1.5;
+          renderCtx.stroke();
+          
+          // Texto con fondo semitransparente para legibilidad
+          const valueText = Math.abs(peak.value / VERTICAL_SCALE).toFixed(2);
+          renderCtx.font = PEAK_VALUE_FONT;
+          const textWidth = renderCtx.measureText(valueText).width;
+          
+          // Fondo para el texto
+          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+          renderCtx.fillRect(x - textWidth/2 - 3, y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
+          
+          // Valor del pico
+          renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(valueText, x, y - PEAK_TEXT_OFFSET);
+          
+          // Indicador de arritmia si corresponde
+          if (isPeakArrhythmia) {
+            renderCtx.font = 'bold 12px Inter';
+            const arrhythmiaText = 'ARRITMIA';
+            const arrhythmiaWidth = renderCtx.measureText(arrhythmiaText).width;
             
-            const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
+            // Rectángulo para texto de arritmia
+            renderCtx.fillStyle = 'rgba(255, 220, 220, 0.85)';
+            renderCtx.fillRect(x - arrhythmiaWidth/2 - 3, y - PEAK_TEXT_OFFSET - 28, arrhythmiaWidth + 6, 16);
             
-            // Dibujar círculo enfatizado del pico
-            renderCtx.beginPath();
-            renderCtx.arc(x, y, isPeakArrhythmia ? PEAK_DISPLAY_RADIUS + 2 : PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
-            renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9';
-            renderCtx.fill();
-            
-            // Añadir borde para mejor visibilidad del círculo
-            renderCtx.strokeStyle = isPeakArrhythmia ? '#FEF7CD' : '#FFFFFF';
-            renderCtx.lineWidth = PEAK_EMPHASIS_STROKE;
-            renderCtx.stroke();
-            
-            // Dibujar valor del pico con fondo para mayor legibilidad
-            const valueText = Math.abs(peak.value / VERTICAL_SCALE).toFixed(2);
-            
-            // Fondo para texto del valor
-            renderCtx.font = PEAK_VALUE_FONT;
-            const textWidth = renderCtx.measureText(valueText).width;
-            renderCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            renderCtx.fillRect(x - textWidth/2 - 4, y - PEAK_TEXT_OFFSET - 14, textWidth + 8, 18);
-            
-            // Valor del pico
-            renderCtx.fillStyle = '#000000';
+            // Texto de arritmia
+            renderCtx.fillStyle = '#DC2626';
             renderCtx.textAlign = 'center';
-            renderCtx.fillText(valueText, x, y - PEAK_TEXT_OFFSET);
-            
-            // Si es arritmia, mostrar indicador especial con mejor visibilidad
-            if (isPeakArrhythmia) {
-              // Fondo para texto "ARRITMIA"
-              renderCtx.font = 'bold 16px Inter';
-              const arrhythmiaWidth = renderCtx.measureText('ARRITMIA').width;
-              renderCtx.fillStyle = 'rgba(255, 220, 220, 0.85)';
-              renderCtx.fillRect(x - arrhythmiaWidth/2 - 4, y - PEAK_TEXT_OFFSET - 34, arrhythmiaWidth + 8, 20);
-              
-              // Texto "ARRITMIA"
-              renderCtx.fillStyle = '#DC2626';
-              renderCtx.textAlign = 'center';
-              renderCtx.fillText('ARRITMIA', x, y - PEAK_TEXT_OFFSET - 20);
-              
-              // Destaque visual adicional para arritmia
-              renderCtx.beginPath();
-              renderCtx.arc(x, y, 10, 0, Math.PI * 2);
-              renderCtx.strokeStyle = '#FEF7CD';
-              renderCtx.lineWidth = 2;
-              renderCtx.stroke();
-            }
+            renderCtx.fillText(arrhythmiaText, x, y - PEAK_TEXT_OFFSET - 16);
           }
+        }
+      });
+      
+      // Dibujar los picos locales detectados en tiempo real
+      localPeaks.forEach(peak => {
+        if (peak.x >= PEAK_VISIBLE_MARGIN && peak.x <= canvas.width - PEAK_VISIBLE_MARGIN && 
+            peak.y >= PEAK_VISIBLE_MARGIN && peak.y <= canvas.height - PEAK_VISIBLE_MARGIN) {
+          
+          // Marca el pico con un círculo pequeño
+          renderCtx.beginPath();
+          renderCtx.arc(peak.x, peak.y, PEAK_DISPLAY_RADIUS - 1, 0, Math.PI * 2);
+          renderCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#22C55E';
+          renderCtx.fill();
+          renderCtx.strokeStyle = '#FFFFFF';
+          renderCtx.lineWidth = 1;
+          renderCtx.stroke();
+          
+          // Añadir valor del pico
+          const valueText = Math.abs(peak.value).toFixed(2);
+          renderCtx.font = '9px Inter';
+          const textWidth = renderCtx.measureText(valueText).width;
+          
+          // Fondo para valor
+          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+          renderCtx.fillRect(peak.x - textWidth/2 - 2, peak.y - 12, textWidth + 4, 14);
+          
+          // Texto del valor
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(valueText, peak.x, peak.y - 3);
         }
       });
     }
@@ -518,7 +563,7 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     smoothValue, preserveResults, isArrhythmia, drawArrhythmiaZones, arrhythmiaWindows,
     VERTICAL_SCALE, WINDOW_WIDTH_MS, FRAME_TIME, USE_OFFSCREEN_CANVAS, REQUIRED_FINGER_FRAMES,
-    PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN, PEAK_EMPHASIS_STROKE
+    PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN
   ]);
 
   useEffect(() => {
