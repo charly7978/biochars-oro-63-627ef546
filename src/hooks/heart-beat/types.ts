@@ -14,6 +14,7 @@ export interface HeartBeatResult {
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
   rrData?: RRIntervalData;
+  timestamp?: number;
 }
 
 export interface UseHeartBeatReturn {
@@ -26,4 +27,5 @@ export interface UseHeartBeatReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
   arrhythmiaCount?: number;
+  lastPeakTime?: number | null;
 }

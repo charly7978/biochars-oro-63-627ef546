@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
@@ -51,7 +52,8 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
-
+  
+  // Configuración optimizada para visualización de señal PPG
   const WINDOW_WIDTH_MS = 5500;
   const CANVAS_WIDTH = 1000;
   const CANVAS_HEIGHT = 900;
@@ -65,39 +67,46 @@ const PPGSignalMeter = memo(({
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  // Parámetros optimizados para la visualización de picos
-  const PEAK_DISPLAY_RADIUS = 5;  // Tamaño del círculo reducido
-  const PEAK_TEXT_OFFSET = 15;    // Distancia del texto optimizada
-  const PEAK_VALUE_FONT = '11px Inter';  // Fuente más pequeña y legible
-  const PEAK_VISIBLE_MARGIN = 40;  // Margen revisado para mantener visibilidad
+  
+  // Parámetros refinados para visualización precisa de picos
+  const PEAK_DISPLAY_RADIUS = 6;  // Tamaño del círculo para mejor visibilidad
+  const PEAK_TEXT_OFFSET = 18;    // Distancia optimizada para texto
+  const PEAK_VALUE_FONT = '11px Inter';  // Fuente legible
+  const PEAK_VISIBLE_MARGIN = 10;  // Margen reducido para mantener visibilidad sin cortar picos
+
+  // Constantes para análisis de picos
+  const MIN_PEAK_AMPLITUDE = 3.0;  // Amplitud mínima para considerar un pico como significativo
+  const MIN_PEAK_DISTANCE = 300;   // Distancia mínima entre picos en ms (200ms = 300BPM máximo)
 
   useEffect(() => {
     const handlePeakDetection = (peakData: PeakData) => {
       const now = Date.now();
       
-      // Almacenamos la información exacta del pico para mejor visualización
-      peaksRef.current.push({
-        time: peakData.timestamp,
-        value: peakData.value * VERTICAL_SCALE,
-        isArrhythmia: peakData.isArrhythmia || false,
-        beepPlayed: true
-      });
-      
-      // Limitar la cantidad de picos almacenados para mejor rendimiento
-      if (peaksRef.current.length > 25) {
-        peaksRef.current.shift();
+      // Solo almacenar picos con valores reales y medidos
+      if (peakData && peakData.timestamp && peakData.value) {
+        peaksRef.current.push({
+          time: peakData.timestamp,
+          value: peakData.value * VERTICAL_SCALE,
+          isArrhythmia: peakData.isArrhythmia || false,
+          beepPlayed: true
+        });
+        
+        // Mantener una cantidad razonable de picos en memoria
+        while (peaksRef.current.length > 20) {
+          peaksRef.current.shift();
+        }
+        
+        if (peakData.isArrhythmia && !showArrhythmiaAlert) {
+          setShowArrhythmiaAlert(true);
+          showArrhythmiaAlertRef.current = true;
+        }
+        
+        console.log("PPGSignalMeter: Peak received from service", {
+          timestamp: new Date(peakData.timestamp).toISOString(),
+          isArrhythmia: peakData.isArrhythmia,
+          value: peakData.value
+        });
       }
-      
-      if (peakData.isArrhythmia && !showArrhythmiaAlert) {
-        setShowArrhythmiaAlert(true);
-        showArrhythmiaAlertRef.current = true;
-      }
-      
-      console.log("PPGSignalMeter: Peak received from service", {
-        timestamp: new Date(peakData.timestamp).toISOString(),
-        isArrhythmia: peakData.isArrhythmia,
-        value: peakData.value
-      });
     };
     
     HeartRateService.addPeakListener(handlePeakDetection);
@@ -194,11 +203,13 @@ const PPGSignalMeter = memo(({
     return 'Señal débil';
   }, [getAverageQuality, preserveResults]);
 
+  // Función para suavizar valores sin simulación, utilizando solo los datos reales entrantes
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
+  // Dibujo del grid base sin simulación
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
     const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
     
@@ -291,6 +302,7 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
+  // Función para dibujar zonas de arritmia, sin simulación
   const drawArrhythmiaZones = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
     const currentWindows = arrhythmiaWindows || []; 
     
@@ -335,6 +347,77 @@ const PPGSignalMeter = memo(({
       }
     });
   }, [WINDOW_WIDTH_MS, arrhythmiaWindows]);
+
+  // Función para detectar picos en tiempo real sin simulación
+  const detectRealTimePeaks = useCallback((points: PPGDataPointExtended[], now: number): {x: number, y: number, time: number, value: number, isArrhythmia: boolean}[] => {
+    if (!points || points.length < 3) return [];
+    
+    const result: {x: number, y: number, time: number, value: number, isArrhythmia: boolean}[] = [];
+    const middleY = CANVAS_HEIGHT / 2 - 50;
+    
+    // Analizar puntos para detectar máximos locales (picos reales)
+    for (let i = 2; i < points.length - 2; i++) {
+      const p1 = points[i-2];
+      const p2 = points[i-1];
+      const current = points[i];
+      const n1 = points[i+1];
+      const n2 = points[i+2];
+      
+      // Un punto es un pico si es mayor que sus vecinos en una ventana de 5 puntos
+      if (current.value > p1.value && 
+          current.value > p2.value && 
+          current.value > n1.value && 
+          current.value > n2.value) {
+            
+        // Calcular la amplitud del pico para filtrar ruido
+        const prevTrough = Math.min(p1.value, p2.value);
+        const nextTrough = Math.min(n1.value, n2.value);
+        const amplitude = current.value - Math.min(prevTrough, nextTrough);
+        
+        if (amplitude > MIN_PEAK_AMPLITUDE) {
+          // Verificar si este pico está demasiado cerca de otro ya detectado
+          let isTooClose = false;
+          
+          for (const existingPeak of result) {
+            if (Math.abs(current.time - existingPeak.time) < MIN_PEAK_DISTANCE) {
+              // Si ya hay un pico cercano, quedarse con el de mayor amplitud
+              if (current.value > existingPeak.value) {
+                // Reemplazar el pico existente con este
+                const idx = result.indexOf(existingPeak);
+                if (idx !== -1) result.splice(idx, 1);
+              } else {
+                isTooClose = true;
+              }
+              break;
+            }
+          }
+          
+          if (!isTooClose) {
+            // Calcular posición real en canvas
+            const x = CANVAS_WIDTH - ((now - current.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
+            const y = middleY - current.value;
+            
+            // Solo incluir picos visibles en el área de visualización
+            if (x >= PEAK_VISIBLE_MARGIN && 
+                x <= CANVAS_WIDTH - PEAK_VISIBLE_MARGIN && 
+                y >= PEAK_VISIBLE_MARGIN && 
+                y <= CANVAS_HEIGHT - PEAK_VISIBLE_MARGIN) {
+              
+              result.push({
+                x, 
+                y,
+                time: current.time, 
+                value: current.value / VERTICAL_SCALE, // Valor real normalizado
+                isArrhythmia: current.isArrhythmia || false
+              });
+            }
+          }
+        }
+      }
+    }
+    
+    return result;
+  }, [CANVAS_HEIGHT, CANVAS_WIDTH, WINDOW_WIDTH_MS, PEAK_VISIBLE_MARGIN, VERTICAL_SCALE]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -383,6 +466,7 @@ const PPGSignalMeter = memo(({
       return;
     }
     
+    // Actualizar línea base con medición real sin simulación
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
@@ -396,6 +480,7 @@ const PPGSignalMeter = memo(({
     const scaledValue = normalizedValue * VERTICAL_SCALE;
     
     if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      // Solo procesar la señal cuando realmente hay un dedo detectado
       HeartRateService.processSignal(value);
     }
     
@@ -410,8 +495,8 @@ const PPGSignalMeter = memo(({
     const points = dataBufferRef.current.getPoints();
     
     if (points.length > 1) {
-      // Identificar los picos locales en la señal actual para una visualización más precisa
-      let localPeaks: {x: number, y: number, value: number, isArrhythmia: boolean}[] = [];
+      // Detectar picos en tiempo real de la señal actual
+      const realTimePeaks = detectRealTimePeaks(points, now);
       
       // Dibujar líneas de la forma de onda PPG
       for (let i = 1; i < points.length; i++) {
@@ -438,39 +523,51 @@ const PPGSignalMeter = memo(({
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
         renderCtx.stroke();
-        
-        // Detectar picos locales (donde el punto actual es más alto que los adyacentes)
-        if (i > 1 && i < points.length - 1) {
-          const nextPoint = points[i + 1];
-          // Un punto es un pico si es mayor que sus vecinos inmediatos
-          if (currentPoint.value > prevPoint.value && currentPoint.value > nextPoint.value) {
-            // Verificar que el pico tenga una amplitud mínima
-            const amplitude = Math.min(
-              currentPoint.value - prevPoint.value,
-              currentPoint.value - nextPoint.value
-            );
-            
-            if (amplitude > 5) { // Umbral de amplitud para considerar un pico significativo
-              localPeaks.push({
-                x: x2,
-                y: y2,
-                value: currentPoint.value / VERTICAL_SCALE,
-                isArrhythmia: isInArrhythmiaZone
-              });
-            }
-          }
-        }
       }
       
-      // Dibujar los picos almacenados (recibidos del servicio)
+      // Dibujar picos detectados en tiempo real directamente sobre los puntos altos de las ondas
+      realTimePeaks.forEach(peak => {
+        if (peak.x >= PEAK_VISIBLE_MARGIN && 
+            peak.x <= canvas.width - PEAK_VISIBLE_MARGIN && 
+            peak.y >= PEAK_VISIBLE_MARGIN && 
+            peak.y <= canvas.height - PEAK_VISIBLE_MARGIN) {
+          
+          // Círculo del pico con contorno blanco para mejor visibilidad
+          renderCtx.beginPath();
+          renderCtx.arc(peak.x, peak.y, PEAK_DISPLAY_RADIUS - 1, 0, Math.PI * 2);
+          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#22C55E';
+          renderCtx.fill();
+          renderCtx.strokeStyle = '#FFFFFF';
+          renderCtx.lineWidth = 1.5;
+          renderCtx.stroke();
+          
+          // Fondo claro para el valor numérico
+          const valueText = Math.abs(peak.value).toFixed(2);
+          renderCtx.font = PEAK_VALUE_FONT;
+          const textWidth = renderCtx.measureText(valueText).width;
+          
+          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+          renderCtx.fillRect(peak.x - textWidth/2 - 3, peak.y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
+          
+          // Mostrar valor del pico
+          renderCtx.fillStyle = peak.isArrhythmia ? '#DC2626' : '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(valueText, peak.x, peak.y - PEAK_TEXT_OFFSET);
+        }
+      });
+      
+      // Dibujar los picos recibidos del servicio (picos confirmados)
       peaksRef.current.forEach(peak => {
-        // Calculamos posición exacta del pico en el canvas
+        // Calcular posición exacta del pico en el canvas
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const y = (canvas.height / 2 - 50) - peak.value;
+        const centerY = canvas.height / 2 - 50;
+        const y = centerY - peak.value; // Posición vertical exacta en la onda
         
-        // Solo dibujamos los picos que están dentro del área visible
-        if (x >= PEAK_VISIBLE_MARGIN && x <= canvas.width - PEAK_VISIBLE_MARGIN && 
-            y >= PEAK_VISIBLE_MARGIN && y <= canvas.height - PEAK_VISIBLE_MARGIN) {
+        // Solo dibujar los picos que están dentro del área visible
+        if (x >= PEAK_VISIBLE_MARGIN && 
+            x <= canvas.width - PEAK_VISIBLE_MARGIN && 
+            y >= PEAK_VISIBLE_MARGIN && 
+            y <= canvas.height - PEAK_VISIBLE_MARGIN) {
           
           const isInArrhythmiaZone = arrhythmiaWindows.some(window => 
             peak.time >= window.start && peak.time <= window.end
@@ -518,36 +615,6 @@ const PPGSignalMeter = memo(({
           }
         }
       });
-      
-      // Dibujar los picos locales detectados en tiempo real
-      localPeaks.forEach(peak => {
-        if (peak.x >= PEAK_VISIBLE_MARGIN && peak.x <= canvas.width - PEAK_VISIBLE_MARGIN && 
-            peak.y >= PEAK_VISIBLE_MARGIN && peak.y <= canvas.height - PEAK_VISIBLE_MARGIN) {
-          
-          // Marca el pico con un círculo pequeño
-          renderCtx.beginPath();
-          renderCtx.arc(peak.x, peak.y, PEAK_DISPLAY_RADIUS - 1, 0, Math.PI * 2);
-          renderCtx.fillStyle = peak.isArrhythmia ? '#F59E0B' : '#22C55E';
-          renderCtx.fill();
-          renderCtx.strokeStyle = '#FFFFFF';
-          renderCtx.lineWidth = 1;
-          renderCtx.stroke();
-          
-          // Añadir valor del pico
-          const valueText = Math.abs(peak.value).toFixed(2);
-          renderCtx.font = '9px Inter';
-          const textWidth = renderCtx.measureText(valueText).width;
-          
-          // Fondo para valor
-          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-          renderCtx.fillRect(peak.x - textWidth/2 - 2, peak.y - 12, textWidth + 4, 14);
-          
-          // Texto del valor
-          renderCtx.fillStyle = '#000000';
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText(valueText, peak.x, peak.y - 3);
-        }
-      });
     }
     
     if (USE_OFFSCREEN_CANVAS && offscreenCanvasRef.current) {
@@ -563,7 +630,8 @@ const PPGSignalMeter = memo(({
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     smoothValue, preserveResults, isArrhythmia, drawArrhythmiaZones, arrhythmiaWindows,
     VERTICAL_SCALE, WINDOW_WIDTH_MS, FRAME_TIME, USE_OFFSCREEN_CANVAS, REQUIRED_FINGER_FRAMES,
-    PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN
+    PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN,
+    detectRealTimePeaks
   ]);
 
   useEffect(() => {
