@@ -49,18 +49,18 @@ class ArrhythmiaDetectionService {
   private arrhythmiaListeners: ArrhythmiaListener[] = [];
   private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
   
-  // Arrhythmia detection constants
-  private readonly RMSSD_THRESHOLD: number = 70;
+  // Arrhythmia detection constants - adjusted to reduce false positives
+  private readonly RMSSD_THRESHOLD: number = 85; // Aumentado de 70 para mayor especificidad
   private readonly MIN_INTERVAL: number = 300;
   private readonly MAX_INTERVAL: number = 2000;
-  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 10000;
-  private RR_VARIATION_THRESHOLD = 0.17;
+  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = 12000; // Aumentado de 10000
+  private RR_VARIATION_THRESHOLD = 0.20; // Aumentado de 0.17 para más especificidad
   
-  // False positive prevention
+  // False positive prevention - adjusted to require more evidence
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private readonly REQUIRED_CONFIRMATIONS: number = 3;
-  private readonly CONFIRMATION_WINDOW_MS: number = 12000;
+  private readonly REQUIRED_CONFIRMATIONS: number = 4; // Aumentado de 3
+  private readonly CONFIRMATION_WINDOW_MS: number = 14000; // Aumentado de 12000
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -124,14 +124,14 @@ class ArrhythmiaDetectionService {
 
     // Adjust RR variation threshold based on age
     if (age && age > 60) {
-      this.RR_VARIATION_THRESHOLD *= 0.85;
+      this.RR_VARIATION_THRESHOLD *= 0.82; // Ajustado de 0.85 - más restrictivo para mayores
     }
 
     // Adjust for athletic or medical conditions
     if (condition === 'athlete') {
-      this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL *= 1.2;
+      this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL *= 1.3; // Aumentado de 1.2
     } else if (condition === 'hypertension' || condition === 'diabetes') {
-      this.RR_VARIATION_THRESHOLD *= 0.9;
+      this.RR_VARIATION_THRESHOLD *= 0.85; // Ajustado de 0.9 - más sensible para condiciones médicas
     }
   }
 
@@ -169,7 +169,7 @@ class ArrhythmiaDetectionService {
     const currentTime = Date.now();
     
     // Protección contra llamadas frecuentes - previene detecciones falsas por ruido
-    if (currentTime - this.lastDetectionTime < 250) {
+    if (currentTime - this.lastDetectionTime < 350) { // Aumentado de 250 para prevenir falsos positivos
       return {
         isArrhythmia: this.currentBeatIsArrhythmia,
         rmssd: 0,
@@ -182,7 +182,7 @@ class ArrhythmiaDetectionService {
     this.lastDetectionTime = currentTime;
     
     // Requiere al menos 5 intervalos para un análisis confiable
-    if (rrIntervals.length < 5) {
+    if (rrIntervals.length < 6) { // Aumentado de 5 para mayor robustez
       return {
         isArrhythmia: false,
         rmssd: 0,
@@ -200,8 +200,9 @@ class ArrhythmiaDetectionService {
       interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
     );
     
-    // Si menos del 80% de los intervalos recientes son válidos, no es confiable
-    if (validIntervals.length < intervalsForAnalysis.length * 0.8 || validIntervals.length < 4) {
+    // Si menos del 85% de los intervalos recientes son válidos, no es confiable
+    // (Aumentado de 80% para mayor especificidad)
+    if (validIntervals.length < intervalsForAnalysis.length * 0.85 || validIntervals.length < 5) {
       // Resetear contador de confirmación si la señal no es fiable
       this.arrhythmiaConfirmationCounter = 0;
       this.currentBeatIsArrhythmia = false;

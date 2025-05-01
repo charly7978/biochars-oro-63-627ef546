@@ -14,8 +14,8 @@ export const useSignalQualityDetector = () => {
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
   // Increased thresholds to reduce false positives
-  const WEAK_SIGNAL_THRESHOLD = 0.35; // Aumentado de 0.25
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 6; // Aumentado de 5
+  const WEAK_SIGNAL_THRESHOLD = 0.4; // Aumentado de 0.35
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 8; // Aumentado de 6
   
   // Signal pattern detection for finger presence
   const signalHistoryRef = useRef<Array<{time: number, value: number}>>([]);
@@ -24,11 +24,11 @@ export const useSignalQualityDetector = () => {
   const fingerDetectionConfirmedRef = useRef<boolean>(false);
   
   // Constants for pattern detection - made more strict
-  const PATTERN_DETECTION_WINDOW_MS = 4000; // Aumentado para mejor detección
-  const MIN_PEAKS_FOR_RHYTHM = 5; // Aumentado para más precisión
-  const PEAK_DETECTION_THRESHOLD = 0.35; // Aumentado de 0.25
-  const REQUIRED_CONSISTENT_PATTERNS = 5; // Aumentado para más confiabilidad
-  const MIN_SIGNAL_VARIANCE = 0.06; // Aumentado para mejor discriminación
+  const PATTERN_DETECTION_WINDOW_MS = 4500; // Aumentado para mejor detección
+  const MIN_PEAKS_FOR_RHYTHM = 6; // Aumentado para más precisión
+  const PEAK_DETECTION_THRESHOLD = 0.4; // Aumentado de 0.35
+  const REQUIRED_CONSISTENT_PATTERNS = 6; // Aumentado para más confiabilidad
+  const MIN_SIGNAL_VARIANCE = 0.08; // Aumentado para mejor discriminación
 
   /**
    * Detect peaks in the signal history
