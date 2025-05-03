@@ -50,7 +50,7 @@ const PPGSignalMeter = memo(({
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const peaksRef = useRef<{time: number, value: number, beepPlayed: boolean}[]>([]);
+  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
   
   // Configuración optimizada para visualización de señal PPG
   const WINDOW_WIDTH_MS = 4500;
@@ -81,12 +81,13 @@ const PPGSignalMeter = memo(({
     const handlePeakDetection = (peakData: PeakData) => {
       const now = Date.now();
       
-      // Almacenar pico sin información de arritmia
+      // Solo almacenar picos con valores reales y medidos
       if (peakData && peakData.timestamp && peakData.value) {
         peaksRef.current.push({
           time: peakData.timestamp,
           value: peakData.value * VERTICAL_SCALE,
-          beepPlayed: true // Asumir que el beep normal se intentó
+          isArrhythmia: peakData.isArrhythmia || false,
+          beepPlayed: true
         });
         
         // Mantener una cantidad razonable de picos en memoria
@@ -94,8 +95,14 @@ const PPGSignalMeter = memo(({
           peaksRef.current.shift();
         }
         
-        console.log("PPGSignalMeter: Peak received", {
+        if (peakData.isArrhythmia && !showArrhythmiaAlert) {
+          setShowArrhythmiaAlert(true);
+          showArrhythmiaAlertRef.current = true;
+        }
+        
+        console.log("PPGSignalMeter: Peak received from service", {
           timestamp: new Date(peakData.timestamp).toISOString(),
+          isArrhythmia: peakData.isArrhythmia,
           value: peakData.value
         });
       }
@@ -491,16 +498,16 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - currentPoint.value;
         
-        // Determinar si el segmento actual cae DENTRO de una ventana de arritmia confirmada
         const isInArrhythmiaZone = 
+          currentPoint.isArrhythmia || 
+          prevPoint.isArrhythmia || 
           arrhythmiaWindows.some(window => 
             (currentPoint.time >= window.start && currentPoint.time <= window.end) ||
             (prevPoint.time >= window.start && prevPoint.time <= window.end)
           );
         
         renderCtx.beginPath();
-        // El color de la ONDA solo depende de si está en una VENTANA
-        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9'; 
+        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
         renderCtx.lineWidth = isInArrhythmiaZone ? 2 : 1.5;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
@@ -555,13 +562,12 @@ const PPGSignalMeter = memo(({
             peak.time >= window.start && peak.time <= window.end
           );
           
-          const isPeakInArrhythmiaZone = isInArrhythmiaZone; // Usar solo si cae en la ventana visual
+          const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
           // Círculo del pico con contorno blanco para mejorar contraste
           renderCtx.beginPath();
           renderCtx.arc(x, y, PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
-          // Color del círculo siempre normal ahora
-          renderCtx.fillStyle = '#0EA5E9'; // Siempre azul
+          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9'; // Amarillo para arritmias, azul para normales
           renderCtx.fill();
           renderCtx.strokeStyle = '#FFFFFF';
           renderCtx.lineWidth = 1.5;
@@ -577,11 +583,25 @@ const PPGSignalMeter = memo(({
           renderCtx.fillRect(x - textWidth/2 - 3, y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
           
           // Valor del pico
-          renderCtx.fillStyle = '#000000';
+          renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#000000';
           renderCtx.textAlign = 'center';
           renderCtx.fillText(valueText, x, y - PEAK_TEXT_OFFSET);
           
-          // Indicador de arritmia eliminado de la visualización del pico
+          // Indicador de arritmia si corresponde
+          if (isPeakArrhythmia) {
+            renderCtx.font = 'bold 12px Inter';
+            const arrhythmiaText = 'ARRITMIA';
+            const arrhythmiaWidth = renderCtx.measureText(arrhythmiaText).width;
+            
+            // Rectángulo para texto de arritmia
+            renderCtx.fillStyle = 'rgba(255, 220, 220, 0.85)';
+            renderCtx.fillRect(x - arrhythmiaWidth/2 - 3, y - PEAK_TEXT_OFFSET - 28, arrhythmiaWidth + 6, 16);
+            
+            // Texto de arritmia
+            renderCtx.fillStyle = '#DC2626';
+            renderCtx.textAlign = 'center';
+            renderCtx.fillText(arrhythmiaText, x, y - PEAK_TEXT_OFFSET - 16);
+          }
         }
       });
     }

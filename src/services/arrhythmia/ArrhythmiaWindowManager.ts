@@ -43,7 +43,6 @@ export class ArrhythmiaWindowManager {
    */
   public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
     // Check if there's a similar recent window (within 500ms)
-    const currentTime = Date.now();
     const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
       realAbs(existingWindow.start - window.start) < 500 && 
       realAbs(existingWindow.end - window.end) < 500
