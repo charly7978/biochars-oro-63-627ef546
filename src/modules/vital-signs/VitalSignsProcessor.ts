@@ -286,12 +286,12 @@ export class VitalSignsProcessor {
       });
     }
     
-    // Obtener el estado de arritmia MÁS RECIENTE del servicio
+    // Obtain the most recent arrhythmia status from the service
     const arrhythmiaServiceStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
     const arrhythmiaStatus = arrhythmiaServiceStatus.statusMessage;
     const lastArrhythmiaData = arrhythmiaServiceStatus.lastArrhythmiaData;
 
-    // Create result object using the factory - Ahora las variables de confianza siempre están definidas
+    // Create result object using the factory
     const result = ResultFactory.createResult(
       spo2,
       heartRate,
@@ -304,7 +304,7 @@ export class VitalSignsProcessor {
         timestamp: lastArrhythmiaData.timestamp,
         rmssd: lastArrhythmiaData.rmssd || 0,
         rrVariation: lastArrhythmiaData.rrVariation || 0,
-        category: lastArrhythmiaData.category
+        category: lastArrhythmiaData.category || ""
       } : null
     );
     
