@@ -1,17 +1,10 @@
 
-import { ArrhythmiaDetectionService } from './ArrhythmiaDetectionService';
-import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
-import arrhythmiaServiceInstance from './ArrhythmiaDetectionService';
-import { formatArrhythmiaWindowsForDisplay } from './utils';
+// Import and re-export the default export
+import ArrhythmiaDetectionService from './ArrhythmiaDetectionService';
 
-// Export types and utilities
+export default ArrhythmiaDetectionService;
+
+// Also export all named exports from the service
 export * from './types';
 export * from './utils';
 export * from './constants';
-
-// Export classes
-export { ArrhythmiaWindowManager };
-export { ArrhythmiaDetectionService };
-
-// Export the singleton instance as default
-export default arrhythmiaServiceInstance;

@@ -1,136 +1,132 @@
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { ArrhythmiaStatus, ArrhythmiaDetectionResult } from '@/services/arrhythmia/types'; 
+import { useState, useEffect, useCallback } from 'react';
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
-import { toast } from 'sonner';
+import { ArrhythmiaStatus } from '@/services/arrhythmia/types';
 
-interface ArrhythmiaVisualizationHook {
-  arrhythmiaWindows: ArrhythmiaWindow[];
-  addArrhythmiaWindow: (status: ArrhythmiaStatus, probability: number, intervals: number[], details?: Record<string, any>) => void;
-  clearArrhythmiaWindows: () => void;
-  processArrhythmiaStatus: (status: string, data: any) => boolean;
-  registerArrhythmiaNotification: () => void;
-}
+/**
+ * Hook to handle the visualization aspects of arrhythmia detection
+ */
+export function useArrhythmiaVisualization() {
+  const [arrhythmiaState, setArrhythmiaState] = useState<{
+    isArrhythmia: boolean;
+    type: ArrhythmiaStatus;
+    lastDetected: Date | null;
+    windowData: any[];
+  }>({
+    isArrhythmia: false,
+    type: 'normal',
+    lastDetected: null,
+    windowData: []
+  });
 
-export const useArrhythmiaVisualization = (): ArrhythmiaVisualizationHook => {
-  const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
-  const lastNotificationRef = useRef<number>(0);
-  const MIN_NOTIFICATION_INTERVAL = 5000; // 5 segundos entre notificaciones
-  
-  // Al iniciar, obtenemos las ventanas existentes del servicio
+  // Status change listener
+  const handleArrhythmiaStatusChange = useCallback((status: ArrhythmiaStatus) => {
+    const isArrhythmia = status !== 'normal';
+    setArrhythmiaState(prev => ({
+      ...prev,
+      isArrhythmia,
+      type: status,
+      lastDetected: isArrhythmia ? new Date() : prev.lastDetected,
+    }));
+  }, []);
+
+  // Register status change listener
   useEffect(() => {
-    const existingWindows = ArrhythmiaDetectionService.getArrhythmiaWindows();
-    if (existingWindows && existingWindows.length > 0) {
-      setArrhythmiaWindows(existingWindows as ArrhythmiaWindow[]);
-    }
-    
-    // Agregamos un listener para actualizaciones
-    const handleArrhythmiaDetection = (result: ArrhythmiaDetectionResult) => {
-      if (result.status !== 'normal' && result.status !== 'unknown' && result.probability > 0.7) {
-        const newWindow: ArrhythmiaWindow = {
-          timestamp: result.timestamp,
-          duration: result.latestIntervals.reduce((sum, interval) => sum + interval, 0),
-          status: result.status,
-          intervals: [...result.latestIntervals],
-          probability: result.probability,
-          details: { ...result.details },
-          // Add start/end properties to match expected format
-          start: result.timestamp,
-          end: result.timestamp + result.latestIntervals.reduce((sum, interval) => sum + interval, 0)
-        };
-        
-        setArrhythmiaWindows(prev => [...prev, newWindow]);
-      }
-    };
-    
-    ArrhythmiaDetectionService.addArrhythmiaListener(handleArrhythmiaDetection);
+    ArrhythmiaDetectionService.addArrhythmiaListener(handleArrhythmiaStatusChange);
     
     return () => {
-      ArrhythmiaDetectionService.removeArrhythmiaListener(handleArrhythmiaDetection);
+      ArrhythmiaDetectionService.removeArrhythmiaListener(handleArrhythmiaStatusChange);
+    };
+  }, [handleArrhythmiaStatusChange]);
+
+  // Update window data periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const windows = ArrhythmiaDetectionService.getArrhythmiaWindows();
+      
+      // Only update state if there's a change
+      setArrhythmiaState(prev => {
+        if (prev.windowData.length !== windows.length) {
+          return { ...prev, windowData: [...windows] };
+        }
+        return prev;
+      });
+    }, 1000);
+    
+    return () => {
+      clearInterval(interval);
     };
   }, []);
-  
+
   /**
-   * Registrar una ventana de arritmia
+   * Get formatted information about the current arrhythmia
    */
-  const addArrhythmiaWindow = useCallback((
-    status: ArrhythmiaStatus,
-    probability: number,
-    intervals: number[],
-    details: Record<string, any> = {}
-  ): void => {
-    // Crear nueva ventana
-    const timestamp = Date.now();
-    const duration = intervals.reduce((sum, interval) => sum + interval, 0);
-    
-    const newWindow: ArrhythmiaWindow = {
-      timestamp,
-      duration,
-      status,
-      intervals,
-      probability,
-      details,
-      start: timestamp,
-      end: timestamp + duration
-    };
-    
-    // Añadir al estado
-    setArrhythmiaWindows(prev => [...prev, newWindow]);
-    
-    // Registrar también en el servicio
-    ArrhythmiaDetectionService.processRRInterval(
-      intervals.length > 0 ? intervals[intervals.length - 1] : 800,
-      90
-    );
-  }, []);
-  
-  /**
-   * Procesar cambio de estado de arritmia
-   * Retorna true si debe notificarse
-   */
-  const processArrhythmiaStatus = useCallback((
-    status: string,
-    data: any
-  ): boolean => {
-    // Verificar si estamos en arritmia
-    if (status && status !== "Normal" && status !== "--") {
-      const now = Date.now();
-      const shouldNotify = now - lastNotificationRef.current > MIN_NOTIFICATION_INTERVAL;
-      
-      if (shouldNotify) {
-        lastNotificationRef.current = now;
-      }
-      
-      return shouldNotify;
+  const getArrhythmiaInfo = useCallback(() => {
+    if (!arrhythmiaState.isArrhythmia) {
+      return {
+        message: 'Ritmo Normal',
+        severity: 'normal',
+        color: '#4CAF50',
+        details: 'Ninguna arritmia detectada'
+      };
     }
-    
-    return false;
-  }, []);
-  
+
+    switch (arrhythmiaState.type) {
+      case 'bradycardia':
+        return {
+          message: 'Bradicardia',
+          severity: 'moderate',
+          color: '#FF9800',
+          details: 'Frecuencia cardíaca anormalmente lenta'
+        };
+      case 'tachycardia':
+        return {
+          message: 'Taquicardia',
+          severity: 'moderate',
+          color: '#FF5722',
+          details: 'Frecuencia cardíaca anormalmente elevada'
+        };
+      case 'possible-afib':
+        return {
+          message: 'Posible Fibrilación',
+          severity: 'severe',
+          color: '#F44336',
+          details: 'Ritmo irregular detectado - Variaciones significativas'
+        };
+      case 'bigeminy':
+        return {
+          message: 'Bigeminismo',
+          severity: 'moderate',
+          color: '#FF9800',
+          details: 'Patrón de latidos prematuros alternados'
+        };
+      case 'possible-arrhythmia':
+      default:
+        return {
+          message: 'Arritmia Posible',
+          severity: 'moderate',
+          color: '#FFC107',
+          details: 'Irregularidad detectada'
+        };
+    }
+  }, [arrhythmiaState.isArrhythmia, arrhythmiaState.type]);
+
   /**
-   * Registrar notificación de arritmia
+   * Reset arrhythmia visualization state
    */
-  const registerArrhythmiaNotification = useCallback((): void => {
-    toast.warning('¡Posible arritmia detectada!', {
-      description: 'Se ha detectado un ritmo cardíaco irregular.',
-      duration: 5000,
+  const resetArrhythmiaState = useCallback(() => {
+    setArrhythmiaState({
+      isArrhythmia: false,
+      type: 'normal',
+      lastDetected: null,
+      windowData: []
     });
   }, []);
-  
-  /**
-   * Limpiar ventanas de arritmia
-   */
-  const clearArrhythmiaWindows = useCallback((): void => {
-    setArrhythmiaWindows([]);
-    ArrhythmiaDetectionService.reset();
-  }, []);
-  
+
   return {
-    arrhythmiaWindows,
-    addArrhythmiaWindow,
-    clearArrhythmiaWindows,
-    processArrhythmiaStatus,
-    registerArrhythmiaNotification
+    arrhythmiaState,
+    getArrhythmiaInfo,
+    resetArrhythmiaState,
+    arrhythmiaWindowData: arrhythmiaState.windowData
   };
-};
+}
