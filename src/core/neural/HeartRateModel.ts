@@ -93,8 +93,18 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
       this.updatePredictionTime(startTime);
       
       // Obtener el valor y aplicar restricciones fisiológicas
-      const heartRate = Array.isArray(result) && result.length > 0 ? 
-        (Array.isArray(result[0]) ? result[0][0] : result[0]) : 0;
+      // Corregimos aquí la conversión de tipos para manejar correctamente los arrays anidados
+      let heartRate = 0;
+      
+      // Extraer el valor numérico del resultado del tensor
+      if (Array.isArray(result) && result.length > 0) {
+        const firstElement = result[0];
+        if (Array.isArray(firstElement) && firstElement.length > 0) {
+          heartRate = Number(firstElement[0]);
+        } else if (typeof firstElement === 'number') {
+          heartRate = firstElement;
+        }
+      }
       
       // Aplicar límites fisiológicos (40-180 bpm)
       const constrainedHR = heartRate > 0 ? Math.min(180, Math.max(40, heartRate)) : 0;
