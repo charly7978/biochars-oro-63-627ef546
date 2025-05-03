@@ -4,7 +4,15 @@
 
 import { HeartBeatConfig } from '../modules/heart-beat/config';
 import { applyFilterPipeline } from '../modules/heart-beat/signal-filters';
-import { detectPeak, confirmPeak } from '../modules/heart-beat/peak-detector';
+import { 
+  detectPeak, 
+  confirmPeak,
+  getInitialPeakDetectionState,
+  getInitialPeakConfirmationState,
+  // Assuming PeakDetectionState and PeakConfirmationState types are exported from peak-detector too
+  // If not, they should be defined here or in a shared types file.
+  // PeakDetectionState, PeakConfirmationState 
+} from '../modules/heart-beat/peak-detector';
 import { 
   updateBPMHistory, 
   calculateCurrentBPM, 
@@ -93,6 +101,11 @@ class HeartRateService {
   
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
+
+  // Add state properties for peak detection
+  private peakDetectionState = getInitialPeakDetectionState();
+  private peakConfirmationState = getInitialPeakConfirmationState();
+  private readonly signalWindowSizeForConfirmation = 11; // e.g., 5 points before, current, 5 points after
 
   private constructor() {
     this.reset();
@@ -253,31 +266,43 @@ class HeartRateService {
     const now = Date.now();
     const normalizedValue = filteredValue - this.baseline;
     
-    // Detect peak
-    const { isPeak, confidence } = this.detectPeak(
+    // Detect peak candidate and update adaptive threshold state
+    const detectionResult = detectPeak(
       normalizedValue,
       derivative,
-      now
+      this.lastValue, // Pass previous normalized value
+      now,
+      this.peakDetectionState, // Pass current state
+      {
+        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
+        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
+      }
     );
+    this.peakDetectionState = detectionResult.updatedState; // Update state
+    const isPeakCandidate = detectionResult.isPeakCandidate;
+    const peakConfidence = detectionResult.confidence;
     
-    // Confirm peak
-    const { 
-      isConfirmedPeak, 
-      updatedBuffer, 
-      updatedLastConfirmedPeak 
-    } = this.confirmPeak(
-      isPeak,
+    // Confirm peak using a window of the *filtered* signal
+    const confirmationWindow = this.signalBuffer.slice(-(this.signalWindowSizeForConfirmation));
+    const confirmationResult = confirmPeak(
+      isPeakCandidate,
       normalizedValue,
-      confidence
+      peakConfidence, // Use confidence from detectPeak
+      confirmationWindow, // Pass signal window
+      this.peakConfirmationState, // Pass current confirmation state
+      this.MIN_CONFIDENCE,
+      this.peakDetectionState.adaptiveThreshold // Pass the updated adaptive threshold
     );
-    
-    this.peakConfirmationBuffer = updatedBuffer;
-    this.lastConfirmedPeak = updatedLastConfirmedPeak;
+    this.peakConfirmationState = confirmationResult.updatedState; // Update state
+    const isConfirmedPeak = confirmationResult.isConfirmedPeak;
     
     // Process confirmed peak
     if (isConfirmedPeak) {
-      this.previousPeakTime = this.lastPeakTime;
-      this.lastPeakTime = now;
+      // Update lastPeakTime inside the state as well for refractory period check
+      this.peakDetectionState.lastPeakTime = now;
+      
+      this.previousPeakTime = this.lastPeakTime; // Keep track for RR interval
+      this.lastPeakTime = now; // Update service-level lastPeakTime used elsewhere
       
       if (this.previousPeakTime !== null) {
         const newInterval = this.lastPeakTime - this.previousPeakTime;
@@ -303,7 +328,7 @@ class HeartRateService {
         }
         
         const isCurrentPeakArrhythmic = arrhythmiaResult?.isArrhythmia || false;
-        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, confidence);
+        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, peakConfidence);
         
         // Notify listeners about the peak
         this.notifyPeakListeners({
@@ -330,7 +355,7 @@ class HeartRateService {
     
     return {
       bpm: Math.round(this.smoothBPM),
-      confidence,
+      confidence: peakConfidence, // Use confidence from detectPeak stage for now
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
       rrIntervals: [...this.rrIntervalHistory],
@@ -373,51 +398,6 @@ class HeartRateService {
         movingAvgWindowSize: this.MOVING_AVERAGE_WINDOW,
         emaAlpha: this.EMA_ALPHA
       }
-    );
-  }
-  
-  /**
-   * Detecta si hay un pico en la señal
-   */
-  private detectPeak(
-    normalizedValue: number,
-    derivative: number,
-    currentTime: number
-  ): { isPeak: boolean; confidence: number } {
-    return detectPeak(
-      normalizedValue,
-      derivative,
-      this.baseline,
-      this.lastValue,
-      this.lastPeakTime,
-      currentTime,
-      {
-        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
-        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
-        signalThreshold: this.SIGNAL_THRESHOLD
-      }
-    );
-  }
-  
-  /**
-   * Confirma si un pico potencial es real
-   */
-  private confirmPeak(
-    isPeak: boolean,
-    normalizedValue: number,
-    confidence: number
-  ): {
-    isConfirmedPeak: boolean;
-    updatedBuffer: number[];
-    updatedLastConfirmedPeak: boolean;
-  } {
-    return confirmPeak(
-      isPeak,
-      normalizedValue,
-      this.lastConfirmedPeak,
-      this.peakConfirmationBuffer,
-      this.MIN_CONFIDENCE,
-      confidence
     );
   }
   
@@ -477,7 +457,11 @@ class HeartRateService {
     this.lastProcessedPeakTime = 0;
     this.rrIntervalHistory = [];
     
-    console.log("HeartRateService: Reset complete - all values at zero");
+    // Reset peak detection state
+    this.peakDetectionState = getInitialPeakDetectionState();
+    this.peakConfirmationState = getInitialPeakConfirmationState();
+    
+    console.log("HeartRateService: Reset complete - including peak detection states");
   }
 }
 
