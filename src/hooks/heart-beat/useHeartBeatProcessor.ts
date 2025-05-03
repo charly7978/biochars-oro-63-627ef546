@@ -7,10 +7,10 @@
 // All functionality has been consolidated in the main useHeartBeatProcessor hook at src/hooks/useHeartBeatProcessor.ts
 // For imports, please use: import { useHeartBeatProcessor } from '@/hooks/useHeartBeatProcessor';
 
-import { useHeartBeatProcessor } from '@/hooks/useHeartBeatProcessor';
+import { useHeartBeatProcessor as mainProcessor } from '@/hooks/useHeartBeatProcessor';
 
 // Re-export the consolidated hook for backward compatibility
-export const useHeartBeatProcessor = useHeartBeatProcessor;
+export const useHeartBeatProcessor = mainProcessor;
 
 // Export a warning for any developers still using this import path
 console.warn('DEPRECATION WARNING: Please import useHeartBeatProcessor from @/hooks/useHeartBeatProcessor instead');

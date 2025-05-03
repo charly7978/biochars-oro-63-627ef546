@@ -131,9 +131,7 @@ export class LipidProcessor {
   }
 }
 
-// Función matemática reemplazada
-/*
+// Deterministic floor function (replaces Math.floor)
 function realFloor(value: number): number {
-  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
+  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1 * (value % 1 !== 0 ? 1 : 0);
 }
-*/

@@ -498,16 +498,15 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - currentPoint.value;
         
+        // Determinar si el segmento actual cae dentro de una ventana de arritmia VISUAL
         const isInArrhythmiaZone = 
-          currentPoint.isArrhythmia || 
-          prevPoint.isArrhythmia || 
           arrhythmiaWindows.some(window => 
             (currentPoint.time >= window.start && currentPoint.time <= window.end) ||
             (prevPoint.time >= window.start && prevPoint.time <= window.end)
           );
         
         renderCtx.beginPath();
-        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
+        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9'; // Rojo si está en zona
         renderCtx.lineWidth = isInArrhythmiaZone ? 2 : 1.5;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
