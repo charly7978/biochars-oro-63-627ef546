@@ -11,7 +11,7 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import { calculateAC, evaluateSignalQuality } from './shared-signal-utils';
+import { calculateAC, estimateSignalQuality } from './shared-signal-utils';
 
 /**
  * Main vital signs processor
@@ -110,8 +110,8 @@ export class VitalSignsProcessor {
     const hasEnoughData = ppgHistory.length >= 15; 
     const amplitude = hasEnoughData ? calculateAC(ppgHistory.slice(-30)) : 0; 
     const isValidAmplitude = amplitude > 0.01; 
-    // Calcular calidad basada en el historial de valores filtrados
-    const signalQuality = evaluateSignalQuality(ppgHistory); 
+    // Usar el nombre correcto de la función importada
+    const signalQuality = estimateSignalQuality(ppgHistory); 
 
     // Solo calculamos mediciones si tenemos suficientes datos y señal estable
     if (hasEnoughData && isValidAmplitude && this.isStabilized && signalQuality > 30) {

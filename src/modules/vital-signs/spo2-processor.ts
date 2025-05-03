@@ -5,7 +5,7 @@
 import { 
   calculateAC, 
   calculateDC,
-  evaluateSignalQuality // Assuming this remains useful
+  estimateSignalQuality // Corregir nombre importado
 } from './shared-signal-utils';
 
 // Constantes
@@ -36,8 +36,9 @@ export class SpO2Processor {
    * @returns Estimación de SpO2 (NaN si no es calculable).
    */
   public calculateSpO2(ppgValues: number[]): number {
-    // Necesita suficientes datos y variabilidad
-    if (!ppgValues || ppgValues.length < 30) { 
+    // Usar estimateSignalQuality (aunque no se use directamente en el cálculo por ahora)
+    const signalQuality = estimateSignalQuality(ppgValues);
+    if (!ppgValues || ppgValues.length < 30 || signalQuality < 20) { // Requerir calidad mínima baja para este método
       this.confidence = 0;
       return NaN; 
     }
@@ -62,7 +63,8 @@ export class SpO2Processor {
 
     // Validar y limitar el resultado estimado
     if (estimatedSpo2 >= MIN_SPO2 && estimatedSpo2 <= MAX_SPO2) {
-        this.confidence = 0.35; // Confianza baja/moderada debido a la naturaleza del método
+        // Ajustar confianza basada (parcialmente) en calidad de señal
+        this.confidence = Math.max(0.1, Math.min(0.4, 0.2 + (signalQuality / 100) * 0.2)); 
         this.lastSpo2 = estimatedSpo2;
         this.updateBuffer(estimatedSpo2);
         return this.getSmoothedSpo2();
@@ -92,9 +94,7 @@ export class SpO2Processor {
   }
 
   public getConfidence(): number {
-    // TODO: Incorporar métricas de calidad de señal si están disponibles
-    // const signalQuality = evaluateSignalQuality(ppgValues); // Necesitaría ppgValues aquí
-    // return this.confidence * (signalQuality / 100);
+    // Podría usarse signalQuality aquí si se pasara ppgValues
     return this.confidence; 
   }
 

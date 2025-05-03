@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
-import { calculateRMSSD, calculateRRVariation } from '@/modules/vital-signs/arrhythmia/calculations';
+import { calculateRMSSD, calculateRRVariation, calculateSDNN } from '@/modules/vital-signs/arrhythmia/calculations';
 import { toast } from "@/hooks/use-toast";
 import AudioFeedbackService from '../AudioFeedbackService';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
@@ -18,7 +17,8 @@ import {
   DEFAULT_THRESHOLDS, 
   PROFILE_ADJUSTMENTS 
 } from './constants';
-import { categorizeArrhythmia, realMax, realMin } from './utils';
+import { categorizeArrhythmia } from './utils';
+import { HeartBeatConfig } from '@/modules/heart-beat/config';
 
 /**
  * Service for detecting arrhythmias from heart rate data
@@ -53,6 +53,11 @@ class ArrhythmiaDetectionService {
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
+
+  // Añadir constantes para reglas de fallback
+  private readonly RULE_RMSSD_HIGH = 100;
+  private readonly RULE_RMSSD_LOW = 15;
+  private readonly RULE_CV_HIGH = 0.20;
 
   private constructor() {
     this.setupAutomaticCleanup();
@@ -176,65 +181,19 @@ class ArrhythmiaDetectionService {
       };
     }
     
-    // Calculate RMSSD (main metric now)
-    const rmssd = calculateRMSSD(validIntervals);
+    this.lastRRIntervals = validIntervals;
     
-    // Potential arrhythmia detection based on RMSSD
-    const potentialArrhythmia = rmssd > this.RMSSD_THRESHOLD;
+    // --- Usar SIEMPRE el Fallback basado en Reglas --- 
+    const [potential, confidence, category] = this.detectArrhythmiaRuleBased(validIntervals);
+    this.handleDetectionResult(potential, confidence, category, validIntervals);
+    const { rmssd, rrVariation } = this.calculateBaseMetrics(validIntervals);
     
-    // Processing to confirm arrhythmia
-    let confirmedArrhythmia = false;
-    let category: ArrhythmiaDetectionResult['category'] = 'normal';
-    
-    if (potentialArrhythmia) {
-      // If it's a new potential event and we weren't in confirmed arrhythmia before
-      if (!this.currentBeatIsArrhythmia) { 
-        this.arrhythmiaConfirmationCounter++;
-        if (this.arrhythmiaConfirmationCounter >= this.REQUIRED_CONFIRMATIONS) {
-          confirmedArrhythmia = true;
-        } else {
-          console.log(`Potential arrhythmia detected (RMSSD=${rmssd.toFixed(1)}), confirmation ${this.arrhythmiaConfirmationCounter}/${this.REQUIRED_CONFIRMATIONS}`);
-        }
-      }
-    } 
-
-    // Determine category if there's a confirmed or potential arrhythmia
-    if (confirmedArrhythmia || potentialArrhythmia) {
-        category = categorizeArrhythmia(validIntervals);
-    }
-
-    // Save previous state for comparison
-    this.lastIsArrhythmia = this.currentBeatIsArrhythmia;
-    let isNowConsideredArrhythmia = false; // Local variable for current state
-    
-    if (confirmedArrhythmia && category !== 'tachycardia') {
-      // Confirmed and relevant arrhythmia
-      isNowConsideredArrhythmia = true;
-      const variationRatioForInfo = calculateRRVariation(validIntervals);
-      // Call handle only if it's a new detection (previous state was false)
-      if (!this.lastIsArrhythmia) {
-        this.handleArrhythmiaDetection(validIntervals, rmssd, variationRatioForInfo, this.RMSSD_THRESHOLD, category);
-      }
-    } 
-    // If no relevant arrhythmia was confirmed in this cycle, reset state to non-arrhythmic
-    // and reset confirmation counter for the next potential event.
-    if (!isNowConsideredArrhythmia) {
-      this.arrhythmiaConfirmationCounter = 0; 
-    }
-    
-    // Update the persistent state of the class
-    this.currentBeatIsArrhythmia = isNowConsideredArrhythmia;
-    
-    // Calculate rrVariation to return it, although not used for primary detection
-    const finalRRVariation = calculateRRVariation(validIntervals);
-
-    return {
-      rmssd, 
-      rrVariation: finalRRVariation, 
-      timestamp: currentTime,
+    return { 
       isArrhythmia: this.currentBeatIsArrhythmia, 
-      // Return correct category even if not an active arrhythmia
-      category: this.currentBeatIsArrhythmia ? category : (potentialArrhythmia ? category : 'normal')
+      rmssd, 
+      rrVariation, 
+      timestamp: currentTime, 
+      category: this.lastArrhythmiaData?.category || 'normal' 
     };
   }
   
@@ -276,7 +235,7 @@ class ArrhythmiaDetectionService {
     const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
     // Larger window to ensure visualization
-    const windowWidth = realMax(1000, realMin(1800, avgInterval * 3));
+    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 2.5));
     
     const arrhythmiaWindow = {
       start: currentTime - windowWidth/2,
@@ -375,6 +334,61 @@ class ArrhythmiaDetectionService {
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
+  }
+
+  private calculateBaseMetrics(intervals: number[]): { rmssd: number, rrVariation: number, sdnn: number, meanRR: number } {
+    const rmssd = calculateRMSSD(intervals);
+    const rrVariation = calculateRRVariation(intervals);
+    const sdnn = calculateSDNN(intervals);
+    const meanRR = intervals.length > 0 ? intervals.reduce((a, b) => a + b, 0) / intervals.length : 0;
+    return { rmssd, rrVariation, sdnn, meanRR };
+  }
+  
+  private detectArrhythmiaRuleBased(validIntervals: number[]): [boolean, number, ArrhythmiaDetectionResult['category']] { 
+      const { rmssd, sdnn, meanRR } = this.calculateBaseMetrics(validIntervals);
+      const cv = meanRR > 0 ? sdnn / meanRR : 0;
+      
+      // Llamar a categorizeArrhythmia con solo los intervalos
+      let category: ArrhythmiaDetectionResult['category'] = categorizeArrhythmia(validIntervals); 
+      let potentialArrhythmia = category !== 'normal';
+      let confidence = 0.3; // Default confidence for rule-based
+
+      // Ajustar confianza basado en categoría y métricas HRV
+      if (potentialArrhythmia) {
+        switch(category) {
+            case 'bradycardia':
+            case 'tachycardia':
+                confidence = Math.max(confidence, 0.35); break;
+            case 'bigeminy': // Si categorizeArrhythmia lo soporta
+                 confidence = Math.max(confidence, 0.5); break;
+            case 'possible-arrhythmia': // Podría ser alta variabilidad
+                 confidence = Math.max(confidence, 0.45); break;
+        }
+      }
+      // Sobreescribir categoría y ajustar confianza si las reglas HRV lo indican
+      if (rmssd > this.RULE_RMSSD_HIGH || rmssd < this.RULE_RMSSD_LOW || cv > this.RULE_CV_HIGH) {
+          potentialArrhythmia = true;
+          if (category === 'normal') { // Solo cambiar si no es Brady/Tachy
+              category = 'possible-arrhythmia';
+          }
+          confidence = Math.max(confidence, 0.4); 
+      }
+      
+      return [potentialArrhythmia, confidence, category];
+  }
+
+  private handleDetectionResult(
+    potential: boolean,
+    confidence: number,
+    category: ArrhythmiaDetectionResult['category'],
+    intervals: number[]
+  ): void {
+    if (potential) {
+      this.currentBeatIsArrhythmia = true;
+      this.handleArrhythmiaDetection(intervals, calculateRMSSD(intervals), calculateRRVariation(intervals), this.RMSSD_THRESHOLD, category);
+    } else {
+      this.currentBeatIsArrhythmia = false;
+    }
   }
 }
 

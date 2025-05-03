@@ -2,7 +2,7 @@ import {
   calculateStandardDeviation, 
   normalizeValues, 
   findPeaksAndValleys,
-  evaluateSignalQuality
+  estimateSignalQuality
 } from './shared-signal-utils';
 
 // Constantes fisiológicas
@@ -36,7 +36,7 @@ export class BloodPressureProcessor {
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number | typeof NaN; diastolic: number | typeof NaN } {
     // Necesita suficientes datos de buena calidad
-    const signalQuality = evaluateSignalQuality(ppgValues); // Estimar calidad
+    const signalQuality = estimateSignalQuality(ppgValues); // Estimar calidad
     if (!ppgValues || ppgValues.length < 50 || signalQuality < 40) { // Requerir calidad mínima
       this.confidence = 0;
       return { systolic: NaN, diastolic: NaN };
