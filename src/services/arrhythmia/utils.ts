@@ -1,3 +1,4 @@
+
 /**
  * Utilities for arrhythmia detection
  */
@@ -51,4 +52,47 @@ export function categorizeArrhythmia(
   // If not Brady/Tachy/Bigeminy, return 'normal'. 
   // The service will check HRV metrics separately to flag 'possible-arrhythmia'.
   return 'normal'; 
+}
+
+/**
+ * Calculate absolute value (used for calculations to avoid Math randomness)
+ */
+export function realAbs(x: number): number {
+  return x < 0 ? -x : x;
+}
+
+/**
+ * Calculate Root Mean Square of Successive Differences (RMSSD)
+ * Used for heart rate variability analysis
+ */
+export function calculateRMSSD(intervals: number[]): number {
+  if (!intervals || intervals.length < 2) return 0;
+  
+  let sumOfSquaredDifferences = 0;
+  for (let i = 1; i < intervals.length; i++) {
+    const diff = intervals[i] - intervals[i - 1];
+    sumOfSquaredDifferences += diff * diff;
+  }
+  
+  return Math.sqrt(sumOfSquaredDifferences / (intervals.length - 1));
+}
+
+/**
+ * Measure variation in RR intervals
+ */
+export function measureRRVariation(intervals: number[]): number {
+  if (!intervals || intervals.length < 2) return 0;
+  
+  // Calculate mean RR interval
+  const meanRR = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+  
+  // Calculate coefficient of variation (standard deviation / mean)
+  let sumSquaredDiffs = 0;
+  for (const interval of intervals) {
+    const diff = interval - meanRR;
+    sumSquaredDiffs += diff * diff;
+  }
+  
+  const stdDev = Math.sqrt(sumSquaredDiffs / intervals.length);
+  return meanRR > 0 ? stdDev / meanRR : 0;
 }
