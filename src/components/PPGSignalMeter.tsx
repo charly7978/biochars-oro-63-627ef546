@@ -498,16 +498,16 @@ const PPGSignalMeter = memo(({
         const x2 = canvas.width - ((now - currentPoint.time) * canvas.width / WINDOW_WIDTH_MS);
         const y2 = (canvas.height / 2 - 50) - currentPoint.value;
         
-        // Determinar si el segmento actual cae DENTRO de una ventana de arritmia confirmada
         const isInArrhythmiaZone = 
+          currentPoint.isArrhythmia || 
+          prevPoint.isArrhythmia || 
           arrhythmiaWindows.some(window => 
             (currentPoint.time >= window.start && currentPoint.time <= window.end) ||
             (prevPoint.time >= window.start && prevPoint.time <= window.end)
           );
         
         renderCtx.beginPath();
-        // El color de la ONDA solo depende de si está en una VENTANA
-        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9'; 
+        renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
         renderCtx.lineWidth = isInArrhythmiaZone ? 2 : 1.5;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
@@ -562,13 +562,12 @@ const PPGSignalMeter = memo(({
             peak.time >= window.start && peak.time <= window.end
           );
           
-          const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone; // Color del PICO sí depende del flag del pico
+          const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
           // Círculo del pico con contorno blanco para mejorar contraste
           renderCtx.beginPath();
           renderCtx.arc(x, y, PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
-          // Color del CÍRCULO del pico depende del flag isArrhythmia del pico
-          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9'; 
+          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9'; // Amarillo para arritmias, azul para normales
           renderCtx.fill();
           renderCtx.strokeStyle = '#FFFFFF';
           renderCtx.lineWidth = 1.5;
@@ -591,7 +590,7 @@ const PPGSignalMeter = memo(({
           // Indicador de arritmia si corresponde
           if (isPeakArrhythmia) {
             renderCtx.font = 'bold 12px Inter';
-            const arrhythmiaText = 'ARR';
+            const arrhythmiaText = 'ARRITMIA';
             const arrhythmiaWidth = renderCtx.measureText(arrhythmiaText).width;
             
             // Rectángulo para texto de arritmia
@@ -601,7 +600,7 @@ const PPGSignalMeter = memo(({
             // Texto de arritmia
             renderCtx.fillStyle = '#DC2626';
             renderCtx.textAlign = 'center';
-            renderCtx.fillText(arrhythmiaText, x, y - PEAK_TEXT_OFFSET - 16); // Texto más corto
+            renderCtx.fillText(arrhythmiaText, x, y - PEAK_TEXT_OFFSET - 16);
           }
         }
       });
