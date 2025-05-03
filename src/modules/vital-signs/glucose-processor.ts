@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,7 +7,7 @@ import {
   calculateStandardDeviation, 
   normalizeValues, 
   findPeaksAndValleys,
-  evaluateSignalQuality,
+  estimateSignalQuality,
   calculateDC
 } from './shared-signal-utils';
 
@@ -39,7 +40,7 @@ export class GlucoseProcessor {
    */
   public calculateGlucose(ppgValues: number[]): number {
     // Requiere una cantidad significativa de datos de buena calidad
-    const signalQuality = evaluateSignalQuality(ppgValues);
+    const signalQuality = estimateSignalQuality(ppgValues);
     if (!ppgValues || ppgValues.length < 100 || signalQuality < 30) { // Requerir calidad mínima
       this.confidence = 0;
       return NaN;

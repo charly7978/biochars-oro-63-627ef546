@@ -1,3 +1,4 @@
+
 import { 
   calculateStandardDeviation, 
   normalizeValues, 
@@ -36,7 +37,7 @@ export class BloodPressureProcessor {
    */
   public calculateBloodPressure(ppgValues: number[]): { systolic: number | typeof NaN; diastolic: number | typeof NaN } {
     // Necesita suficientes datos de buena calidad
-    const signalQuality = estimateSignalQuality(ppgValues); // Estimar calidad
+    const signalQuality = estimateSignalQuality(ppgValues); // Changed from evaluateSignalQuality to estimateSignalQuality
     if (!ppgValues || ppgValues.length < 50 || signalQuality < 40) { // Requerir calidad mínima
       this.confidence = 0;
       return { systolic: NaN, diastolic: NaN };
