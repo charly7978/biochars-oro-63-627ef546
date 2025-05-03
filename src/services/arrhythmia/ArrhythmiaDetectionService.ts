@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,7 +11,8 @@ import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
 import { 
   ArrhythmiaDetectionResult, 
   ArrhythmiaStatus, 
-  UserProfile 
+  UserProfile,
+  ArrhythmiaListener
 } from './types';
 import { 
   DEFAULT_THRESHOLDS, 
@@ -25,8 +27,8 @@ class ArrhythmiaDetectionService {
   private static instance: ArrhythmiaDetectionService;
   private userProfile: UserProfile = {};
   
-  // Window manager
-  private windowManager = new ArrhythmiaWindowManager();
+  // Window manager - exportado como público para unificar la visualización
+  public windowManager = new ArrhythmiaWindowManager();
   
   // Detection state
   private lastRRIntervals: number[] = [];
@@ -81,14 +83,14 @@ class ArrhythmiaDetectionService {
   /**
    * Register for arrhythmia window notifications
    */
-  public addArrhythmiaListener(listener: (window: ArrhythmiaWindow) => void): void {
+  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
     this.windowManager.addArrhythmiaListener(listener);
   }
 
   /**
    * Remove arrhythmia listener
    */
-  public removeArrhythmiaListener(listener: (window: ArrhythmiaWindow) => void): void {
+  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
     this.windowManager.removeArrhythmiaListener(listener);
   }
 
@@ -377,4 +379,3 @@ class ArrhythmiaDetectionService {
 }
 
 export default ArrhythmiaDetectionService.getInstance();
-

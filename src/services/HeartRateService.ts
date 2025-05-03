@@ -11,7 +11,7 @@ import {
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { PeakData, RRIntervalData } from '../types/peak';
+import { RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
 
