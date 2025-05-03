@@ -104,9 +104,6 @@ const Index = () => {
                   spo2: vitals.spo2, 
                   pressure: vitals.pressure,
                   glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin,
                   frameCount: processedFrameCountRef.current
                 });
               }
@@ -120,9 +117,6 @@ const Index = () => {
                   spo2: vitals.spo2,
                   pressure: vitals.pressure,
                   glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin
                 });
               }
             }
@@ -366,19 +360,8 @@ const Index = () => {
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-2">
                 <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
-                <VitalSign 
-                  label="HIDRATACIÓN" 
-                  value={vitalSigns.hydration || "--"} 
-                  unit="%" 
-                  highlighted={showResults} 
-                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />} 
-                  compact={false} 
-                />
+                <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
               </div>
-              <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="HEMOGLOBINA" value={vitalSigns.hemoglobin || "--"} unit="g/dL" highlighted={showResults} compact={false} />
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">
