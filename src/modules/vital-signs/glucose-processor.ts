@@ -2,6 +2,21 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import { 
+  calculateStandardDeviation, 
+  normalizeValues, 
+  findPeaksAndValleys,
+  evaluateSignalQuality
+} from './shared-signal-utils';
+import { getModel } from '@/core/neural/ModelRegistry';
+import { GlucoseNeuralModel } from '@/core/neural/GlucoseModel';
+import { Tensor1D } from '@/core/neural/NeuralNetworkBase';
+
+// Constantes fisiológicas (ejemplos, ajustar)
+const MIN_GLUCOSE = 40;  // mg/dL
+const MAX_GLUCOSE = 400; // mg/dL
+const DEFAULT_GLUCOSE = 90;
+
 /**
  * GlucoseProcessor class para medición directa
  */
@@ -9,12 +24,21 @@ export class GlucoseProcessor {
   private confidence: number = 0;
   private valueBuffer: number[] = [];
   private readonly BUFFER_SIZE = 10;
+  private lastGlucose: number = DEFAULT_GLUCOSE;
+  private glucoseModel: GlucoseNeuralModel | null = null;
   
   /**
    * Initialize the processor
    */
   constructor() {
-    this.reset();
+    this.loadModel();
+  }
+  
+  private async loadModel() {
+    this.glucoseModel = await getModel<GlucoseNeuralModel>('glucose');
+    if (!this.glucoseModel) {
+        console.warn("Glucose Model not found or failed to load.");
+    }
   }
   
   /**
@@ -22,86 +46,82 @@ export class GlucoseProcessor {
    * Sin valores predeterminados ni constantes fijas
    */
   public calculateGlucose(ppgValues: number[]): number {
-    if (!ppgValues || ppgValues.length < 15) {
-      this.confidence = 0.1;
-      return 0;
+    if (!ppgValues || ppgValues.length < 100) { // Requiere más datos que otros
+      this.confidence = 0;
+      return NaN;
     }
-    
-    // Calcular media y amplitud reales
-    let sum = 0;
-    let min = ppgValues[0];
-    let max = ppgValues[0];
-    
-    for (let i = 0; i < ppgValues.length; i++) {
-      sum += ppgValues[i];
-      
-      if (ppgValues[i] < min) min = ppgValues[i];
-      if (ppgValues[i] > max) max = ppgValues[i];
-    }
-    
-    const avg = sum / ppgValues.length;
-    const amplitude = max - min;
-    
-    if (amplitude < 0.01) {
-      this.confidence = 0.1;
-      return 0;
-    }
-    
-    // Índice de absorción (amplitud relativa)
-    const absorptionIndex = amplitude / (avg + 0.0001);
-    
-    // Variabilidad (desviación estándar)
-    let sqSum = 0;
-    for (let i = 0; i < ppgValues.length; i++) {
-      sqSum += (ppgValues[i] - avg) * (ppgValues[i] - avg);
-    }
-    const stdDev = Math.sqrt(sqSum / ppgValues.length);
-    
-    // Cruces por el promedio (frecuencia relativa)
-    let crossings = 0;
-    for (let i = 1; i < ppgValues.length; i++) {
-      if ((ppgValues[i] > avg && ppgValues[i-1] <= avg) || 
-          (ppgValues[i] < avg && ppgValues[i-1] >= avg)) {
-        crossings++;
+
+    if (this.glucoseModel) {
+      try {
+        // Preprocesar entrada para el modelo
+        const modelInput: Tensor1D = ppgValues.slice(-256); // Ejemplo: usar últimos 256 puntos
+         if (modelInput.length < 256) {
+            this.confidence = 0;
+            return NaN; // No suficientes datos para el modelo
+        }
+
+        const predictionTensor = this.glucoseModel.predict(modelInput);
+        const predictedGlucose = predictionTensor[0];
+
+        if (predictedGlucose >= MIN_GLUCOSE && predictedGlucose <= MAX_GLUCOSE) {
+          this.confidence = 0.6; // Confianza base del modelo
+          this.lastGlucose = predictedGlucose;
+          this.updateBuffer(predictedGlucose);
+          return this.getSmoothedGlucose();
+        } else {
+          console.warn(`Glucose prediction out of range: ${predictedGlucose}`);
+          this.confidence = 0.05;
+          return NaN;
+        }
+      } catch (error) {
+        console.error("Error during Glucose model prediction:", error);
+        this.confidence = 0;
+        return this.calculateGlucoseFallback(ppgValues);
       }
-    }
-    
-    const freqIndex = crossings / ppgValues.length;
-    
-    // Estimación fisiológica: producto de índices reales
-    // (sin suma ni constante base)
-    let glucoseEstimate = absorptionIndex * stdDev * freqIndex * 1000;
-    
-    // Validación fisiológica: rango plausible (ejemplo: 40-400 mg/dL)
-    if (glucoseEstimate < 40 || glucoseEstimate > 400) {
+    } else {
+      console.warn("Glucose Model not loaded, using fallback calculation.");
       this.confidence = 0.1;
-      return 0;
+      return this.calculateGlucoseFallback(ppgValues);
     }
-    
-    // Buffer para estabilidad
-    this.valueBuffer.push(glucoseEstimate);
+  }
+
+  // Fallback: Estimación muy simplificada (NO PRECISA)
+  private calculateGlucoseFallback(ppgValues: number[]): number {
+     console.warn("Glucose Fallback calculation is highly speculative and likely inaccurate.");
+     // Placeholder: Devolver NaN
+     return NaN;
+     /*
+     // Ejemplo Placeholder INCORRECTO:
+     const normalized = normalizeValues(ppgValues);
+     const stdDev = calculateStandardDeviation(normalized);
+     // Asunción muy simple: mayor variabilidad podría correlacionar inversamente con glucosa? (Necesita validación)
+     const estimatedGlucose = 120 - stdDev * 100;
+     const clampedGlucose = Math.max(MIN_GLUCOSE, Math.min(MAX_GLUCOSE, estimatedGlucose));
+     this.updateBuffer(clampedGlucose);
+     return this.getSmoothedGlucose();
+     */
+  }
+
+  private updateBuffer(glucoseValue: number): void {
+    this.valueBuffer.push(glucoseValue);
     if (this.valueBuffer.length > this.BUFFER_SIZE) {
       this.valueBuffer.shift();
     }
-    
-    let bufferSum = 0;
-    for (let i = 0; i < this.valueBuffer.length; i++) {
-      bufferSum += this.valueBuffer[i];
-    }
-    
-    const bufferAvg = bufferSum / this.valueBuffer.length;
-    
-    // Confianza basada en amplitud y variabilidad
-    this.confidence = (amplitude > 0.05 && stdDev > 0.01) ? 0.7 : 0.3;
-    
-    // Truncar a entero sin Math.round
-    return bufferAvg >= 0 ? ~~(bufferAvg + 0.5) : ~~(bufferAvg - 0.5);
+  }
+
+  private getSmoothedGlucose(): number {
+    if (this.valueBuffer.length === 0) return NaN;
+    const sum = this.valueBuffer.reduce((a, b) => a + b, 0);
+    return sum / this.valueBuffer.length;
   }
   
   /**
    * Get current confidence value
    */
   public getConfidence(): number {
+    // Incorporar calidad de señal PPG
+    // const signalQuality = evaluateSignalQuality(ppgValues); // Need ppgValues
+    // return this.confidence * (signalQuality / 100);
     return this.confidence;
   }
   
@@ -109,8 +129,9 @@ export class GlucoseProcessor {
    * Reset all internal state
    */
   public reset(): void {
-    this.confidence = 0;
     this.valueBuffer = [];
-    console.log("GlucoseProcessor: Reset complete");
+    this.lastGlucose = DEFAULT_GLUCOSE;
+    this.confidence = 0;
+    console.log("Glucose Processor Reset");
   }
 }

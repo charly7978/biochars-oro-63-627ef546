@@ -11,9 +11,11 @@ import {
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { RRIntervalData } from '../types/peak';
+import { PeakData, RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import { ArrhythmiaDetectionResult } from './arrhythmia/types';
 
 export interface HeartRateResult {
   bpm: number;
@@ -25,9 +27,10 @@ export interface HeartRateResult {
   rrData?: RRIntervalData;
 }
 
-export interface PeakData {
-  timestamp: number;
-  value: number;
+export interface PeakDetectionOptions {
+  minPeakTimeMs: number;
+  derivativeThreshold: number;
+  signalThreshold: number;
 }
 
 export interface FilterOptions {
@@ -162,9 +165,40 @@ class HeartRateService {
    * Reproduce un sonido de latido con la opción de vibración
    */
   private triggerHeartbeatFeedback(isArrhythmia: boolean = false, value: number = 0.7): boolean {
-    // Ya no usamos el flag isArrhythmia aquí
-    // Delegar a AudioFeedbackService para feedback normal
-    return AudioFeedbackService.triggerHeartbeatFeedback('normal', realMin(0.8, realAbs(value) + 0.3));
+    const now = Date.now();
+    
+    // Evitar reproducción de beeps demasiado seguidos
+    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
+      return false;
+    }
+    
+    // Actualizar tiempo del último beep
+    this.lastBeepTime = now;
+    
+    // Crear datos del pico para audio
+    const peakData: PeakData = {
+      timestamp: now,
+      value,
+      isArrhythmia
+    };
+    
+    // Reproducir audio
+    AudioFeedbackService.queuePeak(peakData);
+    
+    // Activar vibración si está disponible
+    if (this.vibrationEnabled) {
+      try {
+        if (isArrhythmia) {
+          FeedbackService.vibrateArrhythmia();
+        } else {
+          FeedbackService.vibrate(80); // Vibración corta para pulso normal
+        }
+      } catch (error) {
+        console.error("HeartRateService: Error during vibration", error);
+      }
+    }
+    
+    return true;
   }
 
   /**
@@ -172,7 +206,6 @@ class HeartRateService {
    * Versión sincronizada para coordinar audio y visual
    */
   public processSignal(value: number): HeartRateResult {
-    // Weak signal check
     if (this.isWeakSignal(value)) {
       return {
         bpm: 0,
@@ -259,21 +292,35 @@ class HeartRateService {
       // Update BPM history
       this.bpmHistory = this.updateBPMHistory(now);
       
-      // Trigger vibration and beep (ya no diferencia arritmia)
-      this.triggerHeartbeatFeedback(false, confidence); // Siempre feedback normal
-      
-      // Notify listeners about the peak (solo timestamp y valor)
-      this.notifyPeakListeners({
-        timestamp: now, 
-        value: filteredValue // Usar valor filtrado 
-      });
+      // Activar retroalimentación si el monitoreo está activo
+      if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
+        let arrhythmiaResult: ArrhythmiaDetectionResult | null = null;
+        let isPotentialArrhythmia = false;
+        
+        if (this.rrIntervalHistory.length > 5) { // Necesita suficientes intervalos
+          arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(this.rrIntervalHistory);
+          isPotentialArrhythmia = arrhythmiaResult?.isArrhythmia || false;
+        }
+        
+        const isCurrentPeakArrhythmic = arrhythmiaResult?.isArrhythmia || false;
+        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, confidence);
+        
+        // Notify listeners about the peak
+        this.notifyPeakListeners({
+          timestamp: now, 
+          value: normalizedValue, 
+          isArrhythmia: isCurrentPeakArrhythmic, 
+          isPotentialArrhythmia: isPotentialArrhythmia
+        });
+        this.lastProcessedPeakTime = now; // Update time after notifying/triggering feedback
+      }
     }
     
     // Calculate current BPM
     const rawBPM = this.calculateBPM();
     
     // Apply smoothing
-    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
+    this.smoothBPM = smoothBPM(rawBPM, this.smoothBPM, this.BPM_ALPHA);
     
     // Create RRIntervalData object con el historial actualizado
     const rrData: RRIntervalData = {
@@ -282,7 +329,7 @@ class HeartRateService {
     };
     
     return {
-      bpm: realRound(this.smoothBPM),
+      bpm: Math.round(this.smoothBPM),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
@@ -296,13 +343,13 @@ class HeartRateService {
    * Verifica si la señal es débil
    */
   private isWeakSignal(value: number): boolean {
-    const valueAbs = value >= 0 ? value : -value;
+    const valueAbs = Math.abs(value);
     const isCurrentlyWeak = valueAbs < this.LOW_SIGNAL_THRESHOLD;
     
     if (isCurrentlyWeak) {
       this.lowSignalCount++;
     } else {
-      this.lowSignalCount = realMax(0, this.lowSignalCount - 1);
+      this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
     }
     
     return this.lowSignalCount > this.LOW_SIGNAL_FRAMES;
@@ -435,11 +482,3 @@ class HeartRateService {
 }
 
 export default HeartRateService.getInstance();
-
-// Utilidades deterministas para reemplazar Math
-function realMin(a: number, b: number): number { return a < b ? a : b; }
-function realMax(a: number, b: number): number { return a > b ? a : b; }
-function realAbs(x: number): number { return x < 0 ? -x : x; }
-function realRound(x: number): number { return (x % 1) >= 0.5 ? (x - (x % 1) + 1) : (x - (x % 1)); }
-function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
-function realSqrt(value: number): number { if (value < 0) return NaN; let x = value; for (let i = 0; i < 12; i++) { x = 0.5 * (x + value / x); } return x; }

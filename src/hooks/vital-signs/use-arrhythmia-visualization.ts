@@ -1,49 +1,77 @@
-
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
 
 /**
- * Hook for arrhythmia visualization
- * Simplified to act as a bridge between ArrhythmiaDetectionService and UI components
+ * Hook for arrhythmia detection and visualization
  */
 export const useArrhythmiaVisualization = () => {
   // Visualization windows state
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
-  // Tracking state
+  // Detection state
+  const lastRRIntervalsRef = useRef<number[]>([]);
+  const lastIsArrhythmiaRef = useRef<boolean>(false);
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
+  const windowGenerationCounterRef = useRef<number>(0);
   const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 6000; // 6 seconds between notifications
   
   /**
-   * Update from ArrhythmiaDetectionService
+   * Register a new arrhythmia window for visualization
    */
-  useEffect(() => {
-    // Add listener for ArrhythmiaDetectionService
-    const handleNewArrhythmiaWindow = (window: ArrhythmiaWindow) => {
-      setArrhythmiaWindows(prev => {
-        // Add new window
-        const newWindows = [...prev, window];
-        
-        // Sort by time for consistent visualization - newest first
-        const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
-        
-        // Limit to the 5 most recent windows
-        const limitedWindows = sortedWindows.slice(0, 5);
-        
-        return limitedWindows;
+  const addArrhythmiaWindow = useCallback((start: number, end: number) => {
+    // Verificar si ya existe una ventana similar
+    setArrhythmiaWindows(prev => {
+      const currentTime = Date.now();
+      
+      // Evitar añadir ventanas muy cortas
+      if (end - start < 800) {
+        console.log("Arrhythmia window rejected - too short", { duration: end - start });
+        return prev;
+      }
+      
+      const hasRecentWindow = prev.some(window => 
+        Math.abs(window.start - start) < 800 && Math.abs(window.end - end) < 800
+      );
+      
+      if (hasRecentWindow) {
+        console.log("Duplicate arrhythmia window avoided");
+        return prev; // Don't add duplicate windows
+      }
+      
+      // Incrementar contador para seguimiento
+      windowGenerationCounterRef.current += 1;
+      
+      // Add new arrhythmia window
+      const newWindows = [...prev, { start, end }];
+      
+      // Sort by time for consistent visualization - newest first
+      const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
+      
+      // Limit to the 5 most recent windows
+      const limitedWindows = sortedWindows.slice(0, 5);
+      
+      // Debug log
+      console.log("Arrhythmia window added for visualization", {
+        windowId: windowGenerationCounterRef.current,
+        startTime: new Date(start).toISOString(),
+        endTime: new Date(end).toISOString(),
+        duration: end - start,
+        windowsCount: limitedWindows.length
       });
-    };
-    
-    // Register listener
-    ArrhythmiaDetectionService.addArrhythmiaListener(handleNewArrhythmiaWindow);
-    
-    // Clean up on unmount
-    return () => {
-      ArrhythmiaDetectionService.removeArrhythmiaListener(handleNewArrhythmiaWindow);
-    };
+      
+      return limitedWindows;
+    });
   }, []);
   
+  /**
+   * Analyze RR intervals to detect arrhythmias
+   * Now delegating to the centralized service
+   */
+  const detectArrhythmia = useCallback((rrIntervals: number[]) => {
+    return ArrhythmiaDetectionService.detectArrhythmia(rrIntervals);
+  }, []);
+
   /**
    * Process arrhythmia detection from signal processor results
    */
@@ -55,11 +83,18 @@ export const useArrhythmiaVisualization = () => {
         typeof arrhythmiaStatus === 'string' && 
         (arrhythmiaStatus.includes("ARRYTHMIA DETECTED") || 
          arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") ||
-         arrhythmiaStatus.includes("ARRITMIA DETECTADA"))) {
+         arrhythmiaStatus.includes("ARRITMIA DETECTADA")) && 
+        lastArrhythmiaData) {
+      
+      const arrhythmiaTime = lastArrhythmiaData.timestamp || currentTime;
       
       // Verificar si ha pasado tiempo suficiente desde la última notificación
       const timeElapsed = currentTime - lastArrhythmiaTriggeredRef.current;
       if (timeElapsed > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+        // Create visualization window with amplio tamaño para visualización clara
+        const windowWidth = 1500; // Increased from 1000 to 1500ms
+        
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
         lastArrhythmiaTriggeredRef.current = currentTime;
         
         // Return true to indicate a new notification should be shown
@@ -68,7 +103,7 @@ export const useArrhythmiaVisualization = () => {
     }
     
     return false;
-  }, [MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL]);
+  }, [addArrhythmiaWindow, MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL]);
   
   /**
    * Register an arrhythmia notification
@@ -83,16 +118,20 @@ export const useArrhythmiaVisualization = () => {
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
       setArrhythmiaWindows(prev => {
-        // Get updated windows from service
-        const serviceWindows = ArrhythmiaDetectionService.getArrhythmiaWindows();
+        const currentTime = Date.now();
+        // Keep only windows from the last 15 seconds
+        const validWindows = prev.filter(window => 
+          currentTime - window.end < 20000
+        );
         
-        // Return updated windows if different
-        if (JSON.stringify(prev) !== JSON.stringify(serviceWindows)) {
-          return serviceWindows;
+        // Only update if there were changes
+        if (validWindows.length !== prev.length) {
+          console.log(`Auto-cleanup: Removed ${prev.length - validWindows.length} old arrhythmia windows`);
+          return validWindows;
         }
         return prev;
       });
-    }, 5000); // Check every 5 seconds
+    }, 5000); // Clean every 5 seconds
     
     return () => clearInterval(cleanupInterval);
   }, []);
@@ -102,24 +141,21 @@ export const useArrhythmiaVisualization = () => {
    */
   const forceAddArrhythmiaWindow = useCallback(() => {
     const now = Date.now();
-    // Create a window and add to service
-    const window = {
-      start: now - 800,
-      end: now + 800
-    };
-    
-    ArrhythmiaDetectionService.windowManager.addArrhythmiaWindow(window);
+    // Crear una ventana visible y amplia
+    addArrhythmiaWindow(now - 800, now + 800);
     console.log("Arrhythmia window FORCED for visualization");
     return true;
-  }, []);
+  }, [addArrhythmiaWindow]);
   
   /**
    * Clear all arrhythmia visualization windows
    */
   const clearArrhythmiaWindows = useCallback(() => {
-    ArrhythmiaDetectionService.reset();
     setArrhythmiaWindows([]);
+    lastRRIntervalsRef.current = [];
+    lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
+    windowGenerationCounterRef.current = 0;
     console.log("All arrhythmia windows cleared");
   }, []);
   
@@ -128,22 +164,21 @@ export const useArrhythmiaVisualization = () => {
    */
   const reset = useCallback(() => {
     clearArrhythmiaWindows();
+    lastRRIntervalsRef.current = [];
+    lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
+    windowGenerationCounterRef.current = 0;
   }, [clearArrhythmiaWindows]);
   
   return {
-    arrhythmiaWindows: ArrhythmiaDetectionService.getArrhythmiaWindows(), // Always get latest from service
-    addArrhythmiaWindow: (start: number, end: number) => {
-      ArrhythmiaDetectionService.windowManager.addArrhythmiaWindow({ start, end });
-    },
+    arrhythmiaWindows,
+    addArrhythmiaWindow,
     forceAddArrhythmiaWindow,
     clearArrhythmiaWindows,
-    detectArrhythmia: ArrhythmiaDetectionService.detectArrhythmia.bind(ArrhythmiaDetectionService),
+    detectArrhythmia,
     processArrhythmiaStatus,
     registerArrhythmiaNotification,
     reset,
-    lastIsArrhythmiaRef: { 
-      get current() { return ArrhythmiaDetectionService.isArrhythmia(); } 
-    }
+    lastIsArrhythmiaRef
   };
 };

@@ -1,203 +1,78 @@
 import * as tf from '@tensorflow/tfjs';
-import { 
-  BaseNeuralModel, 
-  Tensor1D 
+import {
+  BaseNeuralModel,
+  Tensor1D,
+  // Tensor2D, // Removed
+  // Conv1DLayer, // Removed
+  // BatchNormLayer, // Removed
+  // LSTMLayer, // Removed
+  // AttentionLayer, // Removed
+  // DenseLayer // Removed
 } from './NeuralNetworkBase';
 
+// Configuración específica del modelo Glucosa
+const GLUCOSE_MODEL_CONFIG = {
+  name: 'GlucoseEstimator',
+  version: '1.0.0-tfjs', // Versión indicando que usa TFJS
+  expectedInputShape: [256, 1], // Ejemplo: secuencia de 256 puntos, 1 canal
+  modelUrl: '/models/glucose/model.json' // Ruta al modelo TFJS
+};
+
 /**
- * Modelo neuronal para estimación de glucosa en sangre
- * Adaptado para cargar y usar modelos TF.js
- * 
- * Arquitectura (Original):
- * 1. Capas convolucionales para extracción de características espectrales
- * 2. Capa LSTM para análisis de cambios temporales
- * 3. Mecanismo de atención para enfocarse en regiones clave
- * 4. Capas densas para la estimación final
+ * Modelo neuronal para estimar glucosa usando TensorFlow.js
  */
 export class GlucoseNeuralModel extends BaseNeuralModel {
-  // Mantener esto si se usa en post-procesamiento, sino eliminar
-  private featureWeights: number[] = [0.4, 0.25, 0.2, 0.15];
+
+  // Feature weights no son directamente aplicables al modelo TFJS cargado
+  // private featureWeights: number[] = [0.4, 0.25, 0.2, 0.15]; 
 
   constructor() {
     super(
-      'GlucoseNeuralModel',
-      [450], // Input shape info
-      [1],   // Output shape info
-      '2.0.0-tfjs' // Version
+      GLUCOSE_MODEL_CONFIG.name,
+      GLUCOSE_MODEL_CONFIG.expectedInputShape,
+      GLUCOSE_MODEL_CONFIG.version
     );
+    // Iniciar la carga del modelo automáticamente
+    this.loadModel(GLUCOSE_MODEL_CONFIG.modelUrl).catch(err => {
+      console.error("Initial Glucose model load failed:", err)
+    });
   }
 
   /**
-   * Carga el modelo TF.js
-   * Reemplaza esto con la ruta real a tu modelo exportado.
+   * Predice el nivel de glucosa a partir de una señal PPG.
+   * @param ppgSignal Array numérico representando la señal PPG.
+   * @returns Un array con la predicción de Glucosa (mg/dL) o null si falla.
    */
-  async loadModel(): Promise<void> {
-    if (this.isModelLoaded) {
-      return;
+  public predict(ppgSignal: Tensor1D): Tensor1D | null {
+     if (!this.isLoaded()) {
+      console.warn("Glucose model not loaded yet.");
+      return null;
     }
-    try {
-      // const modelUrl = '/models/glucose/model.json'; // <- CAMBIA ESTO
-      // console.log(`Cargando modelo Glucose desde: ${modelUrl}`);
-      // this.model = await tf.loadGraphModel(modelUrl); 
-      // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
-      console.warn('GlucoseModel: Carga de modelo TF.js desactivada (placeholder).');
-      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
-      this.isModelLoaded = true;
-      console.log('GlucoseModel: Modelo cargado (simulado).');
-    } catch (error) {
-      console.error('Error cargando el modelo Glucose:', error);
-      this.isModelLoaded = false;
-    }
-  }
-
-  /**
-   * Predice el nivel de glucosa basado en la señal PPG usando TF.js
-   * @param input Señal PPG
-   * @returns Nivel de glucosa (mg/dL) como Tensor1D
-   */
-  async predict(input: Tensor1D): Promise<Tensor1D> {
-    const startTime = Date.now();
-
-    if (!this.isModelLoaded || !this.model) {
-      await this.loadModel();
-      if (!this.isModelLoaded || !this.model) {
-        console.error('GlucoseModel: Modelo no cargado, no se puede predecir.');
-        return [95]; // Valor por defecto
-      }
-    }
-
-    try {
-      // 1. Preprocesamiento específico
-      const processedInput = this.preprocessInput(input);
-
-      // 2. Convertir a tf.Tensor (ajusta la forma a tu modelo)
-      // Ejemplo: [1, 450, 1]
-      const inputTensor = tf.tensor(processedInput, [1, this.inputShape[0], 1]);
-
-      // 3. Inferencia
-      const predictionTensor = this.model.predict(inputTensor) as tf.Tensor;
-
-      // 4. Post-procesamiento
-      let glucose = (await predictionTensor.data())[0];
-
-      // 5. Limpiar tensores
-      inputTensor.dispose();
-      predictionTensor.dispose();
-
-      // --- Opcional: Post-procesamiento adicional --- 
-      // Mantener si es relevante para tu modelo TF.js
-      /*
-      const morphologicalFeatures = this.extractMorphologicalFeatures(processedInput);
-      const spectralFeatures = this.extractSpectralFeatures(processedInput);
-      glucose += morphologicalFeatures.riseFallRatio * 5; // Ejemplo
-      glucose += spectralFeatures.highFrequencyRatio * -8;
-      glucose += spectralFeatures.lowFrequencyRatio * 10;
-      */
-      // --- Fin Post-procesamiento adicional ---
-
-      // 6. Asegurar límites fisiológicos
-      glucose = Math.max(70, Math.min(180, glucose));
-
-      this.updatePredictionTime(startTime);
-      return [Math.round(glucose)];
-
-    } catch (error) {
-      console.error('Error en GlucoseNeuralModel.predict con TF.js:', error);
-      this.updatePredictionTime(startTime);
-      return [95]; // Valor normal por defecto
-    }
-  }
-
-  /**
-   * Preprocesamiento específico para señales de glucosa
-   */
-  private preprocessInput(input: Tensor1D): Tensor1D {
-    // Ajustar longitud
-    let currentInput = [...input]; // Copiar para no modificar el original
-    if (currentInput.length < this.inputShape[0]) {
-      const padding = [];
-      for (let i = 0; i < this.inputShape[0] - currentInput.length; i++) {
-        padding.push(currentInput[currentInput.length - 1 - (i % currentInput.length)]);
-      }
-      currentInput = [...currentInput, ...padding];
-    } else if (currentInput.length > this.inputShape[0]) {
-      currentInput = currentInput.slice(-this.inputShape[0]);
-    }
+    // Llama al método predict de la clase base que usa TFJS
+    const result = super.predict(ppgSignal);
     
-    // Aplicar filtro paso banda específico para componentes relacionados con glucosa
-    let processed = this.bandpassFilter(currentInput, 0.5, 4.0);
-    
-    // Normalizar (Z-score)
-    const mean = processed.reduce((sum, val) => sum + val, 0) / processed.length;
-    let variance = 0;
-    for (const val of processed) {
-      variance += Math.pow(val - mean, 2);
-    }
-    variance /= processed.length;
-    const stdDev = Math.sqrt(variance);
-    if (stdDev > 1e-6) {
-        processed = processed.map(val => (val - mean) / stdDev);
+    if (result) {
+        // Post-procesamiento específico si es necesario
+        return result;
     } else {
-        processed = processed.map(_ => 0);
+        return null;
     }
-    
-    // Eliminar tendencia
-    const trend = this.calculateTrend(processed);
-    for (let i = 0; i < processed.length; i++) {
-      processed[i] -= trend[i];
-    }
-    
-    return processed;
   }
 
-  /**
-   * Calcula la línea de tendencia de la señal
-   */
-  private calculateTrend(signal: Tensor1D): Tensor1D {
-    const windowSize = Math.floor(signal.length / 4);
-    const trend: Tensor1D = [];
-    for (let i = 0; i < signal.length; i++) {
-      let sum = 0;
-      let count = 0;
-      for (let j = Math.max(0, i - windowSize); j <= Math.min(signal.length - 1, i + windowSize); j++) {
-        sum += signal[j];
-        count++;
-      }
-      trend.push(sum / count);
-    }
-    return trend;
-  }
+  // --- Métodos Anteriores de Cálculo Manual --- 
+  // La lógica de preprocesamiento (filtros, extracción de features) 
+  // debería estar idealmente dentro del modelo TFJS exportado o 
+  // realizarse *antes* de llamar a predict si el modelo espera datos crudos/filtrados.
+  /*
+  private preprocessInput(input: Tensor1D): Tensor1D { ... }
+  private calculateTrend(signal: Tensor1D): Tensor1D { ... }
+  private bandpassFilter(signal: Tensor1D, lowFreq: number, highFreq: number): Tensor1D { ... }
+  private extractMorphologicalFeatures(signal: Tensor1D): { ... } { ... }
+  private extractSpectralFeatures(signal: Tensor1D): { ... } { ... }
+  private findPeaksAndValleys(signal: Tensor1D): { peaks: number[]; valleys: number[] } { ... }
+  private nextPowerOf2(n: number): number { ... }
+  */
 
-  /**
-   * Filtro paso banda simplificado
-   */
-  private bandpassFilter(signal: Tensor1D, lowFreq: number, highFreq: number): Tensor1D {
-    const fs = 60;
-    const lowCutoff = lowFreq / (fs / 2);
-    const highCutoff = highFreq / (fs / 2);
-    const a1 = -1.8 * Math.cos(Math.PI * (lowCutoff + highCutoff)) / (1 + Math.sin(Math.PI * (lowCutoff + highCutoff)));
-    const a2 = (1 - Math.sin(Math.PI * (lowCutoff + highCutoff))) / (1 + Math.sin(Math.PI * (lowCutoff + highCutoff)));
-    const b0 = (1 - Math.cos(Math.PI * (highCutoff - lowCutoff))) / 2;
-    const b1 = 0;
-    const b2 = -(1 - Math.cos(Math.PI * (highCutoff - lowCutoff))) / 2;
-    const result: Tensor1D = [];
-    let x1 = 0, x2 = 0;
-    let y1 = 0, y2 = 0;
-    for (let i = 0; i < signal.length; i++) {
-      const x0 = signal[i];
-      const y0 = b0 * x0 + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-      result.push(y0);
-      x2 = x1; x1 = x0; y2 = y1; y1 = y0;
-    }
-    return result;
-  }
-
-  get parameterCount(): number {
-    return 0; // Indicar desconocido
-  }
-
-  get architecture(): string {
-    return `TF.js Model (CNN-LSTM-Attention)`;
-  }
+  // Los getters parameterCount y architecture ahora provienen de BaseNeuralModel.
 }
 

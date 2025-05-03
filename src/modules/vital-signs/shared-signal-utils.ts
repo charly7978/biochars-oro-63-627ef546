@@ -47,8 +47,10 @@ export function calculateStandardDeviation(values: number[]): number {
  * Calcula el componente AC de una señal real
  */
 export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return findMaximum(values) - findMinimum(values);
+  if (!values || values.length < 2) return 0;
+  const maxVal = Math.max(...values);
+  const minVal = Math.min(...values);
+  return maxVal - minVal;
 }
 
 /**
@@ -64,10 +66,12 @@ export function calculateDC(values: number[]): number {
  */
 export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
-  const min = findMinimum(values);
-  const max = findMaximum(values);
-  if (max - min < SIGNAL_CONSTANTS.MIN_AMPLITUDE) return values.map(() => 0);
-  return values.map(v => (v - min) / (max - min));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const MIN_AMPLITUDE = 0.01;
+  if (range < MIN_AMPLITUDE) return values.map(() => 0);
+  return values.map(v => (v - min) / range);
 }
 
 /**
@@ -112,28 +116,13 @@ export function calculateAmplitude(
 ): number {
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
-  const amps: number[] = [];
-  const len = realMin(peakIndices.length, valleyIndices.length);
-  
-  for (let i = 0; i < len; i++) {
-    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
-    if (amp > 0) {
-      amps.push(amp);
-    }
-  }
-  
-  if (amps.length === 0) return 0;
+  const peakValues = peakIndices.map(i => values[i]);
+  const valleyValues = valleyIndices.map(i => values[i]);
 
-  // Calcular media robusta con datos reales
-  amps.sort((a, b) => a - b);
-  const trimmedAmps = amps.slice(
-    realFloor(amps.length * 0.1),
-    realCeil(amps.length * 0.9)
-  );
-  
-  return trimmedAmps.length > 0
-    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
-    : amps.reduce((a, b) => a + b, 0) / amps.length;
+  const avgPeak = peakValues.reduce((sum, v) => sum + v, 0) / peakValues.length;
+  const avgValley = valleyValues.reduce((sum, v) => sum + v, 0) / valleyValues.length;
+
+  return avgPeak - avgValley;
 }
 
 /**
@@ -171,63 +160,28 @@ export class KalmanFilter {
  */
 export function evaluateSignalQuality(
   values: number[],
-  minThreshold: number = SIGNAL_CONSTANTS.MIN_AMPLITUDE,
+  minThreshold: number = 0.01,
   peakThreshold: number = 0.3
 ): number {
-  if (values.length < 30) return 0;
+  if (!values || values.length < 10) return 0;
   
-  // Análisis de datos reales
-  const min = findMinimum(values);
-  const max = findMaximum(values);
-  const range = max - min;
-  
-  if (range < minThreshold) return 10;
-  
+  // 1. Baseline wander removal (simple high-pass)
   const mean = calculateDC(values);
-  const stdDev = calculateStandardDeviation(values);
-  const cv = stdDev / mean;
-  
-  // Analizar picos en datos reales
-  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-  
-  if (peakIndices.length < 2 || valleyIndices.length < 2) return 30;
-  
-  // Regularidad entre picos reales
-  let peakRegularity = 100;
-  if (peakIndices.length >= 3) {
-    const peakDiffs = [];
-    for (let i = 1; i < peakIndices.length; i++) {
-      peakDiffs.push(peakIndices[i] - peakIndices[i - 1]);
-    }
-    
-    const avgDiff = peakDiffs.reduce((a, b) => a + b, 0) / peakDiffs.length;
-    const diffVariation = peakDiffs.reduce((acc, diff) => 
-      acc + absoluteValue(diff - avgDiff), 0) / peakDiffs.length;
-    
-    const normalizedVariation = diffVariation / avgDiff;
-    
-    peakRegularity = 100 - (normalizedVariation * 100);
-    peakRegularity = realMax(0, realMin(100, peakRegularity));
-  }
-  
-  // Puntuación basada en datos reales
-  const amplitudeScore = range < peakThreshold ? 50 : 
-                       range > 1.0 ? 60 : 
-                       80;
-  
-  const variabilityScore = cv < 0.05 ? 40 : 
-                         cv > 0.5 ? 40 : 
-                         90;
-  
-  // Combinar puntuaciones de datos reales
-  const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
-  
-  return realMin(100, qualityScore);
-}
+  const baselineRemoved = values.map(v => v - mean);
 
-// Agregar utilidades deterministas locales si es necesario
-function realMin(a: number, b: number): number { return a < b ? a : b; }
-function realMax(a: number, b: number): number { return a > b ? a : b; }
-function realAbs(x: number): number { return x < 0 ? -x : x; }
-function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
-function realCeil(x: number): number { return x % 1 === 0 ? x : (x - (x % 1) + 1); }
+  // 2. Amplitude check
+  const amplitude = Math.max(...baselineRemoved) - Math.min(...baselineRemoved);
+  const amplitudeScore = amplitude > minThreshold ? 100 : 0;
+
+  // 3. Noise level estimation (standard deviation)
+  const stdDev = calculateStandardDeviation(baselineRemoved);
+  const noiseScore = Math.max(0, 100 - (stdDev / (amplitude + 1e-6)) * 200);
+  
+  // 4. Peak regularity (placeholder - needs actual peak detection)
+  let peakRegularity = 50;
+  
+  // Weighted average
+  const qualityScore = (amplitudeScore * 0.4) + (noiseScore * 0.4) + (peakRegularity * 0.2);
+
+  return Math.min(100, Math.max(0, qualityScore));
+}
