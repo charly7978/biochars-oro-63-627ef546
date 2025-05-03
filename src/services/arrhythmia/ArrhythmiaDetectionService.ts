@@ -215,13 +215,13 @@ class ArrhythmiaDetectionService {
   /**
    * Fallback arrhythmia detection logic based on rules (RMSSD, CV).
    */
-  private detectArrhythmiaRuleBased(validIntervals: number[]): [boolean, number, ArrhythmiaDetectionResult['category']] { 
+  private detectArrhythmiaRuleBased(validIntervals: number[]): [boolean, number, ArrhythmiaCategory] { 
     const { rmssd, sdnn, meanRR } = this.calculateBaseMetrics(validIntervals);
     const cv = meanRR > 0 ? sdnn / meanRR : 0;
     
     let potentialArrhythmia = false;
     let confidence = 0.3;
-    let category: ArrhythmiaDetectionResult['category'] = categorizeArrhythmia(validIntervals, rmssd, cv);
+    let category: ArrhythmiaCategory = categorizeArrhythmia(validIntervals) as ArrhythmiaCategory;
 
     if (category !== 'normal') {
       potentialArrhythmia = true;
@@ -355,7 +355,7 @@ class ArrhythmiaDetectionService {
       timestamp: Date.now(),
       rmssd: calculateRMSSD(this.lastRRIntervals.slice(-5)),
       rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5)),
-      category: categorizeArrhythmia(this.lastRRIntervals.slice(-5))
+      category: categorizeArrhythmia(this.lastRRIntervals.slice(-5)) as ArrhythmiaCategory
     } : null;
     
     return {
@@ -411,4 +411,3 @@ class ArrhythmiaDetectionService {
 }
 
 export default ArrhythmiaDetectionService.getInstance();
-

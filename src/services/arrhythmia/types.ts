@@ -3,12 +3,14 @@ import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
 export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
 
+export type ArrhythmiaCategory = 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
+
 export interface ArrhythmiaDetectionResult {
   isArrhythmia: boolean;
   rmssd: number;
   rrVariation: number;
   timestamp: number;
-  category?: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
+  category?: ArrhythmiaCategory;
 }
 
 export interface ArrhythmiaStatus {
@@ -18,7 +20,7 @@ export interface ArrhythmiaStatus {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
-    category?: string;
+    category?: ArrhythmiaCategory;
   } | null;
 }
 

@@ -1,4 +1,3 @@
-
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -46,7 +45,6 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
     super(
       'HeartRateNeuralModel',
       [300], // Ventana de entrada de 5 segundos @ 60Hz
-      [1],   // Salida: frecuencia cardíaca (BPM)
       '2.5.0' // Versión
     );
     
@@ -166,7 +164,7 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
       let sum = 0;
       let count = 0;
       
-      for (let j = Math.max(0, i - windowSize); j <= Math.min(processedInput.length - 1, i + windowSize); j++) {
+      for (let j = Math.max(0, i - windowSize)); j <= Math.min(processedInput.length - 1, i + windowSize); j++) {
         sum += processedInput[j];
         count++;
       }
