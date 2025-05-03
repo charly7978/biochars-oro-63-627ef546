@@ -134,6 +134,31 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
   }
   
   /**
+   * Implementación de un paso adicional de procesamiento con filtro 
+   * de ventana deslizante para suavizar la entrada
+   */
+  private applyMovingAverage(input: number[], windowSize: number = 3): number[] {
+    if (!input || input.length === 0) return [];
+    
+    const processedInput = [...input];
+    const result = new Array(processedInput.length).fill(0);
+    
+    for (let i = 0; i < processedInput.length; i++) {
+      let sum = 0;
+      let count = 0;
+      
+      for (let j = Math.max(0, i - windowSize); j <= Math.min(processedInput.length - 1, i + windowSize); j++) {
+          sum += processedInput[j];
+          count++;
+      }
+      
+      result[i] = sum / count;
+    }
+    
+    return result;
+  }
+  
+  /**
    * Retorna el conteo de parámetros del modelo
    */
   get parameterCount(): number {
