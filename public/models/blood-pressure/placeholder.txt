@@ -1,0 +1,14 @@
+
+This directory is reserved for TensorFlow.js blood pressure estimation models.
+
+Your model files (.json and .bin shards) should be placed here.
+For example:
+- model.json (main model description)
+- group1-shard1of1.bin (weights)
+
+The model path in the BloodPressureModel.ts file should point to:
+'/models/blood-pressure/model.json'
+
+*** IMPORTANT ***
+Real model files must be provided separately.
+This is just a placeholder so the directory structure is preserved in Git.

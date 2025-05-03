@@ -11,10 +11,10 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
-import { getModel } from '../../core/neural/ModelRegistry';
+import { ModelRegistry } from '../../core/neural/ModelRegistry';
 import { PeakDetector } from '../../core/signal/PeakDetector';
 
 /**
@@ -33,9 +33,9 @@ export class VitalSignsProcessor {
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
   
-  // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
-  private spo2Model: SpO2NeuralModel | null;
-  private bpModel: BloodPressureNeuralModel | null;
+  // Instancias de modelos neuronales
+  private spo2Model: SpO2NeuralModel | null = null;
+  private bpModel: BloodPressureNeuralModel | null = null;
   
   // Detector de picos para fallback de HR
   private peakDetector: PeakDetector;
@@ -78,19 +78,38 @@ export class VitalSignsProcessor {
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
 
-    // Obtener instancias de modelos neuronales
-    this.spo2Model = getModel<SpO2NeuralModel>('spo2');
-    this.bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
-    
     // Inicializar detector de picos
     this.peakDetector = new PeakDetector();
+    
+    // Inicializar modelos usando el ModelRegistry (ahora sincrónico)
+    this.spo2Model = ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+    this.bpModel = ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+    
+    console.log("VitalSignsProcessor: Neural models initialized", {
+      spo2ModelPresent: !!this.spo2Model,
+      bpModelPresent: !!this.bpModel
+    });
 
     this.reset();
   }
   
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Inicializa asíncronamente los modelos neuronales
+   */
+  private async initModels() {
+    try {
+      // Obtener modelos de forma asíncrona
+      this.spo2Model = await ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+      this.bpModel = await ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+      console.log("VitalSignsProcessor: Modelos neuronales cargados");
+    } catch (error) {
+      console.error("VitalSignsProcessor: Error al cargar modelos neuronales", error);
+    }
+  }
+  
+  /**
+   * Procesa la señal real de PPG y calcula todos los signos vitales
+   * Usando SOLO mediciones directas sin valores de referencia o simulación
    */
   public processSignal(
     ppgValue: number,
@@ -182,8 +201,8 @@ export class VitalSignsProcessor {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const spo2Result = this.spo2Model.predict(currentSignalSlice); 
           spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+        } catch (error) {
+          console.error("Error al procesar SpO2:", error);
         }
       } else {
         spo2 = 0; // No hay modelo disponible
@@ -201,8 +220,8 @@ export class VitalSignsProcessor {
           } else {
             pressure = "--/--";
           }
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+        } catch (error) {
+          console.error("Error al procesar presión arterial:", error);
         }
       } else {
         pressure = "--/--"; // No hay modelo disponible
@@ -267,12 +286,12 @@ export class VitalSignsProcessor {
       });
     }
     
-    // Obtener el estado de arritmia MÁS RECIENTE del servicio
+    // Obtain the most recent arrhythmia status from the service
     const arrhythmiaServiceStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
     const arrhythmiaStatus = arrhythmiaServiceStatus.statusMessage;
     const lastArrhythmiaData = arrhythmiaServiceStatus.lastArrhythmiaData;
 
-    // Create result object using the factory - Ahora las variables de confianza siempre están definidas
+    // Create result object using the factory
     const result = ResultFactory.createResult(
       spo2,
       heartRate,
@@ -281,7 +300,12 @@ export class VitalSignsProcessor {
       glucose,
       glucoseConfidence,
       overallConfidence,
-      lastArrhythmiaData
+      lastArrhythmiaData ? {
+        timestamp: lastArrhythmiaData.timestamp,
+        rmssd: lastArrhythmiaData.rmssd || 0,
+        rrVariation: lastArrhythmiaData.rrVariation || 0,
+        category: lastArrhythmiaData.category
+      } : null
     );
     
     // Si tenemos al menos un valor válido, guardar como último válido

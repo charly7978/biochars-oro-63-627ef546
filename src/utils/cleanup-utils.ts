@@ -3,7 +3,7 @@
  * Utilities for cleaning up services and preventing memory leaks
  */
 import AudioFeedbackService from '@/services/AudioFeedbackService';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
 
 export const cleanupServices = () => {
   // Clean up AudioFeedbackService
