@@ -9,56 +9,6 @@ import { HeartBeatConfig } from './config'; // Ensure this import is present
  */
 
 /**
- * Detects if the current sample represents a peak in the signal
- */
-export function detectPeak(
-  normalizedValue: number,
-  derivative: number,
-  baseline: number,
-  lastValue: number,
-  lastPeakTime: number | null,
-  currentTime: number,
-  config: {
-    minPeakTimeMs: number,
-    derivativeThreshold: number,
-    signalThreshold: number,
-  }
-): {
-  isPeak: boolean;
-  confidence: number;
-} {
-  // Check minimum time between peaks
-  if (lastPeakTime !== null) {
-    const timeSinceLastPeak = currentTime - lastPeakTime;
-    if (timeSinceLastPeak < config.minPeakTimeMs) {
-      return { isPeak: false, confidence: 0 };
-    }
-  }
-
-  // Peak detection logic
-  const isPeak =
-    derivative < config.derivativeThreshold &&
-    normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.98;
-
-  // Calculate confidence based on signal characteristics
-  const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
-    1
-  );
-  
-  const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
-    1
-  );
-
-  // Combined confidence score
-  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
-
-  return { isPeak, confidence };
-}
-
-/**
  * Detecta y confirma un pico potencial en la señal PPG normalizada.
  * Incorpora umbral adaptativo y realiza una confirmación simple.
  */

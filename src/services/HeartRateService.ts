@@ -233,7 +233,7 @@ class HeartRateService {
     this.peakDetectionState = detectionResult.updatedState; 
     const isConfirmedPeak = detectionResult.isPeakConfirmed;
     const peakConfidence = detectionResult.confidence;
-    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Peak Confirm: ${isConfirmedPeak}, Conf: ${peakConfidence.toFixed(2)}`);
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Peak Confirm Result: ${isConfirmedPeak}, Conf: ${peakConfidence.toFixed(2)}`);
 
     // --- Process Confirmed Peak --- 
     let validatedRrIntervals: number[] = this.rrIntervalHistory;
@@ -426,6 +426,13 @@ class HeartRateService {
   public getFinalBPM(): number {
     // Return the smoothed value, rounded
     return Math.round(this.smoothBPM);
+  }
+
+  /**
+   * Returns the current smoothed (filtered) PPG value.
+   */
+  public getSmoothedValue(): number {
+    return this.smoothedValue;
   }
 
   private updateBaseline(): void {
