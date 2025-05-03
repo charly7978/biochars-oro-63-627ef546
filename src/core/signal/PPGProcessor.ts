@@ -1,6 +1,6 @@
 import { KalmanFilter } from '../../modules/vital-signs/shared-signal-utils';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
-import type { ProcessedSignal, ProcessingError } from '../../types/signal';
+import { ProcessingError, ProcessedSignal } from '../../types/signal';
 
 export class PPGProcessor {
   // Configuración unificada con valores optimizados
@@ -61,43 +61,45 @@ export class PPGProcessor {
   }
 
   public processFrame(imageData: ImageData): void {
-    if (!this.isProcessing) {
-      return;
+    if (!this.isProcessing) return;
+    
+    if (!this.kalmanFilter || !this.waveletDenoiser) {
+        this.handleError('not_initialized', 'PPGProcessor filters not initialized.');
+        return;
     }
 
-    try {
-      const redValue = this.extractRedChannel(imageData);
-      const kalmanFiltered = this.kalmanFilter.filter(redValue);
-      const filtered = this.waveletDenoiser.denoise(kalmanFiltered);
-      
-      this.lastValues.push(filtered);
-      if (this.lastValues.length > this.CONFIG.BUFFER_SIZE) {
-        this.lastValues.shift();
-      }
+    const rawValue = this.extractRedChannel(imageData);
 
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
-      const perfusionIndex = this.calculatePerfusionIndex();
-
-      this.periodicityBuffer.push(filtered);
-      if (this.periodicityBuffer.length > this.CONFIG.PERIODICITY_BUFFER_SIZE) {
-        this.periodicityBuffer.shift();
-      }
-
-      const processedSignal: ProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: redValue,
-        filteredValue: filtered,
-        quality: quality,
-        fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
-        perfusionIndex: perfusionIndex
-      };
-
-      this.onSignalReady?.(processedSignal);
-    } catch (error) {
-      console.error("PPGProcessor: Error procesando frame", error);
-      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
+    // Apply filters
+    const kalmanFiltered = this.kalmanFilter.filter(rawValue);
+    const denoisedValue = this.waveletDenoiser.denoise(kalmanFiltered);
+    
+    // Store filtered value for analysis
+    this.lastValues.push(denoisedValue);
+    if (this.lastValues.length > this.CONFIG.BUFFER_SIZE) {
+      this.lastValues.shift();
     }
+
+    const { isFingerDetected, quality } = this.analyzeSignal(denoisedValue, rawValue);
+    const perfusionIndex = this.calculatePerfusionIndex();
+
+    this.periodicityBuffer.push(denoisedValue);
+    if (this.periodicityBuffer.length > this.CONFIG.PERIODICITY_BUFFER_SIZE) {
+      this.periodicityBuffer.shift();
+    }
+
+    const processedSignal: ProcessedSignal = {
+      timestamp: Date.now(),
+      rawValue,
+      filteredValue: denoisedValue,
+      quality,
+      fingerDetected: isFingerDetected,
+      roi: this.detectROI(rawValue),
+      perfusionIndex,
+      value: denoisedValue,
+    };
+
+    this.onSignalReady?.(processedSignal);
   }
 
   private extractRedChannel(imageData: ImageData): number {
@@ -165,47 +167,45 @@ export class PPGProcessor {
       quality = Math.round(stabilityQuality + periodicityQuality);
     }
 
-    return { isFingerDetected, quality: Math.max(0, Math.min(100, quality)) };
+    return { isFingerDetected, quality };
   }
 
   private calculatePerfusionIndex(): number {
-    if (this.lastValues.length < 20) return 0;
-    const recentValues = this.lastValues.slice(-20);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    if (mean === 0) return 0; 
+    if (this.lastValues.length < 10) return 0;
     
-    const minVal = Math.min(...recentValues);
-    const maxVal = Math.max(...recentValues);
-    const acComponent = maxVal - minVal; 
-    const dcComponent = mean; 
-
-    // Fórmula estándar de PI (simplificada). Precisión depende de la calidad AC/DC.
-    const pi = (acComponent / dcComponent) * 100;
-    // Clamp PI to a reasonable range (0-20%)
-    return Math.max(0, Math.min(20, pi)); 
+    const values = this.lastValues.slice(-10);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const dc = (max + min) / 2;
+    
+    if (dc === 0) return 0;
+    
+    const ac = max - min;
+    const pi = (ac / dc) * 100;
+    
+    return Math.min(pi, 10); // Limitar a un máximo razonable de 10%
   }
 
   private analyzePeriodicityQuality(): number {
-    // TODO: Implementar un análisis de periodicidad real (FFT o Autocorrelación).
-    // La implementación actual basada en varianza es un placeholder.
-    if (this.periodicityBuffer.length < this.CONFIG.PERIODICITY_BUFFER_SIZE / 2) return 30; // Calidad baja si no hay suficientes datos
+    if (this.periodicityBuffer.length < 30) return 0.5;
     
     const mean = this.periodicityBuffer.reduce((sum, val) => sum + val, 0) / this.periodicityBuffer.length;
     const variance = this.periodicityBuffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.periodicityBuffer.length;
-    // Devolver un valor neutro (50) si la varianza es baja (señal potencialmente periódica)
-    // Devolver un valor bajo (e.g., 20) si la varianza es alta (menos probable que sea periódica)
-    const quality = variance < 0.01 ? 70 : variance < 0.05 ? 50 : 20; // Umbrales de ejemplo
+    const quality = Math.max(0, 100 - Math.min(100, variance * 1000));
     return quality;
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
-    // TODO: Implementar detección real de ROI (Región de Interés) del dedo.
-    // Requiere análisis de imagen (posiblemente con OpenCV si se integra más).
-    // Actualmente devuelve un ROI que cubre todo el frame.
-    return { x: 0, y: 0, width: 1, height: 1 }; 
+    return { x: 0, y: 0, width: 1, height: 1 };
   }
 
   private handleError(code: string, message: string): void {
-    this.onError?.({ code, message, timestamp: Date.now() });
+    const error: ProcessingError = {
+      code,
+      message,
+      timestamp: Date.now()
+    };
+    
+    this.onError?.(error);
   }
 }

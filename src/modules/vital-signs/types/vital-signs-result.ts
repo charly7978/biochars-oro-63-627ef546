@@ -1,4 +1,3 @@
-
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -18,18 +17,6 @@ export interface VitalSignsResult {
   // Blood glucose level in mg/dL
   glucose: number;
   
-  // Hydration level (0-100%)
-  hydration?: number;
-  
-  // Lipid profile data
-  lipids?: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  
-  // Hemoglobin value in g/dL
-  hemoglobin?: number;
-  
   // Individual confidence values (as separate properties)
   glucoseConfidence?: number;
   overallConfidence?: number;
@@ -39,6 +26,5 @@ export interface VitalSignsResult {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
-    category?: string;
   } | null;
 }

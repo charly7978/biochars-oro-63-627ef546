@@ -2,21 +2,7 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { 
-  applySMAFilter, 
-  calculateStandardDeviation, 
-  calculateAC, 
-  calculateDC,
-  evaluateSignalQuality
-} from './shared-signal-utils';
-import { getModel } from '@/core/neural/ModelRegistry';
-import { SpO2NeuralModel } from '@/core/neural/SpO2Model';
-import { Tensor1D } from '@/core/neural/NeuralNetworkBase';
-
-// Constantes (ejemplo)
-const MIN_SPO2 = 80;
-const MAX_SPO2 = 100;
-const DEFAULT_SPO2 = 95; // Valor por defecto si falla la predicción
+import { calculateAC, calculateDC } from './shared-signal-utils';
 
 /**
  * Procesador para estimar SpO2 desde la señal PPG
@@ -25,121 +11,94 @@ const DEFAULT_SPO2 = 95; // Valor por defecto si falla la predicción
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10; // Número de muestras para promediar
   private spo2Buffer: number[] = [];
-  private lastSpo2: number = DEFAULT_SPO2;
-  private confidence: number = 0; // Confianza del cálculo actual
-  private spo2Model: SpO2NeuralModel | null = null;
+  private lastSpo2: number = 0;
 
-  constructor() {
-    this.loadModel();
-  }
-
-  private async loadModel() {
-    this.spo2Model = await getModel<SpO2NeuralModel>('spo2');
-    if (!this.spo2Model) {
-      console.warn("SpO2 Model not found or failed to load.");
-    }
-  }
-
-  public calculateSpO2(ppgValues: number[]): number {
-    if (!ppgValues || ppgValues.length < 20) { // Necesita suficientes datos
-        this.confidence = 0;
-        return NaN; // No se puede calcular
+  /**
+   * Calcula el SpO2 basado en la relación de absorción AC/DC
+   * ADVERTENCIA: Este método asume señales R e IR que no se proporcionan.
+   * La implementación actual solo usa una señal y no es clínicamente válida.
+   */
+  public calculateSpO2(values: number[]): number {
+    // Necesita suficientes datos
+    if (!values || values.length < 50) {
+      return 0; // No hay datos suficientes
     }
 
-    // Intentar usar el modelo neuronal si está disponible
-    if (this.spo2Model) {
-        try {
-            // Preprocesar entrada para el modelo (asegúrate que coincida con lo esperado)
-            const modelInput: Tensor1D = ppgValues.slice(-128); // Ejemplo: usar últimos 128 puntos
-            if (modelInput.length < 128) {
-                this.confidence = 0;
-                return NaN; // No suficientes datos para el modelo
-            }
-            
-            const predictionTensor = this.spo2Model.predict(modelInput);
-            const predictedSpo2 = predictionTensor[0]; // Asumiendo que el modelo devuelve un tensor con el valor SpO2
+    // --- Lógica basada en AC/DC (requiere R/IR, actualmente inválida) ---
+    // Comentada y reemplazada por retorno de 0
+    /*
+    const recentValues = values.slice(-50);
 
-            // Validar y limitar el resultado del modelo
-            if (predictedSpo2 >= MIN_SPO2 && predictedSpo2 <= MAX_SPO2) {
-                 this.confidence = 0.7; // Confianza base del modelo (ajustar según sea necesario)
-                 this.lastSpo2 = predictedSpo2;
-                 this.updateBuffer(predictedSpo2);
-                 return this.getSmoothedSpo2();
-            } else {
-                 console.warn(`SpO2 prediction out of range: ${predictedSpo2}`);
-                 this.confidence = 0.1; // Baja confianza si el resultado está fuera de rango
-                 // No actualizar lastSpo2 si está fuera de rango, usar el último válido o NaN
-                 return NaN; 
-            }
-        } catch (error) {
-            console.error("Error during SpO2 model prediction:", error);
-            this.confidence = 0;
-            // Fallback a cálculo basado en R si el modelo falla
-            return this.calculateSpo2Fallback(ppgValues);
-        }
-    } else {
-      // Fallback si el modelo no está cargado
-      console.warn("SpO2 Model not loaded, using fallback calculation.");
-      this.confidence = 0.2; // Menor confianza para el fallback
-      return this.calculateSpo2Fallback(ppgValues);
+    // Calcular componentes AC y DC (necesita separación R/IR)
+    const ac = calculateAC(recentValues); // Necesita AC(R) y AC(IR)
+    const dc = calculateDC(recentValues); // Necesita DC(R) y DC(IR)
+
+    if (dc === 0) {
+      return 0; // Evitar división por cero
     }
-  }
-  
-  // Fallback: Cálculo clásico basado en la relación R (AC/DC)
-  // Nota: Esto requiere señales separadas de Rojo e Infrarrojo, no solo una señal PPG combinada.
-  // Esta implementación es un placeholder y NO funcionará correctamente con una sola señal PPG.
-  private calculateSpo2Fallback(ppgValues: number[]): number {
-      // Placeholder: Esta lógica es incorrecta sin señales R/IR separadas.
-      // Devolver NaN para indicar que no se puede calcular de forma fiable.
-      console.warn("SpO2 Fallback calculation requires Red and IR signals, returning NaN.");
-      this.confidence = 0;
-      return NaN;
-      /*
-      // Ejemplo (INCORRECTO CON UNA SOLA SEÑAL):
-      const ac = calculateAC(ppgValues);
-      const dc = calculateDC(ppgValues);
-      if (dc === 0) return NaN;
-      const ratio = ac / dc;
-      // Formula de calibración simple (necesita calibración real)
-      // Esta fórmula es solo un ejemplo y no es médicamente precisa.
-      const estimatedSpo2 = 110 - 25 * ratio; 
-      const clampedSpo2 = Math.max(MIN_SPO2, Math.min(MAX_SPO2, estimatedSpo2));
-      this.updateBuffer(clampedSpo2);
-      return this.getSmoothedSpo2();
-      */
-  }
 
-  private updateBuffer(spo2Value: number): void {
-      this.spo2Buffer.push(spo2Value);
-      if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
-          this.spo2Buffer.shift();
+    // Calcular relación de ratios (R)
+    // Esto ESPECÍFICAMENTE requiere datos de canales R e IR separados
+    // const ratio = (acRed / dcRed) / (acIr / dcIr);
+    // Usando solo una señal, este 'ratio' no tiene significado fisiológico para SpO2
+    const ratio = ac / dc; 
+
+    if (ratio <= 0) {
+      return 0; // Ratio inválido
+    }
+
+    // Fórmula empírica para SpO2 (simplificada, NO VALIDADA para una sola señal)
+    // La fórmula real es SpO2 = A - B * R
+    let spo2 = 105 - 25 * ratio;
+
+    // Asegurar que esté en rango fisiológico
+    spo2 = Math.max(85, Math.min(100, spo2));
+    */
+
+    // Devolver 0 ya que el cálculo actual no es válido
+    const spo2 = 0;
+
+    // Añadir al buffer y calcular promedio
+    this.spo2Buffer.push(spo2);
+    if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
+      this.spo2Buffer.shift();
+    }
+
+    // Calcular la mediana del buffer si hay suficientes datos
+    let finalSpo2 = spo2;
+    if (this.spo2Buffer.length >= 3) { // Usar mediana con al menos 3 valores
+      const sorted = [...this.spo2Buffer].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) {
+        finalSpo2 = (sorted[mid - 1] + sorted[mid]) / 2;
+      } else {
+        finalSpo2 = sorted[mid];
       }
+    }
+    
+    // Guardar último valor (redondeado a un decimal)
+    this.lastSpo2 = Math.round(finalSpo2 * 10) / 10;
+    
+    // Devolver 0 para indicar falta de medición fiable
+    return 0;
   }
 
-  private getSmoothedSpo2(): number {
-      if (this.spo2Buffer.length === 0) return NaN;
-      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      return sum / this.spo2Buffer.length;
-  }
-
+  /**
+   * Obtiene el último valor SpO2 válido calculado y guardado
+   * NO devuelve una simulación, sino el último valor real estable
+   */
   private getLastValidSpo2(decayAmount: number): number {
-    // This function seems less relevant now model is primary
-    // Kept for potential use but might be removed
-    this.lastSpo2 = Math.max(MIN_SPO2, this.lastSpo2 - decayAmount);
-    return this.lastSpo2;
-  }
-
-  public getConfidence(): number {
-    // Considerar la calidad de la señal PPG también aquí
-    // const signalQuality = evaluateSignalQuality(ppgValues); // Necesitaría ppgValues aquí
-    // return this.confidence * (signalQuality / 100);
-    return this.confidence; 
+    if (this.spo2Buffer.length > 0) {
+      // Devuelve el último valor calculado si existe
+      return this.lastSpo2;
+    }
+    // Si no hay historial, devuelve 0
+    return 0;
   }
 
   public reset(): void {
     this.spo2Buffer = [];
-    this.lastSpo2 = DEFAULT_SPO2;
-    this.confidence = 0;
-    console.log("SpO2 Processor Reset");
+    this.lastSpo2 = 0;
+    console.log("SpO2Processor reset");
   }
 }

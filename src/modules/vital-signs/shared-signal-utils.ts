@@ -1,5 +1,4 @@
-import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
-import { HeartBeatConfig } from '../heart-beat/config';
+// import { SIGNAL_CONSTANTS } from './signal-constants'; // Removed - file doesn't exist
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -18,9 +17,9 @@ export const SIGNAL_CONSTANTS = {
 };
 
 /**
- * Aplica un filtro de media móvil simple a datos reales
+ * Aplica un filtro de Media Móvil Simple (SMA) al valor actual.
  */
-export function applySMAFilter(value: number, buffer: number[], windowSize: number = SIGNAL_CONSTANTS.SMA_WINDOW): {
+export function applySMAFilter(value: number, buffer: number[], windowSize: number = 5): {
   filteredValue: number;
   updatedBuffer: number[];
 } {
@@ -41,11 +40,11 @@ export function calculateStandardDeviation(values: number[]): number {
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const sqDiffs = values.map((v) => (v - mean) * (v - mean));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return squareRoot(avgSqDiff);
+  return Math.sqrt(avgSqDiff);
 }
 
 /**
- * Calcula el componente AC de una señal real
+ * Calcula la componente AC (variación) de una señal.
  */
 export function calculateAC(values: number[]): number {
   if (!values || values.length < 2) return 0;
@@ -55,11 +54,12 @@ export function calculateAC(values: number[]): number {
 }
 
 /**
- * Calcula el componente DC de una señal real
+ * Calcula la componente DC (valor medio) de una señal.
  */
 export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
+  if (!values || values.length === 0) return 0;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return sum / values.length;
 }
 
 /**
@@ -69,10 +69,8 @@ export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const range = max - min;
-  const MIN_AMPLITUDE = 0.01;
-  if (range < MIN_AMPLITUDE) return values.map(() => 0);
-  return values.map(v => (v - min) / range);
+  if (max - min < SIGNAL_CONSTANTS.MIN_AMPLITUDE) return values.map(() => 0);
+  return values.map(v => (v - min) / (max - min));
 }
 
 /**
@@ -117,13 +115,28 @@ export function calculateAmplitude(
 ): number {
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
-  const peakValues = peakIndices.map(i => values[i]);
-  const valleyValues = valleyIndices.map(i => values[i]);
+  const amps: number[] = [];
+  const len = Math.min(peakIndices.length, valleyIndices.length);
+  
+  for (let i = 0; i < len; i++) {
+    const amp = values[peakIndices[i]] - values[valleyIndices[i]];
+    if (amp > 0) {
+      amps.push(amp);
+    }
+  }
+  
+  if (amps.length === 0) return 0;
 
-  const avgPeak = peakValues.reduce((sum, v) => sum + v, 0) / peakValues.length;
-  const avgValley = valleyValues.reduce((sum, v) => sum + v, 0) / valleyValues.length;
-
-  return avgPeak - avgValley;
+  // Calcular media robusta con datos reales
+  amps.sort((a, b) => a - b);
+  const trimmedAmps = amps.slice(
+    Math.floor(amps.length * 0.1),
+    Math.ceil(amps.length * 0.9)
+  );
+  
+  return trimmedAmps.length > 0
+    ? trimmedAmps.reduce((a, b) => a + b, 0) / trimmedAmps.length
+    : amps.reduce((a, b) => a + b, 0) / amps.length;
 }
 
 /**
@@ -165,7 +178,7 @@ export function evaluateSignalQuality(
   peakThreshold: number = 0.3
 ): number {
   if (!values || values.length < 10) return 0;
-  
+
   // 1. Baseline wander removal (simple high-pass)
   const mean = calculateDC(values);
   const baselineRemoved = values.map(v => v - mean);
@@ -177,99 +190,21 @@ export function evaluateSignalQuality(
   // 3. Noise level estimation (standard deviation)
   const stdDev = calculateStandardDeviation(baselineRemoved);
   const noiseScore = Math.max(0, 100 - (stdDev / (amplitude + 1e-6)) * 200);
-  
+
   // 4. Peak regularity (placeholder - needs actual peak detection)
   let peakRegularity = 50;
-  
-  // Weighted average
+
+  // Weighted average (adjust weights as needed)
   const qualityScore = (amplitudeScore * 0.4) + (noiseScore * 0.4) + (peakRegularity * 0.2);
 
   return Math.min(100, Math.max(0, qualityScore));
 }
 
-/**
- * Calculates the Median Absolute Deviation (MAD) of an array of numbers.
- * MAD is a robust measure of variability.
- */
-export function calculateMAD(values: number[]): { median: number, mad: number } {
-  if (!values || values.length === 0) {
-    return { median: NaN, mad: NaN };
-  }
-
-  const sortedValues = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sortedValues.length / 2);
-  const median = sortedValues.length % 2 !== 0 
-    ? sortedValues[mid] 
-    : (sortedValues[mid - 1] + sortedValues[mid]) / 2;
-
-  if (values.length === 1) {
-      return { median: median, mad: 0 };
-  }
-
-  const deviations = values.map(value => Math.abs(value - median));
-  const sortedDeviations = deviations.sort((a, b) => a - b);
-  const madMid = Math.floor(sortedDeviations.length / 2);
-  const mad = sortedDeviations.length % 2 !== 0
-    ? sortedDeviations[madMid]
-    : (sortedDeviations[madMid - 1] + sortedDeviations[madMid]) / 2;
-
-  return { median, mad };
-}
-
-/**
- * Filters an array of RR intervals using Median Absolute Deviation (MAD).
- * Removes outliers that are too far from the median interval.
- */
-export function filterRRIntervalsMAD(intervals: number[], madFactor: number = 2.5): number[] {
-  if (!intervals || intervals.length < 5) { // Need a few intervals for robust stats
-    return intervals; // Return original if not enough data
-  }
-
-  const { median, mad } = calculateMAD(intervals);
-
-  if (isNaN(median) || isNaN(mad)) {
-    return intervals; // Calculation failed
-  }
-
-  const lowerBound = median - madFactor * mad;
-  const upperBound = median + madFactor * mad;
-
-  // Allow physiological limits as well
-  const minRR = 60000 / HeartBeatConfig.MAX_BPM; // Max BPM -> Min RR
-  const maxRR = 60000 / HeartBeatConfig.MIN_BPM; // Min BPM -> Max RR
-
-  return intervals.filter(interval => 
-    interval >= lowerBound && 
-    interval <= upperBound &&
-    interval >= minRR &&
-    interval <= maxRR
-  );
-}
-
-/**
- * Basic Signal Quality Estimator based on amplitude and standard deviation.
- * Returns a score between 0 and 100.
- */
-export function estimateSignalQuality(filteredSignal: number[], minAmplitudeThreshold: number = 0.02): number {
-    if (!filteredSignal || filteredSignal.length < 20) return 0; // Need sufficient data
-
-    const recentSignal = filteredSignal.slice(-50); // Use last 50 samples
-    const mean = calculateDC(recentSignal);
-    const stdDev = calculateStandardDeviation(recentSignal);
-    const maxVal = Math.max(...recentSignal);
-    const minVal = Math.min(...recentSignal);
-    const amplitude = maxVal - minVal;
-
-    // Score based on amplitude (must meet minimum threshold)
-    const amplitudeScore = amplitude >= minAmplitudeThreshold ? 1 : 0;
-
-    // Score based on noise (relative standard deviation)
-    // Lower relative std dev = better quality
-    const relativeStdDev = amplitude > 1e-6 ? stdDev / amplitude : 1;
-    const noiseScore = Math.max(0, 1 - relativeStdDev * 2); // Penalize higher relative noise
-    
-    // Combine scores (adjust weights as needed)
-    const quality = (amplitudeScore * 0.6 + noiseScore * 0.4) * 100;
-    
-    return Math.max(0, Math.min(100, quality)); // Clamp to 0-100
-}
+// Funciones matemáticas reemplazadas (usar Math directly)
+/*
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+function realCeil(x: number): number { return x % 1 === 0 ? x : (x - (x % 1) + 1); }
+*/
