@@ -1,28 +1,17 @@
-
-import { BaseNeuralModel, DenseLayer, Conv1DLayer, ResidualBlock, BatchNormLayer, TensorUtils, Tensor1D } from './NeuralNetworkBase';
+import * as tf from '@tensorflow/tfjs';
+import { 
+  BaseNeuralModel, 
+  Tensor1D 
+} from './NeuralNetworkBase';
 
 /**
  * Modelo neuronal especializado en la estimación de presión arterial
+ * Adaptado para cargar y usar modelos TF.js
  * 
  * IMPORTANTE: Este modelo solo trabaja con datos reales, sin simulación.
  * NO utiliza Math.random() ni ninguna función que genere datos aleatorios.
  */
 export class BloodPressureNeuralModel extends BaseNeuralModel {
-  // Capas
-  private conv1: Conv1DLayer;
-  private bn1: BatchNormLayer;
-  private residualBlock1: ResidualBlock;
-  private residualBlock2: ResidualBlock;
-  
-  // Ramas separadas para sistólica y diastólica
-  private systolicBranch1: DenseLayer;
-  private systolicBranch2: DenseLayer;
-  private systolicOutput: DenseLayer;
-  
-  private diastolicBranch1: DenseLayer;
-  private diastolicBranch2: DenseLayer;
-  private diastolicOutput: DenseLayer;
-  
   // Parámetros de filtrado
   private readonly filterParams = {
     lowCutoff: 0.5,  // Hz - eliminar componente DC
@@ -35,119 +24,70 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       'BloodPressureNeuralModel',
       [300], // 5 segundos de señal @ 60Hz
       [2],   // Salida: [sistólica, diastólica] en mmHg
-      '3.1.0' // Incrementada versión para indicar optimización
+      '3.1.0-tfjs' // Indicar versión y backend
     );
-    
-    // Feature extraction layers con pesos pre-entrenados (no aleatorios)
-    // CORRECCIÓN: Ajustado número de argumentos según definición de Conv1DLayer
-    this.conv1 = new Conv1DLayer(1, 32, 15, 1, 'relu');
-    this.bn1 = new BatchNormLayer(32);
-    
-    // Residual blocks
-    this.residualBlock1 = new ResidualBlock(32, 7);
-    this.residualBlock2 = new ResidualBlock(32, 5);
-    
-    // Systolic branch con bias para rango fisiológico realista
-    // CORRECCIÓN: Ajustado para pasar undefined en lugar de número para argumentos opcionales
-    this.systolicBranch1 = new DenseLayer(32, 24, undefined, undefined, 'relu');
-    this.systolicBranch2 = new DenseLayer(24, 12, undefined, undefined, 'relu');
-    this.systolicOutput = new DenseLayer(12, 1, undefined, undefined, 'linear'); // Bias para rango sistólico
-    
-    // Diastolic branch con bias para rango fisiológico realista
-    // CORRECCIÓN: Ajustado para pasar undefined en lugar de número para argumentos opcionales
-    this.diastolicBranch1 = new DenseLayer(32, 24, undefined, undefined, 'relu');
-    this.diastolicBranch2 = new DenseLayer(24, 12, undefined, undefined, 'relu');
-    this.diastolicOutput = new DenseLayer(12, 1, undefined, undefined, 'linear'); // Bias para rango diastólico
-    
-    // Inicializar pesos de capa convolucional con valores significativos para PPG
-    this.initializeConvolutionalWeights();
   }
   
   /**
-   * Inicializa los pesos de la primera capa convolucional con valores sinusoidales
-   * que ayudan a detectar características de señal PPG - no aleatorios
+   * Carga el modelo TF.js
+   * Reemplaza esto con la ruta real a tu modelo exportado.
    */
-  private initializeConvolutionalWeights(): void {
-    // Crear kernel basado en ondas sinusoidales de distintas frecuencias
-    const kernelSize = 15;
-    const numFrequencies = 32;
-    
-    // CORRECCIÓN: Reemplazado el método setWeight con un enfoque alternativo
-    // para inicializar pesos, asumiendo que Conv1DLayer tiene alguna propiedad
-    // o método para acceder a sus pesos internos
-    
-    // En lugar de acceder directamente a los pesos, configuramos un patrón
-    // de inicialización que se aplicará internamente en la capa
-    this.configureConvolutionalInitialization(numFrequencies, kernelSize);
+  async loadModel(): Promise<void> {
+    if (this.isModelLoaded) {
+      return;
+    }
+    try {
+      // const modelUrl = '/models/blood_pressure/model.json'; // <- CAMBIA ESTO
+      // console.log(`Cargando modelo BloodPressure desde: ${modelUrl}`);
+      // this.model = await tf.loadGraphModel(modelUrl);
+      // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
+      console.warn('BloodPressureModel: Carga de modelo TF.js desactivada (placeholder).');
+      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
+      this.isModelLoaded = true;
+      console.log('BloodPressureModel: Modelo cargado (simulado).');
+    } catch (error) {
+      console.error('Error cargando el modelo BloodPressure:', error);
+      this.isModelLoaded = false;
+    }
   }
   
   /**
-   * Configura la inicialización de la capa convolucional con un patrón específico
-   * basado en frecuencias fisiológicas relevantes para PPG
-   */
-  private configureConvolutionalInitialization(numFrequencies: number, kernelSize: number): void {
-    // Este método reemplaza la inicialización directa de pesos
-    // Asumimos que la capa convolucional tiene una forma interna de inicializar sus pesos
-    
-    console.log('Configurando inicialización de capa convolucional');
-    console.log(`Número de frecuencias: ${numFrequencies}, Tamaño de kernel: ${kernelSize}`);
-    
-    // En una implementación real, aquí tendríamos código que configure
-    // adecuadamente la inicialización de los pesos de la capa convolucional
-  }
-  
-  /**
-   * Predice presión arterial sistólica y diastólica
-   * SOLO procesa datos reales, sin simulación
+   * Predice presión arterial sistólica y diastólica usando TF.js
    * @param input Señal PPG
    * @returns [sistólica, diastólica] en mmHg, o [0,0] si no hay estimación confiable
    */
-  predict(input: Tensor1D): Tensor1D {
+  async predict(input: Tensor1D): Promise<Tensor1D> {
     const startTime = Date.now();
     
-    try {
-      // Verificar datos de entrada
-      if (!input || input.length === 0) {
-        console.error('BloodPressureNeuralModel: Datos de entrada inválidos');
-        return [0, 0]; // Indicar que no hay medición
+    if (!this.isModelLoaded || !this.model) {
+      await this.loadModel();
+      if (!this.isModelLoaded || !this.model) {
+        console.error('BloodPressureModel: Modelo no cargado, no se puede predecir.');
+        return [0, 0]; // Indicar fallo
       }
-      
-      // Preprocesar entrada
+    }
+    
+    try {
+      // 1. Preprocesar entrada
       const processedInput = this.preprocessInput(input);
       
-      // Forward pass - extracción de características
-      let features = this.conv1.forward([processedInput]);
-      features = this.bn1.forward(features);
+      // 2. Convertir a tf.Tensor (ajusta la forma a tu modelo)
+      // Ejemplo: [1, 300, 1]
+      const inputTensor = tf.tensor(processedInput, [1, this.inputShape[0], 1]);
       
-      // Blocks residuales
-      features = this.residualBlock1.forward(features);
-      features = this.residualBlock2.forward(features);
+      // 3. Inferencia
+      const predictionTensor = this.model.predict(inputTensor) as tf.Tensor;
       
-      // Global average pooling
-      const pooled = this.globalAveragePooling(features);
+      // 4. Post-procesamiento (asumiendo salida de 2 valores)
+      const outputData = await predictionTensor.data();
+      const systolic = outputData[0];
+      const diastolic = outputData[1];
       
-      // Rama sistólica
-      let systolicOut = this.systolicBranch1.forward(pooled);
-      systolicOut = this.systolicBranch2.forward(systolicOut);
-      systolicOut = this.systolicOutput.forward(systolicOut);
-      
-      // Rama diastólica
-      let diastolicOut = this.diastolicBranch1.forward(pooled);
-      diastolicOut = this.diastolicBranch2.forward(diastolicOut);
-      diastolicOut = this.diastolicOutput.forward(diastolicOut);
+      // 5. Limpiar tensores
+      inputTensor.dispose();
+      predictionTensor.dispose();
       
       // Verificar si los resultados son fisiológicamente válidos
-      const systolic = systolicOut[0];
-      const diastolic = diastolicOut[0];
-      
-      // Log detalles de la predicción
-      console.log('BloodPressureNeuralModel: Resultados crudos del modelo', { 
-        systolic, 
-        diastolic,
-        pooledFeatures: pooled.slice(0, 3)
-      });
-      
-      // Verificar si los resultados parecen válidos para publicar
       if (isNaN(systolic) || isNaN(diastolic) || systolic <= 0 || diastolic <= 0) {
         console.error('BloodPressureNeuralModel: Resultados inválidos', { systolic, diastolic });
         return [0, 0]; // Indicar que no hay medición
@@ -291,43 +231,13 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     return { min, max };
   }
   
-  /**
-   * Global average pooling implementation
-   */
-  private globalAveragePooling(features: Tensor1D[]): Tensor1D {
-    const result: Tensor1D = [];
-    
-    for (let f = 0; f < features.length; f++) {
-      const sum = features[f].reduce((acc, val) => acc + val, 0);
-      result.push(sum / features[f].length);
-    }
-    
-    return result;
-  }
-  
   get parameterCount(): number {
-    let count = 0;
-    
-    // Conv layers
-    count += (15 * 1 * 32) + 32;
-    
-    // Residual blocks
-    count += 2 * ((7 * 32 * 32) + 32 + (7 * 32 * 32) + 32);
-    
-    // Dense layers - systolic
-    count += (32 * 24) + 24;
-    count += (24 * 12) + 12;
-    count += (12 * 1) + 1;
-    
-    // Dense layers - diastolic
-    count += (32 * 24) + 24;
-    count += (24 * 12) + 12;
-    count += (12 * 1) + 1;
-    
-    return count;
+    // Ya no se puede calcular desde capas TS
+    return 0;
   }
   
   get architecture(): string {
-    return `CNN-ResNet-Dual (${this.parameterCount} params)`;
+    // Describir la arquitectura cargada
+    return `TF.js Model (CNN-ResNet-Dual)`;
   }
 }
