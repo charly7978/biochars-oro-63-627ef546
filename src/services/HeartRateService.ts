@@ -7,8 +7,9 @@ import { applyFilterPipeline } from '../modules/heart-beat/signal-filters';
 import { 
   detectAndConfirmPeak,
   getInitialPeakDetectionState,
-  detectPeak,
-  confirmPeak
+  // PeakDetectionState 
+  // detectPeak, // No longer needed separately
+  // confirmPeak // No longer needed separately
 } from '../modules/heart-beat/peak-detector';
 import { 
   updateBPMHistory, 
@@ -19,8 +20,7 @@ import {
 import { RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
-import { calculateMAD } from '../modules/heart-beat/utils';
-import ArrhythmiaDetectionService from './ArrhythmiaDetectionService';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import { ArrhythmiaDetectionResult } from './arrhythmia/types';
 import { 
     filterRRIntervalsMAD, 
