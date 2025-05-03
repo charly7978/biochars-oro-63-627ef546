@@ -7,7 +7,6 @@ export type {
   ArrhythmiaDetectionResult,
   ArrhythmiaStatus,
   ArrhythmiaListener,
-  UserProfile,
-  ArrhythmiaCategory
+  UserProfile
 } from './arrhythmia/types';
 export default ArrhythmiaDetectionService;
