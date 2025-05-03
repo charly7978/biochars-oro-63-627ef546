@@ -1,63 +1,84 @@
-
 import { ArrhythmiaStatus } from './types';
 
+interface ArrhythmiaWindow {
+  timestamp: number;
+  duration: number;
+  status: ArrhythmiaStatus;
+  intervals: number[];
+  probability: number;
+  details: Record<string, any>;
+}
+
 /**
- * Manages the history of arrhythmia detection windows
- * Solo datos reales - sin simulación
+ * Manager for arrhythmia detection windows
+ * Tracks when arrhythmias occur and their duration
  */
 export class ArrhythmiaWindowManager {
-  // Ventanas de arritmia detectadas (historial)
-  private arrhythmiaWindows: Array<{
-    timestamp: number;
-    duration: number;
-    status: ArrhythmiaStatus;
-    intervals: number[];
-    probability: number;
-    details: Record<string, any>;
-  }> = [];
+  private windows: ArrhythmiaWindow[] = [];
+  private maxWindows: number = 20;
 
-  private readonly MAX_WINDOWS = 50;
+  constructor(maxWindows: number = 20) {
+    this.maxWindows = maxWindows;
+  }
 
   /**
-   * Añadir nueva ventana de arritmia
+   * Add a new arrhythmia window
    */
   public addArrhythmiaWindow(
+    timestamp: number,
+    duration: number,
     status: ArrhythmiaStatus,
-    probability: number,
     intervals: number[],
+    probability: number,
     details: Record<string, any> = {}
   ): void {
-    const timestamp = Date.now();
-    
-    // Calcular duración aproximada basada en intervalos
-    const duration = intervals.reduce((sum, interval) => sum + interval, 0);
-    
-    this.arrhythmiaWindows.push({
+    const window: ArrhythmiaWindow = {
       timestamp,
       duration,
       status,
       intervals: [...intervals],
       probability,
       details
-    });
-    
-    // Mantener solo las últimas ventanas
-    if (this.arrhythmiaWindows.length > this.MAX_WINDOWS) {
-      this.arrhythmiaWindows.shift();
+    };
+
+    this.windows.push(window);
+
+    // Keep only the latest windows
+    if (this.windows.length > this.maxWindows) {
+      this.windows = this.windows.slice(-this.maxWindows);
     }
   }
 
   /**
-   * Obtener todas las ventanas de arritmia
+   * Get all arrhythmia windows
    */
-  public getArrhythmiaWindows() {
-    return [...this.arrhythmiaWindows];
+  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
+    return [...this.windows];
   }
 
   /**
-   * Limpiar historial de ventanas
+   * Get windows that match a specific status
    */
-  public clearWindows(): void {
-    this.arrhythmiaWindows = [];
+  public getWindowsByStatus(status: ArrhythmiaStatus): ArrhythmiaWindow[] {
+    return this.windows.filter(window => window.status === status);
+  }
+
+  /**
+   * Get windows from a time range
+   */
+  public getWindowsInTimeRange(startTime: number, endTime: number): ArrhythmiaWindow[] {
+    return this.windows.filter(window => {
+      const windowEnd = window.timestamp + window.duration;
+      return (window.timestamp >= startTime && window.timestamp <= endTime) ||
+             (windowEnd >= startTime && windowEnd <= endTime) ||
+             (window.timestamp <= startTime && windowEnd >= endTime);
+    });
+  }
+
+  /**
+   * Clear all windows
+   */
+  public clear(): void {
+    this.windows = [];
   }
 }

@@ -1,8 +1,6 @@
 
 import { useState, useCallback, useRef } from 'react';
-import { calculateBPM, getRRData } from '@/modules/heart-beat/bpm-calculator';
-import { findPeaks } from '@/modules/heart-beat/peak-detector';
-import { assessSignalQuality } from '@/modules/heart-beat/signal-quality';
+import { calculateSignalQuality } from '@/modules/heart-beat/signal-quality';
 
 // Type definitions
 export interface HeartBeatResult {
@@ -60,7 +58,7 @@ export const useHeartBeatProcessor = (): HeartBeatProcessor => {
     }
     
     // Evaluar calidad de la señal
-    const quality = assessSignalQuality(signalBuffer.current);
+    const quality = calculateSignalQuality(signalBuffer.current);
     setSignalQuality(quality);
     
     // Detectar picos si hay suficientes datos
@@ -100,6 +98,48 @@ export const useHeartBeatProcessor = (): HeartBeatProcessor => {
       confidence: 0
     };
   }, []);
+
+  // Helper functions that need to be implemented since they are missing from imports
+  const findPeaks = (signal: number[]): number[] => {
+    // Simple peak detection algorithm
+    const peaks: number[] = [];
+    const threshold = 0.5;
+    
+    for (let i = 1; i < signal.length - 1; i++) {
+      if (signal[i] > signal[i - 1] && signal[i] > signal[i + 1] && signal[i] > threshold) {
+        peaks.push(i);
+      }
+    }
+    
+    return peaks;
+  };
+
+  const calculateBPM = (timestamps: number[]): number => {
+    if (timestamps.length < 2) return 0;
+    
+    // Calculate average interval between peaks
+    let totalInterval = 0;
+    for (let i = 1; i < timestamps.length; i++) {
+      totalInterval += timestamps[i] - timestamps[i - 1];
+    }
+    
+    const avgInterval = totalInterval / (timestamps.length - 1);
+    // Convert to BPM (60000 ms in a minute)
+    return Math.round(60000 / avgInterval);
+  };
+
+  const getRRData = (timestamps: number[]): { intervals: number[], timestamps: number[] } => {
+    if (timestamps.length < 2) {
+      return { intervals: [], timestamps: [] };
+    }
+    
+    const intervals: number[] = [];
+    for (let i = 1; i < timestamps.length; i++) {
+      intervals.push(timestamps[i] - timestamps[i - 1]);
+    }
+    
+    return { intervals, timestamps };
+  };
   
   /**
    * Procesa un frame de video
