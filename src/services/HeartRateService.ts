@@ -11,9 +11,11 @@ import {
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { RRIntervalData } from '../types/peak';
+import { PeakData, RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import { ArrhythmiaDetectionResult } from './arrhythmia/types';
 
 export interface HeartRateResult {
   bpm: number;
@@ -25,9 +27,10 @@ export interface HeartRateResult {
   rrData?: RRIntervalData;
 }
 
-export interface PeakData {
-  timestamp: number;
-  value: number;
+export interface PeakDetectionOptions {
+  minPeakTimeMs: number;
+  derivativeThreshold: number;
+  signalThreshold: number;
 }
 
 export interface FilterOptions {
@@ -162,9 +165,40 @@ class HeartRateService {
    * Reproduce un sonido de latido con la opción de vibración
    */
   private triggerHeartbeatFeedback(isArrhythmia: boolean = false, value: number = 0.7): boolean {
-    // Ya no usamos el flag isArrhythmia aquí
-    // Delegar a AudioFeedbackService para feedback normal
-    return AudioFeedbackService.triggerHeartbeatFeedback('normal', realMin(0.8, realAbs(value) + 0.3));
+    const now = Date.now();
+    
+    // Evitar reproducción de beeps demasiado seguidos
+    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
+      return false;
+    }
+    
+    // Actualizar tiempo del último beep
+    this.lastBeepTime = now;
+    
+    // Crear datos del pico para audio
+    const peakData: PeakData = {
+      timestamp: now,
+      value,
+      isArrhythmia
+    };
+    
+    // Reproducir audio
+    AudioFeedbackService.queuePeak(peakData);
+    
+    // Activar vibración si está disponible
+    if (this.vibrationEnabled) {
+      try {
+        if (isArrhythmia) {
+          FeedbackService.vibrateArrhythmia();
+        } else {
+          FeedbackService.vibrate(80); // Vibración corta para pulso normal
+        }
+      } catch (error) {
+        console.error("HeartRateService: Error during vibration", error);
+      }
+    }
+    
+    return true;
   }
 
   /**
@@ -259,21 +293,34 @@ class HeartRateService {
       // Update BPM history
       this.bpmHistory = this.updateBPMHistory(now);
       
-      // Trigger vibration and beep (ya no diferencia arritmia)
-      this.triggerHeartbeatFeedback(false, confidence); // Siempre feedback normal
-      
-      // Notify listeners about the peak (solo timestamp y valor)
-      this.notifyPeakListeners({
-        timestamp: now, 
-        value: filteredValue // Usar valor filtrado 
-      });
+      // Activar retroalimentación si el monitoreo está activo
+      if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
+        let arrhythmiaResult: ArrhythmiaDetectionResult | null = null;
+        let isPotentialArrhythmia = false;
+        
+        if (this.rrIntervalHistory.length > 5) { // Necesita suficientes intervalos
+          arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(this.rrIntervalHistory);
+          isPotentialArrhythmia = arrhythmiaResult?.isArrhythmia || false;
+        }
+        
+        const isCurrentPeakArrhythmic = arrhythmiaResult?.isArrhythmia || false;
+        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, confidence);
+        
+        // Notify listeners about the peak
+        this.notifyPeakListeners({
+          timestamp: now, 
+          value: normalizedValue, 
+          isArrhythmia: isCurrentPeakArrhythmic, 
+          isPotentialArrhythmia: isPotentialArrhythmia
+        });
+      }
     }
     
     // Calculate current BPM
     const rawBPM = this.calculateBPM();
     
     // Apply smoothing
-    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
+    this.smoothBPM = this.smoothBPM === 0 ? rawBPM : this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
     
     // Create RRIntervalData object con el historial actualizado
     const rrData: RRIntervalData = {

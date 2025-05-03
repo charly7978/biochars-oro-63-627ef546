@@ -9,7 +9,7 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
 
@@ -38,6 +38,7 @@ const Index = () => {
 
   const { 
     processSignal: processHeartBeat, 
+    isArrhythmia: heartBeatIsArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -108,8 +109,6 @@ const Index = () => {
               }
               
               setVitalSigns(vitals);
-              
-              // Get arrhythmia state directly from the centralized service
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
               
               if (processedFrameCountRef.current % 60 === 0) {
@@ -137,7 +136,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
 
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
