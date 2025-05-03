@@ -1,8 +1,7 @@
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating standardized vital signs results without using Math functions
+ * Factory for creating VitalSignsResult objects
  */
 export class ResultFactory {
   public static createResult(
@@ -11,11 +10,7 @@ export class ResultFactory {
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
-    lipids: { totalCholesterol: number; triglycerides: number },
-    hemoglobin: number,
-    hydration: number,
     glucoseConfidence?: number,
-    lipidsConfidence?: number,
     overallConfidence?: number,
     lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
@@ -25,30 +20,22 @@ export class ResultFactory {
       pressure,
       arrhythmiaStatus,
       glucose,
-      lipids,
-      hemoglobin,
-      hydration,
       glucoseConfidence,
-      lipidsConfidence,
       overallConfidence,
       lastArrhythmiaData
     };
   }
 
   public static createEmptyResults(): VitalSignsResult {
-    // Valores vacíos para representar ausencia de medición
     return {
       spo2: 0,
       heartRate: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
+      pressure: '--/--',
+      arrhythmiaStatus: '--',
       glucose: 0,
-      lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
-      },
-      hemoglobin: 0,
-      hydration: 0
+      glucoseConfidence: 0,
+      overallConfidence: 0,
+      lastArrhythmiaData: null
     };
   }
 }

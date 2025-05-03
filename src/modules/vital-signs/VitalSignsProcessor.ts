@@ -6,15 +6,11 @@ import { SpO2Processor } from './spo2-processor';
 import { BloodPressureProcessor } from './blood-pressure-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
-import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
 import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
-import { RRIntervalData } from '../../types/peak';
-import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
-import { HemoglobinEstimator } from '../../core/analysis/HemoglobinEstimator';
-import { KalmanFilter } from './shared-signal-utils';
+import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 /**
@@ -28,17 +24,12 @@ export class VitalSignsProcessor {
   private bpProcessor: BloodPressureProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
-  private lipidProcessor: LipidProcessor;
-  private hydrationEstimator: HydrationEstimator;
-  private hemoglobinEstimator: HemoglobinEstimator;
   
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
   
   // Propiedades añadidas para corregir errores
-  private kalmanFilterRed: KalmanFilter;
-  private kalmanFilterIR: KalmanFilter;
   private signalBufferRed: number[] = [];
   private signalBufferIR: number[] = [];
   private timestamps: number[] = [];
@@ -71,17 +62,10 @@ export class VitalSignsProcessor {
     this.bpProcessor = new BloodPressureProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
-    this.lipidProcessor = new LipidProcessor();
-    this.hydrationEstimator = new HydrationEstimator();
-    this.hemoglobinEstimator = new HemoglobinEstimator();
     
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
-
-    // Initialize filters (propiedades añadidas)
-    this.kalmanFilterRed = new KalmanFilter();
-    this.kalmanFilterIR = new KalmanFilter();
 
     this.reset();
   }
@@ -164,9 +148,8 @@ export class VitalSignsProcessor {
     let spo2 = 0;
     let pressure = "--/--";
     let glucose = 0;
-    let hemoglobin = 0;
-    let hydration = 0;
-    let lipids = { totalCholesterol: 0, triglycerides: 0 };
+    let glucoseConfidence = 0; // Declarar fuera del if con valor por defecto
+    let overallConfidence = 0; // Declarar fuera del if con valor por defecto
     
     // Solo calculamos mediciones si tenemos suficientes datos
     if (hasEnoughData && amplitude > 0.005) {
@@ -203,28 +186,14 @@ export class VitalSignsProcessor {
       // Calcular glucosa con procesamiento directo
       glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
       
-      // Calcular perfil lipídico con datos directos (un argumento)
-      const lipidCalcResult = this.lipidProcessor.calculateLipids(ppgValues);
-      lipids = { 
-        totalCholesterol: lipidCalcResult.totalCholesterol, 
-        triglycerides: lipidCalcResult.triglycerides 
-      };
+      // Calcular Confidence Scores
+      glucoseConfidence = this.glucoseProcessor.getConfidence();
+      const lipidsConfidencePlaceholder = 0; // Since lipids processor is removed
+      overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
+        glucoseConfidence, 
+        lipidsConfidencePlaceholder
+      );
       
-      // Calcular hemoglobina con medición directa
-      hemoglobin = this.hemoglobinEstimator.estimateHemoglobin(ppgValues);
-      
-      // Calcular hidratación con medición directa
-      hydration = this.hydrationEstimator.analyze(ppgValues);
-      
-      // Calcular Confianza General (Ejemplo usando confidenceCalculator)
-      // Asumiendo que los procesadores devuelven confianza o se puede estimar
-      // overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
-      //   this.spo2Processor.getConfidence(), // Asume que existe .getConfidence()
-      //   this.bpProcessor.getConfidence(),   // Asume que existe .getConfidence()
-      //   this.lipidProcessor.getConfidence() // Asume que existe .getConfidence()
-      //   // ... otras confianzas ...
-      // );
-
       // Log detallado cada cierto número de frames
       if (this.processedFrameCount % 50 === 0) {
         console.log("VitalSignsProcessor: Calculated values", {
@@ -232,9 +201,6 @@ export class VitalSignsProcessor {
           spo2,
           pressure,
           glucose,
-          hemoglobin,
-          hydration,
-          lipids
         });
       }
     } else if (this.processedFrameCount % 50 === 0) {
@@ -245,30 +211,23 @@ export class VitalSignsProcessor {
       });
     }
     
-    // Create result object matching VitalSignsResult interface
-    const result: VitalSignsResult = {
-      heartRate,
+    // Create result object using the factory - Ahora las variables de confianza siempre están definidas
+    const result = ResultFactory.createResult(
       spo2,
+      heartRate,
       pressure,
+      arrhythmiaResult.arrhythmiaStatus,
       glucose,
-      hydration,
-      lipids: {
-        totalCholesterol: lipids.totalCholesterol,
-        triglycerides: lipids.triglycerides,
-      },
-      hemoglobin,
-      arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-      lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData
-    };
+      glucoseConfidence,
+      overallConfidence,
+      arrhythmiaResult.lastArrhythmiaData
+    );
     
     // Si tenemos al menos un valor válido, guardar como último válido
     if (
       result.heartRate > 0 ||
       result.spo2 > 0 ||
       result.glucose > 0 ||
-      result.hemoglobin > 0 ||
-      result.hydration > 0 ||
-      (result.lipids && (result.lipids.totalCholesterol > 0 || result.lipids.triglycerides > 0)) ||
       (result.pressure && result.pressure !== "--/--")
     ) {
       this.lastValidResult = { ...result };
@@ -299,13 +258,8 @@ export class VitalSignsProcessor {
     this.bpProcessor.reset();
     this.signalProcessor.reset();
     this.glucoseProcessor.reset();
-    this.lipidProcessor.reset();
-    this.hydrationEstimator.reset();
-    this.hemoglobinEstimator.reset();
 
     // Resetear propiedades añadidas
-    this.kalmanFilterRed?.reset();
-    this.kalmanFilterIR?.reset();
     this.signalBufferRed = [];
     this.signalBufferIR = [];
     this.timestamps = [];

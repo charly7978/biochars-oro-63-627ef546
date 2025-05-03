@@ -1,4 +1,3 @@
-
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -18,21 +17,8 @@ export interface VitalSignsResult {
   // Blood glucose level in mg/dL
   glucose: number;
   
-  // Blood lipid levels
-  lipids: {
-    totalCholesterol: number;
-    triglycerides: number;
-  };
-  
-  // Hemoglobin level (g/dL)
-  hemoglobin: number;
-  
-  // Hydration level (percentage)
-  hydration: number;
-  
   // Individual confidence values (as separate properties)
   glucoseConfidence?: number;
-  lipidsConfidence?: number;
   overallConfidence?: number;
   
   // Information about the last detected arrhythmia event

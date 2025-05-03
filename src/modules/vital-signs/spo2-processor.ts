@@ -4,89 +4,101 @@
 
 import { calculateAC, calculateDC } from './shared-signal-utils';
 
+/**
+ * Procesador para estimar SpO2 desde la señal PPG
+ * Nota: Asume que recibe señales R e IR, lo cual no sucede actualmente
+ */
 export class SpO2Processor {
-  private readonly SPO2_BUFFER_SIZE = 10;
+  private readonly SPO2_BUFFER_SIZE = 10; // Número de muestras para promediar
   private spo2Buffer: number[] = [];
+  private lastSpo2: number = 0;
 
   /**
-   * Calculates the oxygen saturation (SpO2) from real PPG values
-   * No simulation or reference values are used
+   * Calcula el SpO2 basado en la relación de absorción AC/DC
+   * ADVERTENCIA: Este método asume señales R e IR que no se proporcionan.
+   * La implementación actual solo usa una señal y no es clínicamente válida.
    */
   public calculateSpO2(values: number[]): number {
-    if (values.length < 30) {
-      return this.getLastValidSpo2(1);
+    // Necesita suficientes datos
+    if (!values || values.length < 50) {
+      return 0; // No hay datos suficientes
     }
 
-    const dc = calculateDC(values);
+    // --- Lógica basada en AC/DC (requiere R/IR, actualmente inválida) ---
+    // Comentada y reemplazada por retorno de 0
+    /*
+    const recentValues = values.slice(-50);
+
+    // Calcular componentes AC y DC (necesita separación R/IR)
+    const ac = calculateAC(recentValues); // Necesita AC(R) y AC(IR)
+    const dc = calculateDC(recentValues); // Necesita DC(R) y DC(IR)
+
     if (dc === 0) {
-      return this.getLastValidSpo2(1);
+      return 0; // Evitar división por cero
     }
 
-    const ac = calculateAC(values);
-    
-    const perfusionIndex = ac / dc;
-    
-    if (perfusionIndex < 0.06) {
-      return this.getLastValidSpo2(2);
+    // Calcular relación de ratios (R)
+    // Esto ESPECÍFICAMENTE requiere datos de canales R e IR separados
+    // const ratio = (acRed / dcRed) / (acIr / dcIr);
+    // Usando solo una señal, este 'ratio' no tiene significado fisiológico para SpO2
+    const ratio = ac / dc; 
+
+    if (ratio <= 0) {
+      return 0; // Ratio inválido
     }
 
-    // Direct calculation from real signal characteristics
-    const R = (ac / dc);
-    
-    // Calculate SpO2 without Math.round
-    let spO2 = 98 - (15 * R);
-    // Integer conversion without Math.round
-    spO2 = spO2 >= 0 ? ~~(spO2 + 0.5) : ~~(spO2 - 0.5);
-    
-    // Adjust based on real perfusion quality without using Math.min/Math.max
-    if (perfusionIndex > 0.15) {
-      spO2 = spO2 >= 98 ? 98 : spO2 + 1;
-    } else if (perfusionIndex < 0.08) {
-      spO2 = spO2 <= 0 ? 0 : spO2 - 1;
-    }
+    // Fórmula empírica para SpO2 (simplificada, NO VALIDADA para una sola señal)
+    // La fórmula real es SpO2 = A - B * R
+    let spo2 = 105 - 25 * ratio;
 
-    spO2 = spO2 >= 98 ? 98 : spO2;
+    // Asegurar que esté en rango fisiológico
+    spo2 = Math.max(85, Math.min(100, spo2));
+    */
 
-    // Update buffer with real measurement
-    this.spo2Buffer.push(spO2);
+    // Devolver 0 ya que el cálculo actual no es válido
+    const spo2 = 0;
+
+    // Añadir al buffer y calcular promedio
+    this.spo2Buffer.push(spo2);
     if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
       this.spo2Buffer.shift();
     }
 
-    // Calculate average for stability from real measurements
-    if (this.spo2Buffer.length > 0) {
-      // Sum without reduce
-      let sum = 0;
-      for (let i = 0; i < this.spo2Buffer.length; i++) {
-        sum += this.spo2Buffer[i];
+    // Calcular la mediana del buffer si hay suficientes datos
+    let finalSpo2 = spo2;
+    if (this.spo2Buffer.length >= 3) { // Usar mediana con al menos 3 valores
+      const sorted = [...this.spo2Buffer].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) {
+        finalSpo2 = (sorted[mid - 1] + sorted[mid]) / 2;
+      } else {
+        finalSpo2 = sorted[mid];
       }
-      
-      // Integer conversion without Math.round
-      const avg = sum / this.spo2Buffer.length;
-      spO2 = avg >= 0 ? ~~(avg + 0.5) : ~~(avg - 0.5);
     }
-
-    return spO2;
-  }
-  
-  /**
-   * Get last valid SpO2 with optional decay
-   * Only uses real historical values
-   */
-  private getLastValidSpo2(decayAmount: number): number {
-    if (this.spo2Buffer.length > 0) {
-      const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      // No Math.max needed - simple comparison
-      return lastValid > decayAmount ? lastValid - decayAmount : 0;
-    }
+    
+    // Guardar último valor (redondeado a un decimal)
+    this.lastSpo2 = Math.round(finalSpo2 * 10) / 10;
+    
+    // Devolver 0 para indicar falta de medición fiable
     return 0;
   }
 
   /**
-   * Reset the SpO2 processor state
-   * Ensures all measurements start from zero
+   * Obtiene el último valor SpO2 válido calculado y guardado
+   * NO devuelve una simulación, sino el último valor real estable
    */
+  private getLastValidSpo2(decayAmount: number): number {
+    if (this.spo2Buffer.length > 0) {
+      // Devuelve el último valor calculado si existe
+      return this.lastSpo2;
+    }
+    // Si no hay historial, devuelve 0
+    return 0;
+  }
+
   public reset(): void {
     this.spo2Buffer = [];
+    this.lastSpo2 = 0;
+    console.log("SpO2Processor reset");
   }
 }
