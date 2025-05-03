@@ -1,6 +1,6 @@
-import { KalmanFilter } from './filters/KalmanFilter';
+import { KalmanFilter } from '../../modules/vital-signs/shared-signal-utils';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
-import type { ProcessedSignal, ProcessingError } from '../../types/signal';
+import { ProcessingError, ProcessedSignal } from '../../types/signal';
 
 export class PPGProcessor {
   // Configuración unificada con valores optimizados
@@ -61,43 +61,45 @@ export class PPGProcessor {
   }
 
   public processFrame(imageData: ImageData): void {
-    if (!this.isProcessing) {
-      return;
+    if (!this.isProcessing) return;
+    
+    if (!this.kalmanFilter || !this.waveletDenoiser) {
+        this.handleError('not_initialized', 'PPGProcessor filters not initialized.');
+        return;
     }
 
-    try {
-      const redValue = this.extractRedChannel(imageData);
-      const kalmanFiltered = this.kalmanFilter.filter(redValue);
-      const filtered = this.waveletDenoiser.denoise(kalmanFiltered);
-      
-      this.lastValues.push(filtered);
-      if (this.lastValues.length > this.CONFIG.BUFFER_SIZE) {
-        this.lastValues.shift();
-      }
+    const rawValue = this.extractRedChannel(imageData);
 
-      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue);
-      const perfusionIndex = this.calculatePerfusionIndex();
-
-      this.periodicityBuffer.push(filtered);
-      if (this.periodicityBuffer.length > this.CONFIG.PERIODICITY_BUFFER_SIZE) {
-        this.periodicityBuffer.shift();
-      }
-
-      const processedSignal: ProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: redValue,
-        filteredValue: filtered,
-        quality: quality,
-        fingerDetected: isFingerDetected,
-        roi: this.detectROI(redValue),
-        perfusionIndex: perfusionIndex
-      };
-
-      this.onSignalReady?.(processedSignal);
-    } catch (error) {
-      console.error("PPGProcessor: Error procesando frame", error);
-      this.handleError("PROCESSING_ERROR", "Error al procesar frame");
+    // Apply filters
+    const kalmanFiltered = this.kalmanFilter.filter(rawValue);
+    const denoisedValue = this.waveletDenoiser.denoise(kalmanFiltered);
+    
+    // Store filtered value for analysis
+    this.lastValues.push(denoisedValue);
+    if (this.lastValues.length > this.CONFIG.BUFFER_SIZE) {
+      this.lastValues.shift();
     }
+
+    const { isFingerDetected, quality } = this.analyzeSignal(denoisedValue, rawValue);
+    const perfusionIndex = this.calculatePerfusionIndex();
+
+    this.periodicityBuffer.push(denoisedValue);
+    if (this.periodicityBuffer.length > this.CONFIG.PERIODICITY_BUFFER_SIZE) {
+      this.periodicityBuffer.shift();
+    }
+
+    const processedSignal: ProcessedSignal = {
+      timestamp: Date.now(),
+      rawValue,
+      filteredValue: denoisedValue,
+      quality,
+      fingerDetected: isFingerDetected,
+      roi: this.detectROI(rawValue),
+      perfusionIndex,
+      value: denoisedValue,
+    };
+
+    this.onSignalReady?.(processedSignal);
   }
 
   private extractRedChannel(imageData: ImageData): number {
@@ -187,27 +189,14 @@ export class PPGProcessor {
   private analyzePeriodicityQuality(): number {
     if (this.periodicityBuffer.length < 30) return 0.5;
     
-    // Implementar análisis simple de periodicidad
-    let correlationSum = 0;
-    const halfSize = Math.floor(this.periodicityBuffer.length / 2);
-    
-    for (let i = 0; i < halfSize; i++) {
-      correlationSum += Math.abs(this.periodicityBuffer[i] - this.periodicityBuffer[i + halfSize]);
-    }
-    
-    const avgCorrelation = correlationSum / halfSize;
-    const normalizedCorrelation = Math.min(1, Math.max(0, 1 - (avgCorrelation / 10)));
-    
-    return normalizedCorrelation;
+    const mean = this.periodicityBuffer.reduce((sum, val) => sum + val, 0) / this.periodicityBuffer.length;
+    const variance = this.periodicityBuffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.periodicityBuffer.length;
+    const quality = Math.max(0, 100 - Math.min(100, variance * 1000));
+    return quality;
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
-    return {
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100
-    };
+    return { x: 0, y: 0, width: 1, height: 1 };
   }
 
   private handleError(code: string, message: string): void {
@@ -219,32 +208,4 @@ export class PPGProcessor {
     
     this.onError?.(error);
   }
-}
-
-function realFloor(value: number): number {
-  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
-}
-
-function realMax(arr: number[]): number {
-  let max = arr[0];
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) max = arr[i];
-  }
-  return max;
-}
-
-function realMin(arr: number[]): number {
-  let min = arr[0];
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] < min) min = arr[i];
-  }
-  return min;
-}
-
-function realAbs(value: number): number {
-  return value < 0 ? -value : value;
-}
-
-function realRound(value: number): number {
-  return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
 }

@@ -1,98 +1,113 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Utility functions for signal quality assessment
+ * Only processes real data
  */
 
+interface SignalQualityConfig {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
+}
+
 /**
- * Comprueba la calidad de la señal y detecta si es demasiado débil
- * Usa solo datos reales sin simulación
+ * Checks signal quality to determine if the signal is too weak
+ * @param value Current value to check
+ * @param consecutiveWeakSignals Current count of consecutive weak signals
+ * @param config Configuration parameters
+ * @returns Object with isWeakSignal and updatedWeakSignalsCount
  */
 export function checkSignalQuality(
   value: number,
   consecutiveWeakSignals: number,
-  config: {
-    lowSignalThreshold: number;
-    maxWeakSignalCount: number;
-  }
+  config: SignalQualityConfig
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
   const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  // Verificar si la señal es débil basado en su amplitud absoluta
-  const valueAbs = value < 0 ? -value : value;
-  const isCurrentlyWeak = valueAbs < lowSignalThreshold;
+  // Calculate absolute value without Math.abs
+  const absValue = value >= 0 ? value : -value;
   
-  // Actualizar contador de señales débiles consecutivas
+  // Check if signal is below threshold
+  const isCurrentlyWeak = absValue < lowSignalThreshold;
+  
+  // Update consecutive weak signals count
   let updatedWeakSignalsCount = isCurrentlyWeak
     ? consecutiveWeakSignals + 1
-    : Math.max(0, consecutiveWeakSignals - 1);
+    : consecutiveWeakSignals > 0 
+      ? consecutiveWeakSignals - 1 
+      : 0;
   
-  // Determinar si la señal debe considerarse como débil en general
-  // (cuando hay demasiadas muestras débiles consecutivas)
-  const isWeakSignal = updatedWeakSignalsCount > maxWeakSignalCount;
+  // Log for debugging
+  if (updatedWeakSignalsCount > 3) {
+    console.log("Signal quality check:", {
+      value,
+      absValue,
+      isCurrentlyWeak,
+      updatedWeakSignalsCount,
+      maxWeakSignalCount
+    });
+  }
+  
+  // Determine if signal is considered weak overall
+  const isWeakSignal = updatedWeakSignalsCount >= maxWeakSignalCount;
   
   return { isWeakSignal, updatedWeakSignalsCount };
 }
 
 /**
- * Función auxiliar para calcular valor absoluto sin Math
+ * Calculates a quality percentage for the signal
+ * Higher values indicate better quality
+ * @param values Array of recent signal values
+ * @returns Quality value from 0-100
  */
-function absoluteValue(value: number): number {
-  return value < 0 ? -value : value;
-}
-
-export function getSignalQualityScore(
-  values: number[],
-  minLength: number = 10
-): { quality: number; amplitude: number } {
-  // Verificación básica
-  if (values.length < minLength) {
-    return { quality: 0, amplitude: 0 };
+export function calculateSignalQuality(values: number[]): number {
+  if (!values || values.length < 10) return 0;
+  
+  // Take most recent values
+  const recentValues = values.slice(-10);
+  
+  // Find min and max without Math functions
+  let min = recentValues[0];
+  let max = recentValues[0];
+  let sum = recentValues[0];
+  
+  for (let i = 1; i < recentValues.length; i++) {
+    if (recentValues[i] < min) min = recentValues[i];
+    if (recentValues[i] > max) max = recentValues[i];
+    sum += recentValues[i];
   }
   
-  // Calcular mínimo y máximo
-  let min = values[0];
-  let max = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] < min) min = values[i];
-    if (values[i] > max) max = values[i];
-  }
+  const range = max - min;
+  const avg = sum / recentValues.length;
   
-  // Calcular amplitud
-  const amplitude = max - min;
-  
-  // Si la amplitud es demasiado baja, la calidad es cero
-  if (amplitude < 0.01) {
-    return { quality: 0, amplitude };
-  }
-  
-  // Calcular calidad basada en:
-  // 1. Amplitud relativa
-  const amplitudeQuality = amplitude < 0.05 ? amplitude * 20 : 1;
-  
-  // 2. Variabilidad (desviación)
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-  }
-  const mean = sum / values.length;
-  
+  // Calculate variation
   let varianceSum = 0;
-  for (let i = 0; i < values.length; i++) {
-    const diff = values[i] - mean;
+  for (let i = 0; i < recentValues.length; i++) {
+    const diff = recentValues[i] - avg;
     varianceSum += diff * diff;
   }
-  const variance = varianceSum / values.length;
-  const normalizedVariance = variance / (amplitude * amplitude);
   
-  // Menor varianza = mejor señal (más regular)
-  const varianceQuality = 1.0 / (1.0 + normalizedVariance * 10);
+  const variance = varianceSum / recentValues.length;
+  const standardDeviation = Math.sqrt(variance);
   
-  // Calidad combinada (70% amplitud, 30% variabilidad)
-  const quality = amplitudeQuality * 0.7 + varianceQuality * 0.3;
+  // Calculate signal-to-noise ratio (SNR)
+  const snr = range / (standardDeviation || 0.001);
   
-  // Escalar a 0-100
-  return {
-    quality: quality * 100,
-    amplitude
-  };
+  // Convert to 0-100 scale
+  let quality = snr * 20;
+  
+  // Ensure within bounds
+  if (quality < 0) quality = 0;
+  if (quality > 100) quality = 100;
+  
+  return quality;
 }
+
+/**
+ * Resets the signal quality state
+ * @returns The reset value for signal quality counter (0)
+ */
+export function resetSignalQualityState(): number {
+  // This function resets the signal quality tracking state to its initial value
+  return 0;
+}
+

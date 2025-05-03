@@ -1,8 +1,9 @@
+
 /**
  * Utility functions for heart beat signal processing
  * Solo procesa datos reales
  */
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 interface SignalQualityConfig {
   lowSignalThreshold: number;

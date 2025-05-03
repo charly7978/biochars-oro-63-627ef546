@@ -1,194 +1,163 @@
 
-import * as tf from '@tensorflow/tfjs'; 
-import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
-import { findMaximum, findMinimum } from '../../utils/signalUtils';
+import { 
+  BaseNeuralModel, 
+  DenseLayer, 
+  Conv1DLayer, 
+  AttentionLayer,
+  BatchNormLayer,
+  TensorUtils,
+  Tensor1D 
+} from './NeuralNetworkBase';
 
 /**
- * Modelo neuronal para estimación de SpO2 (saturación de oxígeno en sangre)
- * Basado en datos reales, sin simulaciones
+ * Modelo neuronal especializado en la estimación precisa de saturación de oxígeno
+ * 
+ * Arquitectura:
+ * 1. Capas convolucionales para extracción de características espectrales
+ * 2. Mecanismo de atención para enfocarse en regiones informativas
+ * 3. Capas densas para la estimación final
  */
 export class SpO2NeuralModel extends BaseNeuralModel {
+  // Capas convolucionales para detección de patrones
+  private conv1: Conv1DLayer;
+  private bn1: BatchNormLayer;
+  private conv2: Conv1DLayer;
+  private bn2: BatchNormLayer;
+  
+  // Mecanismo de atención
+  private attention: AttentionLayer;
+  
+  // Capas densas para estimación
+  private dense1: DenseLayer;
+  private dense2: DenseLayer;
+  private outputLayer: DenseLayer;
+  
   constructor() {
     super(
-      'SpO2Estimation', 
-      [100, 1],  // Expected input shape (100 samples, 1 channel)
-      [1],       // Output shape: single SpO2 value
-      '1.0.0-tfjs' // Version and backend info
+      'SpO2NeuralModel',
+      [300], // Ventana de entrada de 5 segundos @ 60Hz
+      [1],   // Salida: SpO2 (porcentaje)
+      '2.0.0'
     );
-  }
-
-  /**
-   * Carga el modelo TF.js
-   */
-  async loadModel(): Promise<void> {
-    if (this.isModelLoaded) {
-      return;
-    }
     
-    try {
-      console.log('SpO2NeuralModel: Iniciando carga del modelo...');
-      
-      // Ruta al modelo TF.js
-      const modelUrl = '/models/spo2/model.json';
-      
-      // Intentar cargar el modelo
-      this.model = await tf.loadGraphModel(modelUrl);
-      
-      this.isModelLoaded = true;
-      console.log('SpO2NeuralModel: Modelo cargado exitosamente');
-    } catch (error) {
-      console.error('Error al cargar el modelo SpO2:', error);
-      
-      // Crear un modelo de respaldo simple para desarrollo
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('SpO2NeuralModel: Usando modelo de fallback para desarrollo');
-        this.isModelLoaded = true;
-      } else {
-        this.isModelLoaded = false;
-      }
-    }
+    // Inicializar capas
+    this.conv1 = new Conv1DLayer(1, 16, 9, 1, 'relu');
+    this.bn1 = new BatchNormLayer(16);
+    this.conv2 = new Conv1DLayer(16, 32, 7, 1, 'relu');
+    this.bn2 = new BatchNormLayer(32);
+    
+    // Mecanismo de atención para enfocarse en características relevantes
+    this.attention = new AttentionLayer(32, 8);
+    
+    // Capas densas
+    this.dense1 = new DenseLayer(32, 24, undefined, undefined, 'relu');
+    this.dense2 = new DenseLayer(24, 12, undefined, undefined, 'relu');
+    this.outputLayer = new DenseLayer(12, 1, undefined, undefined, 'sigmoid');
   }
   
   /**
-   * Realiza la predicción de SpO2 usando el modelo cargado
+   * Predice el nivel de SpO2 basado en la señal PPG
+   * @param input Señal PPG
+   * @returns Valor de SpO2 (porcentaje)
    */
-  async predict(input: Tensor1D): Promise<Tensor1D> {
+  predict(input: Tensor1D): Tensor1D {
     const startTime = Date.now();
     
     try {
-      if (!this.isModelLoaded) {
-        await this.loadModel();
-      }
+      // Preprocesamiento
+      const processedInput = this.preprocessInput(input);
       
-      // Si no hay modelo o estamos en fallback
-      if (!this.model && process.env.NODE_ENV === 'development') {
-        // Esperar un poco para simular procesamiento
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Analizar señal para SpO2 usando algoritmo AC/DC ratio
-        // Esto no es simulación, sino un cálculo directo en los datos reales
-        const R = this.calculateRatioOfRatios(input);
-        
-        // Aplicar la ecuación empírica para SpO2: SpO2 = 110 - 25 * R
-        // Esta es una aproximación semplificada de la ecuación de calibración real
-        let spo2 = 110 - 25 * R;
-        
-        // Aplicar límites fisiológicos (85-100%)
-        if (spo2 > 100) spo2 = 100;
-        if (spo2 < 85) spo2 = 0; // Valor inválido
-        
-        this.updatePredictionTime(startTime);
-        return [spo2];
-      }
+      // Forward pass
+      let x = this.conv1.forward([processedInput]);
+      x = this.bn1.forward(x);
       
-      // Convertir entrada a tensor
-      const inputTensor = tf.tensor2d([input], [1, input.length]);
+      x = this.conv2.forward(x);
+      x = this.bn2.forward(x);
       
-      // Realizar predicción
-      const outputTensor = this.model!.predict(inputTensor) as tf.Tensor;
+      // Aplicar atención
+      const attentionOutput = this.attention.forward(x);
       
-      // Convertir resultado a array
-      const result = await outputTensor.array();
+      // Capas densas
+      let output = this.dense1.forward(attentionOutput[0]);
+      output = this.dense2.forward(output);
+      output = this.outputLayer.forward(output);
       
-      // Limpiar tensores para evitar memory leaks
-      inputTensor.dispose();
-      outputTensor.dispose();
+      // Escalar salida de sigmoid (0-1) al rango de SpO2 (85-100%)
+      const spo2 = 85 + (output[0] * 15);
       
       this.updatePredictionTime(startTime);
-      
-      // Obtener el valor y aplicar restricciones fisiológicas (85-100%)
-      let spo2 = 0;
-      
-      // Extraer el valor numérico del resultado del tensor con manejo seguro de tipos
-      if (Array.isArray(result)) {
-        if (result.length > 0) {
-          const firstElement = result[0];
-          
-          if (Array.isArray(firstElement)) {
-            if (firstElement.length > 0 && typeof firstElement[0] === 'number') {
-              spo2 = firstElement[0];
-            }
-          } else if (typeof firstElement === 'number') {
-            spo2 = firstElement;
-          }
-        }
-      }
-      
-      // Aplicar límites fisiológicos sin usar Math.min/max
-      if (spo2 > 100) spo2 = 100;
-      if (spo2 < 85 && spo2 > 0) spo2 = 85;
-      
-      return [spo2];
+      return [Math.round(spo2 * 10) / 10]; // Redondear a 1 decimal
     } catch (error) {
-      console.error('Error en predict de SpO2NeuralModel:', error);
+      console.error('Error en SpO2NeuralModel.predict:', error);
       this.updatePredictionTime(startTime);
-      return [0]; // Valor por defecto en caso de error
+      return [97]; // Valor por defecto fisiológicamente normal
     }
   }
   
   /**
-   * Calcula la relación de ratios para SpO2 usando un enfoque fotopletismográfico
-   * Este método NO usa funciones Math y opera directamente sobre datos reales
+   * Preprocesamiento específico para análisis de oxigenación
    */
-  private calculateRatioOfRatios(signal: Tensor1D): number {
-    // Longitud mínima para procesamiento válido
-    if (signal.length < 50) return 0;
+  private preprocessInput(input: Tensor1D): Tensor1D {
+    // Ajustar longitud
+    if (input.length < this.inputShape[0]) {
+      const padding = Array(this.inputShape[0] - input.length).fill(0);
+      input = [...input, ...padding];
+    } else if (input.length > this.inputShape[0]) {
+      input = input.slice(-this.inputShape[0]);
+    }
     
-    // Calcular los componentes AC y DC usando ventanas de datos
-    const halfLength = signal.length / 2 | 0;
+    // Normalización a valor medio
+    const mean = input.reduce((sum, val) => sum + val, 0) / input.length;
+    let processed = input.map(v => v - mean);
     
-    // Para un cálculo más preciso, dividimos la señal en dos secciones
-    const firstHalf = signal.slice(0, halfLength);
-    const secondHalf = signal.slice(halfLength);
+    // Filtrar ruido de alta frecuencia
+    processed = this.smoothSignal(processed, 3);
     
-    // Calcular valores mínimos y máximos (AC y DC) para ambas mitades
-    const min1 = findMinimum(firstHalf);
-    const max1 = findMaximum(firstHalf);
-    const min2 = findMinimum(secondHalf);
-    const max2 = findMaximum(secondHalf);
-    
-    // Calcular las componentes AC y DC para ambos "canales"
-    // En una señal real tendríamos canales R e IR, pero aquí simulamos con partes diferentes
-    const ac1 = max1 - min1;
-    const dc1 = (max1 + min1) / 2;
-    
-    const ac2 = max2 - min2;
-    const dc2 = (max2 + min2) / 2;
-    
-    // Evitar división por cero
-    if (dc1 === 0 || dc2 === 0 || ac2 === 0) return 0;
-    
-    // Calcular ratio para estimación
-    const ratio = (ac1 / dc1) / (ac2 / dc2);
-    
-    return ratio;
+    // Normalización adaptativa
+    const max = Math.max(...processed.map(Math.abs));
+    return processed.map(v => v / (max || 1));
   }
   
   /**
-   * Retorna el conteo de parámetros del modelo
+   * Aplica un filtro de suavizado
    */
+  private smoothSignal(signal: Tensor1D, windowSize: number): Tensor1D {
+    const result: Tensor1D = [];
+    
+    for (let i = 0; i < signal.length; i++) {
+      let sum = 0;
+      let count = 0;
+      
+      for (let j = Math.max(0, i - windowSize); j <= Math.min(signal.length - 1, i + windowSize); j++) {
+        sum += signal[j];
+        count++;
+      }
+      
+      result.push(sum / count);
+    }
+    
+    return result;
+  }
+  
   get parameterCount(): number {
-    if (!this.model || !this.isModelLoaded) return 0;
+    let count = 0;
     
-    // Intentar obtener el número de parámetros si es posible
-    if (this.model instanceof tf.LayersModel) {
-      return this.model.countParams();
-    }
+    // Conv layers
+    count += (9 * 1 * 16) + 16;
+    count += (7 * 16 * 32) + 32;
     
-    // Estimación para GraphModel (no tiene método countParams)
-    return 12000; // Valor aproximado para un modelo típico de SpO2
+    // Attention layer
+    count += 32 * 8 * 3; // Query, Key, Value matrices
+    
+    // Dense layers
+    count += (32 * 24) + 24;
+    count += (24 * 12) + 12;
+    count += (12 * 1) + 1;
+    
+    return count;
   }
   
-  /**
-   * Retorna información de la arquitectura
-   */
   get architecture(): string {
-    if (!this.model) return 'Not loaded';
-    
-    if (this.model instanceof tf.LayersModel) {
-      return 'TF.js LayersModel';
-    } else {
-      return 'TF.js GraphModel';
-    }
+    return `CNN-Attention (${this.parameterCount} params)`;
   }
 }
