@@ -11,7 +11,7 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 import { ModelRegistry } from '../../core/neural/ModelRegistry';
