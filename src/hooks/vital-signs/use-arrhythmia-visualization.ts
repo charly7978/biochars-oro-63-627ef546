@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
 import { ArrhythmiaStatus } from '@/services/arrhythmia/types';
+import { formatArrhythmiaWindowsForDisplay } from '@/services/arrhythmia/utils';
 
 /**
  * Hook to handle the visualization aspects of arrhythmia detection
@@ -123,10 +124,69 @@ export function useArrhythmiaVisualization() {
     });
   }, []);
 
+  /**
+   * Process arrhythmia status from detected values
+   */
+  const processArrhythmiaStatus = useCallback((
+    status: string, 
+    data: { timestamp: number; rmssd: number; rrVariation: number; } | null
+  ): boolean => {
+    // If no data, can't process
+    if (!data) return false;
+    
+    // Check if this is a new arrhythmia event
+    const isNewEvent = status !== 'normal' && status.includes('ARRHYTHMIA DETECTED');
+    return isNewEvent;
+  }, []);
+
+  /**
+   * Register a notification for arrhythmia detection
+   */
+  const registerArrhythmiaNotification = useCallback(() => {
+    // Implementation would depend on your notification system
+    console.log('Arrhythmia notification registered at', new Date());
+    return true;
+  }, []);
+
+  /**
+   * Add an arrhythmia window for visualization
+   */
+  const addArrhythmiaWindow = useCallback((
+    timestamp: number,
+    duration: number,
+    status: ArrhythmiaStatus,
+    intervals: number[],
+    probability: number,
+    details: Record<string, any> = {}
+  ) => {
+    ArrhythmiaDetectionService.updateStatus(status, probability, {
+      ...details,
+      intervals,
+      duration
+    });
+  }, []);
+
+  /**
+   * Clear all arrhythmia windows
+   */
+  const clearArrhythmiaWindows = useCallback(() => {
+    ArrhythmiaDetectionService.clear();
+    resetArrhythmiaState();
+  }, [resetArrhythmiaState]);
+
+  // Get formatted windows for display
+  const arrhythmiaWindows = formatArrhythmiaWindowsForDisplay(arrhythmiaState.windowData);
+
   return {
     arrhythmiaState,
     getArrhythmiaInfo,
     resetArrhythmiaState,
-    arrhythmiaWindowData: arrhythmiaState.windowData
+    arrhythmiaWindowData: arrhythmiaState.windowData,
+    // Add the missing methods
+    arrhythmiaWindows,
+    addArrhythmiaWindow,
+    clearArrhythmiaWindows,
+    processArrhythmiaStatus,
+    registerArrhythmiaNotification
   };
 }

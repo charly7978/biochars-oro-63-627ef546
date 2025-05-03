@@ -30,6 +30,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   
   // Centralized arrhythmia tracking
   const { 
+    arrhythmiaState, 
+    getArrhythmiaInfo, 
+    resetArrhythmiaState, 
+    arrhythmiaWindowData,
+    // Add these correctly mapped properties
     arrhythmiaWindows, 
     addArrhythmiaWindow, 
     clearArrhythmiaWindows,
