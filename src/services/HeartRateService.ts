@@ -7,6 +7,8 @@ import { applyFilterPipeline } from '../modules/heart-beat/signal-filters';
 import { 
   detectAndConfirmPeak,
   getInitialPeakDetectionState,
+  getInitialPeakConfirmationState,
+  PeakConfirmationState,
   // PeakDetectionState 
   // detectPeak, // No longer needed separately
   // confirmPeak // No longer needed separately
@@ -90,6 +92,7 @@ class HeartRateService {
   private values: number[] = [];
   private startTime: number = 0;
   private peakDetectionState = getInitialPeakDetectionState();
+  private peakConfirmationState = getInitialPeakConfirmationState();
   private lastConfirmedPeak: boolean = false;
   private smoothBPM: number = 0;
   private readonly BPM_ALPHA: number = 0.2;
@@ -105,6 +108,7 @@ class HeartRateService {
   private lastProcessedPeakTime: number = 0;
   private debugCounter = 0; // Counter for selective logging
   private currentSignalQuality: number = 50; // Initialize quality
+  private readonly signalWindowSizeForConfirmation = 11; 
 
   private constructor() {
     this.reset();
@@ -214,12 +218,11 @@ class HeartRateService {
     if (shouldLog) console.log(`[HRS ${this.debugCounter}] Filtered: ${filteredValue.toFixed(4)}, Norm: ${normalizedValue.toFixed(4)}, Deriv: ${derivative.toFixed(4)}`);
 
     // --- Peak Detection & Confirmation --- 
-    const now = Date.now();
     const detectionResult = detectAndConfirmPeak(
       normalizedValue,
       derivative,
       this.lastValue, 
-      now,
+      Date.now(),
       this.peakDetectionState,
       {
         minPeakTimeMs: this.MIN_PEAK_TIME_MS,
@@ -230,58 +233,57 @@ class HeartRateService {
     this.peakDetectionState = detectionResult.updatedState; 
     const isConfirmedPeak = detectionResult.isPeakConfirmed;
     const peakConfidence = detectionResult.confidence;
-    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Peak Confirm: ${isConfirmedPeak}, Conf: ${peakConfidence.toFixed(2)}, AdaptThresh: ${this.peakDetectionState.adaptiveThreshold.toFixed(3)}`);
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Peak Confirm: ${isConfirmedPeak}, Conf: ${peakConfidence.toFixed(2)}`);
 
     // --- Process Confirmed Peak --- 
     let validatedRrIntervals: number[] = this.rrIntervalHistory;
-    let rrStabilityScore = 0.5;
-    let isCurrentPeakArrhythmic = false;
+    let rrStabilityScore = 0.5; 
+    let isCurrentPeakArrhythmic = false; 
 
-    if (isConfirmedPeak && !this.lastConfirmedPeak) {
-      this.lastConfirmedPeak = true;
-      
-      this.previousPeakTime = this.lastPeakTime; 
-      this.lastPeakTime = now;
-      
-      if (this.previousPeakTime !== null) {
-        const newInterval = this.lastPeakTime - this.previousPeakTime;
-        if (newInterval >= this.MIN_PEAK_TIME_MS / 1.5 && newInterval <= 2500) {
-          this.rrIntervalHistory.push(newInterval);
-          if (this.rrIntervalHistory.length > 20) this.rrIntervalHistory.shift();
-          if (shouldLog) console.log(`[HRS ${this.debugCounter}] New RR: ${newInterval} ms`);
+    if (isConfirmedPeak && !this.lastConfirmedPeak) { 
+        this.lastConfirmedPeak = true; 
+        this.previousPeakTime = this.lastPeakTime; 
+        this.lastPeakTime = Date.now();
+        
+        if (this.previousPeakTime !== null) {
+            const newInterval = this.lastPeakTime - this.previousPeakTime;
+            if (newInterval >= this.MIN_PEAK_TIME_MS / 1.5 && newInterval <= 2500) {
+                this.rrIntervalHistory.push(newInterval);
+                if (this.rrIntervalHistory.length > 20) this.rrIntervalHistory.shift();
+                if (shouldLog) console.log(`[HRS ${this.debugCounter}] New RR: ${newInterval} ms`);
+            }
         }
-      }
-      
-      validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory);
-      if (shouldLog && validatedRrIntervals.length !== this.rrIntervalHistory.length) {
-          console.log(`[HRS ${this.debugCounter}] RR Filtered: ${this.rrIntervalHistory.length} -> ${validatedRrIntervals.length}`);
-      }
-      
-      if (validatedRrIntervals.length >= 5) {
-          const { median: medianRR, mad: madRR } = calculateMAD(validatedRrIntervals);
-          if (!isNaN(medianRR) && medianRR > 0) {
-              const coeffVar = (madRR / medianRR);
-              rrStabilityScore = Math.max(0, 1 - coeffVar * 3); 
-          }
-      }
-      if (shouldLog) console.log(`[HRS ${this.debugCounter}] RR Stability Score: ${rrStabilityScore.toFixed(2)}`);
+        
+        validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory);
+        if (shouldLog && validatedRrIntervals.length !== this.rrIntervalHistory.length) {
+            console.log(`[HRS ${this.debugCounter}] RR Filtered: ${this.rrIntervalHistory.length} -> ${validatedRrIntervals.length}`);
+        }
+        
+        if (validatedRrIntervals.length >= 5) {
+            const { median: medianRR, mad: madRR } = calculateMAD(validatedRrIntervals);
+            if (!isNaN(medianRR) && medianRR > 0) {
+                const coeffVar = (madRR / medianRR);
+                rrStabilityScore = Math.max(0, 1 - coeffVar * 3); 
+            }
+        }
+        if (shouldLog) console.log(`[HRS ${this.debugCounter}] RR Stability Score: ${rrStabilityScore.toFixed(2)}`);
 
-      let currentArrhythmiaStatus: ArrhythmiaDetectionResult['category'] = 'normal';
-      if (validatedRrIntervals.length >= 5) {
-          const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(validatedRrIntervals);
-          isCurrentPeakArrhythmic = arrhythmiaResult.isArrhythmia;
-          currentArrhythmiaStatus = arrhythmiaResult.category || (isCurrentPeakArrhythmic ? 'possible-arrhythmia' : 'normal');
-      }
-      
-      if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS * 0.8) {
-          const feedbackConfidence = peakConfidence * (this.currentSignalQuality / 100) * rrStabilityScore;
-          if (shouldLog) console.log(`[HRS ${this.debugCounter}] Triggering Feedback: Arr=${isCurrentPeakArrhythmic}, Conf=${feedbackConfidence.toFixed(2)}`);
-          this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, feedbackConfidence);
-          this.notifyPeakListeners({ timestamp: now, value: normalizedValue }); 
-          this.lastProcessedPeakTime = now; 
-      }
+        let currentArrhythmiaStatus: ArrhythmiaDetectionResult['category'] = 'normal';
+        if (validatedRrIntervals.length >= 5) {
+            const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(validatedRrIntervals);
+            isCurrentPeakArrhythmic = arrhythmiaResult.isArrhythmia;
+            currentArrhythmiaStatus = arrhythmiaResult.category || (isCurrentPeakArrhythmic ? 'possible-arrhythmia' : 'normal');
+        }
+        
+        if (this.isMonitoring && !this.isInWarmup() && Date.now() - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS * 0.8) {
+            const feedbackConfidence = peakConfidence * (this.currentSignalQuality / 100) * rrStabilityScore;
+            if (shouldLog) console.log(`[HRS ${this.debugCounter}] Triggering Feedback: Arr=${isCurrentPeakArrhythmic}, Conf=${feedbackConfidence.toFixed(2)}`);
+            this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, feedbackConfidence);
+            this.notifyPeakListeners({ timestamp: Date.now(), value: normalizedValue }); 
+            this.lastProcessedPeakTime = Date.now(); 
+        }
     } else if (!isConfirmedPeak) {
-      this.lastConfirmedPeak = false;
+        this.lastConfirmedPeak = false; 
     }
     
     if (this.rrIntervalHistory.length > 0) {
@@ -405,6 +407,7 @@ class HeartRateService {
     this.values = [];
     this.startTime = Date.now();
     this.peakDetectionState = getInitialPeakDetectionState();
+    this.peakConfirmationState = getInitialPeakConfirmationState();
     this.lastConfirmedPeak = false;
     this.smoothBPM = 0;
     this.peakCandidateIndex = null;

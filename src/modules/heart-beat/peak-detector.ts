@@ -145,14 +145,7 @@ interface PeakDetectionState {
   minPeakValue: number; 
 }
 
-// Estado de confirmación eliminado por ahora
-/*
-export interface PeakConfirmationState {
-  buffer: number[]; 
-  lastConfirmedPeak: boolean;
-}
-*/
-
+// Restaurar PEAK_STATE_DEFAULTS aquí
 const PEAK_STATE_DEFAULTS: PeakDetectionState = {
   lastPeakTime: null,
   adaptiveThreshold: HeartBeatConfig.SIGNAL_THRESHOLD, 
@@ -161,11 +154,134 @@ const PEAK_STATE_DEFAULTS: PeakDetectionState = {
   minPeakValue: HeartBeatConfig.SIGNAL_THRESHOLD * 0.4 
 };
 
+// Interfaz para el estado de confirmación (restaurada)
+export interface PeakConfirmationState {
+  buffer: number[]; // Almacena valores normalizados si son picos candidatos
+  lastConfirmedPeak: boolean;
+}
+
+// Restaurar constante por defecto
+const CONFIRMATION_STATE_DEFAULTS: PeakConfirmationState = {
+  buffer: [],
+  lastConfirmedPeak: false,
+};
+
+// Restaurar constantes de validación
+const CONFIRMATION_WINDOW_SIZE = 5;
+const MIN_PEAK_PROMINENCE_FACTOR = 0.4; 
+const MAX_PEAK_WIDTH_SAMPLES = 8; 
+
+/**
+ * Confirma si un pico candidato es válido basado en contexto local.
+ * Incluye validación de prominencia y anchura.
+ */
+export function confirmPeak(
+  isPeakCandidate: boolean,
+  normalizedValue: number,
+  confidence: number,
+  signalWindow: number[], // Ventana de señal normalizada alrededor del punto actual
+  currentState: PeakConfirmationState,
+  minConfidence: number,
+  adaptiveThreshold: number // Usar el umbral calculado en detectPeak
+): {
+  isConfirmedPeak: boolean;
+  updatedState: PeakConfirmationState;
+} {
+  let isConfirmed = false;
+  // Usar una copia del estado para no mutar el original directamente aquí
+  let updatedBuffer = [...currentState.buffer];
+  let updatedLastConfirmed = currentState.lastConfirmedPeak;
+
+  updatedBuffer.push(isPeakCandidate ? normalizedValue : -1); 
+  if (updatedBuffer.length > CONFIRMATION_WINDOW_SIZE) {
+    updatedBuffer.shift();
+  }
+
+  // Asegurar que tengamos suficientes datos en el buffer de confirmación
+  if (updatedBuffer.length < CONFIRMATION_WINDOW_SIZE) {
+       return { 
+           isConfirmedPeak: false, 
+           updatedState: { buffer: updatedBuffer, lastConfirmedPeak: false }
+       };
+  }
+
+  const currentWindowIndex = Math.floor(CONFIRMATION_WINDOW_SIZE / 2);
+  
+  // Solo confirmar si el punto central del buffer es un candidato válido
+  if (updatedBuffer[currentWindowIndex] > 0 && 
+      confidence >= minConfidence && 
+      !currentState.lastConfirmedPeak) { // Evitar confirmar inmediatamente después de otra confirmación
+
+    // 1. Es máximo local en la ventana de confirmación?
+    let isLocalMax = true;
+    for (let i = 0; i < CONFIRMATION_WINDOW_SIZE; i++) {
+      // Comparar con el valor en el buffer, no el normalizedValue actual
+      if (i !== currentWindowIndex && updatedBuffer[i] > updatedBuffer[currentWindowIndex]) {
+        isLocalMax = false;
+        break;
+      }
+    }
+
+    if (isLocalMax) {
+      // 2. Validar Prominencia y Anchura usando signalWindow
+      // Asegurar que signalWindow tenga longitud impar y el pico esté en el centro
+      if (signalWindow && signalWindow.length % 2 === 1) { 
+          const windowCenterIndex = Math.floor(signalWindow.length / 2);
+          // Verificar que el índice central corresponda al pico que estamos confirmando
+          // (Esta verificación puede ser compleja, asumimos que signalWindow está correctamente alineada)
+          const peakValue = signalWindow[windowCenterIndex]; 
+          
+          let leftValley = peakValue;
+          let rightValley = peakValue;
+          let peakWidth = 1;
+          let leftIndex = windowCenterIndex - 1;
+          let rightIndex = windowCenterIndex + 1;
+          
+          // Izquierda
+          while (leftIndex >= 0 && peakWidth < MAX_PEAK_WIDTH_SAMPLES / 2) {
+              if (signalWindow[leftIndex] >= signalWindow[leftIndex + 1]) break; 
+              leftValley = Math.min(leftValley, signalWindow[leftIndex]);
+              peakWidth++;
+              leftIndex--;
+          }
+          // Derecha
+          while (rightIndex < signalWindow.length && peakWidth < MAX_PEAK_WIDTH_SAMPLES) {
+              if (signalWindow[rightIndex] >= signalWindow[rightIndex - 1]) break; 
+              rightValley = Math.min(rightValley, signalWindow[rightIndex]);
+              peakWidth++;
+              rightIndex++;
+          }
+
+          const prominence = peakValue - Math.max(leftValley, rightValley);
+          
+          // Validar
+          if (prominence >= adaptiveThreshold * MIN_PEAK_PROMINENCE_FACTOR && 
+              peakWidth <= MAX_PEAK_WIDTH_SAMPLES) {
+             isConfirmed = true;
+          } else {
+              // console.log(`Peak rejected: Prominence=${prominence.toFixed(2)}, Width=${peakWidth}`);
+          }
+      } else {
+          // Si signalWindow no es válida, usar confirmación simple basada en confianza y localMax
+          isConfirmed = true; 
+      }
+    }
+  }
+
+  updatedLastConfirmed = isConfirmed;
+  return { 
+      isConfirmedPeak: isConfirmed, 
+      // Devolver el estado actualizado
+      updatedState: { buffer: updatedBuffer, lastConfirmedPeak: updatedLastConfirmed } 
+  };
+}
+
+// Restaurar la función para obtener estado de confirmación inicial
+export function getInitialPeakConfirmationState(): PeakConfirmationState {
+    return JSON.parse(JSON.stringify(CONFIRMATION_STATE_DEFAULTS));
+}
+
 // Constantes para lógica
 const ADAPTIVE_THRESHOLD_WINDOW = 15; 
 const AMPLITUDE_BUFFER_SIZE = 20;
-// Constantes de confirmación no usadas directamente ahora
-// const CONFIRMATION_WINDOW_SIZE = 5;
-// const MIN_PEAK_PROMINENCE_FACTOR = 0.4; 
-// const MAX_PEAK_WIDTH_SAMPLES = 8; 
 const REFRACTORY_PERIOD_MS = HeartBeatConfig.MIN_PEAK_TIME_MS * 0.6; 

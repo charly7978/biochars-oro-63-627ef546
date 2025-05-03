@@ -11,6 +11,7 @@ import { VitalSignsProcessor } from "@/modules/vital-signs/VitalSignsProcessor";
 import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
 import { HeartBeatConfig } from "@/modules/heart-beat/config";
+import { PeakData } from "@/types/peak";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -33,6 +34,7 @@ const Index = () => {
   const [signalQuality, setSignalQuality] = useState(0);
   const [isArrhythmia, setIsArrhythmia] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [lastPeakData, setLastPeakData] = useState<PeakData | null>(null);
   const measurementTimer = useRef<NodeJS.Timeout | null>(null);
   const lastSignalValueRef = useRef<number>(0);
   const animationFrameRef = useRef<number | null>(null);
@@ -46,46 +48,9 @@ const Index = () => {
     return () => {
         currentProcessor?.reset();
         currentVitalsProcessor?.fullReset();
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
     };
   }, []);
-
-  const processPPGData = useCallback(() => {
-    if (!isMonitoring) {
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-        animationFrameRef.current = null;
-        return;
-    }
-
-    const ppgValue = lastSignalValueRef.current;
-    
-    const hrResult = processorRef.current.processSignal(ppgValue);
-    const currentHeartRate = hrResult.bpm > 0 ? hrResult.bpm : NaN;
-    setHrConfidence(hrResult.confidence);
-    
-    let currentArrhythmiaStatus: VitalSignsResult['arrhythmiaStatus'] = 'Normal';
-    let currentLastArrhythmiaData = null;
-    if (hrResult.rrData) {
-        const arrhythmiaResult = ArrhythmiaDetectionServiceInstance.detectArrhythmia(hrResult.rrData.intervals);
-        setIsArrhythmia(arrhythmiaResult.isArrhythmia);
-        currentArrhythmiaStatus = arrhythmiaResult.isArrhythmia ? arrhythmiaResult.category || 'Detected' : 'Normal';
-    }
-    
-    const otherVitalsPartial = vitalSignsProcessorRef.current.processSignal(hrResult.filteredValue); 
-    
-    const currentSignalQuality = Math.round(hrResult.confidence * 100);
-    setSignalQuality(currentSignalQuality); 
-
-    setVitalSigns(prev => ({ 
-        ...prev,
-        ...otherVitalsPartial,
-        heartRate: currentHeartRate, 
-        arrhythmiaStatus: currentArrhythmiaStatus,
-    }));
-
-    if (isMonitoring) {
-        animationFrameRef.current = requestAnimationFrame(processPPGData);
-    }
-  }, [isMonitoring]);
 
   const startMonitoring = () => {
     console.log("Starting monitoring...");
@@ -99,6 +64,7 @@ const Index = () => {
     setIsArrhythmia(false);
     setHrConfidence(0);
     setSignalQuality(0);
+    setLastPeakData(null);
     processorRef.current.reset(); 
     vitalSignsProcessorRef.current.fullReset(); 
     ArrhythmiaDetectionServiceInstance.reset(); 
@@ -115,16 +81,11 @@ const Index = () => {
   const finalizeMeasurement = () => {
     if (!isMonitoring) return;
     console.log("Finalizing measurement...");
-    const finalVitalsPartial = vitalSignsProcessorRef.current.getLastValidResult();
-    const finalHr = processorRef.current.getFinalBPM();
-    const finalArrhythmiaStatus = ArrhythmiaDetectionServiceInstance.getArrhythmiaStatus();
+    stopMonitoring();
+    setShowResults(true);
     setVitalSigns(prev => ({
          ...prev, 
-         ...(finalVitalsPartial || {}),
-         heartRate: finalHr
     }));
-    setShowResults(true);
-    stopMonitoring();
   };
 
   const stopMonitoring = () => {
@@ -162,11 +123,13 @@ const Index = () => {
     setSignalQuality(0);
     setIsArrhythmia(false);
     setShowResults(false);
+    setLastPeakData(null);
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
   };
 
   const handleStreamReady = useCallback((mediaStream: MediaStream) => {
     if (!isMonitoring) {
+        console.log("Stopping capture loop (stream no longer active).");
         mediaStream.getTracks().forEach(track => track.stop());
         return; 
     } 
@@ -225,12 +188,34 @@ const Index = () => {
                 for (let i = 0; i < data.length; i += 4) {
                     sumR += data[i];
                 }
-                lastSignalValueRef.current = data.length > 0 ? (sumR / (data.length / 4)) : 0;
+                const ppgValue = data.length > 0 ? (sumR / (data.length / 4)) : 0;
+                lastSignalValueRef.current = ppgValue;
 
-                if (animationFrameRef.current === null) { 
-                   console.log("Starting processPPGData loop");
-                   processPPGData();
+                const hrResult = processorRef.current.processSignal(ppgValue);
+                const currentHeartRate = hrResult.bpm > 0 ? hrResult.bpm : NaN;
+                const currentHrConfidence = hrResult.confidence;
+                const currentSignalQualityEst = Math.round(currentHrConfidence * 100);
+                setLastPeakData(hrResult.isPeak ? { timestamp: hrResult.lastPeakTime || Date.now(), value: hrResult.filteredValue } : null);
+                
+                let currentArrhythmiaStatus: VitalSignsResult['arrhythmiaStatus'] = 'Normal';
+                let currentIsArrhythmia = false;
+                if (hrResult.rrData && hrResult.rrData.intervals.length > 0) {
+                    const arrhythmiaResult = ArrhythmiaDetectionServiceInstance.detectArrhythmia(hrResult.rrData.intervals);
+                    currentIsArrhythmia = arrhythmiaResult.isArrhythmia;
+                    currentArrhythmiaStatus = arrhythmiaResult.isArrhythmia ? arrhythmiaResult.category || 'Detected' : 'Normal';
                 }
+                
+                const otherVitalsPartial = vitalSignsProcessorRef.current.processSignal(hrResult.filteredValue); 
+
+                setVitalSigns(prev => ({ 
+                    ...prev,
+                    ...otherVitalsPartial,
+                    heartRate: currentHeartRate, 
+                    arrhythmiaStatus: currentArrhythmiaStatus,
+                }));
+                setHrConfidence(currentHrConfidence);
+                setSignalQuality(currentSignalQualityEst);
+                setIsArrhythmia(currentIsArrhythmia);
 
             } catch (error) {
                  if (error instanceof DOMException && error.name === 'InvalidStateError') {
@@ -249,7 +234,7 @@ const Index = () => {
 
     requestAnimationFrame(captureAndProcess);
 
-  }, [isMonitoring, processPPGData]);
+  }, [isMonitoring]);
 
   const handleToggleMonitoring = () => {
     if (isMonitoring) {
@@ -293,12 +278,14 @@ const Index = () => {
           </div>
           <div className="flex-1">
             <PPGSignalMeter 
-              value={lastSignalValueRef.current}
+              value={processorRef.current?.smoothedValue || 0}
               quality={signalQuality} 
               isFingerDetected={signalQuality > 10}
+              isPeak={lastPeakData !== null}
+              peakTimestamp={lastPeakData?.timestamp}
               onStartMeasurement={startMonitoring} 
               onReset={handleReset} 
-              arrhythmiaStatus={ArrhythmiaDetectionServiceInstance.getArrhythmiaStatus().statusMessage || "--"} 
+              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
               arrhythmiaWindows={ArrhythmiaDetectionServiceInstance.windowManager.getArrhythmiaWindows()}
