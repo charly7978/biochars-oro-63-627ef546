@@ -34,7 +34,9 @@ export function useArrhythmiaDetector() {
   return {
     detectArrhythmia,
     lastRRIntervalsRef,
-    lastIsArrhythmiaRef: { current: false }, // Service now handles this state
+    lastIsArrhythmiaRef: { 
+      get current() { return ArrhythmiaDetectionService.isArrhythmia(); }
+    },
     currentBeatIsArrhythmiaRef: { 
       get current() { return ArrhythmiaDetectionService.isArrhythmia(); }
     },

@@ -28,6 +28,11 @@ export interface RRAnalysisResult {
    * Boolean flag indicating whether an arrhythmia was detected
    */
   isArrhythmia: boolean;
+
+  /**
+   * Optional category of the detected arrhythmia
+   */
+  category?: string;
 }
 
 /**
@@ -46,6 +51,7 @@ export interface ArrhythmiaProcessingResult {
   lastArrhythmiaData: { 
     timestamp: number; 
     rmssd: number; 
-    rrVariation: number; 
+    rrVariation: number;
+    category?: string; 
   } | null;
 }
