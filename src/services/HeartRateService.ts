@@ -15,6 +15,7 @@ import { PeakData, RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import { ArrhythmiaDetectionResult } from './arrhythmia/types';
 
 export interface HeartRateResult {
   bpm: number;
@@ -294,15 +295,23 @@ class HeartRateService {
       
       // Activar retroalimentación si el monitoreo está activo
       if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
-        const isCurrentPeakArrhythmic = ArrhythmiaDetectionService.detectArrhythmia(this.rrIntervalHistory)?.isArrhythmia || false;
-        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, realMin(0.8, realAbs(normalizedValue) + 0.3));
-        this.lastProcessedPeakTime = now;
+        let arrhythmiaResult: ArrhythmiaDetectionResult | null = null;
+        let isPotentialArrhythmia = false;
         
-        // Notificar a los escuchadores
+        if (this.rrIntervalHistory.length > 5) { // Necesita suficientes intervalos
+          arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(this.rrIntervalHistory);
+          isPotentialArrhythmia = arrhythmiaResult?.isArrhythmia || false;
+        }
+        
+        const isCurrentPeakArrhythmic = arrhythmiaResult?.isArrhythmia || false;
+        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, confidence);
+        
+        // Notify listeners about the peak
         this.notifyPeakListeners({
-          timestamp: now,
-          value: normalizedValue,
-          isArrhythmia: isCurrentPeakArrhythmic
+          timestamp: now, 
+          value: normalizedValue, 
+          isArrhythmia: isCurrentPeakArrhythmic, 
+          isPotentialArrhythmia: isPotentialArrhythmia
         });
       }
     }
