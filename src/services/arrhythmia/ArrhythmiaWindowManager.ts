@@ -1,109 +1,150 @@
 
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
-import { ArrhythmiaListener } from './types';
-import { realAbs } from './utils';
-
 /**
- * Manages arrhythmia visualization windows and listeners
+ * Administrador de ventana deslizante para intervalos RR
+ * Permite almacenar y analizar intervalos temporales entre latidos cardíacos
+ * 
+ * IMPORTANTE: Este componente SOLO utiliza datos reales, no simulaciones.
  */
+
 export class ArrhythmiaWindowManager {
-  private arrhythmiaWindows: ArrhythmiaWindow[] = [];
-  private arrhythmiaListeners: ArrhythmiaListener[] = [];
-  private windowGenerationCounter: number = 0;
-
-  /**
-   * Register for arrhythmia window notifications
-   */
-  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
-    this.arrhythmiaListeners.push(listener);
+  private intervals: number[] = [];
+  private readonly maxSize: number;
+  
+  constructor(maxSize: number = 30) {
+    this.maxSize = maxSize;
   }
-
+  
   /**
-   * Remove arrhythmia listener
+   * Añade un nuevo intervalo RR a la ventana
    */
-  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
-    this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
+  public addInterval(interval: number): void {
+    // Validar intervalo (debe ser positivo y fisiológicamente plausible)
+    if (interval <= 0 || interval > 2000) return;
+    
+    this.intervals.push(interval);
+    
+    // Mantener tamaño de ventana
+    if (this.intervals.length > this.maxSize) {
+      this.intervals.shift();
+    }
   }
-
+  
   /**
-   * Notify all listeners about a new arrhythmia window
+   * Obtiene todos los intervalos almacenados
    */
-  private notifyListeners(window: ArrhythmiaWindow): void {
-    this.arrhythmiaListeners.forEach(listener => {
-      try {
-        listener(window);
-      } catch (error) {
-        console.error("Error in arrhythmia listener:", error);
+  public getAllIntervals(): number[] {
+    return [...this.intervals];
+  }
+  
+  /**
+   * Obtiene los N intervalos más recientes
+   */
+  public getRecentIntervals(count: number): number[] {
+    const startIndex = Math.max(0, this.intervals.length - count);
+    return this.intervals.slice(startIndex);
+  }
+  
+  /**
+   * Calcula la variabilidad RR (RMSSD) de la ventana actual
+   */
+  public calculateRMSSD(): number {
+    if (this.intervals.length < 2) return 0;
+    
+    let sumSquaredDiff = 0;
+    for (let i = 1; i < this.intervals.length; i++) {
+      const diff = this.intervals[i] - this.intervals[i-1];
+      sumSquaredDiff += diff * diff;
+    }
+    
+    return Math.sqrt(sumSquaredDiff / (this.intervals.length - 1));
+  }
+  
+  /**
+   * Calcula el ritmo cardíaco promedio basado en los intervalos
+   */
+  public calculateAverageHeartRate(): number {
+    if (this.intervals.length === 0) return 0;
+    
+    const avgInterval = this.intervals.reduce((sum, interval) => sum + interval, 0) / 
+                        this.intervals.length;
+    
+    // Convertir de ms a BPM
+    return Math.round(60000 / avgInterval);
+  }
+  
+  /**
+   * Verifica si hay un patrón de arritmia específico
+   */
+  public hasArrhythmiaPattern(pattern: 'irregular' | 'bigeminy' | 'trigeminy'): boolean {
+    if (this.intervals.length < 4) return false;
+    
+    // Calcular promedio
+    const mean = this.calculateAverage();
+    
+    if (pattern === 'irregular') {
+      // Contar intervalos irregulares (>20% de desviación)
+      let irregularCount = 0;
+      
+      for (let i = 1; i < this.intervals.length; i++) {
+        const percentDiff = Math.abs(this.intervals[i] - this.intervals[i-1]) / this.intervals[i-1];
+        if (percentDiff > 0.2) {
+          irregularCount++;
+        }
       }
-    });
-  }
-
-  /**
-   * Add a new arrhythmia window for visualization
-   */
-  public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
-    // Check if there's a similar recent window (within 500ms)
-    const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
-      realAbs(existingWindow.start - window.start) < 500 && 
-      realAbs(existingWindow.end - window.end) < 500
-    );
-    
-    if (hasRecentWindow) {
-      return; // Don't add duplicate windows
+      
+      return irregularCount / (this.intervals.length - 1) > 0.5;
     }
     
-    // Add new arrhythmia window
-    this.arrhythmiaWindows.push(window);
-    
-    // Sort by time for consistent visualization
-    this.arrhythmiaWindows.sort((a, b) => b.start - a.start);
-    
-    // Limit to the 5 most recent windows
-    if (this.arrhythmiaWindows.length > 5) {
-      this.arrhythmiaWindows = this.arrhythmiaWindows.slice(0, 5);
+    if (pattern === 'bigeminy') {
+      // Verificar patrón corto-largo alternante
+      for (let i = 2; i < this.intervals.length; i += 2) {
+        const shortLongPattern = (
+          this.intervals[i-2] < mean * 0.9 &&
+          this.intervals[i-1] > mean * 1.1 &&
+          this.intervals[i] < mean * 0.9
+        );
+        
+        if (!shortLongPattern) {
+          return false;
+        }
+      }
+      
+      return true;
     }
     
-    // Debug log
-    console.log("Arrhythmia window added for visualization", {
-      startTime: new Date(window.start).toISOString(),
-      endTime: new Date(window.end).toISOString(),
-      duration: window.end - window.start,
-      windowsCount: this.arrhythmiaWindows.length
-    });
-    
-    // Notify listeners about the new window
-    this.notifyListeners(window);
-  }
-
-  /**
-   * Get all current arrhythmia windows
-   */
-  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
-    return [...this.arrhythmiaWindows];
-  }
-
-  /**
-   * Clear outdated arrhythmia windows
-   */
-  public cleanupOldWindows(): void {
-    const currentTime = Date.now();
-    // Filter only recent windows (less than 20 seconds)
-    const oldWindows = this.arrhythmiaWindows.filter(window => 
-      currentTime - window.end < 20000
-    );
-    
-    // Only update if there are changes
-    if (oldWindows.length !== this.arrhythmiaWindows.length) {
-      console.log(`Cleaned up old arrhythmia windows: removed ${this.arrhythmiaWindows.length - oldWindows.length} windows`);
-      this.arrhythmiaWindows = oldWindows;
+    if (pattern === 'trigeminy') {
+      // Patrón con un latido prematuro cada tres
+      for (let i = 3; i < this.intervals.length; i += 3) {
+        const trigeminyPattern = (
+          Math.abs(this.intervals[i-3] - mean) < mean * 0.1 &&
+          Math.abs(this.intervals[i-2] - mean) < mean * 0.1 &&
+          this.intervals[i-1] < mean * 0.7 &&
+          Math.abs(this.intervals[i] - mean) < mean * 0.1
+        );
+        
+        if (!trigeminyPattern) {
+          return false;
+        }
+      }
+      
+      return true;
     }
+    
+    return false;
   }
-
+  
   /**
-   * Reset window state
+   * Limpia todos los intervalos almacenados
    */
-  public reset(): void {
-    this.arrhythmiaWindows = [];
-    this.windowGenerationCounter = 0;
+  public clear(): void {
+    this.intervals = [];
+  }
+  
+  /**
+   * Calcula el promedio de los intervalos
+   */
+  private calculateAverage(): number {
+    if (this.intervals.length === 0) return 0;
+    return this.intervals.reduce((sum, val) => sum + val, 0) / this.intervals.length;
   }
 }
