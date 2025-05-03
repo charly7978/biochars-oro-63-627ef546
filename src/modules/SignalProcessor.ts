@@ -189,7 +189,7 @@ export class PPGSignalProcessor implements SignalProcessor {
       const redValue = this.extractRedChannel(imageData);
       
       // Aplicar filtrado inicial para reducir ruido
-      const filtered = this.kalmanFilter.filter(redValue);
+      const filtered = this.kalmanFilter.update(redValue);
       
       // Almacenar para análisis
       this.lastValues.push(filtered);

@@ -9,7 +9,7 @@ import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
 import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
 
@@ -38,7 +38,6 @@ const Index = () => {
 
   const { 
     processSignal: processHeartBeat, 
-    isArrhythmia: heartBeatIsArrhythmia,
     startMonitoring: startHeartBeatMonitoring,
     stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
@@ -104,14 +103,13 @@ const Index = () => {
                   spo2: vitals.spo2, 
                   pressure: vitals.pressure,
                   glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin,
                   frameCount: processedFrameCountRef.current
                 });
               }
               
               setVitalSigns(vitals);
+              
+              // Get arrhythmia state directly from the centralized service
               setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
               
               if (processedFrameCountRef.current % 60 === 0) {
@@ -120,9 +118,6 @@ const Index = () => {
                   spo2: vitals.spo2,
                   pressure: vitals.pressure,
                   glucose: vitals.glucose,
-                  hydration: vitals.hydration,
-                  lipids: vitals.lipids,
-                  hemoglobin: vitals.hemoglobin
                 });
               }
             }
@@ -142,7 +137,7 @@ const Index = () => {
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, heartBeatIsArrhythmia]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
@@ -366,19 +361,8 @@ const Index = () => {
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-2">
                 <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
-                <VitalSign 
-                  label="HIDRATACIÓN" 
-                  value={vitalSigns.hydration || "--"} 
-                  unit="%" 
-                  highlighted={showResults} 
-                  icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />} 
-                  compact={false} 
-                />
+                <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
               </div>
-              <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
-              <VitalSign label="HEMOGLOBINA" value={vitalSigns.hemoglobin || "--"} unit="g/dL" highlighted={showResults} compact={false} />
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">

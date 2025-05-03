@@ -10,6 +10,7 @@ import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
+import ArrhythmiaDetectionService from '@/services/arrhythmia'; 
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -22,10 +23,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   // Session tracking
   const sessionId = useRef<string>(`session_${Date.now()}`);
   
-  // Signal quality tracking - MODIFICADO: Umbrales más permisivos
+  // Signal quality tracking
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.02; // MODIFICADO: Umbral más permisivo (0.03 → 0.02)
-  const MAX_WEAK_SIGNALS = 10;      // MODIFICADO: Mayor tolerancia (15 → 10)
+  const LOW_SIGNAL_THRESHOLD = 0.02;
+  const MAX_WEAK_SIGNALS = 10;
   
   // Centralized arrhythmia tracking
   const { 
@@ -95,9 +96,14 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
+    // If we have RR data, update the arrhythmia service
+    if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+      ArrhythmiaDetectionService.updateRRIntervals(rrData.intervals);
+    }
+    
     // Process signal directly - no simulation
     try {
-      // MODIFICADO: Procesamos la señal incluso si es débil para obtener más resultados
+      // We process the signal even if weak to get more results
       let result = processVitalSignal(value, rrData, isWeakSignal);
       
       // Process and handle arrhythmia events with our centralized system
@@ -118,7 +124,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Log más detallado para debug - MODIFICADO: Frecuencia reducida para claridad
+      // Log detailed debugging info at intervals
       if (processedSignals.current % 20 === 0) {
         console.log("useVitalSignsProcessor: Evaluating results", {
           sessionId: sessionId.current,

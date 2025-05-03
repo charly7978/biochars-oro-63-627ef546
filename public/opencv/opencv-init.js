@@ -1,8 +1,4 @@
-// Inicialización de OpenCV.js
-window.Module = {
-  onRuntimeInitialized: function() {
-    console.log('✅ OpenCV.js runtime inicializado');
-    document.dispatchEvent(new Event('opencv-ready'));
-    window.cv_ready = true;
-  }
-}; 
+
+// Este archivo es requerido por referencias del código pero no se usa
+// Se mantiene como placeholder para evitar errores de carga
+console.log("OpenCV inicialización no implementada - usando procesamiento directo");

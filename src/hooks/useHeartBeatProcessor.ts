@@ -1,11 +1,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
-// import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector'; // Eliminado
 import HeartRateService from '@/services/HeartRateService';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
-import ArrhythmiaDetectionService from '@/services/arrhythmia'; // Updated import
-import type { ArrhythmiaDetectionResult } from '@/services/arrhythmia'; // Updated import
+import ArrhythmiaDetectionService from '@/services/arrhythmia'; // Unified import
+import type { ArrhythmiaDetectionResult } from '@/services/arrhythmia'; // Unified import
 import { HeartRateResult } from '@/services/HeartRateService';
 
 export interface UseHeartBeatReturn {
@@ -32,14 +31,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   // Estado/Ref para resultado de arritmia del servicio centralizado
   const isArrhythmiaRef = useRef<boolean>(false);
   const arrhythmiaCategoryRef = useRef<ArrhythmiaDetectionResult['category']>('normal');
-
-  // // Hooks para detección de arritmias heredado - ELIMINADO
-  // const {
-  //   detectArrhythmia,
-  //   lastRRIntervalsRef,
-  //   currentBeatIsArrhythmiaRef,
-  //   reset: resetArrhythmiaDetector
-  // } = useArrhythmiaDetector();
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing processor', {
@@ -122,8 +113,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     setConfidence(0);
     isArrhythmiaRef.current = false; // Resetear estado interno
     arrhythmiaCategoryRef.current = 'normal';
-    
-    // resetArrhythmiaDetector(); // Llamada eliminada
   }, []);
 
   // Iniciar monitoreo

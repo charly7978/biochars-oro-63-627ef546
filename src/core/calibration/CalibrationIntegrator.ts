@@ -1,4 +1,3 @@
-
 import { getCalibrationSystem, MeasurementData } from './IntelligentCalibrationSystem';
 import { getModel } from '../neural/ModelRegistry';
 import { HeartRateNeuralModel } from '../neural/HeartRateModel';
@@ -34,8 +33,9 @@ export class CalibrationIntegrator {
   
   /**
    * Procesa una medición mediante el sistema de calibración y los modelos neuronales
+   * Ahora es asíncrono debido a la carga/predicción del modelo.
    */
-  public processMeasurement(rawData: {
+  public async processMeasurement(rawData: {
     ppgValues: number[];
     heartRate: number;
     spo2: number;
@@ -43,7 +43,7 @@ export class CalibrationIntegrator {
     diastolic: number;
     glucose: number;
     quality: number;
-  }): {
+  }): Promise<{
     heartRate: number;
     spo2: number;
     systolic: number;
@@ -51,7 +51,7 @@ export class CalibrationIntegrator {
     glucose: number;
     quality: number;
     isCalibrated: boolean;
-  } {
+  }> {
     // Preparar datos de medición
     const measurementData: MeasurementData = {
       timestamp: Date.now(),
@@ -71,7 +71,7 @@ export class CalibrationIntegrator {
     // Aplicar modelos neuronales si hay suficiente señal de buena calidad
     if (rawData.quality > 75 && rawData.ppgValues && rawData.ppgValues.length > 200) {
       // Usar modelos neuronales para obtener estimaciones independientes
-      const neuralEstimates = this.applyNeuralModels(rawData.ppgValues);
+      const neuralEstimates = await this.applyNeuralModels(rawData.ppgValues);
       
       // Combinar estimaciones calibradas con las neurales (70/30)
       return {
@@ -99,14 +99,15 @@ export class CalibrationIntegrator {
   
   /**
    * Aplica modelos neuronales para obtener estimaciones independientes
+   * Ahora es asíncrono.
    */
-  private applyNeuralModels(ppgValues: number[]): {
+  private async applyNeuralModels(ppgValues: number[]): Promise<{
     heartRate: number;
     spo2: number;
     systolic: number;
     diastolic: number;
     glucose: number;
-  } {
+  }> {
     // Valores por defecto
     const defaultEstimates = {
       heartRate: 75,
@@ -117,25 +118,26 @@ export class CalibrationIntegrator {
     };
     
     try {
-      // Obtener estimaciones de cada modelo
-      const heartRateModel = getModel<HeartRateNeuralModel>('heartRate');
-      const spo2Model = getModel<SpO2NeuralModel>('spo2');
-      const bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
-      const glucoseModel = getModel<GlucoseNeuralModel>('glucose');
+      // Obtener estimaciones de cada modelo (ahora asíncrono)
+      const heartRateModel = await getModel<HeartRateNeuralModel>('heartRate');
+      const spo2Model = await getModel<SpO2NeuralModel>('spo2');
+      const bpModel = await getModel<BloodPressureNeuralModel>('bloodPressure');
+      const glucoseModel = await getModel<GlucoseNeuralModel>('glucose');
       
-      // Aplicar modelos que estén disponibles
-      const heartRate = heartRateModel ? heartRateModel.predict(ppgValues)[0] : defaultEstimates.heartRate;
-      const spo2 = spo2Model ? spo2Model.predict(ppgValues)[0] : defaultEstimates.spo2;
+      // Aplicar modelos que estén disponibles y cargados
+      // Las predicciones ahora son asíncronas
+      const heartRate = heartRateModel ? (await heartRateModel.predict(ppgValues))[0] : defaultEstimates.heartRate;
+      const spo2 = spo2Model ? (await spo2Model.predict(ppgValues))[0] : defaultEstimates.spo2;
       
       let systolic = defaultEstimates.systolic;
       let diastolic = defaultEstimates.diastolic;
       if (bpModel) {
-        const bpResult = bpModel.predict(ppgValues);
+        const bpResult = await bpModel.predict(ppgValues);
         systolic = bpResult[0];
         diastolic = bpResult[1];
       }
       
-      const glucose = glucoseModel ? glucoseModel.predict(ppgValues)[0] : defaultEstimates.glucose;
+      const glucose = glucoseModel ? (await glucoseModel.predict(ppgValues))[0] : defaultEstimates.glucose;
       
       return { heartRate, spo2, systolic, diastolic, glucose };
     } catch (error) {

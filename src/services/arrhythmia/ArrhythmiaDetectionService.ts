@@ -11,7 +11,8 @@ import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
 import { 
   ArrhythmiaDetectionResult, 
   ArrhythmiaStatus, 
-  UserProfile 
+  UserProfile,
+  ArrhythmiaListener
 } from './types';
 import { 
   DEFAULT_THRESHOLDS, 
@@ -26,8 +27,8 @@ class ArrhythmiaDetectionService {
   private static instance: ArrhythmiaDetectionService;
   private userProfile: UserProfile = {};
   
-  // Window manager
-  private windowManager = new ArrhythmiaWindowManager();
+  // Window manager - exportado como público para unificar la visualización
+  public windowManager = new ArrhythmiaWindowManager();
   
   // Detection state
   private lastRRIntervals: number[] = [];
@@ -47,8 +48,8 @@ class ArrhythmiaDetectionService {
   // False positive prevention - adjusted to require more evidence
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private REQUIRED_CONFIRMATIONS: number = DEFAULT_THRESHOLDS.REQUIRED_CONFIRMATIONS;
-  private CONFIRMATION_WINDOW_MS: number = DEFAULT_THRESHOLDS.CONFIRMATION_WINDOW_MS;
+  private REQUIRED_CONFIRMATIONS: number = 1;
+  private CONFIRMATION_WINDOW_MS: number = 10000;
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -82,14 +83,14 @@ class ArrhythmiaDetectionService {
   /**
    * Register for arrhythmia window notifications
    */
-  public addArrhythmiaListener(listener: (window: ArrhythmiaWindow) => void): void {
+  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
     this.windowManager.addArrhythmiaListener(listener);
   }
 
   /**
    * Remove arrhythmia listener
    */
-  public removeArrhythmiaListener(listener: (window: ArrhythmiaWindow) => void): void {
+  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
     this.windowManager.removeArrhythmiaListener(listener);
   }
 
@@ -378,4 +379,3 @@ class ArrhythmiaDetectionService {
 }
 
 export default ArrhythmiaDetectionService.getInstance();
-
