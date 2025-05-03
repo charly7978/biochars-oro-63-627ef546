@@ -304,7 +304,7 @@ export class VitalSignsProcessor {
         timestamp: lastArrhythmiaData.timestamp,
         rmssd: lastArrhythmiaData.rmssd || 0,
         rrVariation: lastArrhythmiaData.rrVariation || 0,
-        category: lastArrhythmiaData.category || ""
+        category: lastArrhythmiaData.category
       } : null
     );
     
