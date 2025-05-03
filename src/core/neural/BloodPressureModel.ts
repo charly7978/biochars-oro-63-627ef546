@@ -24,7 +24,7 @@ const BP_MODEL_CONFIG = {
  * utilizando TensorFlow.js.
  */
 export class BloodPressureNeuralModel extends BaseNeuralModel {
-
+  
   constructor() {
     super(
       BP_MODEL_CONFIG.name,

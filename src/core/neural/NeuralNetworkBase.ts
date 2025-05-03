@@ -20,7 +20,7 @@ export abstract class BaseNeuralModel {
   private _isLoading: boolean = false;
   private _lastPredictionTime: number = 0;
   private _parameterCount: number | null = null; // Se puede intentar obtener del modelo
-
+  
   constructor(
     name: string,
     expectedInputShape: number[], // Solo la forma de la entrada, ej [128, 1] para secuencia
@@ -107,7 +107,7 @@ export abstract class BaseNeuralModel {
     const endTime = performance.now();
     this._lastPredictionTime = endTime - startTime;
   }
-
+  
   get lastPredictionTime(): number {
     return this._lastPredictionTime;
   }
@@ -125,17 +125,17 @@ export abstract class BaseNeuralModel {
   get name(): string {
     return this._name;
   }
-
+  
   get inputShape(): number[] {
      // Devuelve la forma esperada (sin batch)
     return this._expectedInputShape;
   }
-
+  
   get outputShape(): number[] {
     // Obtener del modelo cargado si es posible
     return this._loadedModel?.outputShape ? (this._loadedModel.outputShape as number[]).slice(1) : []; // Quitar dimensión de batch
   }
-
+  
   get version(): string {
     return this._version;
   }

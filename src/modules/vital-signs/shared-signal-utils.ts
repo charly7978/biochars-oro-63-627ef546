@@ -1,4 +1,5 @@
 import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
+import { HeartBeatConfig } from '../heart-beat/config';
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -184,4 +185,91 @@ export function evaluateSignalQuality(
   const qualityScore = (amplitudeScore * 0.4) + (noiseScore * 0.4) + (peakRegularity * 0.2);
 
   return Math.min(100, Math.max(0, qualityScore));
+}
+
+/**
+ * Calculates the Median Absolute Deviation (MAD) of an array of numbers.
+ * MAD is a robust measure of variability.
+ */
+export function calculateMAD(values: number[]): { median: number, mad: number } {
+  if (!values || values.length === 0) {
+    return { median: NaN, mad: NaN };
+  }
+
+  const sortedValues = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sortedValues.length / 2);
+  const median = sortedValues.length % 2 !== 0 
+    ? sortedValues[mid] 
+    : (sortedValues[mid - 1] + sortedValues[mid]) / 2;
+
+  if (values.length === 1) {
+      return { median: median, mad: 0 };
+  }
+
+  const deviations = values.map(value => Math.abs(value - median));
+  const sortedDeviations = deviations.sort((a, b) => a - b);
+  const madMid = Math.floor(sortedDeviations.length / 2);
+  const mad = sortedDeviations.length % 2 !== 0
+    ? sortedDeviations[madMid]
+    : (sortedDeviations[madMid - 1] + sortedDeviations[madMid]) / 2;
+
+  return { median, mad };
+}
+
+/**
+ * Filters an array of RR intervals using Median Absolute Deviation (MAD).
+ * Removes outliers that are too far from the median interval.
+ */
+export function filterRRIntervalsMAD(intervals: number[], madFactor: number = 2.5): number[] {
+  if (!intervals || intervals.length < 5) { // Need a few intervals for robust stats
+    return intervals; // Return original if not enough data
+  }
+
+  const { median, mad } = calculateMAD(intervals);
+
+  if (isNaN(median) || isNaN(mad)) {
+    return intervals; // Calculation failed
+  }
+
+  const lowerBound = median - madFactor * mad;
+  const upperBound = median + madFactor * mad;
+
+  // Allow physiological limits as well
+  const minRR = 60000 / HeartBeatConfig.MAX_BPM; // Max BPM -> Min RR
+  const maxRR = 60000 / HeartBeatConfig.MIN_BPM; // Min BPM -> Max RR
+
+  return intervals.filter(interval => 
+    interval >= lowerBound && 
+    interval <= upperBound &&
+    interval >= minRR &&
+    interval <= maxRR
+  );
+}
+
+/**
+ * Basic Signal Quality Estimator based on amplitude and standard deviation.
+ * Returns a score between 0 and 100.
+ */
+export function estimateSignalQuality(filteredSignal: number[], minAmplitudeThreshold: number = 0.02): number {
+    if (!filteredSignal || filteredSignal.length < 20) return 0; // Need sufficient data
+
+    const recentSignal = filteredSignal.slice(-50); // Use last 50 samples
+    const mean = calculateDC(recentSignal);
+    const stdDev = calculateStandardDeviation(recentSignal);
+    const maxVal = Math.max(...recentSignal);
+    const minVal = Math.min(...recentSignal);
+    const amplitude = maxVal - minVal;
+
+    // Score based on amplitude (must meet minimum threshold)
+    const amplitudeScore = amplitude >= minAmplitudeThreshold ? 1 : 0;
+
+    // Score based on noise (relative standard deviation)
+    // Lower relative std dev = better quality
+    const relativeStdDev = amplitude > 1e-6 ? stdDev / amplitude : 1;
+    const noiseScore = Math.max(0, 1 - relativeStdDev * 2); // Penalize higher relative noise
+    
+    // Combine scores (adjust weights as needed)
+    const quality = (amplitudeScore * 0.6 + noiseScore * 0.4) * 100;
+    
+    return Math.max(0, Math.min(100, quality)); // Clamp to 0-100
 }
