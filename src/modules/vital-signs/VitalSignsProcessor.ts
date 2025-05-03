@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -61,6 +62,10 @@ export class VitalSignsProcessor {
   // Usar RRIntervalData
   private rrDataBuffer: RRIntervalData = { intervals: [], lastPeakTime: null };
 
+  // Flag para seguimiento de inicialización de modelos
+  private modelsInitialized: boolean = false;
+  private initializationInProgress: boolean = false;
+
   /**
    * Constructor that initializes all specialized processors
    * Using only direct measurement
@@ -81,13 +86,9 @@ export class VitalSignsProcessor {
     // Inicializar detector de picos
     this.peakDetector = new PeakDetector();
     
-    // Inicializar modelos usando el ModelRegistry (ahora sincrónico)
-    this.spo2Model = ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
-    this.bpModel = ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
-    
-    console.log("VitalSignsProcessor: Neural models initialized", {
-      spo2ModelPresent: !!this.spo2Model,
-      bpModelPresent: !!this.bpModel
+    // Iniciar carga asíncrona de modelos sin bloquear constructor
+    this.initModels().catch(err => {
+      console.error("VitalSignsProcessor: Error al inicializar modelos", err);
     });
 
     this.reset();
@@ -95,15 +96,63 @@ export class VitalSignsProcessor {
   
   /**
    * Inicializa asíncronamente los modelos neuronales
+   * Devuelve una promesa para permitir esperar la carga completa
    */
-  private async initModels() {
+  private async initModels(): Promise<void> {
+    // Evitar inicialización múltiple simultánea
+    if (this.initializationInProgress) {
+      return;
+    }
+    
+    this.initializationInProgress = true;
+    
     try {
-      // Obtener modelos de forma asíncrona
-      this.spo2Model = await ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
-      this.bpModel = await ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
-      console.log("VitalSignsProcessor: Modelos neuronales cargados");
+      console.log("VitalSignsProcessor: Iniciando carga de modelos neuronales");
+      
+      // Obtener instancias del registro (ahora de forma asíncrona explícita)
+      const registry = ModelRegistry.getInstance();
+      
+      // Cargar modelos de forma paralela para optimizar
+      const [spo2ModelResult, bpModelResult] = await Promise.all([
+        this.loadModelSafely<SpO2NeuralModel>('spo2'),
+        this.loadModelSafely<BloodPressureNeuralModel>('bloodPressure')
+      ]);
+      
+      // Asignar modelos solo si se cargaron correctamente
+      this.spo2Model = spo2ModelResult;
+      this.bpModel = bpModelResult;
+      
+      this.modelsInitialized = true;
+      console.log("VitalSignsProcessor: Modelos neuronales cargados correctamente", {
+        spo2Model: !!this.spo2Model,
+        bpModel: !!this.bpModel
+      });
     } catch (error) {
       console.error("VitalSignsProcessor: Error al cargar modelos neuronales", error);
+      this.modelsInitialized = false;
+    } finally {
+      this.initializationInProgress = false;
+    }
+  }
+  
+  /**
+   * Función auxiliar para cargar un modelo de forma segura
+   * Devuelve null si hay un error en lugar de lanzar excepción
+   */
+  private async loadModelSafely<T>(modelId: string): Promise<T | null> {
+    try {
+      const model = ModelRegistry.getInstance().getModel<T>(modelId);
+      if (model) {
+        // Si el modelo implementa loadModel, llamarlo explícitamente
+        if ('loadModel' in model && typeof (model as any).loadModel === 'function') {
+          await (model as any).loadModel();
+        }
+        return model;
+      }
+      return null;
+    } catch (error) {
+      console.error(`Error al cargar modelo ${modelId}:`, error);
+      return null;
     }
   }
   
@@ -115,6 +164,13 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: RRIntervalData
   ): VitalSignsResult {
+    // Si los modelos no están inicializados y no hay inicialización en progreso, intentar cargarlos
+    if (!this.modelsInitialized && !this.initializationInProgress) {
+      this.initModels().catch(err => {
+        console.error("VitalSignsProcessor: Error al inicializar modelos durante processSignal", err);
+      });
+    }
+    
     // Incrementar contador de frames
     this.processedFrameCount++;
     
@@ -141,12 +197,19 @@ export class VitalSignsProcessor {
         ppgValue,
         hasRRData: !!rrData,
         rrIntervals: rrData?.intervals?.length || 0,
-        isStabilized: this.isStabilized
+        isStabilized: this.isStabilized,
+        modelsInitialized: this.modelsInitialized
       });
     }
 
     // Aplicar filtrado a la señal PPG real, siempre procesar
     const filtered = this.signalProcessor.processPPG(ppgValue);
+    
+    // Actualizar buffer de señal para uso de modelos NN
+    this.signalBufferRed.push(filtered);
+    if (this.signalBufferRed.length > 300) {
+      this.signalBufferRed.shift();
+    }
     
     // La detección de arritmia se hace externamente
     const arrhythmiaResult = { arrhythmiaStatus: "--", lastArrhythmiaData: null };
@@ -195,11 +258,11 @@ export class VitalSignsProcessor {
     // Solo calculamos mediciones si tenemos suficientes datos y señal estable
     if (hasEnoughData && amplitude > 0.005 && this.isStabilized) {
       
-      // Estimar SpO2 usando modelo NN
+      // Estimar SpO2 usando modelo NN (seguro ante modelo no disponible)
       if (this.spo2Model) {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
-          const spo2Result = this.spo2Model.predict(currentSignalSlice); 
+          const spo2Result = await this.spo2Model.predict(currentSignalSlice); 
           spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
         } catch (error) {
           console.error("Error al procesar SpO2:", error);
@@ -208,11 +271,11 @@ export class VitalSignsProcessor {
         spo2 = 0; // No hay modelo disponible
       }
       
-      // Estimar Presión Arterial usando modelo NN
+      // Estimar Presión Arterial usando modelo NN (seguro ante modelo no disponible)
       if (this.bpModel) {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
-          const bpResultNN = this.bpModel.predict(currentSignalSlice); 
+          const bpResultNN = await this.bpModel.predict(currentSignalSlice); 
           systolic = bpResultNN[0];
           diastolic = bpResultNN[1];
           if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
@@ -396,5 +459,12 @@ export class VitalSignsProcessor {
    */
   public getLastRRData(): RRIntervalData {
     return this.rrDataBuffer;
+  }
+  
+  /**
+   * Comprueba si los modelos han sido inicializados correctamente
+   */
+  public areModelsInitialized(): boolean {
+    return this.modelsInitialized;
   }
 }
