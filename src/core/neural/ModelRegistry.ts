@@ -13,14 +13,26 @@ import { GlucoseNeuralModel } from './GlucoseModel';
 export class ModelRegistry {
   private static instance: ModelRegistry;
   private models: Map<string, BaseNeuralModel> = new Map();
+  private initialized: boolean = false;
   
   private constructor() {
+    this.initializeModels();
+  }
+  
+  /**
+   * Inicializa los modelos disponibles
+   */
+  private initializeModels(): void {
+    if (this.initialized) return;
+    
     // Registrar modelos disponibles
-    this.registerModel('heartRate', () => new HeartRateNeuralModel());
-    this.registerModel('spo2', () => new SpO2NeuralModel());
-    this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
-    this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
-    this.registerModel('glucose', () => new GlucoseNeuralModel());
+    this.models.set('heartRate', new HeartRateNeuralModel());
+    this.models.set('spo2', new SpO2NeuralModel());
+    this.models.set('bloodPressure', new BloodPressureNeuralModel());
+    this.models.set('arrhythmia', new ArrhythmiaNeuralModel());
+    this.models.set('glucose', new GlucoseNeuralModel());
+    
+    this.initialized = true;
   }
   
   /**
@@ -34,15 +46,8 @@ export class ModelRegistry {
   }
   
   /**
-   * Registra un factory de modelo
-   */
-  private registerModel(id: string, factory: () => BaseNeuralModel): void {
-    this.models.set(id, factory());
-  }
-  
-  /**
    * Obtiene un modelo por su ID, inicializándolo (cargándolo) si es necesario
-   * Modificado para retornar el modelo directamente, no una promesa
+   * Retorna el modelo directamente, no una promesa
    */
   public getModel<T extends BaseNeuralModel>(id: string): T | null {
     const model = this.models.get(id) as T;
