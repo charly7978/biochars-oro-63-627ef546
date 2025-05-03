@@ -12,6 +12,10 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
+import { getModel } from '../../core/neural/ModelRegistry';
+import { PeakDetector } from '../../core/signal/PeakDetector';
 
 /**
  * Main vital signs processor
@@ -28,6 +32,13 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
+  private spo2Model: SpO2NeuralModel | null;
+  private bpModel: BloodPressureNeuralModel | null;
+  
+  // Detector de picos para fallback de HR
+  private peakDetector: PeakDetector;
   
   // Propiedades añadidas para corregir errores
   private signalBufferRed: number[] = [];
@@ -66,6 +77,13 @@ export class VitalSignsProcessor {
     // Initialize validators and calculators
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
+
+    // Obtener instancias de modelos neuronales
+    this.spo2Model = getModel<SpO2NeuralModel>('spo2');
+    this.bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+    
+    // Inicializar detector de picos
+    this.peakDetector = new PeakDetector();
 
     this.reset();
   }
@@ -147,24 +165,50 @@ export class VitalSignsProcessor {
     let heartRate = 0;
     let spo2 = 0;
     let pressure = "--/--";
+    let systolic = 0;
+    let diastolic = 0;
     let glucose = 0;
     let glucoseConfidence = 0; // Declarar fuera del if con valor por defecto
     let overallConfidence = 0; // Declarar fuera del if con valor por defecto
     
-    // Solo calculamos mediciones si tenemos suficientes datos
-    if (hasEnoughData && amplitude > 0.005) {
-      // Calcular SpO2 (asume que devuelve número)
-      spo2 = this.spo2Processor.calculateSpO2(ppgValues); 
+    const currentSignalSlice = this.signalBufferRed.slice(-100); // Asegúrate que esta línea exista ANTES del if
+
+    // Solo calculamos mediciones si tenemos suficientes datos y señal estable
+    if (hasEnoughData && amplitude > 0.005 && this.isStabilized) {
       
-      // Calcular presión arterial con datos directos
-      const bpResult = this.bpProcessor.calculateBloodPressure(ppgValues);
-      if (bpResult.systolic > 0 && bpResult.diastolic > 0) {
-        pressure = `${bpResult.systolic}/${bpResult.diastolic}`;
+      // Estimar SpO2 usando modelo NN
+      if (this.spo2Model) {
+        try {
+          // Pasar el array directamente, el modelo maneja la conversión a Tensor
+          const spo2Result = this.spo2Model.predict(currentSignalSlice); 
+          spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
+        } finally {
+          // La gestión de tensores debe ocurrir dentro del modelo
+        }
       } else {
-        pressure = "--/--"; 
+        spo2 = 0; // No hay modelo disponible
       }
       
-      // Calcular frecuencia cardíaca - Priorizar cálculo desde RR si hay datos
+      // Estimar Presión Arterial usando modelo NN
+      if (this.bpModel) {
+        try {
+          // Pasar el array directamente, el modelo maneja la conversión a Tensor
+          const bpResultNN = this.bpModel.predict(currentSignalSlice); 
+          systolic = bpResultNN[0];
+          diastolic = bpResultNN[1];
+          if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
+            pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
+          } else {
+            pressure = "--/--";
+          }
+        } finally {
+          // La gestión de tensores debe ocurrir dentro del modelo
+        }
+      } else {
+        pressure = "--/--"; // No hay modelo disponible
+      }
+      
+      // Calcular frecuencia cardíaca
       if (rrData && rrData.intervals && rrData.intervals.length >= 2) { 
         let sum = 0;
         const lastFiveIntervals = rrData.intervals.slice(-5);
@@ -178,9 +222,21 @@ export class VitalSignsProcessor {
             heartRate = hrFromRR; 
           }
         }
+      } else {
+        // Fallback: Calcular HR desde picos PPG si no hay RR válidos
+        // Pasar el array directamente
+        const { peakIndices } = this.peakDetector.detectPeaks(currentSignalSlice); 
+        if (peakIndices.length >= 2) {
+          const intervalsMs = peakIndices.slice(1).map((pkIdx, i) => 
+            (pkIdx - peakIndices[i]) * (1000 / 60) // Asumiendo 60fps aprox.
+          ).filter(interval => interval > 300 && interval < 1500);
+          if (intervalsMs.length > 0) {
+            const avgInterval = intervalsMs.reduce((s, v) => s + v, 0) / intervalsMs.length;
+            heartRate = Math.round(60000 / avgInterval);
+            heartRate = Math.max(40, Math.min(200, heartRate)); // Clamp
+          }
+        }
       } 
-      // Si no se pudo calcular HR desde RR, quizás otro procesador la provea?
-      // (Se necesita revisar cómo se obtiene HR si no hay RR válidos)
       // Por ahora, si no hay RR, heartRate permanecerá en 0 si no se calcula en otro lado.
       
       // Calcular glucosa con procesamiento directo
@@ -188,7 +244,7 @@ export class VitalSignsProcessor {
       
       // Calcular Confidence Scores
       glucoseConfidence = this.glucoseProcessor.getConfidence();
-      const lipidsConfidencePlaceholder = 0; // Since lipids processor is removed
+      const lipidsConfidencePlaceholder = 0; // Lipids processor is removed
       overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
         glucoseConfidence, 
         lipidsConfidencePlaceholder
@@ -211,16 +267,21 @@ export class VitalSignsProcessor {
       });
     }
     
+    // Obtener el estado de arritmia MÁS RECIENTE del servicio
+    const arrhythmiaServiceStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
+    const arrhythmiaStatus = arrhythmiaServiceStatus.statusMessage;
+    const lastArrhythmiaData = arrhythmiaServiceStatus.lastArrhythmiaData;
+
     // Create result object using the factory - Ahora las variables de confianza siempre están definidas
     const result = ResultFactory.createResult(
       spo2,
       heartRate,
       pressure,
-      arrhythmiaResult.arrhythmiaStatus,
+      arrhythmiaStatus,
       glucose,
       glucoseConfidence,
       overallConfidence,
-      arrhythmiaResult.lastArrhythmiaData
+      lastArrhythmiaData
     );
     
     // Si tenemos al menos un valor válido, guardar como último válido
