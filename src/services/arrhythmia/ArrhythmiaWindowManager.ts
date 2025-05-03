@@ -1,3 +1,4 @@
+
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
 import { ArrhythmiaListener } from './types';
 

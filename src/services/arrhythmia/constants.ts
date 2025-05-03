@@ -21,3 +21,18 @@ export const PROFILE_ADJUSTMENTS = {
   ATHLETE_FACTOR: 1.3, // Notification interval factor for athletes
   MEDICAL_CONDITION_FACTOR: 0.85, // Threshold factor for medical conditions
 };
+
+// Normal sinus rhythm interval range (in ms)
+export const NORMAL_INTERVAL_MS = {
+  MIN: 600,  // 100 bpm
+  MAX: 1000, // 60 bpm
+  VARIATION_THRESHOLD: 0.15 // Normal variation threshold (15%)
+};
+
+// Arrhythmia configuration
+export const ARRHYTHMIA_CONFIG = {
+  DETECTION_WINDOW_SIZE: 8, // Number of intervals to analyze
+  MIN_INTERVALS_REQUIRED: 5, // Minimum intervals needed for reliable detection
+  CONFIDENCE_THRESHOLD: 0.65, // Minimum confidence to report arrhythmia
+  MAX_FALSE_POSITIVE_RATE: 0.05 // Maximum acceptable false positive rate
+};

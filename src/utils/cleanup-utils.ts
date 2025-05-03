@@ -1,3 +1,4 @@
+
 /**
  * Utilities for cleaning up services and preventing memory leaks
  */
@@ -10,7 +11,10 @@ export const cleanupServices = () => {
   AudioFeedbackService.cleanUp();
   
   // Get instance using static method and call reset
-  ArrhythmiaDetectionService.getInstance().reset(); 
+  const arrhythmiaService = ArrhythmiaDetectionService.getInstance();
+  if (typeof arrhythmiaService.reset === 'function') {
+    arrhythmiaService.reset();
+  }
   
   console.log('All services cleaned up successfully');
 };
