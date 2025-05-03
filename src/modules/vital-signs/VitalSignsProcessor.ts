@@ -108,8 +108,8 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Procesa la señal real de PPG y calcula todos los signos vitales
-   * Usando SOLO mediciones directas sin valores de referencia o simulación
+   * Processes the real PPG signal and calculates all vital signs
+   * Using ONLY direct measurements with no reference values or simulation
    */
   public processSignal(
     ppgValue: number,
@@ -286,12 +286,12 @@ export class VitalSignsProcessor {
       });
     }
     
-    // Obtain the most recent arrhythmia status from the service
+    // Obtener el estado de arritmia MÁS RECIENTE del servicio
     const arrhythmiaServiceStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
     const arrhythmiaStatus = arrhythmiaServiceStatus.statusMessage;
     const lastArrhythmiaData = arrhythmiaServiceStatus.lastArrhythmiaData;
 
-    // Create result object using the factory
+    // Create result object using the factory - Ahora las variables de confianza siempre están definidas
     const result = ResultFactory.createResult(
       spo2,
       heartRate,
@@ -300,12 +300,7 @@ export class VitalSignsProcessor {
       glucose,
       glucoseConfidence,
       overallConfidence,
-      lastArrhythmiaData ? {
-        timestamp: lastArrhythmiaData.timestamp,
-        rmssd: lastArrhythmiaData.rmssd || 0,
-        rrVariation: lastArrhythmiaData.rrVariation || 0,
-        category: lastArrhythmiaData.category
-      } : null
+      lastArrhythmiaData
     );
     
     // Si tenemos al menos un valor válido, guardar como último válido

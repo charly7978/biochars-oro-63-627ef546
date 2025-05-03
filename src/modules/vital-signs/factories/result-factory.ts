@@ -13,7 +13,7 @@ export class ResultFactory {
     glucose: number,
     glucoseConfidence?: number,
     overallConfidence?: number,
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number; category?: string } | null,
+    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null,
     hydration: number = 0,
     lipids: { totalCholesterol: number; triglycerides: number } = { totalCholesterol: 0, triglycerides: 0 },
     hemoglobin: number = 0

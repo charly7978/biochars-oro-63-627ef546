@@ -39,6 +39,5 @@ export interface VitalSignsResult {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
-    category?: string;
   } | null;
 }
