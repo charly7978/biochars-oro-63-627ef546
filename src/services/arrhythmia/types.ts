@@ -22,6 +22,7 @@ export interface ArrhythmiaDetectionResult {
   details: Record<string, any>; // Detalles adicionales
   latestIntervals: number[]; // Últimos intervalos RR en ms
   isArrhythmia?: boolean; // Propiedad opcional para compatibilidad
+  category?: string; // Nueva propiedad para categorización general
 }
 
 export type ArrhythmiaListener = (result: ArrhythmiaDetectionResult) => void;

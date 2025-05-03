@@ -1,4 +1,3 @@
-
 /**
  * Utilities for arrhythmia detection without using Math functions
  */
@@ -43,3 +42,16 @@ export function categorizeArrhythmia(
 
   return 'possible-arrhythmia';
 }
+
+/**
+ * Converts ArrhythmiaWindows to the format expected by PPGSignalMeter
+ * @param windows ArrhythmiaWindows from the service
+ * @returns Windows in the expected format with start/end properties
+ */
+export const formatArrhythmiaWindowsForDisplay = (windows: any[]): { start: number, end: number }[] => {
+  return windows.map(window => ({
+    start: window.timestamp,
+    end: window.timestamp + window.duration,
+    ...window
+  }));
+};

@@ -1,10 +1,14 @@
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const OPENCV_URL = 'https://docs.opencv.org/4.6.0/opencv.js';
-const OUTPUT_DIR = path.join(process.cwd(), 'public', 'opencv');
+const OUTPUT_DIR = path.join(path.resolve(__dirname, '..', '..'), 'public', 'opencv');
 const OPENCV_PATH = path.join(OUTPUT_DIR, 'opencv.js');
 const OPENCV_INIT_PATH = path.join(OUTPUT_DIR, 'opencv-init.js');
 

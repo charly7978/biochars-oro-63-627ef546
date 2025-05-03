@@ -1,409 +1,413 @@
 
-import { ArrhythmiaListener, ArrhythmiaStatus, ArrhythmiaDetectionResult, UserProfile } from './types';
-import { calculateRMSSD, calculatePNN50, calculatePoincareSd1 } from '../../modules/vital-signs/arrhythmia/calculations';
+import { ArrhythmiaDetectionResult, ArrhythmiaListener, ArrhythmiaStatus, UserProfile } from './types';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
 
 /**
- * Servicio para detección de arritmias basado en análisis de PPG
- * Solo procesa datos reales - sin simulación
+ * Servicio de detección de arritmias basado en análisis de PPG
  */
 export class ArrhythmiaDetectionService {
-  // Singleton instance
-  private static instance: ArrhythmiaDetectionService;
-
-  // Window manager para historial
-  private windowManager: ArrhythmiaWindowManager;
-
-  // Listeners para notificaciones
   private listeners: ArrhythmiaListener[] = [];
-
-  // Estado actual
-  private currentStatus: ArrhythmiaStatus = 'unknown';
-  private lastDetectionResult: ArrhythmiaDetectionResult | null = null;
-
-  // Contadores y umbrales
-  private arrhythmiaCount: number = 0;
-  private consecutiveAbnormalIntervals: number = 0;
-  private intervalBuffer: number[] = [];
-  private isCurrentlyArrhythmia: boolean = false;
-
-  // Perfil de usuario 
+  private lastResult: ArrhythmiaDetectionResult | null = null;
+  private rrIntervals: number[] = [];
+  private windowManager: ArrhythmiaWindowManager;
+  private lastBpmTimestamp = 0;
   private userProfile: UserProfile | null = null;
+  private isInitialized = false;
+  private warningThreshold = 0.7;
+  private alertThreshold = 0.9;
+  private arrhythmiaDetected = false;
+  private signalQualityThreshold = 70;
+  private lastArrhythmiaTimestamp = 0;
+  private arrhythmiaCooldown = 10000; // 10 segundos entre alertas
 
-  // Umbrales para detección
-  private readonly MAX_BUFFER_SIZE = 30;
-  private readonly IRREGULARITY_THRESHOLD = 0.15;
-  private readonly MIN_INTERVALS_FOR_ANALYSIS = 5;
-  private readonly BRADYCARDIA_THRESHOLD = 50;
-  private readonly TACHYCARDIA_THRESHOLD = 100;
-
-  // Utility functions to avoid Math
-  private realMin(a: number, b: number): number {
-    return a < b ? a : b;
-  }
-  
-  private realMax(a: number, b: number): number {
-    return a > b ? a : b;
-  }
-
-  /**
-   * Constructor privado (singleton)
-   */
-  private constructor() {
+  constructor() {
     this.windowManager = new ArrhythmiaWindowManager();
-    console.log("ArrhythmiaDetectionService: Initializing with real data processing only");
+    this.initialize();
   }
 
   /**
-   * Get singleton instance
+   * Inicializa el servicio
    */
-  public static getInstance(): ArrhythmiaDetectionService {
-    if (!ArrhythmiaDetectionService.instance) {
-      ArrhythmiaDetectionService.instance = new ArrhythmiaDetectionService();
-    }
-    return ArrhythmiaDetectionService.instance;
-  }
-
-  /**
-   * Add listener for arrhythmia notifications
-   */
-  public addListener(listener: ArrhythmiaListener): void {
-    this.listeners.push(listener);
-  }
-
-  /**
-   * Remove listener
-   */
-  public removeListener(listener: ArrhythmiaListener): void {
-    this.listeners = this.listeners.filter(l => l !== listener);
-  }
-
-  /**
-   * Add arrhythmia listener
-   */
-  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
-    this.addListener(listener);
-  }
-
-  /**
-   * Remove arrhythmia listener
-   */
-  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
-    this.removeListener(listener);
-  }
-
-  /**
-   * Process an RR interval and update detection status
-   * Solo datos reales
-   */
-  public processRRInterval(interval: number, signalQuality: number = 100): ArrhythmiaDetectionResult {
-    // Añadir intervalo al buffer
-    this.intervalBuffer.push(interval);
+  private initialize(): void {
+    this.reset();
     
-    // Mantener tamaño de buffer
-    if (this.intervalBuffer.length > this.MAX_BUFFER_SIZE) {
-      this.intervalBuffer.shift();
-    }
+    // Configuración predeterminada
+    this.warningThreshold = 0.7;
+    this.alertThreshold = 0.9;
+    this.signalQualityThreshold = 70;
+    
+    this.isInitialized = true;
+    console.log("ArrhythmiaDetectionService inicializado.");
+  }
 
-    // Solo analizar si tenemos suficientes datos
-    if (this.intervalBuffer.length < this.MIN_INTERVALS_FOR_ANALYSIS) {
+  /**
+   * Establece el perfil del usuario
+   */
+  setUserProfile(profile: UserProfile): void {
+    this.userProfile = profile;
+    console.log("Perfil de usuario establecido:", profile);
+    
+    // Ajustar umbrales basados en el perfil
+    if (profile.age > 65) {
+      this.warningThreshold = 0.65;
+      this.alertThreshold = 0.85;
+    }
+    
+    if (profile.knownConditions.includes('arrhythmia')) {
+      this.warningThreshold = 0.80;
+      this.alertThreshold = 0.92;
+    }
+  }
+
+  /**
+   * Procesa un nuevo intervalo RR
+   */
+  processRRInterval(rrInterval: number, signalQuality: number): ArrhythmiaDetectionResult | null {
+    if (!this.isInitialized) {
+      this.initialize();
+    }
+    
+    // Validación básica del intervalo
+    if (rrInterval <= 0 || rrInterval > 2000) {
+      console.log("Intervalo RR inválido:", rrInterval);
+      return null;
+    }
+    
+    // Verificar calidad de señal
+    if (signalQuality < this.signalQualityThreshold) {
       const result: ArrhythmiaDetectionResult = {
         timestamp: Date.now(),
         status: 'unknown',
         probability: 0,
         signalQuality,
-        details: { message: 'Insufficient data for arrhythmia analysis' },
-        latestIntervals: [...this.intervalBuffer]
+        details: { reason: 'Calidad de señal insuficiente' },
+        latestIntervals: [...this.rrIntervals],
       };
-      
-      this.lastDetectionResult = result;
+      this.lastResult = result;
       return result;
     }
-
-    // Realizar detección básica
-    const result = this.detectArrhythmia(this.intervalBuffer);
-    this.lastDetectionResult = result;
     
-    // Actualizar estado global
-    this.updateGlobalStatus(result);
+    // Agregar intervalo a la lista
+    this.rrIntervals.push(rrInterval);
     
-    // Notificar listeners
-    this.notifyListeners(result);
+    // Mantener solo los últimos 20 intervalos
+    if (this.rrIntervals.length > 20) {
+      this.rrIntervals.shift();
+    }
     
-    return result;
+    // Analizar si hay suficientes datos
+    if (this.rrIntervals.length >= 5) {
+      return this.analyzeIntervals(signalQuality);
+    }
+    
+    return null;
   }
-
+  
   /**
-   * Process PPG segment for morphological analysis
-   * Solo datos reales
+   * Analiza los intervalos RR para detectar arritmias
    */
-  public async processPPGSegment(ppgSegment: number[], signalQuality: number = 100): Promise<ArrhythmiaDetectionResult> {
-    // Si no hay suficientes datos, retornar resultado básico
-    if (ppgSegment.length < 100) {
-      const basicResult: ArrhythmiaDetectionResult = {
-        timestamp: Date.now(),
-        status: 'unknown',
-        probability: 0,
-        signalQuality,
-        details: { message: 'Insufficient data for morphological analysis' },
-        latestIntervals: [...this.intervalBuffer]
-      };
-      
-      this.lastDetectionResult = basicResult;
-      return basicResult;
+  private analyzeIntervals(signalQuality: number): ArrhythmiaDetectionResult | null {
+    if (this.rrIntervals.length < 3) {
+      return null;
     }
-
-    // Aquí se podría implementar análisis morfológico avanzado
-    // Por ahora usamos el básico basado en intervalos RR
-    return this.detectArrhythmia(this.intervalBuffer);
-  }
-
-  /**
-   * Update RR intervals (from external source)
-   * Solo datos reales
-   */
-  public updateRRIntervals(intervals: number[]): void {
-    // Añadir todos los intervalos al buffer
-    for (const interval of intervals) {
-      this.intervalBuffer.push(interval);
-      
-      // Mantener tamaño de buffer
-      if (this.intervalBuffer.length > this.MAX_BUFFER_SIZE) {
-        this.intervalBuffer.shift();
-      }
-    }
-  }
-
-  /**
-   * Main detection algorithm
-   * Solo datos reales
-   */
-  public detectArrhythmia(intervals: number[]): ArrhythmiaDetectionResult {
-    if (intervals.length < this.MIN_INTERVALS_FOR_ANALYSIS) {
-      return {
-        timestamp: Date.now(),
-        status: 'unknown',
-        probability: 0,
-        signalQuality: 0,
-        details: { message: 'Insufficient data for analysis' },
-        latestIntervals: [...intervals]
-      };
-    }
-
-    // Calcular estadísticas de variabilidad
-    const rmssd = calculateRMSSD(intervals);
-    const pnn50 = calculatePNN50(intervals);
-    const sd1 = calculatePoincareSd1(intervals);
-
-    // Calcular irregularidad general
-    const meanInterval = intervals.reduce((sum, i) => sum + i, 0) / intervals.length;
-    let irregularityCount = 0;
-
-    for (let i = 1; i < intervals.length; i++) {
-      const prevInterval = intervals[i-1];
-      const currInterval = intervals[i];
-      
-      const relativeChange = Math.abs(currInterval - prevInterval) / prevInterval;
-      
-      if (relativeChange > this.IRREGULARITY_THRESHOLD) {
-        irregularityCount++;
-      }
-    }
-
-    // Calcular probabilidad basada en varios factores
-    const irregularityRatio = irregularityCount / (intervals.length - 1);
-    const bpm = 60000 / meanInterval;
-
-    // Variables para determinar el estado
-    let isBradycardia = bpm < this.BRADYCARDIA_THRESHOLD;
-    let isTachycardia = bpm > this.TACHYCARDIA_THRESHOLD;
-    let isIrregular = irregularityRatio > 0.2;
-    let isPossibleAFib = irregularityRatio > 0.4 && pnn50 > 0.2 && sd1 > 25;
     
-    // Determinar estado basado en criterios
+    const now = Date.now();
+    
+    // Calcular variabilidad (SDNN)
+    const mean = this.calculateMean(this.rrIntervals);
+    const sdnn = this.calculateSDNN(this.rrIntervals, mean);
+    
+    // Calcular pNN50
+    const pnn50 = this.calculatePNN50(this.rrIntervals);
+    
+    // Calcular rMSSD (raíz cuadrada del promedio de las diferencias al cuadrado)
+    const rmssd = this.calculateRMSSD(this.rrIntervals);
+    
+    // Detectar si hay arritmia basado en la variabilidad
     let status: ArrhythmiaStatus = 'normal';
     let probability = 0;
-
-    if (isPossibleAFib) {
-      status = 'possible-afib';
-      probability = 0.7 + (irregularityRatio - 0.4) * 0.5;
-    } else if (isIrregular && isTachycardia) {
-      status = 'tachycardia';
-      probability = 0.6 + (irregularityRatio * 0.3);
-    } else if (isIrregular && isBradycardia) {
-      status = 'bradycardia';
-      probability = 0.6 + (irregularityRatio * 0.3);
-    } else if (isIrregular) {
-      status = 'possible-arrhythmia';
-      probability = 0.4 + (irregularityRatio * 0.4);
-    } else if (isTachycardia) {
-      status = 'tachycardia';
-      probability = 0.5;
-    } else if (isBradycardia) {
-      status = 'bradycardia';
-      probability = 0.5;
-    }
-
-    // Si detectamos posible arritmia, incrementar contador
-    if (status !== 'normal' && status !== 'unknown') {
-      this.isCurrentlyArrhythmia = true;
-      this.consecutiveAbnormalIntervals++;
-      
-      if (this.consecutiveAbnormalIntervals >= 3) {
-        this.arrhythmiaCount++;
-      }
-    } else {
-      this.isCurrentlyArrhythmia = false;
-      this.consecutiveAbnormalIntervals = 0;
-    }
-
-    // Crear resultado detallado
-    const result: ArrhythmiaDetectionResult = {
-      timestamp: Date.now(),
-      status,
-      probability: this.realMin(1, probability),
-      signalQuality: 70 + Math.round(intervals.length / this.MAX_BUFFER_SIZE * 30),
-      details: {
-        rmssd,
-        pnn50,
-        sd1,
-        irregularityRatio,
-        meanInterval,
-        bpm,
-        irregularCount: irregularityCount,
-        category: status
-      },
-      latestIntervals: [...intervals]
+    let details: Record<string, any> = {
+      sdnn,
+      pnn50,
+      rmssd,
+      mean
     };
-
-    // Si la probabilidad es alta, registrar ventana
-    if (probability > 0.6 && status !== 'normal') {
-      this.windowManager.addArrhythmiaWindow(
-        status,
-        probability,
-        intervals,
-        result.details
-      );
+    
+    // Detección de bradicardia o taquicardia
+    const bpm = 60000 / mean;
+    if (bpm < 50) {
+      status = 'bradycardia';
+      probability = 0.9;
+      details.bpm = bpm;
+    } else if (bpm > 100) {
+      status = 'tachycardia';
+      probability = 0.85;
+      details.bpm = bpm;
+    } else if (pnn50 > 30 || sdnn > 100) {
+      // Alta variabilidad puede indicar fibrilación auricular
+      status = 'possible-afib';
+      probability = Math.min(0.7 + (sdnn / 1000), 0.95);
+      details.reason = 'Alta variabilidad detectada';
+    } else if (this.detectPattern(this.rrIntervals, 2)) {
+      // Patrones repetidos cada 2 latidos pueden indicar bigeminismo
+      status = 'bigeminy';
+      probability = 0.8;
+      details.reason = 'Patrón alternante detectado';
+    } else if (this.detectPattern(this.rrIntervals, 3)) {
+      // Patrones repetidos cada 3 latidos pueden indicar trigeminismo
+      status = 'trigeminy';
+      probability = 0.75;
+      details.reason = 'Patrón cada 3 latidos detectado';
+    } else if (sdnn > 50 || rmssd > 50) {
+      // Variabilidad moderada
+      status = 'possible-arrhythmia';
+      probability = 0.6 + (sdnn / 500);
+      details.reason = 'Variabilidad moderada';
     }
-
-    // Actualizar estado global
-    this.lastDetectionResult = result;
-    this.currentStatus = status;
+    
+    // Ajustar probabilidad basada en la calidad de la señal
+    probability *= signalQuality / 100;
+    
+    // Actualizar estado de arritmia detectada
+    const prevArrhythmiaState = this.arrhythmiaDetected;
+    this.arrhythmiaDetected = status !== 'normal' && status !== 'unknown' && probability > this.warningThreshold;
+    
+    // Si acabamos de detectar una arritmia, guardamos el timestamp
+    if (!prevArrhythmiaState && this.arrhythmiaDetected) {
+      this.lastArrhythmiaTimestamp = now;
+      
+      // Registrar ventana de arritmia
+      if (this.rrIntervals.length > 0) {
+        this.windowManager.addArrhythmiaWindow({
+          timestamp: now,
+          duration: this.rrIntervals.reduce((sum, i) => sum + i, 0),
+          status: status,
+          intervals: [...this.rrIntervals],
+          probability,
+          details: {...details}
+        });
+      }
+    }
+    
+    // Crear resultado
+    const result: ArrhythmiaDetectionResult = {
+      timestamp: now,
+      status,
+      probability,
+      signalQuality,
+      details,
+      latestIntervals: [...this.rrIntervals],
+      isArrhythmia: this.arrhythmiaDetected
+    };
+    
+    this.lastResult = result;
+    
+    // Notificar a los listeners
+    if (status !== 'normal' || now - this.lastBpmTimestamp > 5000) {
+      this.lastBpmTimestamp = now;
+      this.notifyListeners(result);
+    }
     
     return result;
   }
-
+  
   /**
-   * Check if currently in arrhythmia
+   * Calcula la media de un array de números
    */
-  public isArrhythmia(): boolean {
-    return this.isCurrentlyArrhythmia;
+  private calculateMean(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sum = values.reduce((a, b) => a + b, 0);
+    return sum / values.length;
   }
-
+  
   /**
-   * Get current arrhythmia status
+   * Calcula la desviación estándar (SDNN)
    */
-  public getArrhythmiaStatus(): {
-    statusMessage: string,
-    lastArrhythmiaData: any
-  } {
-    if (!this.lastDetectionResult) {
-      return { statusMessage: "--", lastArrhythmiaData: null };
-    }
-
-    let statusMessage = "--";
+  private calculateSDNN(values: number[], mean: number): number {
+    if (values.length < 2) return 0;
+    const squareDiffs = values.map(value => {
+      const diff = value - mean;
+      return diff * diff;
+    });
+    const avgSquareDiff = this.calculateMean(squareDiffs);
+    return Math.sqrt(avgSquareDiff);
+  }
+  
+  /**
+   * Calcula el porcentaje de intervalos que difieren por más de 50ms
+   */
+  private calculatePNN50(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
     
-    if (this.lastDetectionResult.status === 'normal') {
-      statusMessage = "Normal";
-    } else if (this.lastDetectionResult.status === 'possible-arrhythmia') {
-      statusMessage = `Irregular|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'arrhythmia') {
-      statusMessage = `Arrhythmia|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'possible-afib') {
-      statusMessage = `Possible AFib|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'tachycardia') {
-      statusMessage = `Tachycardia|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'bradycardia') {
-      statusMessage = `Bradycardia|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'bigeminy') {
-      statusMessage = `Bigeminy|${this.arrhythmiaCount}`;
-    } else if (this.lastDetectionResult.status === 'trigeminy') {
-      statusMessage = `Trigeminy|${this.arrhythmiaCount}`;
+    let count = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      if (Math.abs(intervals[i] - intervals[i-1]) > 50) {
+        count++;
+      }
     }
     
-    return {
-      statusMessage,
-      lastArrhythmiaData: this.lastDetectionResult
-    };
+    return (count / (intervals.length - 1)) * 100;
   }
-
+  
   /**
-   * Get total arrhythmia count
+   * Calcula la raíz cuadrada del promedio de las diferencias al cuadrado
    */
-  public getArrhythmiaCount(): number {
-    return this.arrhythmiaCount;
-  }
-
-  /**
-   * Get arrhythmia windows
-   */
-  public getArrhythmiaWindows() {
-    return this.windowManager.getArrhythmiaWindows();
-  }
-
-  /**
-   * Set user profile
-   */
-  public setUserProfile(profile: UserProfile): void {
-    this.userProfile = profile;
+  private calculateRMSSD(intervals: number[]): number {
+    if (intervals.length < 2) return 0;
     
-    // Adjust thresholds based on user profile
-    if (profile.age > 65) {
-      // Adjust thresholds for elderly
-      this.consecutiveAbnormalIntervals = 0;
+    let sumSquaredDiffs = 0;
+    for (let i = 1; i < intervals.length; i++) {
+      const diff = intervals[i] - intervals[i-1];
+      sumSquaredDiffs += diff * diff;
     }
     
-    if (profile.restingHeartRate < 60) {
-      // Adjust for naturally low heart rate (athletes)
+    const avgSquaredDiff = sumSquaredDiffs / (intervals.length - 1);
+    return Math.sqrt(avgSquaredDiff);
+  }
+  
+  /**
+   * Detecta patrones en los intervalos RR
+   */
+  private detectPattern(intervals: number[], patternLength: number): boolean {
+    if (intervals.length < patternLength * 2) return false;
+    
+    // Simplificado: buscar alternancia en los valores
+    const recentIntervals = intervals.slice(-patternLength * 2);
+    
+    // Para detección de patrones simples
+    if (patternLength === 2) {
+      const diffs = [];
+      for (let i = 0; i < recentIntervals.length - 1; i++) {
+        diffs.push(Math.abs(recentIntervals[i] - recentIntervals[i+1]));
+      }
+      
+      // Verificar si el patrón se repite (corto, largo, corto, largo)
+      const threshold = 40; // ms
+      for (let i = 0; i < diffs.length - 2; i += 2) {
+        if (Math.abs(diffs[i] - diffs[i+2]) < threshold) {
+          return true;
+        }
+      }
+    } else if (patternLength === 3) {
+      // Implementación simplificada para trigeminismo
+      // Verificar si cada tercer intervalo es similar
+      const firstGroup = recentIntervals.filter((_, i) => i % 3 === 0);
+      const secondGroup = recentIntervals.filter((_, i) => i % 3 === 1);
+      const thirdGroup = recentIntervals.filter((_, i) => i % 3 === 2);
+      
+      if (firstGroup.length > 1 && secondGroup.length > 1 && thirdGroup.length > 1) {
+        const stdFirst = this.calculateSDNN(firstGroup, this.calculateMean(firstGroup));
+        const stdSecond = this.calculateSDNN(secondGroup, this.calculateMean(secondGroup));
+        const stdThird = this.calculateSDNN(thirdGroup, this.calculateMean(thirdGroup));
+        
+        // Si la variabilidad dentro de cada grupo es baja
+        return stdFirst < 20 && stdSecond < 20 && stdThird < 20;
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Agrega un listener para las detecciones de arritmia
+   */
+  addArrhythmiaListener(listener: ArrhythmiaListener): void {
+    if (!this.listeners.includes(listener)) {
+      this.listeners.push(listener);
     }
   }
-
+  
   /**
-   * Reset all data and counters
+   * Elimina un listener
    */
-  public reset(): void {
-    this.arrhythmiaCount = 0;
-    this.consecutiveAbnormalIntervals = 0;
-    this.intervalBuffer = [];
-    this.currentStatus = 'unknown';
-    this.isCurrentlyArrhythmia = false;
-    this.lastDetectionResult = null;
-    
-    // Clear window data
-    this.windowManager.clearWindows();
+  removeArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.listeners = this.listeners.filter(l => l !== listener);
   }
-
+  
   /**
-   * Update global status based on detection result
-   */
-  private updateGlobalStatus(result: ArrhythmiaDetectionResult): void {
-    this.currentStatus = result.status;
-  }
-
-  /**
-   * Notify all listeners with detection result
+   * Notifica a todos los listeners
    */
   private notifyListeners(result: ArrhythmiaDetectionResult): void {
-    for (const listener of this.listeners) {
+    this.listeners.forEach(listener => {
       try {
         listener(result);
       } catch (error) {
-        console.error('Error in arrhythmia listener:', error);
+        console.error("Error en listener de arritmia:", error);
       }
+    });
+  }
+  
+  /**
+   * Obtiene el último resultado de detección
+   */
+  getLastResult(): ArrhythmiaDetectionResult | null {
+    return this.lastResult;
+  }
+  
+  /**
+   * Comprueba si hay arritmia detectada actualmente
+   */
+  isArrhythmia(): boolean {
+    return this.arrhythmiaDetected;
+  }
+  
+  /**
+   * Comprueba si debe mostrarse una alerta (basado en tiempo transcurrido)
+   */
+  shouldShowAlert(): boolean {
+    if (!this.arrhythmiaDetected) return false;
+    
+    // Si no hay resultado o no es arritmia, no mostrar alerta
+    if (!this.lastResult || this.lastResult.status === 'normal' || this.lastResult.status === 'unknown') {
+      return false;
     }
+
+    // Corregir comparación - adding explicit comparison to specific statuses
+    // Original line causing error: this.lastResult.status === 'unknown'
+    if (this.lastResult.status === 'normal' || this.lastResult.status === 'unknown') {
+      return false;
+    }
+    
+    const now = Date.now();
+    
+    // Solo mostrar alerta si pasó el tiempo de enfriamiento
+    return now - this.lastArrhythmiaTimestamp > this.arrhythmiaCooldown;
+  }
+  
+  /**
+   * Obtiene el estado actual de arritmia del servicio
+   */
+  getArrhythmiaStatus(): string {
+    if (!this.lastResult) return "--";
+    
+    if (this.arrhythmiaDetected && this.lastResult.probability > this.alertThreshold) {
+      return this.lastResult.status;
+    } else if (this.arrhythmiaDetected) {
+      return 'possible-arrhythmia';
+    } else {
+      return 'normal';
+    }
+  }
+  
+  /**
+   * Reinicia el servicio
+   */
+  reset(): void {
+    this.rrIntervals = [];
+    this.lastResult = null;
+    this.arrhythmiaDetected = false;
+    this.windowManager.clearWindows();
+    console.log("ArrhythmiaDetectionService reseteado.");
+  }
+  
+  /**
+   * Obtiene las ventanas de arritmia detectadas
+   */
+  getArrhythmiaWindows(): any[] {
+    return this.windowManager.getWindows();
   }
 }
 
-// Create and export singleton instance
-const instance = ArrhythmiaDetectionService.getInstance();
-export default instance;
+// Instancia singleton
+const arrhythmiaServiceInstance = new ArrhythmiaDetectionService();
+export default arrhythmiaServiceInstance;

@@ -34,7 +34,10 @@ export const useArrhythmiaVisualization = (): ArrhythmiaVisualizationHook => {
           status: result.status,
           intervals: [...result.latestIntervals],
           probability: result.probability,
-          details: { ...result.details }
+          details: { ...result.details },
+          // Add start/end properties to match expected format
+          start: result.timestamp,
+          end: result.timestamp + result.latestIntervals.reduce((sum, interval) => sum + interval, 0)
         };
         
         setArrhythmiaWindows(prev => [...prev, newWindow]);
@@ -58,13 +61,18 @@ export const useArrhythmiaVisualization = (): ArrhythmiaVisualizationHook => {
     details: Record<string, any> = {}
   ): void => {
     // Crear nueva ventana
+    const timestamp = Date.now();
+    const duration = intervals.reduce((sum, interval) => sum + interval, 0);
+    
     const newWindow: ArrhythmiaWindow = {
-      timestamp: Date.now(),
-      duration: intervals.reduce((sum, interval) => sum + interval, 0),
+      timestamp,
+      duration,
       status,
       intervals,
       probability,
-      details
+      details,
+      start: timestamp,
+      end: timestamp + duration
     };
     
     // Añadir al estado

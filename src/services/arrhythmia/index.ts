@@ -2,6 +2,7 @@
 import { ArrhythmiaDetectionService } from './ArrhythmiaDetectionService';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
 import arrhythmiaServiceInstance from './ArrhythmiaDetectionService';
+import { formatArrhythmiaWindowsForDisplay } from './utils';
 
 // Export types and utilities
 export * from './types';

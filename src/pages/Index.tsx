@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -10,6 +11,7 @@ import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result
 import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import { formatArrhythmiaWindowsForDisplay } from '@/services/arrhythmia/utils';
 import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
 
@@ -161,6 +163,7 @@ const Index = () => {
     setIsMonitoring(true);
     processedFrameCountRef.current = 0;
     startSignalProcessing();
+    startHeartBeatMonitoring();
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
       console.log("30 second measurement timer elapsed.");
@@ -179,6 +182,7 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopSignalProcessing();
+    stopHeartBeatMonitoring();
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
@@ -349,7 +353,7 @@ const Index = () => {
               rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
-              arrhythmiaWindows={ArrhythmiaDetectionService.getArrhythmiaWindows()}
+              arrhythmiaWindows={formatArrhythmiaWindowsForDisplay(ArrhythmiaDetectionService.getArrhythmiaWindows())}
             />
           </div>
           <AppTitle />
