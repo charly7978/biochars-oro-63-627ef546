@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -46,8 +47,8 @@ class ArrhythmiaDetectionService {
   // False positive prevention - adjusted to require more evidence
   private lastDetectionTime: number = 0;
   private arrhythmiaConfirmationCounter: number = 0;
-  private REQUIRED_CONFIRMATIONS: number = 1;
-  private CONFIRMATION_WINDOW_MS: number = 10000;
+  private REQUIRED_CONFIRMATIONS: number = DEFAULT_THRESHOLDS.REQUIRED_CONFIRMATIONS;
+  private CONFIRMATION_WINDOW_MS: number = DEFAULT_THRESHOLDS.CONFIRMATION_WINDOW_MS;
   
   // Cleanup interval
   private cleanupInterval: NodeJS.Timeout | null = null;
