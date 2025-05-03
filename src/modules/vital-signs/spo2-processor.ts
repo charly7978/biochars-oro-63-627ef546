@@ -2,106 +2,103 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { 
-  calculateAC, 
-  calculateDC,
-  estimateSignalQuality // Corregir nombre importado
-} from './shared-signal-utils';
-
-// Constantes
-const MIN_SPO2 = 80;
-const MAX_SPO2 = 100;
-const DEFAULT_SPO2 = NaN; // Default to NaN as calculation is unreliable
+import { calculateAC, calculateDC } from './shared-signal-utils';
 
 /**
- * Procesador para ESTIMAR SpO2 desde señal PPG.
- * ADVERTENCIA: El cálculo fiable de SpO2 requiere señales Roja e Infrarroja.
- * Esta implementación utiliza solo una señal PPG y es una APROXIMACIÓN NO VALIDADA CLÍNICAMENTE,
- * basada en la relación AC/DC, que puede correlacionar pobremente con SpO2 real.
- * NO USAR PARA FINES MÉDICOS.
+ * Procesador para estimar SpO2 desde la señal PPG
+ * Nota: Asume que recibe señales R e IR, lo cual no sucede actualmente
  */
 export class SpO2Processor {
-  private readonly SPO2_BUFFER_SIZE = 10; 
+  private readonly SPO2_BUFFER_SIZE = 10; // Número de muestras para promediar
   private spo2Buffer: number[] = [];
-  private lastSpo2: number = NaN; // Iniciar como NaN
-  private confidence: number = 0; 
+  private lastSpo2: number = 0;
 
-  constructor() {
-    this.reset();
+  /**
+   * Calcula el SpO2 basado en la relación de absorción AC/DC
+   * ADVERTENCIA: Este método asume señales R e IR que no se proporcionan.
+   * La implementación actual solo usa una señal y no es clínicamente válida.
+   */
+  public calculateSpO2(values: number[]): number {
+    // Necesita suficientes datos
+    if (!values || values.length < 50) {
+      return 0; // No hay datos suficientes
+    }
+
+    // --- Lógica basada en AC/DC (requiere R/IR, actualmente inválida) ---
+    // Comentada y reemplazada por retorno de 0
+    /*
+    const recentValues = values.slice(-50);
+
+    // Calcular componentes AC y DC (necesita separación R/IR)
+    const ac = calculateAC(recentValues); // Necesita AC(R) y AC(IR)
+    const dc = calculateDC(recentValues); // Necesita DC(R) y DC(IR)
+
+    if (dc === 0) {
+      return 0; // Evitar división por cero
+    }
+
+    // Calcular relación de ratios (R)
+    // Esto ESPECÍFICAMENTE requiere datos de canales R e IR separados
+    // const ratio = (acRed / dcRed) / (acIr / dcIr);
+    // Usando solo una señal, este 'ratio' no tiene significado fisiológico para SpO2
+    const ratio = ac / dc; 
+
+    if (ratio <= 0) {
+      return 0; // Ratio inválido
+    }
+
+    // Fórmula empírica para SpO2 (simplificada, NO VALIDADA para una sola señal)
+    // La fórmula real es SpO2 = A - B * R
+    let spo2 = 105 - 25 * ratio;
+
+    // Asegurar que esté en rango fisiológico
+    spo2 = Math.max(85, Math.min(100, spo2));
+    */
+
+    // Devolver 0 ya que el cálculo actual no es válido
+    const spo2 = 0;
+
+    // Añadir al buffer y calcular promedio
+    this.spo2Buffer.push(spo2);
+    if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
+      this.spo2Buffer.shift();
+    }
+
+    // Calcular la mediana del buffer si hay suficientes datos
+    let finalSpo2 = spo2;
+    if (this.spo2Buffer.length >= 3) { // Usar mediana con al menos 3 valores
+      const sorted = [...this.spo2Buffer].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) {
+        finalSpo2 = (sorted[mid - 1] + sorted[mid]) / 2;
+      } else {
+        finalSpo2 = sorted[mid];
+      }
+    }
+    
+    // Guardar último valor (redondeado a un decimal)
+    this.lastSpo2 = Math.round(finalSpo2 * 10) / 10;
+    
+    // Devolver 0 para indicar falta de medición fiable
+    return 0;
   }
 
   /**
-   * Estima SpO2 usando la relación AC/DC de la señal PPG única.
-   * @param ppgValues Array de valores de señal PPG (filtrada).
-   * @returns Estimación de SpO2 (NaN si no es calculable).
+   * Obtiene el último valor SpO2 válido calculado y guardado
+   * NO devuelve una simulación, sino el último valor real estable
    */
-  public calculateSpO2(ppgValues: number[]): number {
-    // Usar estimateSignalQuality (aunque no se use directamente en el cálculo por ahora)
-    const signalQuality = estimateSignalQuality(ppgValues);
-    if (!ppgValues || ppgValues.length < 30 || signalQuality < 20) { // Requerir calidad mínima baja para este método
-      this.confidence = 0;
-      return NaN; 
+  private getLastValidSpo2(decayAmount: number): number {
+    if (this.spo2Buffer.length > 0) {
+      // Devuelve el último valor calculado si existe
+      return this.lastSpo2;
     }
-
-    // Usar un segmento reciente para calcular AC/DC
-    const segment = ppgValues.slice(-50); // Usar últimos 50 puntos
-    const ac = calculateAC(segment);
-    const dc = calculateDC(segment);
-
-    if (dc === 0 || ac <= 0) { // DC no puede ser 0, AC debe ser positivo
-      this.confidence = 0;
-      return NaN;
-    }
-
-    // Calcular Ratio (R = AC/DC). Este R NO es el mismo que en pulsioximetría R/IR.
-    const ratio = ac / dc;
-    
-    // Fórmula empírica de calibración (Placeholder - MUY SIMPLIFICADA y probablemente INCORRECTA)
-    const A = 110; // Valor placeholder
-    const B = 25;  // Valor placeholder
-    let estimatedSpo2 = A - B * ratio; 
-
-    // Validar y limitar el resultado estimado
-    if (estimatedSpo2 >= MIN_SPO2 && estimatedSpo2 <= MAX_SPO2) {
-        // Ajustar confianza basada (parcialmente) en calidad de señal
-        this.confidence = Math.max(0.1, Math.min(0.4, 0.2 + (signalQuality / 100) * 0.2)); 
-        this.lastSpo2 = estimatedSpo2;
-        this.updateBuffer(estimatedSpo2);
-        return this.getSmoothedSpo2();
-    } else {
-        // Si el cálculo da un valor fuera de rango, es probable que la señal o la fórmula sean inadecuadas.
-        console.warn(`Estimación SpO2 (AC/DC) fuera de rango: ${estimatedSpo2.toFixed(1)}`);
-        this.confidence = 0.1;
-        // Devolver NaN si la estimación no es plausible
-        return NaN;
-    }
-  }
-
-  // Método privado para actualizar el buffer interno
-  private updateBuffer(spo2Value: number): void {
-      this.spo2Buffer.push(spo2Value);
-      if (this.spo2Buffer.length > this.SPO2_BUFFER_SIZE) {
-          this.spo2Buffer.shift();
-      }
-  }
-
-  // Método privado para obtener el valor suavizado del buffer
-  private getSmoothedSpo2(): number {
-      if (this.spo2Buffer.length < 3) return NaN; // Necesitar al menos 3 valores para suavizar
-      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
-      // Devolver valor redondeado
-      return Math.round(sum / this.spo2Buffer.length);
-  }
-
-  public getConfidence(): number {
-    // Podría usarse signalQuality aquí si se pasara ppgValues
-    return this.confidence; 
+    // Si no hay historial, devuelve 0
+    return 0;
   }
 
   public reset(): void {
     this.spo2Buffer = [];
-    this.lastSpo2 = NaN; // Iniciar como NaN
-    this.confidence = 0;
-    console.log("SpO2 Processor Reset");
+    this.lastSpo2 = 0;
+    console.log("SpO2Processor reset");
   }
 }

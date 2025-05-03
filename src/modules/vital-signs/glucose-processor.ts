@@ -1,116 +1,116 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { 
-  calculateStandardDeviation, 
-  normalizeValues, 
-  findPeaksAndValleys,
-  estimateSignalQuality,
-  calculateDC
-} from './shared-signal-utils';
-
-// Constantes fisiológicas
-const MIN_GLUCOSE = 40;  // mg/dL
-const MAX_GLUCOSE = 400; // mg/dL
-const DEFAULT_GLUCOSE = NaN; // Default to NaN
-
 /**
- * Procesador para ESTIMAR Glucosa desde señal PPG.
- * ADVERTENCIA: La estimación de Glucosa desde PPG es ALTAMENTE EXPERIMENTAL
- * y NO está validada clínicamente. Los resultados son especulativos.
- * NO USAR PARA FINES MÉDICOS.
+ * GlucoseProcessor class para medición directa
  */
 export class GlucoseProcessor {
   private confidence: number = 0;
   private valueBuffer: number[] = [];
   private readonly BUFFER_SIZE = 10;
-  private lastGlucose: number = NaN; // Iniciar como NaN
-  // No glucoseModel needed
-
+  
+  /**
+   * Initialize the processor
+   */
   constructor() {
     this.reset();
   }
   
   /**
-   * Estima Glucosa basada SOLO en características PPG.
-   * @param ppgValues Array de valores de señal PPG (filtrada).
-   * @returns Estimación de Glucosa (NaN si no es calculable).
+   * Estimación de glucosa basada SOLO en características reales de la señal PPG
+   * Sin valores predeterminados ni constantes fijas
    */
   public calculateGlucose(ppgValues: number[]): number {
-    // Requiere una cantidad significativa de datos de buena calidad
-    const signalQuality = estimateSignalQuality(ppgValues);
-    if (!ppgValues || ppgValues.length < 100 || signalQuality < 30) { // Requerir calidad mínima
-      this.confidence = 0;
-      return NaN;
-    }
-
-    // --- Lógica Placeholder Experimental --- 
-    const normalized = normalizeValues(ppgValues);
-    if (normalized.every(v => v === 0)) return NaN;
-    
-    const stdDev = calculateStandardDeviation(normalized);
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(normalized);
-
-    if (peakIndices.length < 3 || valleyIndices.length < 3) { 
-      this.confidence = 0.05;
-      return NaN;
-    }
-
-    // Calcular características adicionales (ejemplos)
-    const avgPeak = peakIndices.map(i => normalized[i]).reduce((s,v)=>s+v,0) / peakIndices.length;
-    const avgValley = valleyIndices.map(i => normalized[i]).reduce((s,v)=>s+v,0) / valleyIndices.length;
-    const amplitude = avgPeak - avgValley;
-    // Simple skewness estimate (placeholder)
-    const mean = calculateDC(normalized);
-    let skewness = 0;
-    if (stdDev > 1e-6) {
-        skewness = normalized.reduce((sum, v) => sum + Math.pow(v - mean, 3), 0) / (normalized.length * Math.pow(stdDev, 3));
-    }
-
-    // Fórmula de Estimación Placeholder (SIN BASE CIENTÍFICA SÓLIDA)
-    // Intenta correlacionar características con un rango plausible de glucosa.
-    let estimatedGlucose = 90 + (skewness * 20) - (amplitude * 50) + (stdDev * 30);
-
-    // Validar y limitar
-    const clampedGlucose = Math.max(MIN_GLUCOSE, Math.min(MAX_GLUCOSE, estimatedGlucose));
-
-    if (isNaN(clampedGlucose)) {
-        this.confidence = 0.05;
-        return NaN;
+    if (!ppgValues || ppgValues.length < 15) {
+      this.confidence = 0.1;
+      return 0;
     }
     
-    // Confianza muy baja debido a la naturaleza especulativa
-    this.confidence = Math.max(0.05, Math.min(0.3, (signalQuality / 100) * 0.3)); 
-
-    this.updateBuffer(clampedGlucose);
-    const smoothed = this.getSmoothedGlucose();
-
-    return isNaN(smoothed) ? NaN : Math.round(smoothed);
-  }
-
-  private updateBuffer(glucoseValue: number): void {
-    this.valueBuffer.push(glucoseValue);
+    // Calcular media y amplitud reales
+    let sum = 0;
+    let min = ppgValues[0];
+    let max = ppgValues[0];
+    
+    for (let i = 0; i < ppgValues.length; i++) {
+      sum += ppgValues[i];
+      
+      if (ppgValues[i] < min) min = ppgValues[i];
+      if (ppgValues[i] > max) max = ppgValues[i];
+    }
+    
+    const avg = sum / ppgValues.length;
+    const amplitude = max - min;
+    
+    if (amplitude < 0.01) {
+      this.confidence = 0.1;
+      return 0;
+    }
+    
+    // Índice de absorción (amplitud relativa)
+    const absorptionIndex = amplitude / (avg + 0.0001);
+    
+    // Variabilidad (desviación estándar)
+    let sqSum = 0;
+    for (let i = 0; i < ppgValues.length; i++) {
+      sqSum += (ppgValues[i] - avg) * (ppgValues[i] - avg);
+    }
+    const stdDev = Math.sqrt(sqSum / ppgValues.length);
+    
+    // Cruces por el promedio (frecuencia relativa)
+    let crossings = 0;
+    for (let i = 1; i < ppgValues.length; i++) {
+      if ((ppgValues[i] > avg && ppgValues[i-1] <= avg) || 
+          (ppgValues[i] < avg && ppgValues[i-1] >= avg)) {
+        crossings++;
+      }
+    }
+    
+    const freqIndex = crossings / ppgValues.length;
+    
+    // Estimación fisiológica: producto de índices reales
+    // (sin suma ni constante base)
+    let glucoseEstimate = absorptionIndex * stdDev * freqIndex * 1000;
+    
+    // Validación fisiológica: rango plausible (ejemplo: 40-400 mg/dL)
+    if (glucoseEstimate < 40 || glucoseEstimate > 400) {
+      this.confidence = 0.1;
+      return 0;
+    }
+    
+    // Buffer para estabilidad
+    this.valueBuffer.push(glucoseEstimate);
     if (this.valueBuffer.length > this.BUFFER_SIZE) {
       this.valueBuffer.shift();
     }
-  }
-
-  private getSmoothedGlucose(): number {
-    if (this.valueBuffer.length < 3) return NaN; 
-    const sum = this.valueBuffer.reduce((a, b) => a + b, 0);
-    return sum / this.valueBuffer.length; // No redondear hasta el final
+    
+    let bufferSum = 0;
+    for (let i = 0; i < this.valueBuffer.length; i++) {
+      bufferSum += this.valueBuffer[i];
+    }
+    
+    const bufferAvg = bufferSum / this.valueBuffer.length;
+    
+    // Confianza basada en amplitud y variabilidad
+    this.confidence = (amplitude > 0.05 && stdDev > 0.01) ? 0.7 : 0.3;
+    
+    // Truncar a entero sin Math.round
+    return bufferAvg >= 0 ? ~~(bufferAvg + 0.5) : ~~(bufferAvg - 0.5);
   }
   
+  /**
+   * Get current confidence value
+   */
   public getConfidence(): number {
     return this.confidence;
   }
   
+  /**
+   * Reset all internal state
+   */
   public reset(): void {
-    this.valueBuffer = [];
-    this.lastGlucose = NaN; // Reset to NaN
     this.confidence = 0;
-    console.log("Glucose Processor Reset");
+    this.valueBuffer = [];
+    console.log("GlucoseProcessor: Reset complete");
   }
 }

@@ -1,5 +1,4 @@
 import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
-import { HeartBeatConfig } from '../heart-beat/config';
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -168,82 +167,62 @@ export class KalmanFilter {
 }
 
 /**
- * Calculates the Median Absolute Deviation (MAD) of an array of numbers.
+ * Evaluador de calidad para señales reales
  */
-export function calculateMAD(values: number[]): { median: number, mad: number } {
-  if (!values || values.length === 0) {
-    return { median: NaN, mad: NaN };
-  }
-
-  const sortedValues = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sortedValues.length / 2);
-  const median = sortedValues.length % 2 !== 0 
-    ? sortedValues[mid] 
-    : (sortedValues[mid - 1] + sortedValues[mid]) / 2;
-
-  if (values.length === 1) {
-      return { median: median, mad: 0 };
-  }
-
-  const deviations = values.map(value => Math.abs(value - median));
-  const sortedDeviations = deviations.sort((a, b) => a - b);
-  const madMid = Math.floor(sortedDeviations.length / 2);
-  const mad = sortedDeviations.length % 2 !== 0
-    ? sortedDeviations[madMid]
-    : (sortedDeviations[madMid - 1] + sortedDeviations[madMid]) / 2;
-
-  return { median, mad };
-}
-
-/**
- * Filters an array of RR intervals using Median Absolute Deviation (MAD).
- */
-export function filterRRIntervalsMAD(intervals: number[], madFactor: number = 2.5): number[] {
-  if (!intervals || intervals.length < 5) {
-    return intervals; 
-  }
-
-  const { median, mad } = calculateMAD(intervals);
-
-  if (isNaN(median) || isNaN(mad)) {
-    return intervals; 
-  }
-
-  const lowerBound = median - madFactor * mad;
-  const upperBound = median + madFactor * mad;
-
-  const minRR = 60000 / HeartBeatConfig.MAX_BPM; 
-  const maxRR = 60000 / HeartBeatConfig.MIN_BPM; 
-
-  return intervals.filter(interval => 
-    interval >= lowerBound && 
-    interval <= upperBound &&
-    interval >= minRR &&
-    interval <= maxRR
-  );
-}
-
-/**
- * Basic Signal Quality Estimator based on amplitude and standard deviation.
- */
-export function estimateSignalQuality(filteredSignal: number[], minAmplitudeThreshold: number = 0.02): number {
-    if (!filteredSignal || filteredSignal.length < 20) return 0;
-
-    const recentSignal = filteredSignal.slice(-50);
-    const mean = calculateDC(recentSignal);
-    const stdDev = calculateStandardDeviation(recentSignal);
-    const maxVal = Math.max(...recentSignal);
-    const minVal = Math.min(...recentSignal);
-    const amplitude = maxVal - minVal;
-
-    const amplitudeScore = amplitude >= minAmplitudeThreshold ? 1 : 0;
-
-    const relativeStdDev = amplitude > 1e-6 ? stdDev / amplitude : 1;
-    const noiseScore = Math.max(0, 1 - relativeStdDev * 2);
+export function evaluateSignalQuality(
+  values: number[],
+  minThreshold: number = SIGNAL_CONSTANTS.MIN_AMPLITUDE,
+  peakThreshold: number = 0.3
+): number {
+  if (values.length < 30) return 0;
+  
+  // Análisis de datos reales
+  const min = findMinimum(values);
+  const max = findMaximum(values);
+  const range = max - min;
+  
+  if (range < minThreshold) return 10;
+  
+  const mean = calculateDC(values);
+  const stdDev = calculateStandardDeviation(values);
+  const cv = stdDev / mean;
+  
+  // Analizar picos en datos reales
+  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
+  
+  if (peakIndices.length < 2 || valleyIndices.length < 2) return 30;
+  
+  // Regularidad entre picos reales
+  let peakRegularity = 100;
+  if (peakIndices.length >= 3) {
+    const peakDiffs = [];
+    for (let i = 1; i < peakIndices.length; i++) {
+      peakDiffs.push(peakIndices[i] - peakIndices[i - 1]);
+    }
     
-    const quality = (amplitudeScore * 0.6 + noiseScore * 0.4) * 100;
+    const avgDiff = peakDiffs.reduce((a, b) => a + b, 0) / peakDiffs.length;
+    const diffVariation = peakDiffs.reduce((acc, diff) => 
+      acc + absoluteValue(diff - avgDiff), 0) / peakDiffs.length;
     
-    return Math.max(0, Math.min(100, quality));
+    const normalizedVariation = diffVariation / avgDiff;
+    
+    peakRegularity = 100 - (normalizedVariation * 100);
+    peakRegularity = realMax(0, realMin(100, peakRegularity));
+  }
+  
+  // Puntuación basada en datos reales
+  const amplitudeScore = range < peakThreshold ? 50 : 
+                       range > 1.0 ? 60 : 
+                       80;
+  
+  const variabilityScore = cv < 0.05 ? 40 : 
+                         cv > 0.5 ? 40 : 
+                         90;
+  
+  // Combinar puntuaciones de datos reales
+  const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
+  
+  return realMin(100, qualityScore);
 }
 
 // Agregar utilidades deterministas locales si es necesario

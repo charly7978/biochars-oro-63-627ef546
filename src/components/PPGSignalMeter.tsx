@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
+import HeartRateService from '../services/HeartRateService';
 import { PeakData } from '@/types/peak';
-import { optimizeCanvas, getSignalColor, isPointInArrhythmiaWindow } from "@/utils/displayOptimizer";
 
 interface PPGSignalMeterProps {
   value: number;
@@ -19,8 +19,6 @@ interface PPGSignalMeterProps {
   preserveResults?: boolean;
   isArrhythmia?: boolean;
   arrhythmiaWindows?: { start: number, end: number }[];
-  isPeak?: boolean;
-  peakTimestamp?: number | null;
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -37,9 +35,7 @@ const PPGSignalMeter = memo(({
   rawArrhythmiaData,
   preserveResults = false,
   isArrhythmia = false,
-  arrhythmiaWindows = [],
-  isPeak,
-  peakTimestamp
+  arrhythmiaWindows = []
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -55,7 +51,6 @@ const PPGSignalMeter = memo(({
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
-  const [lastPeakEffectTime, setLastPeakEffectTime] = useState(0);
   
   // Configuración optimizada para visualización de señal PPG
   const WINDOW_WIDTH_MS = 4500;
@@ -83,9 +78,49 @@ const PPGSignalMeter = memo(({
   const MIN_PEAK_DISTANCE = 300;   // Distancia mínima entre picos en ms (200ms = 300BPM máximo)
 
   useEffect(() => {
+    const handlePeakDetection = (peakData: PeakData) => {
+      const now = Date.now();
+      
+      // Solo almacenar picos con valores reales y medidos
+      if (peakData && peakData.timestamp && peakData.value) {
+        peaksRef.current.push({
+          time: peakData.timestamp,
+          value: peakData.value * VERTICAL_SCALE,
+          isArrhythmia: peakData.isArrhythmia || false,
+          beepPlayed: true
+        });
+        
+        // Mantener una cantidad razonable de picos en memoria
+        while (peaksRef.current.length > 20) {
+          peaksRef.current.shift();
+        }
+        
+        if (peakData.isArrhythmia && !showArrhythmiaAlert) {
+          setShowArrhythmiaAlert(true);
+          showArrhythmiaAlertRef.current = true;
+        }
+        
+        console.log("PPGSignalMeter: Peak received from service", {
+          timestamp: new Date(peakData.timestamp).toISOString(),
+          isArrhythmia: peakData.isArrhythmia,
+          value: peakData.value
+        });
+      }
+    };
+    
+    HeartRateService.addPeakListener(handlePeakDetection);
+    
+    return () => {
+      HeartRateService.removePeakListener(handlePeakDetection);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
+    
+    HeartRateService.setMonitoring(isFingerDetected);
     
     if (preserveResults && !isFingerDetected) {
       setResultsVisible(true);
@@ -98,7 +133,7 @@ const PPGSignalMeter = memo(({
       lastValueRef.current = null;
       setResultsVisible(false);
     }
-  }, [preserveResults, isFingerDetected, BUFFER_SIZE]);
+  }, [preserveResults, isFingerDetected]);
 
   useEffect(() => {
     qualityHistoryRef.current.push(quality);
@@ -433,6 +468,11 @@ const PPGSignalMeter = memo(({
     const normalizedValue = smoothedValue - (baselineRef.current || 0);
     const scaledValue = normalizedValue * VERTICAL_SCALE;
     
+    if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      // Solo procesar la señal cuando realmente hay un dedo detectado
+      HeartRateService.processSignal(value);
+    }
+    
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
@@ -575,17 +615,12 @@ const PPGSignalMeter = memo(({
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
-
-    // Lógica para efecto visual de pico (usa props isPeak y peakTimestamp)
-    if (isPeak && peakTimestamp && peakTimestamp !== lastPeakEffectTime) {
-      setLastPeakEffectTime(peakTimestamp);
-    }
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
     smoothValue, preserveResults, isArrhythmia, drawArrhythmiaZones, arrhythmiaWindows,
     VERTICAL_SCALE, WINDOW_WIDTH_MS, FRAME_TIME, USE_OFFSCREEN_CANVAS, REQUIRED_FINGER_FRAMES,
     PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN,
-    detectRealTimePeaks, isPeak, peakTimestamp, lastPeakEffectTime
+    detectRealTimePeaks
   ]);
 
   useEffect(() => {
@@ -596,13 +631,11 @@ const PPGSignalMeter = memo(({
     };
   }, [renderSignal]);
 
-  const handleResetClick = useCallback(() => {
+  const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
     showArrhythmiaAlertRef.current = false;
     peaksRef.current = [];
-    baselineRef.current = null;
-    lastValueRef.current = null;
-    dataBufferRef.current?.clear();
+    HeartRateService.reset();
     onReset();
   }, [onReset]);
 
@@ -665,7 +698,7 @@ const PPGSignalMeter = memo(({
           INICIAR
         </button>
         <button 
-          onClick={handleResetClick}
+          onClick={handleReset}
           className="bg-transparent text-white/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           RESET
