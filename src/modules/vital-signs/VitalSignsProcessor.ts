@@ -108,8 +108,8 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Procesa la señal real de PPG y calcula todos los signos vitales
+   * Usando SOLO mediciones directas sin valores de referencia o simulación
    */
   public processSignal(
     ppgValue: number,
@@ -300,7 +300,12 @@ export class VitalSignsProcessor {
       glucose,
       glucoseConfidence,
       overallConfidence,
-      lastArrhythmiaData
+      lastArrhythmiaData ? {
+        timestamp: lastArrhythmiaData.timestamp,
+        rmssd: lastArrhythmiaData.rmssd || 0,
+        rrVariation: lastArrhythmiaData.rrVariation || 0,
+        category: lastArrhythmiaData.category
+      } : null
     );
     
     // Si tenemos al menos un valor válido, guardar como último válido
