@@ -4,7 +4,12 @@
 
 import { HeartBeatConfig } from '../modules/heart-beat/config';
 import { applyFilterPipeline } from '../modules/heart-beat/signal-filters';
-import { detectPeak, confirmPeak } from '../modules/heart-beat/peak-detector';
+import { 
+  detectAndConfirmPeak,
+  getInitialPeakDetectionState,
+  detectPeak,
+  confirmPeak
+} from '../modules/heart-beat/peak-detector';
 import { 
   updateBPMHistory, 
   calculateCurrentBPM, 
@@ -14,6 +19,14 @@ import {
 import { RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
+import { calculateMAD } from '../modules/heart-beat/utils';
+import ArrhythmiaDetectionService from './ArrhythmiaDetectionService';
+import { ArrhythmiaDetectionResult } from './arrhythmia/types';
+import { 
+    filterRRIntervalsMAD, 
+    estimateSignalQuality, 
+    calculateMAD 
+} from '../modules/vital-signs/shared-signal-utils';
 
 export interface HeartRateResult {
   bpm: number;
@@ -76,7 +89,7 @@ class HeartRateService {
   private lastValue: number = 0;
   private values: number[] = [];
   private startTime: number = 0;
-  private peakConfirmationBuffer: number[] = [];
+  private peakDetectionState = getInitialPeakDetectionState();
   private lastConfirmedPeak: boolean = false;
   private smoothBPM: number = 0;
   private readonly BPM_ALPHA: number = 0.2;
@@ -91,6 +104,7 @@ class HeartRateService {
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
   private debugCounter = 0; // Counter for selective logging
+  private currentSignalQuality: number = 50; // Initialize quality
 
   private constructor() {
     this.reset();
@@ -174,146 +188,152 @@ class HeartRateService {
    */
   public processSignal(value: number): HeartRateResult {
     this.debugCounter++;
-    const shouldLog = (this.debugCounter % 15 === 0); // Log roughly every half second
+    const shouldLog = (this.debugCounter % 15 === 0);
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Input: ${value.toFixed(4)}`);
 
-    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Input ppgValue: ${value.toFixed(4)}`);
-
-    // Weak signal check
+    // --- Pre-checks --- 
     if (this.isWeakSignal(value)) {
-      return {
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
-        filteredValue: value,
-        rrIntervals: [],
-        lastPeakTime: this.lastPeakTime,
-        rrData: {
-          intervals: [],
-          lastPeakTime: this.lastPeakTime
-        }
-      };
+      if (shouldLog) console.log(`[HRS ${this.debugCounter}] Weak signal detected`);
+      // Reset confidence/quality if signal is weak? Or let confidence calculation handle it.
+      this.currentSignalQuality = 10; // Set low quality
+      // Return current smoothed BPM but low confidence
+      return { bpm: Math.round(this.smoothBPM), confidence: 0.1, isPeak: false, filteredValue: value, rrIntervals: [], lastPeakTime: this.lastPeakTime, rrData: { intervals: [], lastPeakTime: this.lastPeakTime } };
     }
-    
-    // Update signal buffer
-    this.signalBuffer.push(value);
-    if (this.signalBuffer.length > this.WINDOW_SIZE) {
-      this.signalBuffer.shift();
-    }
-    
-    // Apply filters
-    const { 
-      filteredValue, 
-      updatedMedianBuffer, 
-      updatedMovingAvgBuffer 
-    } = this.applyFilters(value);
-    this.medianBuffer = updatedMedianBuffer;
-    this.movingAverageBuffer = updatedMovingAvgBuffer;
+    this.currentSignalQuality = estimateSignalQuality(this.signalBuffer); // Calculate quality based on buffer
+
+    // --- Filtering & Derivative --- 
+    const { filteredValue } = this.applyFilters(value);
     this.smoothedValue = filteredValue;
-    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Filtered Value: ${filteredValue.toFixed(4)}`);
-    
-    // Update baseline
-    if (this.baseline === 0) {
-      this.baseline = filteredValue;
-    } else {
-      this.baseline = this.baseline * this.BASELINE_FACTOR + filteredValue * (1 - this.BASELINE_FACTOR);
-    }
-    
-    // Calculate derivative
+    // Baseline calculation needs filtered history
+    this.signalBuffer.push(filteredValue);
+    if (this.signalBuffer.length > this.WINDOW_SIZE) this.signalBuffer.shift();
+    this.updateBaseline(); // Update baseline using filtered history
     const derivative = filteredValue - this.lastValue;
-    this.lastValue = filteredValue;
-    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Normalized: ${derivative.toFixed(4)}, Baseline: ${this.baseline.toFixed(4)}`);
-    
-    // Find peaks
-    const now = Date.now();
     const normalizedValue = filteredValue - this.baseline;
-    
-    // Detect peak
-    const { isPeak, confidence } = this.detectPeak(
+    this.lastValue = filteredValue; 
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Filtered: ${filteredValue.toFixed(4)}, Norm: ${normalizedValue.toFixed(4)}, Deriv: ${derivative.toFixed(4)}`);
+
+    // --- Peak Detection & Confirmation --- 
+    const now = Date.now();
+    const detectionResult = detectAndConfirmPeak(
       normalizedValue,
       derivative,
-      now
+      this.lastValue, 
+      now,
+      this.peakDetectionState,
+      {
+        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
+        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
+        minConfidence: this.MIN_CONFIDENCE 
+      }
     );
-    
-    // Confirm peak
-    const { 
-      isConfirmedPeak, 
-      updatedBuffer, 
-      updatedLastConfirmedPeak 
-    } = this.confirmPeak(
-      isPeak,
-      normalizedValue,
-      confidence
-    );
-    
-    this.peakConfirmationBuffer = updatedBuffer;
-    this.lastConfirmedPeak = updatedLastConfirmedPeak;
-    
-    // Process confirmed peak
-    if (isConfirmedPeak) {
-      this.previousPeakTime = this.lastPeakTime;
+    this.peakDetectionState = detectionResult.updatedState; 
+    const isConfirmedPeak = detectionResult.isPeakConfirmed;
+    const peakConfidence = detectionResult.confidence;
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Peak Confirm: ${isConfirmedPeak}, Conf: ${peakConfidence.toFixed(2)}, AdaptThresh: ${this.peakDetectionState.adaptiveThreshold.toFixed(3)}`);
+
+    // --- Process Confirmed Peak --- 
+    let validatedRrIntervals: number[] = this.rrIntervalHistory;
+    let rrStabilityScore = 0.5;
+    let isCurrentPeakArrhythmic = false;
+
+    if (isConfirmedPeak && !this.lastConfirmedPeak) {
+      this.lastConfirmedPeak = true;
+      
+      this.previousPeakTime = this.lastPeakTime; 
       this.lastPeakTime = now;
       
       if (this.previousPeakTime !== null) {
         const newInterval = this.lastPeakTime - this.previousPeakTime;
-        if (newInterval >= this.MIN_PEAK_TIME_MS && newInterval <= 2000) {
+        if (newInterval >= this.MIN_PEAK_TIME_MS / 1.5 && newInterval <= 2500) {
           this.rrIntervalHistory.push(newInterval);
-          if (this.rrIntervalHistory.length > 20) {
-            this.rrIntervalHistory.shift();
-          }
-          if (shouldLog) console.log(`[HRS ${this.debugCounter}] New RR Interval: ${newInterval} ms`);
+          if (this.rrIntervalHistory.length > 20) this.rrIntervalHistory.shift();
+          if (shouldLog) console.log(`[HRS ${this.debugCounter}] New RR: ${newInterval} ms`);
         }
       }
+      
+      validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory);
+      if (shouldLog && validatedRrIntervals.length !== this.rrIntervalHistory.length) {
+          console.log(`[HRS ${this.debugCounter}] RR Filtered: ${this.rrIntervalHistory.length} -> ${validatedRrIntervals.length}`);
+      }
+      
+      if (validatedRrIntervals.length >= 5) {
+          const { median: medianRR, mad: madRR } = calculateMAD(validatedRrIntervals);
+          if (!isNaN(medianRR) && medianRR > 0) {
+              const coeffVar = (madRR / medianRR);
+              rrStabilityScore = Math.max(0, 1 - coeffVar * 3); 
+          }
+      }
+      if (shouldLog) console.log(`[HRS ${this.debugCounter}] RR Stability Score: ${rrStabilityScore.toFixed(2)}`);
 
-      // Update BPM history
-      this.bpmHistory = this.updateBPMHistory(now);
+      let currentArrhythmiaStatus: ArrhythmiaDetectionResult['category'] = 'normal';
+      if (validatedRrIntervals.length >= 5) {
+          const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(validatedRrIntervals);
+          isCurrentPeakArrhythmic = arrhythmiaResult.isArrhythmia;
+          currentArrhythmiaStatus = arrhythmiaResult.category || (isCurrentPeakArrhythmic ? 'possible-arrhythmia' : 'normal');
+      }
       
-      // Trigger vibration and beep (ya no diferencia arritmia)
-      this.triggerHeartbeatFeedback(false, confidence); // Siempre feedback normal
-      
-      // Notify listeners about the peak (solo timestamp y valor)
-      this.notifyPeakListeners({
-        timestamp: now, 
-        value: filteredValue // Usar valor filtrado 
-      });
+      if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS * 0.8) {
+          const feedbackConfidence = peakConfidence * (this.currentSignalQuality / 100) * rrStabilityScore;
+          if (shouldLog) console.log(`[HRS ${this.debugCounter}] Triggering Feedback: Arr=${isCurrentPeakArrhythmic}, Conf=${feedbackConfidence.toFixed(2)}`);
+          this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, feedbackConfidence);
+          this.notifyPeakListeners({ timestamp: now, value: normalizedValue }); 
+          this.lastProcessedPeakTime = now; 
+      }
+    } else if (!isConfirmedPeak) {
+      this.lastConfirmedPeak = false;
     }
     
-    // Calculate current BPM
-    const rawBPM = this.calculateBPM();
+    if (this.rrIntervalHistory.length > 0) {
+        validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory);
+    } else {
+        validatedRrIntervals = [];
+    }
     
-    // Apply smoothing
-    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
+    const rawBPM = calculateCurrentBPM(validatedRrIntervals); 
+    this.smoothBPM = smoothBPM(rawBPM > 0 ? rawBPM : this.smoothBPM, this.smoothBPM, this.BPM_ALPHA);
     
-    // Create RRIntervalData object con el historial actualizado
+    const finalConfidence = Math.max(0, Math.min(1, 
+        (peakConfidence * 0.4 + rrStabilityScore * 0.4 + (this.currentSignalQuality / 100) * 0.2) * 
+        (this.isInWarmup() ? 0.3 : 1) *                
+        (this.isWeakSignal(value) ? 0.0 : 1)
+    ));
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] BPM: Raw=${rawBPM.toFixed(1)}, Smooth=${this.smoothBPM.toFixed(1)}, Conf=${finalConfidence.toFixed(2)}`);
+
     const rrData: RRIntervalData = {
-      intervals: [...this.rrIntervalHistory],
+      intervals: [...validatedRrIntervals],
       lastPeakTime: this.lastPeakTime
     };
     
-    return {
-      bpm: realRound(this.smoothBPM),
-      confidence,
-      isPeak: isConfirmedPeak && !this.isInWarmup(),
-      filteredValue,
-      rrIntervals: [...this.rrIntervalHistory],
-      lastPeakTime: this.lastPeakTime,
-      rrData
+    return { 
+        bpm: Math.round(this.smoothBPM), 
+        confidence: finalConfidence, 
+        isPeak: isConfirmedPeak && !this.lastConfirmedPeak && !this.isInWarmup(),
+        filteredValue,
+        rrIntervals: [...validatedRrIntervals],
+        lastPeakTime: this.lastPeakTime,
+        rrData
     };
   }
   
   /**
    * Verifica si la señal es débil
+   * TEMPORALMENTE DESHABILITADO PARA DEPURACIÓN: Siempre devuelve false.
    */
   private isWeakSignal(value: number): boolean {
-    const valueAbs = value >= 0 ? value : -value;
+    return false; // Deshabilitar temporalmente el chequeo de señal débil
+    /* Lógica Original:
+    const valueAbs = Math.abs(value);
     const isCurrentlyWeak = valueAbs < this.LOW_SIGNAL_THRESHOLD;
     
     if (isCurrentlyWeak) {
       this.lowSignalCount++;
     } else {
-      this.lowSignalCount = realMax(0, this.lowSignalCount - 1);
+      this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
     }
     
     return this.lowSignalCount > this.LOW_SIGNAL_FRAMES;
+    */
   }
   
   /**
@@ -334,51 +354,6 @@ class HeartRateService {
         movingAvgWindowSize: this.MOVING_AVERAGE_WINDOW,
         emaAlpha: this.EMA_ALPHA
       }
-    );
-  }
-  
-  /**
-   * Detecta si hay un pico en la señal
-   */
-  private detectPeak(
-    normalizedValue: number,
-    derivative: number,
-    currentTime: number
-  ): { isPeak: boolean; confidence: number } {
-    return detectPeak(
-      normalizedValue,
-      derivative,
-      this.baseline,
-      this.lastValue,
-      this.lastPeakTime,
-      currentTime,
-      {
-        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
-        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
-        signalThreshold: this.SIGNAL_THRESHOLD
-      }
-    );
-  }
-  
-  /**
-   * Confirma si un pico potencial es real
-   */
-  private confirmPeak(
-    isPeak: boolean,
-    normalizedValue: number,
-    confidence: number
-  ): {
-    isConfirmedPeak: boolean;
-    updatedBuffer: number[];
-    updatedLastConfirmedPeak: boolean;
-  } {
-    return confirmPeak(
-      isPeak,
-      normalizedValue,
-      this.lastConfirmedPeak,
-      this.peakConfirmationBuffer,
-      this.MIN_CONFIDENCE,
-      confidence
     );
   }
   
@@ -429,7 +404,7 @@ class HeartRateService {
     this.lastValue = 0;
     this.values = [];
     this.startTime = Date.now();
-    this.peakConfirmationBuffer = [];
+    this.peakDetectionState = getInitialPeakDetectionState();
     this.lastConfirmedPeak = false;
     this.smoothBPM = 0;
     this.peakCandidateIndex = null;
@@ -437,8 +412,9 @@ class HeartRateService {
     this.lowSignalCount = 0;
     this.lastProcessedPeakTime = 0;
     this.rrIntervalHistory = [];
+    this.currentSignalQuality = 50; // Reset quality estimate
     
-    console.log("HeartRateService: Reset complete - including peak detection states");
+    console.log("HeartRateService: Reset complete - including peak detection state");
   }
 
   /**
@@ -447,6 +423,17 @@ class HeartRateService {
   public getFinalBPM(): number {
     // Return the smoothed value, rounded
     return Math.round(this.smoothBPM);
+  }
+
+  private updateBaseline(): void {
+      if (this.signalBuffer.length > this.WINDOW_SIZE / 2) { 
+          const recentFiltered = this.signalBuffer.slice(-Math.floor(this.WINDOW_SIZE / 2));
+          const { median: medianFiltered } = calculateMAD(recentFiltered);
+          const newBaseline = isNaN(medianFiltered) ? this.smoothedValue : medianFiltered;
+          this.baseline = this.baseline * this.BASELINE_FACTOR + newBaseline * (1 - this.BASELINE_FACTOR); // Smooth update
+      } else {
+          this.baseline = this.smoothedValue; // Fallback if not enough data
+      }
   }
 }
 
