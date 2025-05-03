@@ -8,5 +8,5 @@ export interface ArrhythmiaData {
   timestamp: number;
   rmssd: number;
   rrVariation: number;
-  category?: string; // Added category property as optional
+  category?: string; // This is already defined as optional
 }

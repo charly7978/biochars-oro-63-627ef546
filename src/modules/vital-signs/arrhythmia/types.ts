@@ -28,6 +28,11 @@ export interface RRAnalysisResult {
    * Boolean flag indicating whether an arrhythmia was detected
    */
   isArrhythmia: boolean;
+
+  /**
+   * Optional category of the detected arrhythmia
+   */
+  category?: string;
 }
 
 /**
