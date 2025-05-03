@@ -1,79 +1,109 @@
 
-import { ArrhythmiaWindow } from './types';
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { ArrhythmiaListener } from './types';
+import { realAbs } from './utils';
 
 /**
- * Manages arrhythmia windows for visualization purposes
+ * Manages arrhythmia visualization windows and listeners
  */
 export class ArrhythmiaWindowManager {
-  private windows: ArrhythmiaWindow[] = [];
-  private readonly MAX_WINDOWS = 10;
-  
+  private arrhythmiaWindows: ArrhythmiaWindow[] = [];
+  private arrhythmiaListeners: ArrhythmiaListener[] = [];
+  private windowGenerationCounter: number = 0;
+
   /**
-   * Add a new arrhythmia window
-   * @param window Window time range to add
+   * Register for arrhythmia window notifications
+   */
+  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.arrhythmiaListeners.push(listener);
+  }
+
+  /**
+   * Remove arrhythmia listener
+   */
+  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
+  }
+
+  /**
+   * Notify all listeners about a new arrhythmia window
+   */
+  private notifyListeners(window: ArrhythmiaWindow): void {
+    this.arrhythmiaListeners.forEach(listener => {
+      try {
+        listener(window);
+      } catch (error) {
+        console.error("Error in arrhythmia listener:", error);
+      }
+    });
+  }
+
+  /**
+   * Add a new arrhythmia window for visualization
    */
   public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
-    // Add window to the list
-    this.windows.push(window);
+    // Check if there's a similar recent window (within 500ms)
+    const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
+      realAbs(existingWindow.start - window.start) < 500 && 
+      realAbs(existingWindow.end - window.end) < 500
+    );
     
-    // Limit to MAX_WINDOWS by removing oldest windows
-    if (this.windows.length > this.MAX_WINDOWS) {
-      this.windows.shift(); // Remove oldest window
+    if (hasRecentWindow) {
+      return; // Don't add duplicate windows
+    }
+    
+    // Add new arrhythmia window
+    this.arrhythmiaWindows.push(window);
+    
+    // Sort by time for consistent visualization
+    this.arrhythmiaWindows.sort((a, b) => b.start - a.start);
+    
+    // Limit to the 5 most recent windows
+    if (this.arrhythmiaWindows.length > 5) {
+      this.arrhythmiaWindows = this.arrhythmiaWindows.slice(0, 5);
+    }
+    
+    // Debug log
+    console.log("Arrhythmia window added for visualization", {
+      startTime: new Date(window.start).toISOString(),
+      endTime: new Date(window.end).toISOString(),
+      duration: window.end - window.start,
+      windowsCount: this.arrhythmiaWindows.length
+    });
+    
+    // Notify listeners about the new window
+    this.notifyListeners(window);
+  }
+
+  /**
+   * Get all current arrhythmia windows
+   */
+  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
+    return [...this.arrhythmiaWindows];
+  }
+
+  /**
+   * Clear outdated arrhythmia windows
+   */
+  public cleanupOldWindows(): void {
+    const currentTime = Date.now();
+    // Filter only recent windows (less than 20 seconds)
+    const oldWindows = this.arrhythmiaWindows.filter(window => 
+      currentTime - window.end < 20000
+    );
+    
+    // Only update if there are changes
+    if (oldWindows.length !== this.arrhythmiaWindows.length) {
+      console.log(`Cleaned up old arrhythmia windows: removed ${this.arrhythmiaWindows.length - oldWindows.length} windows`);
+      this.arrhythmiaWindows = oldWindows;
     }
   }
-  
+
   /**
-   * Get all arrhythmia windows
-   * @returns Array of arrhythmia windows
+   * Reset window state
    */
-  public getWindows(): ArrhythmiaWindow[] {
-    return [...this.windows]; // Return copy to prevent external modification
-  }
-  
-  /**
-   * Clear all windows
-   */
-  public clearWindows(): void {
-    this.windows = [];
-  }
-  
-  /**
-   * Check if a timestamp falls within any arrhythmia window
-   * @param timestamp Timestamp to check
-   * @returns True if timestamp is within any arrhythmia window
-   */
-  public isInArrhythmiaWindow(timestamp: number): boolean {
-    return this.windows.some(window => 
-      timestamp >= window.start && timestamp <= window.end
-    );
-  }
-  
-  /**
-   * Find window containing a timestamp
-   * @param timestamp Timestamp to check
-   * @returns The window containing the timestamp, or undefined
-   */
-  public findWindowContaining(timestamp: number): ArrhythmiaWindow | undefined {
-    return this.windows.find(window => 
-      timestamp >= window.start && timestamp <= window.end
-    );
-  }
-  
-  /**
-   * Get total duration of all windows
-   * @returns Total duration in ms
-   */
-  public getTotalDuration(): number {
-    return this.windows.reduce((total, window) => 
-      total + (window.end - window.start), 0
-    );
-  }
-  
-  /**
-   * Get count of windows
-   * @returns Number of windows
-   */
-  public getWindowCount(): number {
-    return this.windows.length;
+  public reset(): void {
+    this.arrhythmiaWindows = [];
+    this.windowGenerationCounter = 0;
   }
 }

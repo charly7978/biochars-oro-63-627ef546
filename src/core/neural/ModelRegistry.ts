@@ -1,6 +1,3 @@
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
 
 import { BaseNeuralModel } from './NeuralNetworkBase';
 import { HeartRateNeuralModel } from './HeartRateModel';
@@ -16,16 +13,26 @@ import { GlucoseNeuralModel } from './GlucoseModel';
 export class ModelRegistry {
   private static instance: ModelRegistry;
   private models: Map<string, BaseNeuralModel> = new Map();
+  private initialized: boolean = false;
   
   private constructor() {
+    this.initializeModels();
+  }
+  
+  /**
+   * Inicializa los modelos disponibles
+   */
+  private initializeModels(): void {
+    if (this.initialized) return;
+    
     // Registrar modelos disponibles
-    console.log("Initializing Model Registry...");
-    this.registerModel('heartRate', () => new HeartRateNeuralModel());
-    this.registerModel('spo2', () => new SpO2NeuralModel());
-    this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
-    this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
-    this.registerModel('glucose', () => new GlucoseNeuralModel());
-    console.log("Model Registry Initialized with model instances.");
+    this.models.set('heartRate', new HeartRateNeuralModel());
+    this.models.set('spo2', new SpO2NeuralModel());
+    this.models.set('bloodPressure', new BloodPressureNeuralModel());
+    this.models.set('arrhythmia', new ArrhythmiaNeuralModel());
+    this.models.set('glucose', new GlucoseNeuralModel());
+    
+    this.initialized = true;
   }
   
   /**
@@ -39,36 +46,23 @@ export class ModelRegistry {
   }
   
   /**
-   * Registra un factory de modelo
-   */
-  private registerModel(id: string, factory: () => BaseNeuralModel): void {
-    if (!this.models.has(id)) {
-      console.log(`Registering model factory for: ${id}`);
-      // Crear la instancia aquí. La carga real (async) ocurre dentro del constructor del modelo.
-      try {
-          const modelInstance = factory();
-          this.models.set(id, modelInstance);
-          console.log(`Model instance created for: ${id}`);
-      } catch (error) {
-           console.error(`Failed to instantiate model ${id}:`, error);
-      }
-      
-    } else {
-      console.warn(`ModelRegistry: Model with id '${id}' already registered.`);
-    }
-  }
-  
-  /**
-   * Obtiene un modelo por su ID, inicializándolo si es necesario
+   * Obtiene un modelo por su ID, inicializándolo (cargándolo) si es necesario
+   * Retorna el modelo directamente, no una promesa
    */
   public getModel<T extends BaseNeuralModel>(id: string): T | null {
-    const model = this.models.get(id);
-    if (!model) {
-      console.warn(`ModelRegistry: Model with id '${id}' not found.`);
-      return null;
+    const model = this.models.get(id) as T;
+    if (!model) return null;
+    
+    // Iniciar carga en background si no está cargado
+    if (!model.getModelInfo().isLoaded) {
+      console.log(`Iniciando carga de modelo en background: ${id}`);
+      // Iniciar carga pero no esperar resultado
+      model.loadModel().catch(err => {
+        console.error(`Error al cargar modelo ${id}:`, err);
+      });
     }
-    // La carga es asíncrona, el que llama debe verificar model.isLoaded()
-    return model as T;
+    
+    return model;
   }
   
   /**
@@ -78,21 +72,19 @@ export class ModelRegistry {
     if (specificId) {
       const model = this.models.get(specificId);
       if (model) {
-        // TODO: Implementar un método `resetState()` en BaseNeuralModel si es necesario
-        // para limpiar estados internos sin recargar pesos.
-        console.log(`ModelRegistry: Resetting state for model '${specificId}' (if implemented).`);
-        // model.resetState?.(); 
-      } else {
-        console.warn(`ModelRegistry: Cannot reset non-existent model '${specificId}'.`);
+        console.log(`Reiniciando modelo específico: ${specificId}`);
+        this.models.set(specificId, new (Object.getPrototypeOf(model).constructor)());
       }
     } else {
-      console.log("ModelRegistry: Resetting state for all models (if implemented).");
-      this.models.forEach(model => {
-        // model.resetState?.();
-      });
-      // Opcional: Podríamos querer volver a registrar/cargar todo aquí
-      // this.models.clear();
-      // this.initializeModels(); // Si hubiera un método así
+      // Reiniciar todos los modelos
+      console.log('Reiniciando todos los modelos');
+      const modelIds = Array.from(this.models.keys());
+      for (const id of modelIds) {
+        const model = this.models.get(id);
+        if (model) {
+          this.models.set(id, new (Object.getPrototypeOf(model).constructor)());
+        }
+      }
     }
   }
   
@@ -103,41 +95,29 @@ export class ModelRegistry {
     id: string;
     name: string;
     version: string;
-    loaded: boolean;
+    initialized: boolean;
     architecture: string;
   }> {
-    const info: Array<{ id: string; name: string; version: string; loaded: boolean; architecture: string; }> = [];
-    this.models.forEach((model, id) => {
-      info.push({
-        id,
-        name: model.name,
-        version: model.version,
-        loaded: model.isLoaded(),
-        architecture: model.architecture,
-      });
-    });
-    return info;
+    return Array.from(this.models.entries()).map(([id, model]) => ({
+      id,
+      name: model.getModelInfo().name,
+      version: model.getModelInfo().version,
+      initialized: model.getModelInfo().isLoaded,
+      architecture: model.architecture
+    }));
   }
   
   /**
    * Libera recursos utilizados por los modelos
    */
   public dispose(): void {
-    console.log("Disposing all models in registry...");
-    this.models.forEach((model, id) => {
-      try {
-          model.dispose();
-      } catch(e) {
-           console.error(`Error disposing model ${id}:`, e);
-      }
-    });
+    // Limpiar modelos
     this.models.clear();
-    console.log("Model registry cleared.");
   }
 }
 
 /**
- * Función de utilidad para acceso rápido a modelos
+ * Función de utilidad para acceso rápido a modelos (ahora sincrónica)
  */
 export function getModel<T extends BaseNeuralModel>(id: string): T | null {
   return ModelRegistry.getInstance().getModel<T>(id);

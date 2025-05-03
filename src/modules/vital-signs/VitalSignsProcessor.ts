@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -15,9 +14,8 @@ import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
-import { getModel } from '../../core/neural/ModelRegistry';
+import { ModelRegistry } from '../../core/neural/ModelRegistry';
 import { PeakDetector } from '../../core/signal/PeakDetector';
-import { BaseNeuralModel } from '../../core/neural/NeuralNetworkBase';
 
 /**
  * Main vital signs processor
@@ -35,9 +33,9 @@ export class VitalSignsProcessor {
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
   
-  // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
-  private spo2Model: SpO2NeuralModel | null;
-  private bpModel: BloodPressureNeuralModel | null;
+  // Instancias de modelos neuronales
+  private spo2Model: SpO2NeuralModel | null = null;
+  private bpModel: BloodPressureNeuralModel | null = null;
   
   // Detector de picos para fallback de HR
   private peakDetector: PeakDetector;
@@ -80,14 +78,33 @@ export class VitalSignsProcessor {
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
 
-    // Obtener instancias de modelos neuronales
-    this.spo2Model = getModel<SpO2NeuralModel>('spo2');
-    this.bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
-    
     // Inicializar detector de picos
     this.peakDetector = new PeakDetector();
+    
+    // Inicializar modelos usando el ModelRegistry (ahora sincrónico)
+    this.spo2Model = ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+    this.bpModel = ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+    
+    console.log("VitalSignsProcessor: Neural models initialized", {
+      spo2ModelPresent: !!this.spo2Model,
+      bpModelPresent: !!this.bpModel
+    });
 
     this.reset();
+  }
+  
+  /**
+   * Inicializa asíncronamente los modelos neuronales
+   */
+  private async initModels() {
+    try {
+      // Obtener modelos de forma asíncrona
+      this.spo2Model = await ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+      this.bpModel = await ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+      console.log("VitalSignsProcessor: Modelos neuronales cargados");
+    } catch (error) {
+      console.error("VitalSignsProcessor: Error al cargar modelos neuronales", error);
+    }
   }
   
   /**
@@ -183,11 +200,9 @@ export class VitalSignsProcessor {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const spo2Result = this.spo2Model.predict(currentSignalSlice); 
-          if (spo2Result && spo2Result.length > 0) {
-            spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
-          }
+          spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
         } catch (error) {
-          console.error("Error predicting SpO2:", error);
+          console.error("Error al procesar SpO2:", error);
         }
       } else {
         spo2 = 0; // No hay modelo disponible
@@ -198,17 +213,15 @@ export class VitalSignsProcessor {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const bpResultNN = this.bpModel.predict(currentSignalSlice); 
-          if (bpResultNN && bpResultNN.length >= 2) {
-            systolic = bpResultNN[0];
-            diastolic = bpResultNN[1];
-            if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
-              pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
-            } else {
-              pressure = "--/--";
-            }
+          systolic = bpResultNN[0];
+          diastolic = bpResultNN[1];
+          if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
+            pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
+          } else {
+            pressure = "--/--";
           }
         } catch (error) {
-          console.error("Error predicting blood pressure:", error);
+          console.error("Error al procesar presión arterial:", error);
         }
       } else {
         pressure = "--/--"; // No hay modelo disponible
