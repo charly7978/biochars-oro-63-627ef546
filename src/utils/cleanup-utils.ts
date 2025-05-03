@@ -1,16 +1,16 @@
-
 /**
  * Utilities for cleaning up services and preventing memory leaks
  */
 import AudioFeedbackService from '@/services/AudioFeedbackService';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+// Import the class correctly now that it's exported directly
+import { ArrhythmiaDetectionService } from '@/services/arrhythmia/ArrhythmiaDetectionService'; 
 
 export const cleanupServices = () => {
   // Clean up AudioFeedbackService
   AudioFeedbackService.cleanUp();
   
-  // Clean up ArrhythmiaDetectionService
-  ArrhythmiaDetectionService.reset();
+  // Get instance using static method and call reset
+  ArrhythmiaDetectionService.getInstance().reset(); 
   
   console.log('All services cleaned up successfully');
 };

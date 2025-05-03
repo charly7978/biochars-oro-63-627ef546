@@ -1,4 +1,3 @@
-
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
 export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
@@ -18,7 +17,7 @@ export interface ArrhythmiaStatus {
     timestamp: number;
     rmssd: number;
     rrVariation: number;
-    category?: string;
+    category?: ArrhythmiaDetectionResult['category'];
   } | null;
 }
 

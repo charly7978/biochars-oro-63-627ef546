@@ -1,7 +1,5 @@
-
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
 import { ArrhythmiaListener } from './types';
-import { realAbs } from './utils';
 
 /**
  * Manages arrhythmia visualization windows and listeners
@@ -44,8 +42,8 @@ export class ArrhythmiaWindowManager {
   public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
     // Check if there's a similar recent window (within 500ms)
     const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
-      realAbs(existingWindow.start - window.start) < 500 && 
-      realAbs(existingWindow.end - window.end) < 500
+      Math.abs(existingWindow.start - window.start) < 500 && 
+      Math.abs(existingWindow.end - window.end) < 500
     );
     
     if (hasRecentWindow) {

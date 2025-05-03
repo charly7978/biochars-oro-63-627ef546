@@ -183,7 +183,7 @@ class ArrhythmiaDetectionService {
     
     this.lastRRIntervals = validIntervals;
     
-    // --- Usar SIEMPRE el Fallback basado en Reglas --- 
+    // --- Use Rule-Based Detection --- 
     const [potential, confidence, category] = this.detectArrhythmiaRuleBased(validIntervals);
     this.handleDetectionResult(potential, confidence, category, validIntervals);
     const { rmssd, rrVariation } = this.calculateBaseMetrics(validIntervals);
@@ -278,17 +278,24 @@ class ArrhythmiaDetectionService {
       ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
       : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
-    const lastArrhythmiaData = this.currentBeatIsArrhythmia ? {
+    // Renamed to avoid conflict
+    const currentCalculatedCategory: ArrhythmiaDetectionResult['category'] = 
+        this.lastRRIntervals.length > 5 ? categorizeArrhythmia(this.lastRRIntervals.slice(-5)) : 'normal';
+    const categoryFromLastData = this.lastArrhythmiaData?.category as ArrhythmiaDetectionResult['category'] | undefined;
+    // Use the renamed variable
+    const lastDataCategory = categoryFromLastData || currentCalculatedCategory;
+
+    const lastData = this.currentBeatIsArrhythmia ? {
       timestamp: Date.now(),
       rmssd: calculateRMSSD(this.lastRRIntervals.slice(-5)),
       rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5)),
-      category: categorizeArrhythmia(this.lastRRIntervals.slice(-5))
+      category: lastDataCategory // Assign validated category
     } : null;
     
     return {
       arrhythmiaCount: this.arrhythmiaCount,
       statusMessage,
-      lastArrhythmiaData
+      lastArrhythmiaData: lastData // Type should now match ArrhythmiaStatus definition
     };
   }
   
@@ -348,29 +355,26 @@ class ArrhythmiaDetectionService {
       const { rmssd, sdnn, meanRR } = this.calculateBaseMetrics(validIntervals);
       const cv = meanRR > 0 ? sdnn / meanRR : 0;
       
-      // Llamar a categorizeArrhythmia con solo los intervalos
-      let category: ArrhythmiaDetectionResult['category'] = categorizeArrhythmia(validIntervals); 
+      // Use categorizeArrhythmia from utils
+      let category: ArrhythmiaDetectionResult['category'] = categorizeArrhythmia(validIntervals);
       let potentialArrhythmia = category !== 'normal';
-      let confidence = 0.3; // Default confidence for rule-based
+      let confidence = 0.3; 
 
-      // Ajustar confianza basado en categoría y métricas HRV
+      // Adjust confidence based on category
       if (potentialArrhythmia) {
         switch(category) {
-            case 'bradycardia':
-            case 'tachycardia':
+            case 'bradycardia': case 'tachycardia':
                 confidence = Math.max(confidence, 0.35); break;
-            case 'bigeminy': // Si categorizeArrhythmia lo soporta
+            case 'bigeminy': 
                  confidence = Math.max(confidence, 0.5); break;
-            case 'possible-arrhythmia': // Podría ser alta variabilidad
+            case 'possible-arrhythmia': 
                  confidence = Math.max(confidence, 0.45); break;
         }
       }
-      // Sobreescribir categoría y ajustar confianza si las reglas HRV lo indican
+      // Override based on HRV metrics
       if (rmssd > this.RULE_RMSSD_HIGH || rmssd < this.RULE_RMSSD_LOW || cv > this.RULE_CV_HIGH) {
           potentialArrhythmia = true;
-          if (category === 'normal') { // Solo cambiar si no es Brady/Tachy
-              category = 'possible-arrhythmia';
-          }
+          if (category === 'normal') category = 'possible-arrhythmia';
           confidence = Math.max(confidence, 0.4); 
       }
       
@@ -392,4 +396,5 @@ class ArrhythmiaDetectionService {
   }
 }
 
-export default ArrhythmiaDetectionService.getInstance();
+// Export the class directly instead of the instance
+export { ArrhythmiaDetectionService };

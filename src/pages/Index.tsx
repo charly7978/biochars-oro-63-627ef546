@@ -5,7 +5,7 @@ import PPGSignalMeter from "@/components/PPGSignalMeter";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { registerGlobalCleanup } from '@/utils/cleanup-utils';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import ArrhythmiaDetectionServiceInstance from '@/services/ArrhythmiaDetectionService';
 import HeartRateServiceInstance from '@/services/HeartRateService';
 import { VitalSignsProcessor } from "@/modules/vital-signs/VitalSignsProcessor";
 import MonitorButton from "@/components/MonitorButton";
@@ -65,7 +65,7 @@ const Index = () => {
     let currentArrhythmiaStatus: VitalSignsResult['arrhythmiaStatus'] = 'Normal';
     let currentLastArrhythmiaData = null;
     if (hrResult.rrData) {
-        const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(hrResult.rrData.intervals);
+        const arrhythmiaResult = ArrhythmiaDetectionServiceInstance.detectArrhythmia(hrResult.rrData.intervals);
         setIsArrhythmia(arrhythmiaResult.isArrhythmia);
         currentArrhythmiaStatus = arrhythmiaResult.isArrhythmia ? arrhythmiaResult.category || 'Detected' : 'Normal';
     }
@@ -101,7 +101,7 @@ const Index = () => {
     setSignalQuality(0);
     processorRef.current.reset(); 
     vitalSignsProcessorRef.current.fullReset(); 
-    ArrhythmiaDetectionService.reset(); 
+    ArrhythmiaDetectionServiceInstance.reset(); 
     setIsCameraOn(true);
     setIsMonitoring(true);
     
@@ -116,7 +116,8 @@ const Index = () => {
     if (!isMonitoring) return;
     console.log("Finalizing measurement...");
     const finalVitalsPartial = vitalSignsProcessorRef.current.getLastValidResult();
-    const finalHr = processorRef.current.getFinalBPM ? processorRef.current.getFinalBPM() : (vitalSigns.heartRate || NaN);
+    const finalHr = processorRef.current.getFinalBPM();
+    const finalArrhythmiaStatus = ArrhythmiaDetectionServiceInstance.getArrhythmiaStatus();
     setVitalSigns(prev => ({
          ...prev, 
          ...(finalVitalsPartial || {}),
@@ -150,7 +151,7 @@ const Index = () => {
     stopMonitoring(); 
     processorRef.current.reset(); 
     vitalSignsProcessorRef.current.fullReset(); 
-    ArrhythmiaDetectionService.reset(); 
+    ArrhythmiaDetectionServiceInstance.reset(); 
     setVitalSigns({
         spo2: NaN, pressure: "--/--", glucose: NaN,
         heartRate: NaN, arrhythmiaStatus: 'Normal', lastArrhythmiaData: null,
@@ -297,10 +298,10 @@ const Index = () => {
               isFingerDetected={signalQuality > 10}
               onStartMeasurement={startMonitoring} 
               onReset={handleReset} 
-              arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
+              arrhythmiaStatus={ArrhythmiaDetectionServiceInstance.getArrhythmiaStatus().statusMessage || "--"} 
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
-              arrhythmiaWindows={ArrhythmiaDetectionService.getArrhythmiaWindows()}
+              arrhythmiaWindows={ArrhythmiaDetectionServiceInstance.windowManager.getArrhythmiaWindows()}
             />
           </div>
           <AppTitle />
