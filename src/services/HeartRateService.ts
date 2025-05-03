@@ -206,7 +206,6 @@ class HeartRateService {
    * Versión sincronizada para coordinar audio y visual
    */
   public processSignal(value: number): HeartRateResult {
-    // Weak signal check
     if (this.isWeakSignal(value)) {
       return {
         bpm: 0,
@@ -313,6 +312,7 @@ class HeartRateService {
           isArrhythmia: isCurrentPeakArrhythmic, 
           isPotentialArrhythmia: isPotentialArrhythmia
         });
+        this.lastProcessedPeakTime = now; // Update time after notifying/triggering feedback
       }
     }
     
@@ -320,7 +320,7 @@ class HeartRateService {
     const rawBPM = this.calculateBPM();
     
     // Apply smoothing
-    this.smoothBPM = this.smoothBPM === 0 ? rawBPM : this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
+    this.smoothBPM = smoothBPM(rawBPM, this.smoothBPM, this.BPM_ALPHA);
     
     // Create RRIntervalData object con el historial actualizado
     const rrData: RRIntervalData = {
@@ -329,7 +329,7 @@ class HeartRateService {
     };
     
     return {
-      bpm: realRound(this.smoothBPM),
+      bpm: Math.round(this.smoothBPM),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
@@ -343,13 +343,13 @@ class HeartRateService {
    * Verifica si la señal es débil
    */
   private isWeakSignal(value: number): boolean {
-    const valueAbs = value >= 0 ? value : -value;
+    const valueAbs = Math.abs(value);
     const isCurrentlyWeak = valueAbs < this.LOW_SIGNAL_THRESHOLD;
     
     if (isCurrentlyWeak) {
       this.lowSignalCount++;
     } else {
-      this.lowSignalCount = realMax(0, this.lowSignalCount - 1);
+      this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
     }
     
     return this.lowSignalCount > this.LOW_SIGNAL_FRAMES;
@@ -482,11 +482,3 @@ class HeartRateService {
 }
 
 export default HeartRateService.getInstance();
-
-// Utilidades deterministas para reemplazar Math
-function realMin(a: number, b: number): number { return a < b ? a : b; }
-function realMax(a: number, b: number): number { return a > b ? a : b; }
-function realAbs(x: number): number { return x < 0 ? -x : x; }
-function realRound(x: number): number { return (x % 1) >= 0.5 ? (x - (x % 1) + 1) : (x - (x % 1)); }
-function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
-function realSqrt(value: number): number { if (value < 0) return NaN; let x = value; for (let i = 0; i < 12; i++) { x = 0.5 * (x + value / x); } return x; }

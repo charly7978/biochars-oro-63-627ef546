@@ -7,110 +7,116 @@
  * Todas las funciones y cálculos están basados únicamente en datos reales de señal PPG.
  * No existe ningún tipo de simulación, generación artificial ni manipulación de datos.
  */
+import { 
+  calculateStandardDeviation, 
+  normalizeValues, 
+  findPeaksAndValleys,
+  evaluateSignalQuality
+} from './shared-signal-utils';
+
+// Constantes fisiológicas (ejemplos, ajustar)
+const MIN_CHOLESTEROL = 100; // mg/dL
+const MAX_CHOLESTEROL = 300; // mg/dL
+const MIN_TRIGLYCERIDES = 50;  // mg/dL
+const MAX_TRIGLYCERIDES = 500; // mg/dL
+const DEFAULT_CHOLESTEROL = 180;
+const DEFAULT_TRIGLYCERIDES = 120;
+
 export class LipidProcessor {
   private confidenceScore: number = 0;
   private cholesterolBuffer: number[] = [];
   private triglyceridesBuffer: number[] = [];
   private readonly BUFFER_SIZE = 10;
   
+  constructor() {
+    this.reset();
+  }
+  
   /**
    * Calcula perfil lipídico basado en características de señal PPG
    * Implementación directa básica, sin simulación
    */
   public calculateLipids(ppgValues: number[]): { 
-    totalCholesterol: number; 
-    triglycerides: number;
+    totalCholesterol: number | typeof NaN; // Permitir NaN
+    triglycerides: number | typeof NaN; // Permitir NaN
   } {
-    if (!ppgValues || ppgValues.length < 15) {
-      this.confidenceScore = 0.1;
-      return {
-        totalCholesterol: 0,
-        triglycerides: 0
-      };
+    // Se requiere una cantidad significativa de datos para análisis de lípidos
+    if (!ppgValues || ppgValues.length < 150) { 
+      this.confidenceScore = 0;
+      return { totalCholesterol: NaN, triglycerides: NaN };
+    }
+
+    // --- Lógica de Cálculo Placeholder --- 
+    // ADVERTENCIA: La estimación de lípidos desde PPG es altamente experimental
+    // y requiere modelos muy complejos y calibración específica. 
+    // La lógica siguiente es un placeholder MUY simplificado y NO es precisa.
+    
+    const normalized = normalizeValues(ppgValues);
+    if (normalized.every(v => v === 0)) { // Check if normalization failed (flat signal)
+        this.confidenceScore = 0;
+        return { totalCholesterol: NaN, triglycerides: NaN };
     }
     
-    // Análisis básico de características PPG relacionadas con lípidos
-    let sum = 0;
-    let min = ppgValues[0];
-    let max = ppgValues[0];
+    const stdDev = calculateStandardDeviation(normalized);
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(normalized);
     
-    // Análisis de amplitud y variabilidad
-    for (let i = 0; i < ppgValues.length; i++) {
-      sum += ppgValues[i];
-      
-      if (ppgValues[i] < min) min = ppgValues[i];
-      if (ppgValues[i] > max) max = ppgValues[i];
+    if (peakIndices.length < 5 || valleyIndices.length < 5) { // Need more peaks/valleys
+         this.confidenceScore = 0.1;
+         return { totalCholesterol: NaN, triglycerides: NaN };
     }
     
-    const avg = sum / ppgValues.length;
-    const amplitude = max - min;
+    // Features (Examples - these correlations are speculative)
+    const avgPeakAmplitude = peakIndices.map(i => normalized[i]).reduce((s,v)=>s+v,0) / peakIndices.length;
+    const avgValleyDepth = valleyIndices.map(i => normalized[i]).reduce((s,v)=>s+v,0) / valleyIndices.length;
+    const pulseWidth = (valleyIndices[1] - valleyIndices[0]) / 30; // Example, needs better calc
     
-    if (amplitude < 0.01) {
-      this.confidenceScore = 0.1;
-      return {
-        totalCholesterol: 0,
-        triglycerides: 0
-      };
+    // Placeholder Estimations (NO REALISTICAS SIN MODELO / CALIBRACIÓN)
+    // Higher std dev -> might correlate with higher triglycerides? (Speculative)
+    const estimatedTriglycerides = DEFAULT_TRIGLYCERIDES + (stdDev * 100) - (avgPeakAmplitude * 50);
+    // Pulse width -> might correlate with arterial stiffness -> cholesterol? (Speculative)
+    const estimatedCholesterol = DEFAULT_CHOLESTEROL + (pulseWidth * 10) + (avgValleyDepth * 30);
+
+    // Clamp to plausible ranges
+    const clampedCholesterol = Math.max(MIN_CHOLESTEROL, Math.min(MAX_CHOLESTEROL, estimatedCholesterol));
+    const clampedTriglycerides = Math.max(MIN_TRIGLYCERIDES, Math.min(MAX_TRIGLYCERIDES, estimatedTriglycerides));
+    
+    this.updateBuffers(clampedCholesterol, clampedTriglycerides);
+    const smoothed = this.getSmoothedLipids();
+    
+    // Confidence based on signal quality (placeholder)
+    const signalQuality = evaluateSignalQuality(ppgValues);
+    this.confidenceScore = Math.max(0, Math.min(1, (signalQuality / 100) * 0.5)); // Max 50% confidence for this placeholder
+
+    // Return NaN if confidence is too low
+    if (this.confidenceScore < 0.2) {
+        return { totalCholesterol: NaN, triglycerides: NaN };
     }
-    
-    // Característica 1: índice de absorción PPG
-    const absorptionIndex = amplitude / (avg + 0.0001);
-    
-    // Característica 2: asimetría de la curva PPG
-    let firstHalfSum = 0;
-    let secondHalfSum = 0;
-    const halfIndex = realFloor(ppgValues.length / 2);
-    
-    for (let i = 0; i < halfIndex; i++) {
-      firstHalfSum += ppgValues[i];
-    }
-    
-    for (let i = halfIndex; i < ppgValues.length; i++) {
-      secondHalfSum += ppgValues[i];
-    }
-    
-    const asymmetry = firstHalfSum / (secondHalfSum + 0.0001);
-    
-    // Estimación básica de colesterol (requiere calibración y validación)
-    let cholesterolEstimate = 150 + (absorptionIndex * 30) + (asymmetry * 20);
-    
-    // Estimación básica de triglicéridos (requiere calibración y validación)
-    let triglyceridesEstimate = 100 + (absorptionIndex * 20) + (asymmetry * 10);
-    
-    // Almacenar en buffer para estabilidad
-    this.cholesterolBuffer.push(cholesterolEstimate);
+
+    return {
+      totalCholesterol: Math.round(smoothed.totalCholesterol), // Use Math.round
+      triglycerides: Math.round(smoothed.triglycerides) // Use Math.round
+    };
+  }
+  
+  private updateBuffers(cholesterol: number, triglycerides: number): void {
+    this.cholesterolBuffer.push(cholesterol);
+    this.triglyceridesBuffer.push(triglycerides);
     if (this.cholesterolBuffer.length > this.BUFFER_SIZE) {
       this.cholesterolBuffer.shift();
     }
-    
-    this.triglyceridesBuffer.push(triglyceridesEstimate);
     if (this.triglyceridesBuffer.length > this.BUFFER_SIZE) {
       this.triglyceridesBuffer.shift();
     }
-    
-    // Promedio del buffer de colesterol
-    let cholesterolSum = 0;
-    for (let i = 0; i < this.cholesterolBuffer.length; i++) {
-      cholesterolSum += this.cholesterolBuffer[i];
-    }
-    
-    // Promedio del buffer de triglicéridos
-    let triglyceridesSum = 0;
-    for (let i = 0; i < this.triglyceridesBuffer.length; i++) {
-      triglyceridesSum += this.triglyceridesBuffer[i];
-    }
-    
-    const avgCholesterol = cholesterolSum / this.cholesterolBuffer.length;
-    const avgTriglycerides = triglyceridesSum / this.triglyceridesBuffer.length;
-    
-    // Establecer confianza basada en estabilidad y amplitud
-    this.confidenceScore = amplitude > 0.05 ? 0.6 : 0.3;
-    
-    // Convertir a enteros sin Math.round
-    return {
-      totalCholesterol: ~~avgCholesterol,
-      triglycerides: ~~avgTriglycerides
-    };
+  }
+
+  private getSmoothedLipids(): { totalCholesterol: number, triglycerides: number } {
+    const smoothedCholesterol = this.cholesterolBuffer.length > 0
+      ? this.cholesterolBuffer.reduce((a, b) => a + b, 0) / this.cholesterolBuffer.length
+      : NaN;
+    const smoothedTriglycerides = this.triglyceridesBuffer.length > 0
+      ? this.triglyceridesBuffer.reduce((a, b) => a + b, 0) / this.triglyceridesBuffer.length
+      : NaN;
+    return { totalCholesterol: smoothedCholesterol, triglycerides: smoothedTriglycerides };
   }
   
   /**
@@ -129,9 +135,4 @@ export class LipidProcessor {
     this.triglyceridesBuffer = [];
     console.log("LipidProcessor: Reset completed");
   }
-}
-
-// Deterministic floor function (replaces Math.floor)
-function realFloor(value: number): number {
-  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1 * (value % 1 !== 0 ? 1 : 0);
 }

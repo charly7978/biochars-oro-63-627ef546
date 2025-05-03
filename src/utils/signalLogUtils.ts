@@ -71,8 +71,8 @@ export function analyzeSignalLog(
   const values = signalLog.map(entry => entry.value);
   const sum = values.reduce((a, b) => a + b, 0);
   const mean = sum / values.length;
-  const variance = values.reduce((a, b) => a + realPow(b - mean, 2), 0) / values.length;
-  const stability = realMax(0, 100 - realMin(100, variance));
+  const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+  const stability = Math.max(0, 100 - Math.min(100, variance));
   
   return {
     falsePositives: detectionChanges / 2,
