@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -11,6 +12,7 @@ import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
 import ArrhythmiaDetectionService from '@/services/arrhythmia'; 
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -299,7 +301,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
     lastValidResults, // Return last valid results
-    arrhythmiaWindows,
+    arrhythmiaWindows: arrhythmiaWindows as ArrhythmiaWindow[], // Type assertion to match expected type
     debugInfo: getDebugInfo()
   };
 };

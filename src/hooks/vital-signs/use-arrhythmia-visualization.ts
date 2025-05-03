@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from 'react';
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
 import { ArrhythmiaStatus } from '@/services/arrhythmia/types';
 import { formatArrhythmiaWindowsForDisplay } from '@/services/arrhythmia/utils';
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
 /**
  * Hook to handle the visualization aspects of arrhythmia detection
@@ -175,14 +176,17 @@ export function useArrhythmiaVisualization() {
   }, [resetArrhythmiaState]);
 
   // Get formatted windows for display
-  const arrhythmiaWindows = formatArrhythmiaWindowsForDisplay(arrhythmiaState.windowData);
+  const formattedWindows = formatArrhythmiaWindowsForDisplay(arrhythmiaState.windowData);
+
+  // Ensure proper typing for arrhythmiaWindows
+  const arrhythmiaWindows = formattedWindows as ArrhythmiaWindow[];
 
   return {
     arrhythmiaState,
     getArrhythmiaInfo,
     resetArrhythmiaState,
     arrhythmiaWindowData: arrhythmiaState.windowData,
-    // Add the missing methods
+    // Return properly implemented methods
     arrhythmiaWindows,
     addArrhythmiaWindow,
     clearArrhythmiaWindows,

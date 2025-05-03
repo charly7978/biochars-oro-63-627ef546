@@ -1,3 +1,4 @@
+
 import { ArrhythmiaStatus, ArrhythmiaDetectionResult, ArrhythmiaListener, UserProfile } from './types';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
 import { categorizeArrhythmia } from './utils';
@@ -46,9 +47,9 @@ class ArrhythmiaDetectionService {
     lastArrhythmiaData: Record<string, any> | null
   } {
     // Create a descriptive status message based on the current status
-    let statusMessage = this.currentStatus;
+    let statusMessage = String(this.currentStatus); // Convert to string to avoid type issues
     if (this.arrhythmiaCount > 0) {
-      statusMessage = `${this.currentStatus}|${this.arrhythmiaCount}`;
+      statusMessage = `${this.currentStatus.toString()}|${this.arrhythmiaCount}`;
     }
 
     return {
