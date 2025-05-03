@@ -33,7 +33,7 @@ export class VitalSignsProcessor {
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
   
-  // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
+  // Instancias de modelos neuronales
   private spo2Model: SpO2NeuralModel | null = null;
   private bpModel: BloodPressureNeuralModel | null = null;
   
@@ -81,8 +81,14 @@ export class VitalSignsProcessor {
     // Inicializar detector de picos
     this.peakDetector = new PeakDetector();
     
-    // Iniciar carga asíncrona de modelos
-    this.initModels();
+    // Inicializar modelos usando el ModelRegistry (ahora sincrónico)
+    this.spo2Model = ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+    this.bpModel = ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+    
+    console.log("VitalSignsProcessor: Neural models initialized", {
+      spo2ModelPresent: !!this.spo2Model,
+      bpModelPresent: !!this.bpModel
+    });
 
     this.reset();
   }

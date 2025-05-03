@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -5,8 +6,8 @@
  * Utiliza procesamiento avanzado de señales para extraer información fisiológica real
  */
 
-import { KalmanFilter } from '@/core/signal/filters/KalmanFilter';
-import { WaveletDenoiser } from '@/core/signal/filters/WaveletDenoiser';
+import { KalmanFilter } from '../../core/signal/filters/KalmanFilter';
+import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
 // Tipos para estructura de datos PPG
