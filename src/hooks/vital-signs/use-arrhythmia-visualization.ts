@@ -1,149 +1,128 @@
 
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { ArrhythmiaStatus, ArrhythmiaDetectionResult } from '@/services/arrhythmia/types'; 
 import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { toast } from 'sonner';
 
-/**
- * Hook for arrhythmia visualization
- * Simplified to act as a bridge between ArrhythmiaDetectionService and UI components
- */
-export const useArrhythmiaVisualization = () => {
-  // Visualization windows state
+interface ArrhythmiaVisualizationHook {
+  arrhythmiaWindows: ArrhythmiaWindow[];
+  addArrhythmiaWindow: (status: ArrhythmiaStatus, probability: number, intervals: number[], details?: Record<string, any>) => void;
+  clearArrhythmiaWindows: () => void;
+  processArrhythmiaStatus: (status: string, data: any) => boolean;
+  registerArrhythmiaNotification: () => void;
+}
+
+export const useArrhythmiaVisualization = (): ArrhythmiaVisualizationHook => {
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
+  const lastNotificationRef = useRef<number>(0);
+  const MIN_NOTIFICATION_INTERVAL = 5000; // 5 segundos entre notificaciones
   
-  // Tracking state
-  const lastArrhythmiaTriggeredRef = useRef<number>(0);
-  const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 6000; // 6 seconds between notifications
-  
-  /**
-   * Update from ArrhythmiaDetectionService
-   */
+  // Al iniciar, obtenemos las ventanas existentes del servicio
   useEffect(() => {
-    // Add listener for ArrhythmiaDetectionService
-    const handleNewArrhythmiaWindow = (window: ArrhythmiaWindow) => {
-      setArrhythmiaWindows(prev => {
-        // Add new window
-        const newWindows = [...prev, window];
+    const existingWindows = ArrhythmiaDetectionService.getArrhythmiaWindows();
+    if (existingWindows && existingWindows.length > 0) {
+      setArrhythmiaWindows(existingWindows as ArrhythmiaWindow[]);
+    }
+    
+    // Agregamos un listener para actualizaciones
+    const handleArrhythmiaDetection = (result: ArrhythmiaDetectionResult) => {
+      if (result.status !== 'normal' && result.status !== 'unknown' && result.probability > 0.7) {
+        const newWindow: ArrhythmiaWindow = {
+          timestamp: result.timestamp,
+          duration: result.latestIntervals.reduce((sum, interval) => sum + interval, 0),
+          status: result.status,
+          intervals: [...result.latestIntervals],
+          probability: result.probability,
+          details: { ...result.details }
+        };
         
-        // Sort by time for consistent visualization - newest first
-        const sortedWindows = newWindows.sort((a, b) => b.start - a.start);
-        
-        // Limit to the 5 most recent windows
-        const limitedWindows = sortedWindows.slice(0, 5);
-        
-        return limitedWindows;
-      });
+        setArrhythmiaWindows(prev => [...prev, newWindow]);
+      }
     };
     
-    // Register listener
-    ArrhythmiaDetectionService.addArrhythmiaListener(handleNewArrhythmiaWindow);
+    ArrhythmiaDetectionService.addArrhythmiaListener(handleArrhythmiaDetection);
     
-    // Clean up on unmount
     return () => {
-      ArrhythmiaDetectionService.removeArrhythmiaListener(handleNewArrhythmiaWindow);
+      ArrhythmiaDetectionService.removeArrhythmiaListener(handleArrhythmiaDetection);
     };
   }, []);
   
   /**
-   * Process arrhythmia detection from signal processor results
+   * Registrar una ventana de arritmia
    */
-  const processArrhythmiaStatus = useCallback((arrhythmiaStatus: string, lastArrhythmiaData: any) => {
-    const currentTime = Date.now();
+  const addArrhythmiaWindow = useCallback((
+    status: ArrhythmiaStatus,
+    probability: number,
+    intervals: number[],
+    details: Record<string, any> = {}
+  ): void => {
+    // Crear nueva ventana
+    const newWindow: ArrhythmiaWindow = {
+      timestamp: Date.now(),
+      duration: intervals.reduce((sum, interval) => sum + interval, 0),
+      status,
+      intervals,
+      probability,
+      details
+    };
     
-    // Check for arrhythmia detected message
-    if (arrhythmiaStatus && 
-        typeof arrhythmiaStatus === 'string' && 
-        (arrhythmiaStatus.includes("ARRYTHMIA DETECTED") || 
-         arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") ||
-         arrhythmiaStatus.includes("ARRITMIA DETECTADA"))) {
+    // Añadir al estado
+    setArrhythmiaWindows(prev => [...prev, newWindow]);
+    
+    // Registrar también en el servicio
+    ArrhythmiaDetectionService.processRRInterval(
+      intervals.length > 0 ? intervals[intervals.length - 1] : 800,
+      90
+    );
+  }, []);
+  
+  /**
+   * Procesar cambio de estado de arritmia
+   * Retorna true si debe notificarse
+   */
+  const processArrhythmiaStatus = useCallback((
+    status: string,
+    data: any
+  ): boolean => {
+    // Verificar si estamos en arritmia
+    if (status && status !== "Normal" && status !== "--") {
+      const now = Date.now();
+      const shouldNotify = now - lastNotificationRef.current > MIN_NOTIFICATION_INTERVAL;
       
-      // Verificar si ha pasado tiempo suficiente desde la última notificación
-      const timeElapsed = currentTime - lastArrhythmiaTriggeredRef.current;
-      if (timeElapsed > MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
-        lastArrhythmiaTriggeredRef.current = currentTime;
-        
-        // Return true to indicate a new notification should be shown
-        return true;
+      if (shouldNotify) {
+        lastNotificationRef.current = now;
       }
+      
+      return shouldNotify;
     }
     
     return false;
-  }, [MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL]);
-  
-  /**
-   * Register an arrhythmia notification
-   */
-  const registerArrhythmiaNotification = useCallback(() => {
-    lastArrhythmiaTriggeredRef.current = Date.now();
   }, []);
   
   /**
-   * Auto-clean old arrhythmia windows
+   * Registrar notificación de arritmia
    */
-  useEffect(() => {
-    const cleanupInterval = setInterval(() => {
-      setArrhythmiaWindows(prev => {
-        // Get updated windows from service
-        const serviceWindows = ArrhythmiaDetectionService.getArrhythmiaWindows();
-        
-        // Return updated windows if different
-        if (JSON.stringify(prev) !== JSON.stringify(serviceWindows)) {
-          return serviceWindows;
-        }
-        return prev;
-      });
-    }, 5000); // Check every 5 seconds
-    
-    return () => clearInterval(cleanupInterval);
+  const registerArrhythmiaNotification = useCallback((): void => {
+    toast.warning('¡Posible arritmia detectada!', {
+      description: 'Se ha detectado un ritmo cardíaco irregular.',
+      duration: 5000,
+    });
   }, []);
   
   /**
-   * Force add an arrhythmia window - useful for testing
+   * Limpiar ventanas de arritmia
    */
-  const forceAddArrhythmiaWindow = useCallback(() => {
-    const now = Date.now();
-    // Create a window and add to service
-    const window = {
-      start: now - 800,
-      end: now + 800
-    };
-    
-    ArrhythmiaDetectionService.windowManager.addArrhythmiaWindow(window);
-    console.log("Arrhythmia window FORCED for visualization");
-    return true;
-  }, []);
-  
-  /**
-   * Clear all arrhythmia visualization windows
-   */
-  const clearArrhythmiaWindows = useCallback(() => {
-    ArrhythmiaDetectionService.reset();
+  const clearArrhythmiaWindows = useCallback((): void => {
     setArrhythmiaWindows([]);
-    lastArrhythmiaTriggeredRef.current = 0;
-    console.log("All arrhythmia windows cleared");
+    ArrhythmiaDetectionService.reset();
   }, []);
-  
-  /**
-   * Reset all tracking data
-   */
-  const reset = useCallback(() => {
-    clearArrhythmiaWindows();
-    lastArrhythmiaTriggeredRef.current = 0;
-  }, [clearArrhythmiaWindows]);
   
   return {
-    arrhythmiaWindows: ArrhythmiaDetectionService.getArrhythmiaWindows(), // Always get latest from service
-    addArrhythmiaWindow: (start: number, end: number) => {
-      ArrhythmiaDetectionService.windowManager.addArrhythmiaWindow({ start, end });
-    },
-    forceAddArrhythmiaWindow,
+    arrhythmiaWindows,
+    addArrhythmiaWindow,
     clearArrhythmiaWindows,
-    detectArrhythmia: ArrhythmiaDetectionService.detectArrhythmia.bind(ArrhythmiaDetectionService),
     processArrhythmiaStatus,
-    registerArrhythmiaNotification,
-    reset,
-    lastIsArrhythmiaRef: { 
-      get current() { return ArrhythmiaDetectionService.isArrhythmia(); } 
-    }
+    registerArrhythmiaNotification
   };
 };

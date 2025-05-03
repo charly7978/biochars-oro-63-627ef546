@@ -1,6 +1,7 @@
 
 import { ArrhythmiaDetectionService } from './ArrhythmiaDetectionService';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
+import arrhythmiaServiceInstance from './ArrhythmiaDetectionService';
 
 // Export types and utilities
 export * from './types';
@@ -12,4 +13,4 @@ export { ArrhythmiaWindowManager };
 export { ArrhythmiaDetectionService };
 
 // Export the singleton instance as default
-export default ArrhythmiaDetectionService.getInstance();
+export default arrhythmiaServiceInstance;

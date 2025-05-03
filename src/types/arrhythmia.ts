@@ -1,7 +1,11 @@
 
 export interface ArrhythmiaWindow {
-  start: number;
-  end: number;
+  timestamp: number;
+  duration: number;
+  status: string; // O usar ArrhythmiaStatus desde el servicio
+  intervals: number[];
+  probability: number;
+  details: Record<string, any>;
 }
 
 export interface ArrhythmiaData {

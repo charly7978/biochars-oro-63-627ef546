@@ -277,7 +277,7 @@ export class ArrhythmiaDetectionService {
     };
 
     // Si la probabilidad es alta, registrar ventana
-    if (probability > 0.6 && status !== 'normal' && status !== 'unknown') {
+    if (probability > 0.6 && status !== 'normal') {
       this.windowManager.addArrhythmiaWindow(
         status,
         probability,
@@ -405,4 +405,5 @@ export class ArrhythmiaDetectionService {
 }
 
 // Create and export singleton instance
-export default ArrhythmiaDetectionService.getInstance();
+const instance = ArrhythmiaDetectionService.getInstance();
+export default instance;

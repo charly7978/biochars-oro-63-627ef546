@@ -21,6 +21,7 @@ export interface ArrhythmiaDetectionResult {
   signalQuality: number; // 0-100
   details: Record<string, any>; // Detalles adicionales
   latestIntervals: number[]; // Últimos intervalos RR en ms
+  isArrhythmia?: boolean; // Propiedad opcional para compatibilidad
 }
 
 export type ArrhythmiaListener = (result: ArrhythmiaDetectionResult) => void;
