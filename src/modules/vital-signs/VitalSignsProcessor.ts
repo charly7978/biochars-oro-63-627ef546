@@ -12,7 +12,10 @@ import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import { calculateAC, evaluateSignalQuality, normalizeValues, findPeaksAndValleys, calculateDC, calculateStandardDeviation } from './shared-signal-utils';
+import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
+import { getModel } from '../../core/neural/ModelRegistry';
+import { PeakDetector } from '../../core/signal/PeakDetector';
 
 /**
  * Main vital signs processor
@@ -29,6 +32,13 @@ export class VitalSignsProcessor {
   // Validators and calculators
   private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
+  
+  // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
+  private spo2Model: SpO2NeuralModel | null;
+  private bpModel: BloodPressureNeuralModel | null;
+  
+  // Detector de picos para fallback de HR
+  private peakDetector: PeakDetector;
   
   // Propiedades añadidas para corregir errores
   private signalBufferRed: number[] = [];
@@ -65,10 +75,31 @@ export class VitalSignsProcessor {
     this.glucoseProcessor = new GlucoseProcessor();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator();
-    this.confidenceCalculator = new ConfidenceCalculator();
+    this.signalValidator = new SignalValidator(0.01, 15);
+    this.confidenceCalculator = new ConfidenceCalculator(0.15);
+
+    // Obtener instancias de modelos neuronales
+    this.spo2Model = getModel<SpO2NeuralModel>('spo2');
+    this.bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
+    
+    // Inicializar detector de picos
+    this.peakDetector = new PeakDetector();
 
     this.reset();
+  }
+  
+  /**
+   * Inicializa asíncronamente los modelos neuronales
+   */
+  private async initModels() {
+    try {
+      // Obtener modelos de forma asíncrona
+      this.spo2Model = await ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+      this.bpModel = await ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+      console.log("VitalSignsProcessor: Modelos neuronales cargados");
+    } catch (error) {
+      console.error("VitalSignsProcessor: Error al cargar modelos neuronales", error);
+    }
   }
   
   /**
@@ -104,30 +135,87 @@ export class VitalSignsProcessor {
         isStabilized: this.isStabilized
       });
     }
+    
+    // Procesamiento directo usando los valores reales
+    let heartRate = 0;
+    let spo2 = 0;
+    let pressure = "--/--";
+    let systolic = 0;
+    let diastolic = 0;
+    let glucose = 0;
+    let glucoseConfidence = 0; // Declarar fuera del if con valor por defecto
+    let overallConfidence = 0; // Declarar fuera del if con valor por defecto
+    
+    const currentSignalSlice = this.signalBufferRed.slice(-100); // Asegúrate que esta línea exista ANTES del if
 
-    const filteredValue = this.signalProcessor.processPPG(ppgValue);
-    const ppgHistory = this.signalProcessor.getPPGValues();
-
-    const hasEnoughData = ppgHistory.length >= 15; 
-    const amplitude = hasEnoughData ? calculateAC(ppgHistory.slice(-30)) : 0; 
-    const isValidAmplitude = amplitude > 0.01; 
-    const signalQuality = evaluateSignalQuality(ppgHistory);
-
-    // Initialize results as NaN
-    let spo2: number | typeof NaN = NaN;
-    let pressureSystolic: number | typeof NaN = NaN;
-    let pressureDiastolic: number | typeof NaN = NaN;
-    let glucose: number | typeof NaN = NaN;
-    let glucoseConfidence = 0;
-    let overallConfidence = 0;
-
-    // Calculate only if signal is usable
-    if (hasEnoughData && isValidAmplitude && this.isStabilized && signalQuality > 30) { 
-      spo2 = this.spo2Processor.calculateSpO2(ppgHistory);
-      const bpResult = this.bpProcessor.calculateBloodPressure(ppgHistory);
-      pressureSystolic = bpResult.systolic;
-      pressureDiastolic = bpResult.diastolic;
-      glucose = this.glucoseProcessor.calculateGlucose(ppgHistory);
+    // Solo calculamos mediciones si tenemos suficientes datos y señal estable
+    if (hasEnoughData && amplitude > 0.005 && this.isStabilized) {
+      
+      // Estimar SpO2 usando modelo NN
+      if (this.spo2Model) {
+        try {
+          // Pasar el array directamente, el modelo maneja la conversión a Tensor
+          const spo2Result = this.spo2Model.predict(currentSignalSlice); 
+          spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
+        } finally {
+          // La gestión de tensores debe ocurrir dentro del modelo
+        }
+      } else {
+        spo2 = 0; // No hay modelo disponible
+      }
+      
+      // Estimar Presión Arterial usando modelo NN
+      if (this.bpModel) {
+        try {
+          // Pasar el array directamente, el modelo maneja la conversión a Tensor
+          const bpResultNN = this.bpModel.predict(currentSignalSlice); 
+          systolic = bpResultNN[0];
+          diastolic = bpResultNN[1];
+          if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
+            pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
+          } else {
+            pressure = "--/--";
+          }
+        } finally {
+          // La gestión de tensores debe ocurrir dentro del modelo
+        }
+      } else {
+        pressure = "--/--"; // No hay modelo disponible
+      }
+      
+      // Calcular frecuencia cardíaca
+      if (rrData && rrData.intervals && rrData.intervals.length >= 2) { 
+        let sum = 0;
+        const lastFiveIntervals = rrData.intervals.slice(-5);
+        for (let i = 0; i < lastFiveIntervals.length; i++) {
+          sum += lastFiveIntervals[i];
+        }
+        const avgInterval = sum / lastFiveIntervals.length;
+        if (avgInterval > 0) {
+          const hrFromRR = Math.round(60000 / avgInterval);
+          if (hrFromRR >= 40 && hrFromRR <= 200) {
+            heartRate = hrFromRR; 
+          }
+        }
+      } else {
+        // Fallback: Calcular HR desde picos PPG si no hay RR válidos
+        // Pasar el array directamente
+        const { peakIndices } = this.peakDetector.detectPeaks(currentSignalSlice); 
+        if (peakIndices.length >= 2) {
+          const intervalsMs = peakIndices.slice(1).map((pkIdx, i) => 
+            (pkIdx - peakIndices[i]) * (1000 / 60) // Asumiendo 60fps aprox.
+          ).filter(interval => interval > 300 && interval < 1500);
+          if (intervalsMs.length > 0) {
+            const avgInterval = intervalsMs.reduce((s, v) => s + v, 0) / intervalsMs.length;
+            heartRate = Math.round(60000 / avgInterval);
+            heartRate = Math.max(40, Math.min(200, heartRate)); // Clamp
+          }
+        }
+      } 
+      // Por ahora, si no hay RR, heartRate permanecerá en 0 si no se calcula en otro lado.
+      
+      // Calcular glucosa con procesamiento directo
+      glucose = this.glucoseProcessor.calculateGlucose(ppgValues);
       
       glucoseConfidence = this.glucoseProcessor.getConfidence();
       const bpConfidence = this.bpProcessor.getConfidence(); 

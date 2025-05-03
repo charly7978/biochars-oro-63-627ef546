@@ -4,31 +4,16 @@
 
 import { HeartBeatConfig } from '../modules/heart-beat/config';
 import { applyFilterPipeline } from '../modules/heart-beat/signal-filters';
-import { 
-  detectPeak, 
-  confirmPeak,
-  getInitialPeakDetectionState,
-  getInitialPeakConfirmationState,
-  // Assuming PeakDetectionState and PeakConfirmationState types are exported from peak-detector too
-  // If not, they should be defined here or in a shared types file.
-  // PeakDetectionState, PeakConfirmationState 
-} from '../modules/heart-beat/peak-detector';
+import { detectPeak, confirmPeak } from '../modules/heart-beat/peak-detector';
 import { 
   updateBPMHistory, 
   calculateCurrentBPM, 
   smoothBPM, 
   calculateFinalBPM 
 } from '../modules/heart-beat/bpm-calculator';
-import { PeakData, RRIntervalData } from '../types/peak';
+import { RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import { ArrhythmiaDetectionResult } from './arrhythmia/types';
-import { 
-    estimateSignalQuality,
-    filterRRIntervalsMAD,
-    calculateMAD // If needed directly elsewhere
-} from '../modules/vital-signs/shared-signal-utils';
 
 export interface HeartRateResult {
   bpm: number;
@@ -40,10 +25,9 @@ export interface HeartRateResult {
   rrData?: RRIntervalData;
 }
 
-export interface PeakDetectionOptions {
-  minPeakTimeMs: number;
-  derivativeThreshold: number;
-  signalThreshold: number;
+export interface PeakData {
+  timestamp: number;
+  value: number;
 }
 
 export interface FilterOptions {
@@ -106,14 +90,6 @@ class HeartRateService {
   
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
-
-  // Add state properties for peak detection
-  private peakDetectionState = getInitialPeakDetectionState();
-  private peakConfirmationState = getInitialPeakConfirmationState();
-  private readonly signalWindowSizeForConfirmation = 11; // e.g., 5 points before, current, 5 points after
-
-  // Add state for signal quality
-  private currentSignalQuality: number = 0;
 
   private constructor() {
     this.reset();
@@ -186,40 +162,9 @@ class HeartRateService {
    * Reproduce un sonido de latido con la opción de vibración
    */
   private triggerHeartbeatFeedback(isArrhythmia: boolean = false, value: number = 0.7): boolean {
-    const now = Date.now();
-    
-    // Evitar reproducción de beeps demasiado seguidos
-    if (now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
-      return false;
-    }
-    
-    // Actualizar tiempo del último beep
-    this.lastBeepTime = now;
-    
-    // Crear datos del pico para audio
-    const peakData: PeakData = {
-      timestamp: now,
-      value,
-      isArrhythmia
-    };
-    
-    // Reproducir audio
-    AudioFeedbackService.queuePeak(peakData);
-    
-    // Activar vibración si está disponible
-    if (this.vibrationEnabled) {
-      try {
-        if (isArrhythmia) {
-          FeedbackService.vibrateArrhythmia();
-        } else {
-          FeedbackService.vibrate(80); // Vibración corta para pulso normal
-        }
-      } catch (error) {
-        console.error("HeartRateService: Error during vibration", error);
-      }
-    }
-    
-    return true;
+    // Ya no usamos el flag isArrhythmia aquí
+    // Delegar a AudioFeedbackService para feedback normal
+    return AudioFeedbackService.triggerHeartbeatFeedback('normal', realMin(0.8, realAbs(value) + 0.3));
   }
 
   /**
@@ -227,6 +172,7 @@ class HeartRateService {
    * Versión sincronizada para coordinar audio y visual
    */
   public processSignal(value: number): HeartRateResult {
+    // Weak signal check
     if (this.isWeakSignal(value)) {
       return {
         bpm: 0,
@@ -242,74 +188,63 @@ class HeartRateService {
       };
     }
     
-    // Update signal buffer (using raw value for now)
+    // Update signal buffer
     this.signalBuffer.push(value);
     if (this.signalBuffer.length > this.WINDOW_SIZE) {
       this.signalBuffer.shift();
     }
-
-    // Apply filters
-    const { filteredValue /*, ... */ } = this.applyFilters(value);
-    this.smoothedValue = filteredValue; // Keep track of the filtered value
     
-    // Estimate Signal Quality using the filtered signal buffer
-    this.currentSignalQuality = estimateSignalQuality(this.signalBuffer.map(v => v - this.baseline), HeartBeatConfig.SIGNAL_THRESHOLD * 0.3 ); // Use filtered, baseline-removed signal
-
-    // Recalculate baseline based on filtered signal
-    if (this.signalBuffer.length > this.WINDOW_SIZE / 2) { 
-        const recentFiltered = this.signalBuffer.slice(-Math.floor(this.WINDOW_SIZE / 2));
-        const { median: medianFiltered } = calculateMAD(recentFiltered);
-        this.baseline = isNaN(medianFiltered) ? this.smoothedValue : medianFiltered;
+    // Apply filters
+    const { 
+      filteredValue, 
+      updatedMedianBuffer, 
+      updatedMovingAvgBuffer 
+    } = this.applyFilters(value);
+    
+    this.medianBuffer = updatedMedianBuffer;
+    this.movingAverageBuffer = updatedMovingAvgBuffer;
+    this.smoothedValue = filteredValue;
+    
+    // Update baseline
+    if (this.baseline === 0) {
+      this.baseline = filteredValue;
     } else {
-        this.baseline = this.smoothedValue; // Fallback if not enough data
+      this.baseline = this.baseline * this.BASELINE_FACTOR + filteredValue * (1 - this.BASELINE_FACTOR);
     }
     
-    // Calculate derivative based on filtered signal
+    // Calculate derivative
     const derivative = filteredValue - this.lastValue;
-    this.lastValue = filteredValue; // Update lastValue with filtered one
+    this.lastValue = filteredValue;
     
-    // Normalize using filtered value and baseline
+    // Find peaks
+    const now = Date.now();
     const normalizedValue = filteredValue - this.baseline;
     
-    // Detect peak candidate
-    const detectionResult = detectPeak(
+    // Detect peak
+    const { isPeak, confidence } = this.detectPeak(
       normalizedValue,
       derivative,
-      this.lastValue, // Pass previous normalized value
-      Date.now(),
-      this.peakDetectionState, // Pass current state
-      {
-        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
-        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
-      }
+      now
     );
-    this.peakDetectionState = detectionResult.updatedState; // Update state
-    const isPeakCandidate = detectionResult.isPeakCandidate;
-    const peakConfidence = detectionResult.confidence;
     
     // Confirm peak
-    const confirmationWindow = this.signalBuffer.slice(-(this.signalWindowSizeForConfirmation)); // Use filtered buffer for confirmation window
-    const confirmationResult = confirmPeak(
-      isPeakCandidate,
+    const { 
+      isConfirmedPeak, 
+      updatedBuffer, 
+      updatedLastConfirmedPeak 
+    } = this.confirmPeak(
+      isPeak,
       normalizedValue,
-      peakConfidence, // Use confidence from detectPeak
-      confirmationWindow, // Pass signal window
-      this.peakConfirmationState, // Pass current confirmation state
-      this.MIN_CONFIDENCE,
-      this.peakDetectionState.adaptiveThreshold // Pass the updated adaptive threshold
+      confidence
     );
-    this.peakConfirmationState = confirmationResult.updatedState; // Update state
-    const isConfirmedPeak = confirmationResult.isConfirmedPeak;
     
-    let validatedRrIntervals: number[] = []; // Store validated intervals
-    let rrStabilityScore = 0; // Score based on interval consistency
-
+    this.peakConfirmationBuffer = updatedBuffer;
+    this.lastConfirmedPeak = updatedLastConfirmedPeak;
+    
+    // Process confirmed peak
     if (isConfirmedPeak) {
-      // Update lastPeakTime inside the state as well for refractory period check
-      this.peakDetectionState.lastPeakTime = Date.now();
-      
-      this.previousPeakTime = this.lastPeakTime; // Keep track for RR interval
-      this.lastPeakTime = Date.now(); // Update service-level lastPeakTime used elsewhere
+      this.previousPeakTime = this.lastPeakTime;
+      this.lastPeakTime = now;
       
       if (this.previousPeakTime !== null) {
         const newInterval = this.lastPeakTime - this.previousPeakTime;
@@ -322,70 +257,36 @@ class HeartRateService {
       }
 
       // Update BPM history
-      this.bpmHistory = this.updateBPMHistory(Date.now());
+      this.bpmHistory = this.updateBPMHistory(now);
       
-      // Validate RR intervals using MAD filter
-      validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory); 
+      // Trigger vibration and beep (ya no diferencia arritmia)
+      this.triggerHeartbeatFeedback(false, confidence); // Siempre feedback normal
       
-      // Calculate stability score based on validated intervals
-      if (validatedRrIntervals.length >= 5) {
-          const { median: medianRR, mad: madRR } = calculateMAD(validatedRrIntervals);
-          if (!isNaN(medianRR) && medianRR > 0) {
-              const coeffVar = (madRR / medianRR); // Coefficient of variation based on MAD
-              rrStabilityScore = Math.max(0, 1 - coeffVar * 3); // Scale and clamp (higher coeffVar = lower score)
-          }
-      }
-
-      // --- Feedback & Notification --- 
-      if (this.isMonitoring && !this.isInWarmup() && Date.now() - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
-        // Detect arrhythmia using VALIDATED intervals
-        let arrhythmiaResult: ArrhythmiaDetectionResult | null = null;
-        let isPotentialArrhythmia = false;
-        if (validatedRrIntervals.length >= 5) { // Use validated intervals
-           // TODO: Refactor ArrhythmiaDetectionService to accept validated intervals and provide fallback
-           arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(validatedRrIntervals); 
-           isPotentialArrhythmia = arrhythmiaResult?.isArrhythmia || false;
-        }
-        const isCurrentPeakArrhythmic = arrhythmiaResult?.isArrhythmia || false;
-        
-        // Adjust confidence for feedback based on signal quality & RR stability
-        const feedbackConfidence = peakConfidence * (this.currentSignalQuality / 100) * rrStabilityScore;
-        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, feedbackConfidence);
-        
-        this.notifyPeakListeners({
-          timestamp: Date.now(), 
-          value: normalizedValue, 
-          isArrhythmia: isCurrentPeakArrhythmic, 
-          isPotentialArrhythmia: isPotentialArrhythmia
-        });
-        this.lastProcessedPeakTime = Date.now(); 
-      }
-    } else {
-         validatedRrIntervals = filterRRIntervalsMAD(this.rrIntervalHistory); // Still filter for consistent RRData output
+      // Notify listeners about the peak (solo timestamp y valor)
+      this.notifyPeakListeners({
+        timestamp: now, 
+        value: filteredValue // Usar valor filtrado 
+      });
     }
     
-    // Calculate BPM using VALIDATED intervals
-    const rawBPM = calculateCurrentBPM(validatedRrIntervals); // Use validated intervals
-    this.smoothBPM = smoothBPM(rawBPM, this.smoothBPM, this.BPM_ALPHA);
+    // Calculate current BPM
+    const rawBPM = this.calculateBPM();
     
-    // Final Confidence Score Calculation
-    const finalConfidence = Math.max(0, Math.min(1, 
-        (peakConfidence * 0.4 + rrStabilityScore * 0.4 + (this.currentSignalQuality / 100) * 0.2) * // Weighted blend
-        (this.isInWarmup() ? 0.3 : 1) *                
-        (this.isWeakSignal(value) ? 0.1 : 1) // Use raw value check for weak signal penalty             
-    ));
-
+    // Apply smoothing
+    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + rawBPM * this.BPM_ALPHA;
+    
+    // Create RRIntervalData object con el historial actualizado
     const rrData: RRIntervalData = {
-      intervals: [...validatedRrIntervals], // Return validated intervals
+      intervals: [...this.rrIntervalHistory],
       lastPeakTime: this.lastPeakTime
     };
     
     return {
-      bpm: Math.round(this.smoothBPM),
-      confidence: finalConfidence, // Use the combined confidence
+      bpm: realRound(this.smoothBPM),
+      confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
       filteredValue,
-      rrIntervals: [...validatedRrIntervals], // Return validated intervals
+      rrIntervals: [...this.rrIntervalHistory],
       lastPeakTime: this.lastPeakTime,
       rrData
     };
@@ -395,13 +296,13 @@ class HeartRateService {
    * Verifica si la señal es débil
    */
   private isWeakSignal(value: number): boolean {
-    const valueAbs = Math.abs(value);
+    const valueAbs = value >= 0 ? value : -value;
     const isCurrentlyWeak = valueAbs < this.LOW_SIGNAL_THRESHOLD;
     
     if (isCurrentlyWeak) {
       this.lowSignalCount++;
     } else {
-      this.lowSignalCount = Math.max(0, this.lowSignalCount - 1);
+      this.lowSignalCount = realMax(0, this.lowSignalCount - 1);
     }
     
     return this.lowSignalCount > this.LOW_SIGNAL_FRAMES;
@@ -425,6 +326,51 @@ class HeartRateService {
         movingAvgWindowSize: this.MOVING_AVERAGE_WINDOW,
         emaAlpha: this.EMA_ALPHA
       }
+    );
+  }
+  
+  /**
+   * Detecta si hay un pico en la señal
+   */
+  private detectPeak(
+    normalizedValue: number,
+    derivative: number,
+    currentTime: number
+  ): { isPeak: boolean; confidence: number } {
+    return detectPeak(
+      normalizedValue,
+      derivative,
+      this.baseline,
+      this.lastValue,
+      this.lastPeakTime,
+      currentTime,
+      {
+        minPeakTimeMs: this.MIN_PEAK_TIME_MS,
+        derivativeThreshold: this.DERIVATIVE_THRESHOLD,
+        signalThreshold: this.SIGNAL_THRESHOLD
+      }
+    );
+  }
+  
+  /**
+   * Confirma si un pico potencial es real
+   */
+  private confirmPeak(
+    isPeak: boolean,
+    normalizedValue: number,
+    confidence: number
+  ): {
+    isConfirmedPeak: boolean;
+    updatedBuffer: number[];
+    updatedLastConfirmedPeak: boolean;
+  } {
+    return confirmPeak(
+      isPeak,
+      normalizedValue,
+      this.lastConfirmedPeak,
+      this.peakConfirmationBuffer,
+      this.MIN_CONFIDENCE,
+      confidence
     );
   }
   
@@ -484,15 +430,16 @@ class HeartRateService {
     this.lastProcessedPeakTime = 0;
     this.rrIntervalHistory = [];
     
-    // Reset peak detection state
-    this.peakDetectionState = getInitialPeakDetectionState();
-    this.peakConfirmationState = getInitialPeakConfirmationState();
-    
-    // Reset signal quality
-    this.currentSignalQuality = 0;
-    
-    console.log("HeartRateService: Reset complete - including peak detection states");
+    console.log("HeartRateService: Reset complete - all values at zero");
   }
 }
 
 export default HeartRateService.getInstance();
+
+// Utilidades deterministas para reemplazar Math
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realRound(x: number): number { return (x % 1) >= 0.5 ? (x - (x % 1) + 1) : (x - (x % 1)); }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realSqrt(value: number): number { if (value < 0) return NaN; let x = value; for (let i = 0; i < 12; i++) { x = 0.5 * (x + value / x); } return x; }

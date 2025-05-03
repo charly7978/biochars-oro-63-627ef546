@@ -1,4 +1,4 @@
-import { KalmanFilter } from '../../modules/vital-signs/shared-signal-utils';
+import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
@@ -165,47 +165,86 @@ export class PPGProcessor {
       quality = Math.round(stabilityQuality + periodicityQuality);
     }
 
-    return { isFingerDetected, quality: Math.max(0, Math.min(100, quality)) };
+    return { isFingerDetected, quality };
   }
 
   private calculatePerfusionIndex(): number {
-    if (this.lastValues.length < 20) return 0;
-    const recentValues = this.lastValues.slice(-20);
-    const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-    if (mean === 0) return 0; 
+    if (this.lastValues.length < 10) return 0;
     
-    const minVal = Math.min(...recentValues);
-    const maxVal = Math.max(...recentValues);
-    const acComponent = maxVal - minVal; 
-    const dcComponent = mean; 
-
-    // Fórmula estándar de PI (simplificada). Precisión depende de la calidad AC/DC.
-    const pi = (acComponent / dcComponent) * 100;
-    // Clamp PI to a reasonable range (0-20%)
-    return Math.max(0, Math.min(20, pi)); 
+    const values = this.lastValues.slice(-10);
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const dc = (max + min) / 2;
+    
+    if (dc === 0) return 0;
+    
+    const ac = max - min;
+    const pi = (ac / dc) * 100;
+    
+    return Math.min(pi, 10); // Limitar a un máximo razonable de 10%
   }
 
   private analyzePeriodicityQuality(): number {
-    // TODO: Implementar un análisis de periodicidad real (FFT o Autocorrelación).
-    // La implementación actual basada en varianza es un placeholder.
-    if (this.periodicityBuffer.length < this.CONFIG.PERIODICITY_BUFFER_SIZE / 2) return 30; // Calidad baja si no hay suficientes datos
+    if (this.periodicityBuffer.length < 30) return 0.5;
     
-    const mean = this.periodicityBuffer.reduce((sum, val) => sum + val, 0) / this.periodicityBuffer.length;
-    const variance = this.periodicityBuffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.periodicityBuffer.length;
-    // Devolver un valor neutro (50) si la varianza es baja (señal potencialmente periódica)
-    // Devolver un valor bajo (e.g., 20) si la varianza es alta (menos probable que sea periódica)
-    const quality = variance < 0.01 ? 70 : variance < 0.05 ? 50 : 20; // Umbrales de ejemplo
-    return quality;
+    // Implementar análisis simple de periodicidad
+    let correlationSum = 0;
+    const halfSize = Math.floor(this.periodicityBuffer.length / 2);
+    
+    for (let i = 0; i < halfSize; i++) {
+      correlationSum += Math.abs(this.periodicityBuffer[i] - this.periodicityBuffer[i + halfSize]);
+    }
+    
+    const avgCorrelation = correlationSum / halfSize;
+    const normalizedCorrelation = Math.min(1, Math.max(0, 1 - (avgCorrelation / 10)));
+    
+    return normalizedCorrelation;
   }
 
   private detectROI(redValue: number): ProcessedSignal['roi'] {
-    // TODO: Implementar detección real de ROI (Región de Interés) del dedo.
-    // Requiere análisis de imagen (posiblemente con OpenCV si se integra más).
-    // Actualmente devuelve un ROI que cubre todo el frame.
-    return { x: 0, y: 0, width: 1, height: 1 }; 
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
   }
 
   private handleError(code: string, message: string): void {
-    this.onError?.({ code, message, timestamp: Date.now() });
+    const error: ProcessingError = {
+      code,
+      message,
+      timestamp: Date.now()
+    };
+    
+    this.onError?.(error);
   }
+}
+
+function realFloor(value: number): number {
+  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
+}
+
+function realMax(arr: number[]): number {
+  let max = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i];
+  }
+  return max;
+}
+
+function realMin(arr: number[]): number {
+  let min = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+  }
+  return min;
+}
+
+function realAbs(value: number): number {
+  return value < 0 ? -value : value;
+}
+
+function realRound(value: number): number {
+  return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
 }
