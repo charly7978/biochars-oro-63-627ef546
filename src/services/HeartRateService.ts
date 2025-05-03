@@ -430,7 +430,15 @@ class HeartRateService {
     this.lastProcessedPeakTime = 0;
     this.rrIntervalHistory = [];
     
-    console.log("HeartRateService: Reset complete - all values at zero");
+    console.log("HeartRateService: Reset complete - including peak detection states");
+  }
+
+  /**
+   * Returns the current smoothed BPM value.
+   */
+  public getFinalBPM(): number {
+    // Return the smoothed value, rounded
+    return Math.round(this.smoothBPM);
   }
 }
 
