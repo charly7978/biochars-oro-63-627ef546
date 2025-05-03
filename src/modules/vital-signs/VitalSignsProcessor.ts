@@ -14,7 +14,7 @@ import { RRIntervalData } from './arrhythmia/types';
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
-import { getModel } from '../../core/neural/ModelRegistry';
+import { ModelRegistry } from '../../core/neural/ModelRegistry';
 import { PeakDetector } from '../../core/signal/PeakDetector';
 
 /**
@@ -34,8 +34,8 @@ export class VitalSignsProcessor {
   private confidenceCalculator: ConfidenceCalculator;
   
   // Instancias de modelos neuronales (opcional, se pueden obtener con getModel)
-  private spo2Model: SpO2NeuralModel | null;
-  private bpModel: BloodPressureNeuralModel | null;
+  private spo2Model: SpO2NeuralModel | null = null;
+  private bpModel: BloodPressureNeuralModel | null = null;
   
   // Detector de picos para fallback de HR
   private peakDetector: PeakDetector;
@@ -78,14 +78,27 @@ export class VitalSignsProcessor {
     this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
 
-    // Obtener instancias de modelos neuronales
-    this.spo2Model = getModel<SpO2NeuralModel>('spo2');
-    this.bpModel = getModel<BloodPressureNeuralModel>('bloodPressure');
-    
     // Inicializar detector de picos
     this.peakDetector = new PeakDetector();
+    
+    // Iniciar carga asíncrona de modelos
+    this.initModels();
 
     this.reset();
+  }
+  
+  /**
+   * Inicializa asíncronamente los modelos neuronales
+   */
+  private async initModels() {
+    try {
+      // Obtener modelos de forma asíncrona
+      this.spo2Model = await ModelRegistry.getInstance().getModel<SpO2NeuralModel>('spo2');
+      this.bpModel = await ModelRegistry.getInstance().getModel<BloodPressureNeuralModel>('bloodPressure');
+      console.log("VitalSignsProcessor: Modelos neuronales cargados");
+    } catch (error) {
+      console.error("VitalSignsProcessor: Error al cargar modelos neuronales", error);
+    }
   }
   
   /**
@@ -182,8 +195,8 @@ export class VitalSignsProcessor {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const spo2Result = this.spo2Model.predict(currentSignalSlice); 
           spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+        } catch (error) {
+          console.error("Error al procesar SpO2:", error);
         }
       } else {
         spo2 = 0; // No hay modelo disponible
@@ -201,8 +214,8 @@ export class VitalSignsProcessor {
           } else {
             pressure = "--/--";
           }
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+        } catch (error) {
+          console.error("Error al procesar presión arterial:", error);
         }
       } else {
         pressure = "--/--"; // No hay modelo disponible

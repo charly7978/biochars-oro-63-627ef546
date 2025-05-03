@@ -1,3 +1,4 @@
+
 import { BaseNeuralModel } from './NeuralNetworkBase';
 import { HeartRateNeuralModel } from './HeartRateModel';
 import { SpO2NeuralModel } from './SpO2Model';
@@ -41,16 +42,19 @@ export class ModelRegistry {
   
   /**
    * Obtiene un modelo por su ID, inicializándolo (cargándolo) si es necesario
-   * Ahora es asíncrono.
+   * Modificado para retornar el modelo directamente, no una promesa
    */
-  public async getModel<T extends BaseNeuralModel>(id: string): Promise<T | null> {
+  public getModel<T extends BaseNeuralModel>(id: string): T | null {
     const model = this.models.get(id) as T;
     if (!model) return null;
     
-    // Cargar modelo si no está cargado
+    // Iniciar carga en background si no está cargado
     if (!model.getModelInfo().isLoaded) {
-      console.log(`Cargando modelo bajo demanda: ${id}`);
-      await model.loadModel();
+      console.log(`Iniciando carga de modelo en background: ${id}`);
+      // Iniciar carga pero no esperar resultado
+      model.loadModel().catch(err => {
+        console.error(`Error al cargar modelo ${id}:`, err);
+      });
     }
     
     return model;
@@ -108,8 +112,8 @@ export class ModelRegistry {
 }
 
 /**
- * Función de utilidad para acceso rápido a modelos (ahora asíncrona)
+ * Función de utilidad para acceso rápido a modelos (ahora sincrónica)
  */
-export async function getModel<T extends BaseNeuralModel>(id: string): Promise<T | null> {
+export function getModel<T extends BaseNeuralModel>(id: string): T | null {
   return ModelRegistry.getInstance().getModel<T>(id);
 }
