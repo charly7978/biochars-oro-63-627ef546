@@ -30,111 +30,129 @@ export class PeakDetector {
     intervals: number[];
     lastPeakTime: number;
   } {
-    if (values.length < this.DERIVATIVE_WINDOW * 2) {
-      return {
-        peakIndices: [],
-        valleyIndices: [],
-        intervals: this.rrIntervals,
-        lastPeakTime: this.lastPeakTime
-      };
+    const n = values.length;
+    if (n < this.SLOPE_SUM_WINDOW + this.VERIFICATION_WINDOW) {
+      return { peakIndices: [], valleyIndices: [], intervals: [], lastPeakTime: this.lastPeakTime };
     }
-    
-    // Calcular primera derivada
-    const firstDerivative = this.calculateFirstDerivative(values);
-    
-    // Calcular suma de pendientes para realzar picos
-    const slopeSum = this.calculateSlopeSum(firstDerivative);
-    
-    // Actualizar umbral adaptativo
+
+    const derivative = this.calculateFirstDerivative(values);
+    const slopeSum = this.calculateSlopeSum(derivative);
+
     this.updateAdaptiveThreshold(slopeSum);
-    
-    // Detectar picos utilizando suma de pendientes y umbral adaptativo
+
     const peakIndices: number[] = [];
     const valleyIndices: number[] = [];
-    
-    for (let i = this.VERIFICATION_WINDOW; i < slopeSum.length - this.VERIFICATION_WINDOW; i++) {
-      // Verificar si es un pico potencial - Adaptado para detectar picos reales
-      if (slopeSum[i] > this.adaptiveThreshold) {
-        // Verificar si es un máximo local
-        let isPeak = true;
-        for (let j = 1; j <= this.VERIFICATION_WINDOW; j++) {
-          if (slopeSum[i] < slopeSum[i - j] || slopeSum[i] < slopeSum[i + j]) {
-            isPeak = false;
-            break;
-          }
-        }
-        
-        if (isPeak) {
-          // Verificar distancia temporal desde el último pico
-          const timeSinceLastPeak = (i - this.lastPeakIndex) * (1000 / this.SAMPLING_RATE);
-          
-          if (this.lastPeakIndex === -1 || 
-              (timeSinceLastPeak >= this.MIN_PEAK_DISTANCE_MS && 
-               timeSinceLastPeak <= this.MAX_PEAK_DISTANCE_MS)) {
-            
-            // Encontrar el pico real en la señal original
-            const peakIndex = this.findPrecisePeakIndex(values, i, 5);
-            peakIndices.push(peakIndex);
-            
-            // Calcular intervalo RR
-            if (this.lastPeakIndex !== -1) {
-              const interval = timeSinceLastPeak;
-              
-              // Validar intervalo
-              if (interval >= this.MIN_PEAK_DISTANCE_MS && interval <= this.MAX_PEAK_DISTANCE_MS) {
-                this.rrIntervals.push(interval);
-                
-                // Mantener tamaño máximo de historia de intervalos
-                if (this.rrIntervals.length > 10) {
-                  this.rrIntervals.shift();
-                }
-              }
+    let inPeakRegion = false;
+    let peakStartIndex = -1;
+
+    for (let i = this.SLOPE_SUM_WINDOW; i < n - this.VERIFICATION_WINDOW; i++) {
+      const currentValue = slopeSum[i];
+
+      if (currentValue > this.adaptiveThreshold && !inPeakRegion) {
+        // Potential peak start
+        inPeakRegion = true;
+        peakStartIndex = i;
+      } else if (currentValue < this.adaptiveThreshold && inPeakRegion) {
+        // Potential peak end
+        inPeakRegion = false;
+        const peakEndIndex = i - 1;
+
+        if (peakStartIndex !== -1 && peakEndIndex > peakStartIndex) {
+          // Find max in the original signal within this detected peak region
+          let maxVal = -Infinity;
+          let maxIndex = peakStartIndex;
+          for (let j = peakStartIndex; j <= peakEndIndex; j++) {
+            if (values[j] > maxVal) {
+              maxVal = values[j];
+              maxIndex = j;
             }
+          }
+          
+          // Find preceding valley
+          let minValBefore = Infinity;
+          let valleyIndexBefore = Math.max(0, maxIndex - this.DERIVATIVE_WINDOW);
+          for (let j = Math.max(0, maxIndex - this.DERIVATIVE_WINDOW); j < maxIndex; j++) {
+              if (values[j] < minValBefore) {
+                  minValBefore = values[j];
+                  valleyIndexBefore = j;
+              }
+          }
+          if (valleyIndexBefore !== -1) valleyIndices.push(valleyIndexBefore);
+
+          // Find succeeding valley
+          let minValAfter = Infinity;
+          let valleyIndexAfter = Math.min(n - 1, maxIndex + this.DERIVATIVE_WINDOW);
+          for (let j = maxIndex + 1; j <= Math.min(n - 1, maxIndex + this.DERIVATIVE_WINDOW); j++) {
+              if (values[j] < minValAfter) {
+                  minValAfter = values[j];
+                  valleyIndexAfter = j;
+              }
+          }
+           if (valleyIndexAfter !== -1) valleyIndices.push(valleyIndexAfter);
+
+          // Basic peak validation (e.g., minimum distance)
+          const currentTime = (maxIndex / this.SAMPLING_RATE) * 1000;
+          if (this.lastPeakTime === 0 || (currentTime - this.lastPeakTime >= this.MIN_PEAK_DISTANCE_MS && currentTime - this.lastPeakTime <= this.MAX_PEAK_DISTANCE_MS)) {
             
-            this.lastPeakIndex = i;
-            this.lastPeakTime = Date.now();
+            // Advanced validation (Prominence, Shape - placeholder)
+            const prominence = maxVal - Math.max(minValBefore, minValAfter);
+            if (prominence > this.peakThreshold * 0.5) { // Simple prominence check
+                peakIndices.push(maxIndex);
+                const interval = currentTime - this.lastPeakTime;
+                if (this.lastPeakTime > 0 && interval > 0) {
+                  this.rrIntervals.push(interval);
+                  if (this.rrIntervals.length > 20) this.rrIntervals.shift(); // Keep history manageable
+
+                  // Check interval consistency
+                  if (this.rrIntervals.length > 1) {
+                      const lastInterval = this.rrIntervals[this.rrIntervals.length - 1];
+                      const secondLastInterval = this.rrIntervals[this.rrIntervals.length - 2];
+                      if (Math.abs(lastInterval - secondLastInterval) < lastInterval * 0.3) {
+                          this.consecutiveGoodIntervals++;
+                      } else {
+                          this.consecutiveGoodIntervals = 0;
+                      }
+                  } else {
+                      this.consecutiveGoodIntervals = 1;
+                  }
+                } else {
+                    this.consecutiveGoodIntervals = 0;
+                }
+                this.lastPeakTime = currentTime;
+            } else {
+                this.consecutiveGoodIntervals = 0;
+            }
+          } else {
+              this.consecutiveGoodIntervals = 0;
           }
         }
-      }
-      
-      // Detectar valles (puede ser útil para otras métricas)
-      if (slopeSum[i] < -this.adaptiveThreshold * 0.5) {
-        let isValley = true;
-        for (let j = 1; j <= this.VERIFICATION_WINDOW; j++) {
-          if (slopeSum[i] > slopeSum[i - j] || slopeSum[i] > slopeSum[i + j]) {
-            isValley = false;
-            break;
-          }
-        }
-        
-        if (isValley) {
-          const valleyIndex = this.findPreciseValleyIndex(values, i, 5);
-          valleyIndices.push(valleyIndex);
-        }
+        peakStartIndex = -1; // Reset start index
       }
     }
-    
+
     return {
       peakIndices,
-      valleyIndices,
+      valleyIndices: [...new Set(valleyIndices)].sort((a, b) => a - b), // Remove duplicates and sort
       intervals: this.getValidIntervals(),
       lastPeakTime: this.lastPeakTime
     };
   }
   
   private getValidIntervals(): number[] {
-    if (this.rrIntervals.length < 3) return [];
+    if (this.rrIntervals.length < 2) return [];
     
-    // Calcular percentiles para filtrar valores atípicos
+    // Simple outlier rejection: remove intervals significantly different from the median
     const sortedIntervals = [...this.rrIntervals].sort((a, b) => a - b);
-    const lowerIdx = this.realFloor(sortedIntervals.length * 0.25);
-    const upperIdx = this.realFloor(sortedIntervals.length * 0.75);
-    const lowerBound = sortedIntervals[lowerIdx] * 0.7;
-    const upperBound = sortedIntervals[upperIdx] * 1.3;
+    // Use Math.floor
+    const medianIndex = Math.floor(sortedIntervals.length / 2);
+    const medianInterval = sortedIntervals.length % 2 === 0
+      ? (sortedIntervals[medianIndex - 1] + sortedIntervals[medianIndex]) / 2
+      : sortedIntervals[medianIndex];
+      
+    const lowerBound = medianInterval * 0.6; // e.g., 60% of median
+    const upperBound = medianInterval * 1.6; // e.g., 160% of median
     
-    // Filtrar intervalos válidos
-    return this.rrIntervals.filter(interval => 
-      interval >= lowerBound && interval <= upperBound);
+    return this.rrIntervals.filter(interval => interval >= lowerBound && interval <= upperBound);
   }
   
   private findPrecisePeakIndex(values: number[], approxIndex: number, window: number): number {
@@ -201,18 +219,18 @@ export class PeakDetector {
   }
   
   private updateAdaptiveThreshold(slopeSum: number[]): void {
-    if (slopeSum.length === 0) return;
-    
-    // Calcular valores estadísticos
-    const max = this.realMax(slopeSum);
-    const mean = slopeSum.reduce((sum, val) => sum + val, 0) / slopeSum.length;
-    
-    // Actualizar umbral adaptativo
-    const newThreshold = mean + (max - mean) * 0.3;
-    this.adaptiveThreshold = this.adaptiveThreshold * 0.7 + newThreshold * 0.3;
-    
-    // Limitar a un rango razonable
-    this.adaptiveThreshold = Math.max(0.2, Math.min(0.6, this.adaptiveThreshold));
+    if (slopeSum.length < 20) return; // Need enough data
+
+    const recentSlope = slopeSum.slice(-20);
+    // Use Math.max
+    const peakSlope = Math.max(...recentSlope);
+    const noiseEstimate = recentSlope.reduce((sum, val) => sum + Math.abs(val), 0) / recentSlope.length;
+
+    // Adjust threshold based on recent peak heights and noise level
+    this.adaptiveThreshold = Math.max(
+      this.peakThreshold * 0.5, // Minimum threshold
+      Math.min(this.peakThreshold * 1.5, peakSlope * 0.3 + noiseEstimate * 0.1) // Dynamic threshold based on signal features
+    );
   }
   
   public reset(): void {
@@ -224,11 +242,14 @@ export class PeakDetector {
     this.consecutiveGoodIntervals = 0;
   }
 
+  // Funciones matemáticas reemplazadas (usar Math directamente)
+  /*
   private realFloor(value: number): number {
     return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
   }
 
   private realMax(arr: number[]): number {
+    if (arr.length === 0) return -Infinity;
     let max = arr[0];
     for (let i = 1; i < arr.length; i++) {
       if (arr[i] > max) max = arr[i];
@@ -237,6 +258,7 @@ export class PeakDetector {
   }
 
   private realMin(arr: number[]): number {
+    if (arr.length === 0) return Infinity;
     let min = arr[0];
     for (let i = 1; i < arr.length; i++) {
       if (arr[i] < min) min = arr[i];
@@ -251,4 +273,5 @@ export class PeakDetector {
   private realRound(value: number): number {
     return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
   }
+  */
 }

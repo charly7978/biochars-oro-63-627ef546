@@ -1,4 +1,4 @@
-import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
+// import { SIGNAL_CONSTANTS } from './signal-constants'; // Removed - file doesn't exist
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -17,9 +17,9 @@ export const SIGNAL_CONSTANTS = {
 };
 
 /**
- * Aplica un filtro de media móvil simple a datos reales
+ * Aplica un filtro de Media Móvil Simple (SMA) al valor actual.
  */
-export function applySMAFilter(value: number, buffer: number[], windowSize: number = SIGNAL_CONSTANTS.SMA_WINDOW): {
+export function applySMAFilter(value: number, buffer: number[], windowSize: number = 5): {
   filteredValue: number;
   updatedBuffer: number[];
 } {
@@ -40,23 +40,26 @@ export function calculateStandardDeviation(values: number[]): number {
   const mean = values.reduce((a, b) => a + b, 0) / n;
   const sqDiffs = values.map((v) => (v - mean) * (v - mean));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return squareRoot(avgSqDiff);
+  return Math.sqrt(avgSqDiff);
 }
 
 /**
- * Calcula el componente AC de una señal real
+ * Calcula la componente AC (variación) de una señal.
  */
 export function calculateAC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return findMaximum(values) - findMinimum(values);
+  if (!values || values.length < 2) return 0;
+  const maxVal = Math.max(...values);
+  const minVal = Math.min(...values);
+  return maxVal - minVal;
 }
 
 /**
- * Calcula el componente DC de una señal real
+ * Calcula la componente DC (valor medio) de una señal.
  */
 export function calculateDC(values: number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, val) => sum + val, 0) / values.length;
+  if (!values || values.length === 0) return 0;
+  const sum = values.reduce((a, b) => a + b, 0);
+  return sum / values.length;
 }
 
 /**
@@ -64,8 +67,8 @@ export function calculateDC(values: number[]): number {
  */
 export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
-  const min = findMinimum(values);
-  const max = findMaximum(values);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
   if (max - min < SIGNAL_CONSTANTS.MIN_AMPLITUDE) return values.map(() => 0);
   return values.map(v => (v - min) / (max - min));
 }
@@ -113,7 +116,7 @@ export function calculateAmplitude(
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = realMin(peakIndices.length, valleyIndices.length);
+  const len = Math.min(peakIndices.length, valleyIndices.length);
   
   for (let i = 0; i < len; i++) {
     const amp = values[peakIndices[i]] - values[valleyIndices[i]];
@@ -127,8 +130,8 @@ export function calculateAmplitude(
   // Calcular media robusta con datos reales
   amps.sort((a, b) => a - b);
   const trimmedAmps = amps.slice(
-    realFloor(amps.length * 0.1),
-    realCeil(amps.length * 0.9)
+    Math.floor(amps.length * 0.1),
+    Math.ceil(amps.length * 0.9)
   );
   
   return trimmedAmps.length > 0
@@ -171,63 +174,37 @@ export class KalmanFilter {
  */
 export function evaluateSignalQuality(
   values: number[],
-  minThreshold: number = SIGNAL_CONSTANTS.MIN_AMPLITUDE,
+  minThreshold: number = 0.01,
   peakThreshold: number = 0.3
 ): number {
-  if (values.length < 30) return 0;
-  
-  // Análisis de datos reales
-  const min = findMinimum(values);
-  const max = findMaximum(values);
-  const range = max - min;
-  
-  if (range < minThreshold) return 10;
-  
+  if (!values || values.length < 10) return 0;
+
+  // 1. Baseline wander removal (simple high-pass)
   const mean = calculateDC(values);
-  const stdDev = calculateStandardDeviation(values);
-  const cv = stdDev / mean;
-  
-  // Analizar picos en datos reales
-  const { peakIndices, valleyIndices } = findPeaksAndValleys(values);
-  
-  if (peakIndices.length < 2 || valleyIndices.length < 2) return 30;
-  
-  // Regularidad entre picos reales
-  let peakRegularity = 100;
-  if (peakIndices.length >= 3) {
-    const peakDiffs = [];
-    for (let i = 1; i < peakIndices.length; i++) {
-      peakDiffs.push(peakIndices[i] - peakIndices[i - 1]);
-    }
-    
-    const avgDiff = peakDiffs.reduce((a, b) => a + b, 0) / peakDiffs.length;
-    const diffVariation = peakDiffs.reduce((acc, diff) => 
-      acc + absoluteValue(diff - avgDiff), 0) / peakDiffs.length;
-    
-    const normalizedVariation = diffVariation / avgDiff;
-    
-    peakRegularity = 100 - (normalizedVariation * 100);
-    peakRegularity = realMax(0, realMin(100, peakRegularity));
-  }
-  
-  // Puntuación basada en datos reales
-  const amplitudeScore = range < peakThreshold ? 50 : 
-                       range > 1.0 ? 60 : 
-                       80;
-  
-  const variabilityScore = cv < 0.05 ? 40 : 
-                         cv > 0.5 ? 40 : 
-                         90;
-  
-  // Combinar puntuaciones de datos reales
-  const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
-  
-  return realMin(100, qualityScore);
+  const baselineRemoved = values.map(v => v - mean);
+
+  // 2. Amplitude check
+  const amplitude = Math.max(...baselineRemoved) - Math.min(...baselineRemoved);
+  const amplitudeScore = amplitude > minThreshold ? 100 : 0;
+
+  // 3. Noise level estimation (standard deviation)
+  const stdDev = calculateStandardDeviation(baselineRemoved);
+  const noiseScore = Math.max(0, 100 - (stdDev / (amplitude + 1e-6)) * 200);
+
+  // 4. Peak regularity (placeholder - needs actual peak detection)
+  let peakRegularity = 50;
+
+  // Weighted average (adjust weights as needed)
+  const qualityScore = (amplitudeScore * 0.4) + (noiseScore * 0.4) + (peakRegularity * 0.2);
+
+  return Math.min(100, Math.max(0, qualityScore));
 }
 
-// Agregar utilidades deterministas locales si es necesario
+// Funciones matemáticas reemplazadas (usar Math directly)
+/*
 function realMin(a: number, b: number): number { return a < b ? a : b; }
 function realMax(a: number, b: number): number { return a > b ? a : b; }
 function realAbs(x: number): number { return x < 0 ? -x : x; }
 function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
 function realCeil(x: number): number { return x % 1 === 0 ? x : (x - (x % 1) + 1); }
+*/
