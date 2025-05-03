@@ -14,6 +14,7 @@ import {
 import { PeakData, RRIntervalData } from '../types/peak';
 import AudioFeedbackService from './AudioFeedbackService';
 import FeedbackService from './FeedbackService';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 export interface HeartRateResult {
   bpm: number;
@@ -150,13 +151,13 @@ class HeartRateService {
    * Notifica a todos los escuchadores que se ha detectado un pico
    */
   private notifyPeakListeners(data: PeakData): void {
-    this.peakListeners.forEach(listener => {
+    for (const listener of this.peakListeners) {
       try {
         listener(data);
       } catch (error) {
         console.error("HeartRateService: Error in peak listener", error);
       }
-    });
+    }
   }
 
   /**
@@ -293,13 +294,15 @@ class HeartRateService {
       
       // Activar retroalimentación si el monitoreo está activo
       if (this.isMonitoring && !this.isInWarmup() && now - this.lastProcessedPeakTime > this.MIN_PEAK_TIME_MS) {
-        this.triggerHeartbeatFeedback(false, realMin(0.8, realAbs(normalizedValue) + 0.3));
+        const isCurrentPeakArrhythmic = ArrhythmiaDetectionService.detectArrhythmia(this.rrIntervalHistory)?.isArrhythmia || false;
+        this.triggerHeartbeatFeedback(isCurrentPeakArrhythmic, realMin(0.8, realAbs(normalizedValue) + 0.3));
         this.lastProcessedPeakTime = now;
         
         // Notificar a los escuchadores
         this.notifyPeakListeners({
           timestamp: now,
           value: normalizedValue,
+          isArrhythmia: isCurrentPeakArrhythmic
         });
       }
     }
