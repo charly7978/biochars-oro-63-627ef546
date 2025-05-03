@@ -1,7 +1,6 @@
 
 import * as tf from '@tensorflow/tfjs'; 
 import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
-import { findMaximum, findMinimum } from '../../utils/signalUtils';
 
 /**
  * Modelo neuronal para estimación de frecuencia cardíaca
@@ -67,21 +66,15 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
         
         // Devolver un valor calculado en base a características básicas del input
         // Esto NO es una simulación aleatoria, sino un cálculo determinista de fallback
-        const peak1 = findMaximum(input.slice(0, 30));
-        const peak2 = findMaximum(input.slice(30, 60));
-        const peak3 = findMaximum(input.slice(60));
+        const peak1 = Math.max(...input.slice(0, 30));
+        const peak2 = Math.max(...input.slice(30, 60));
+        const peak3 = Math.max(...input.slice(60));
         const peaks = [peak1, peak2, peak3].filter(p => p > 0.05).length;
         // Estimar BPM basado en número de picos detectados y longitud del input
         const estimatedBpm = peaks > 0 ? 60 * (peaks / (input.length / 30)) : 0;
         
         this.updatePredictionTime(startTime);
-        
-        // Aplicar límites fisiológicos (40-180 bpm)
-        let constrainedBPM = estimatedBpm;
-        if (constrainedBPM > 180) constrainedBPM = 180;
-        if (constrainedBPM < 40 && constrainedBPM > 0) constrainedBPM = 40;
-        
-        return [constrainedBPM];
+        return [estimatedBpm > 0 ? Math.min(180, Math.max(40, estimatedBpm)) : 0];
       }
       
       // Convertir entrada a tensor
@@ -100,30 +93,21 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
       this.updatePredictionTime(startTime);
       
       // Obtener el valor y aplicar restricciones fisiológicas
+      // Corregimos aquí la conversión de tipos para manejar correctamente los arrays anidados
       let heartRate = 0;
       
-      // Extraer el valor numérico del resultado del tensor con manejo seguro de tipos
-      if (Array.isArray(result)) {
-        // Extraer el valor directamente
-        if (result.length > 0) {
-          const firstElement = result[0];
-          
-          if (Array.isArray(firstElement)) {
-            // Si es un array anidado (ej: [[80]])
-            if (firstElement.length > 0 && typeof firstElement[0] === 'number') {
-              heartRate = firstElement[0];
-            }
-          } else if (typeof firstElement === 'number') {
-            // Si es un número directo (ej: [80])
-            heartRate = firstElement;
-          }
+      // Extraer el valor numérico del resultado del tensor
+      if (Array.isArray(result) && result.length > 0) {
+        const firstElement = result[0];
+        if (Array.isArray(firstElement) && firstElement.length > 0) {
+          heartRate = Number(firstElement[0]);
+        } else if (typeof firstElement === 'number') {
+          heartRate = firstElement;
         }
       }
       
-      // Aplicar límites fisiológicos (40-180 bpm) sin usar Math.min/max
-      let constrainedHR = heartRate;
-      if (constrainedHR > 180) constrainedHR = 180;
-      if (constrainedHR < 40 && constrainedHR > 0) constrainedHR = 40;
+      // Aplicar límites fisiológicos (40-180 bpm)
+      const constrainedHR = heartRate > 0 ? Math.min(180, Math.max(40, heartRate)) : 0;
       
       return [constrainedHR];
     } catch (error) {

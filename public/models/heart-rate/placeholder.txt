@@ -1,4 +1,5 @@
-This directory is reserved for TensorFlow.js heart rate estimation models.
+
+This directory is reserved for TensorFlow.js models.
 
 Your model files (.json and .bin shards) should be placed here.
 For example:
@@ -9,5 +10,8 @@ The model path in the HeartRateModel.ts file should point to:
 '/models/heart-rate/model.json'
 
 *** IMPORTANT ***
-Real model files must be provided separately.
+Real model files must be provided separately. 
 This is just a placeholder so the directory structure is preserved in Git.
+
+To create your own models, you can use TensorFlow/Keras and convert them using the 
+TensorFlow.js Converter: https://www.tensorflow.org/js/tutorials/conversion/import_keras

@@ -1,7 +1,7 @@
 
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
-export type ArrhythmiaListener = (result: ArrhythmiaDetectionResult) => void;
+export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
 
 export interface ArrhythmiaDetectionResult {
   isArrhythmia: boolean;
@@ -10,8 +10,6 @@ export interface ArrhythmiaDetectionResult {
   timestamp: number;
   category?: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
 }
-
-export type ArrhythmiaCategory = 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
 
 export interface ArrhythmiaStatus {
   arrhythmiaCount: number;

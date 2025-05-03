@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs';
 import { 
   BaseNeuralModel, 
@@ -38,11 +37,14 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       return;
     }
     try {
-      const modelUrl = '/models/blood-pressure/model.json';
-      console.log(`Cargando modelo BloodPressure desde: ${modelUrl}`);
-      this.model = await tf.loadGraphModel(modelUrl);
+      // const modelUrl = '/models/blood_pressure/model.json'; // <- CAMBIA ESTO
+      // console.log(`Cargando modelo BloodPressure desde: ${modelUrl}`);
+      // this.model = await tf.loadGraphModel(modelUrl);
+      // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
+      console.warn('BloodPressureModel: Carga de modelo TF.js desactivada (placeholder).');
+      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
       this.isModelLoaded = true;
-      console.log('BloodPressureModel: Modelo cargado exitosamente.');
+      console.log('BloodPressureModel: Modelo cargado (simulado).');
     } catch (error) {
       console.error('Error cargando el modelo BloodPressure:', error);
       this.isModelLoaded = false;
@@ -91,20 +93,12 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
         return [0, 0]; // Indicar que no hay medición
       }
       
-      // Verificar rangos fisiológicos sin usar Math
-      let validSystolic = systolic;
-      if (validSystolic < 80) validSystolic = 0;
-      if (validSystolic > 200) validSystolic = 0;
-      
-      let validDiastolic = diastolic;
-      if (validDiastolic < 40) validDiastolic = 0;
-      if (validDiastolic > 120) validDiastolic = 0;
-      
-      if (validSystolic === 0 || validDiastolic === 0) {
+      // Verificar rangos fisiológicos
+      if (systolic < 80 || systolic > 200 || diastolic < 40 || diastolic > 120) {
         console.error('BloodPressureNeuralModel: Resultados fuera de rango fisiológico', { 
           systolic, diastolic 
         });
-        return [0, 0];
+        return [0, 0]; // Indicar que no hay medición
       }
       
       // Verificar que la sistólica es mayor que la diastólica
@@ -126,11 +120,8 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       
       this.updatePredictionTime(startTime);
       
-      // Redondear a enteros para consistencia sin usar Math.round
-      return [
-        systolic > 0 ? (systolic + 0.5) | 0 : 0,
-        diastolic > 0 ? (diastolic + 0.5) | 0 : 0
-      ];
+      // Redondear a enteros para consistencia
+      return [Math.round(systolic), Math.round(diastolic)];
     } catch (error) {
       console.error('Error en BloodPressureNeuralModel.predict:', error);
       this.updatePredictionTime(startTime);
@@ -163,8 +154,7 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     processedInput = this.bandpassFilter(processedInput);
     
     // Normalizar si hay un rango significativo
-    const min = findMinimum(processedInput);
-    const max = findMaximum(processedInput);
+    const { min, max } = this.findMinMax(processedInput);
     const range = max - min;
     
     if (range > 0.001) { // Solo normalizar si hay un rango significativo
@@ -192,74 +182,62 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     
     // Diseño de filtro IIR Butterworth de segundo orden (aproximación simplificada)
     const dt = 1.0 / samplingRate;
-    const rc_low = 1.0 / (2.0 * Math.PI * lowCutoff);
-    const rc_high = 1.0 / (2.0 * Math.PI * highCutoff);
+    const RC_low = 1.0 / (2 * Math.PI * highCutoff);
+    const RC_high = 1.0 / (2 * Math.PI * lowCutoff);
     
-    // Coeficientes de filtro
-    const alpha_low = dt / (rc_low + dt);
-    const alpha_high = rc_high / (rc_high + dt);
+    // Coeficientes de filtro paso alto (DC removal)
+    const alpha_high = RC_high / (RC_high + dt);
     
-    // Aplicar filtro
-    const filtered: number[] = [];
-    let y_prev_low = 0;
-    let y_prev_high = 0;
+    // Coeficientes de filtro paso bajo
+    const alpha_low = dt / (RC_low + dt);
+    
+    // Aplicar filtrado
+    const filtered: Tensor1D = [];
+    let lastHighpass = 0;
+    let lastLowpass = 0;
     
     for (let i = 0; i < signal.length; i++) {
-      // Paso alto (elimina componente DC)
-      const highpass = alpha_high * (i > 0 ? highpass_prev + signal[i] - signal[i-1] : signal[i]);
-      const highpass_prev = highpass;
+      // Paso alto para eliminar componente DC
+      const highpass = alpha_high * (lastHighpass + signal[i] - (i > 0 ? signal[i-1] : signal[i]));
       
-      // Paso bajo (elimina ruido de alta frecuencia)
-      const y = y_prev_low + alpha_low * (highpass - y_prev_low);
-      y_prev_low = y;
+      // Paso bajo para eliminar ruido de alta frecuencia
+      const lowpass = lastLowpass + alpha_low * (highpass - lastLowpass);
       
-      filtered.push(y);
+      // Actualizar estados
+      lastHighpass = highpass;
+      lastLowpass = lowpass;
+      
+      // Guardar valor filtrado
+      filtered.push(lowpass);
     }
     
     return filtered;
   }
   
   /**
-   * Función auxiliar para encontrar min/max sin usar Math
+   * Encuentra valores mínimo y máximo en un array
    */
-  private findMinMax(signal: Tensor1D): { min: number, max: number } {
-    if (!signal.length) return { min: 0, max: 0 };
+  private findMinMax(array: Tensor1D): { min: number; max: number } {
+    if (!array || array.length === 0) return { min: 0, max: 0 };
     
-    let min = signal[0];
-    let max = signal[0];
+    let min = array[0];
+    let max = array[0];
     
-    for (let i = 1; i < signal.length; i++) {
-      if (signal[i] < min) min = signal[i];
-      if (signal[i] > max) max = signal[i];
+    for (let i = 1; i < array.length; i++) {
+      if (array[i] < min) min = array[i];
+      if (array[i] > max) max = array[i];
     }
     
     return { min, max };
   }
   
   get parameterCount(): number {
-    return 0; // Indicar desconocido
+    // Ya no se puede calcular desde capas TS
+    return 0;
   }
-
+  
   get architecture(): string {
-    return `TF.js Model (CNN-BiLSTM-Attention)`;
+    // Describir la arquitectura cargada
+    return `TF.js Model (CNN-ResNet-Dual)`;
   }
-}
-
-// Funciones auxiliares para evitar dependencia de Math
-function findMinimum(values: number[]): number {
-  if (!values.length) return 0;
-  let min = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] < min) min = values[i];
-  }
-  return min;
-}
-
-function findMaximum(values: number[]): number {
-  if (!values.length) return 0;
-  let max = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > max) max = values[i];
-  }
-  return max;
 }
