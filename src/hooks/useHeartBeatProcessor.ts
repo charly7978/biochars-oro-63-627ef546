@@ -4,8 +4,8 @@ import { toast } from 'sonner';
 // import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector'; // Eliminado
 import HeartRateService from '@/services/HeartRateService';
 import AudioFeedbackService from '@/services/AudioFeedbackService';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService'; // Importado
-import type { ArrhythmiaDetectionResult } from '@/services/ArrhythmiaDetectionService'; // Import as type
+import ArrhythmiaDetectionService from '@/services/arrhythmia'; // Updated import
+import type { ArrhythmiaDetectionResult } from '@/services/arrhythmia'; // Updated import
 import { HeartRateResult } from '@/services/HeartRateService';
 
 export interface UseHeartBeatReturn {
