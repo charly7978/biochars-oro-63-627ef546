@@ -53,64 +53,79 @@ export function detectPeak(
 }
 
 /**
- * Confirms a peak by examining neighboring samples
+ * Confirma si un pico candidato es válido basado en contexto local.
+ * TEMPORALMENTE SIMPLIFICADO PARA DEPURACIÓN: Confirma casi cualquier candidato.
  */
 export function confirmPeak(
-  isPeak: boolean,
+  isPeakCandidate: boolean,
   normalizedValue: number,
-  lastConfirmedPeak: boolean,
-  peakConfirmationBuffer: number[],
+  confidence: number,
+  signalWindow: number[], // No usado en la versión simplificada
+  currentState: PeakConfirmationState,
   minConfidence: number,
-  confidence: number
+  adaptiveThreshold: number // No usado en la versión simplificada
 ): {
   isConfirmedPeak: boolean;
-  updatedBuffer: number[];
-  updatedLastConfirmedPeak: boolean;
+  updatedState: PeakConfirmationState;
 } {
-  // Add value to confirmation buffer
-  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
-  if (updatedBuffer.length > 5) {
-    updatedBuffer.shift();
+  let isConfirmed = false;
+
+  // Lógica de confirmación MUY SIMPLIFICADA para depuración:
+  // Confirmar si es un candidato, supera la confianza mínima 
+  // y no acabamos de confirmar uno en el ciclo anterior.
+  if (isPeakCandidate && confidence >= minConfidence && !currentState.lastConfirmedPeak) {
+    isConfirmed = true;
   }
 
-  let isConfirmedPeak = false;
-  let updatedLastConfirmedPeak = lastConfirmedPeak;
-
-  // Only proceed with peak confirmation if needed
-  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
-    // Need enough samples in buffer for confirmation
-    if (updatedBuffer.length >= 3) {
-      const len = updatedBuffer.length;
-      
-      // Confirmar pico si los valores posteriores descienden significativamente
-      const peakValue = updatedBuffer[len - 3]; // Asumiendo que el pico es el 3er último valor del buffer
-      const valueAfter1 = updatedBuffer[len - 2];
-      const valueAfter2 = updatedBuffer[len - 1];
-      
-      const drop1 = peakValue - valueAfter1;
-      const drop2 = valueAfter1 - valueAfter2;
-
-      // Requerir una bajada clara y consistente
-      const MIN_DROP_RATIO = 0.15; // Exigir que la bajada sea al menos 15% del valor del pico normalizado
-      const isSignificantDrop = 
-        drop1 > peakValue * MIN_DROP_RATIO || 
-        drop2 > peakValue * MIN_DROP_RATIO;
-        
-      // Mantener la lógica anterior como respaldo si la señal es más ruidosa
-      const goingDownSimple = valueAfter2 < valueAfter1 || valueAfter1 < peakValue;
-
-      if (isSignificantDrop || goingDownSimple) { // Priorizar bajada significativa
-        isConfirmedPeak = true;
-        updatedLastConfirmedPeak = true;
+  /* Lógica original más compleja comentada temporalmente:
+    currentState.buffer.push(isPeakCandidate ? normalizedValue : -1); 
+    if (currentState.buffer.length > CONFIRMATION_WINDOW_SIZE) {
+      currentState.buffer.shift();
+    }
+    const currentWindowIndex = Math.floor(CONFIRMATION_WINDOW_SIZE / 2);
+    if (currentState.buffer[currentWindowIndex] > 0 && 
+        confidence >= minConfidence && 
+        !currentState.lastConfirmedPeak) { 
+      let isLocalMax = true;
+      for (let i = 0; i < CONFIRMATION_WINDOW_SIZE; i++) {
+        if (i !== currentWindowIndex && currentState.buffer[i] > currentState.buffer[currentWindowIndex]) {
+          isLocalMax = false;
+          break;
+        }
+      }
+      if (isLocalMax) {
+        const windowCenterIndex = Math.floor(signalWindow.length / 2);
+        const peakValue = signalWindow[windowCenterIndex];
+        let leftValley = peakValue;
+        let rightValley = peakValue;
+        let peakWidth = 1;
+        let leftIndex = windowCenterIndex - 1;
+        let rightIndex = windowCenterIndex + 1;
+        while (leftIndex >= 0) {
+            if (signalWindow[leftIndex] >= signalWindow[leftIndex + 1]) break; 
+            leftValley = Math.min(leftValley, signalWindow[leftIndex]);
+            peakWidth++;
+            leftIndex--;
+        }
+        while (rightIndex < signalWindow.length) {
+            if (signalWindow[rightIndex] >= signalWindow[rightIndex - 1]) break; 
+            rightValley = Math.min(rightValley, signalWindow[rightIndex]);
+             peakWidth++;
+            rightIndex++;
+        }
+        const prominence = peakValue - Math.max(leftValley, rightValley);
+        if (prominence >= adaptiveThreshold * MIN_PEAK_PROMINENCE_FACTOR && 
+            peakWidth <= MAX_PEAK_WIDTH_SAMPLES) {
+           isConfirmed = true;
+        } 
       }
     }
-  } else if (!isPeak) {
-    updatedLastConfirmedPeak = false;
-  }
+  */
 
-  return {
-    isConfirmedPeak,
-    updatedBuffer,
-    updatedLastConfirmedPeak
+  currentState.lastConfirmedPeak = isConfirmed;
+  // Devolver una copia del estado buffer si aún se usa, aunque la lógica simplificada no lo llene igual
+  return { 
+      isConfirmedPeak: isConfirmed, 
+      updatedState: { ...currentState, buffer: [...currentState.buffer] } 
   };
 }

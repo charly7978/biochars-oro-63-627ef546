@@ -90,6 +90,7 @@ class HeartRateService {
   
   // Used to prevent duplicate beeps/vibrations
   private lastProcessedPeakTime: number = 0;
+  private debugCounter = 0; // Counter for selective logging
 
   private constructor() {
     this.reset();
@@ -172,6 +173,11 @@ class HeartRateService {
    * Versión sincronizada para coordinar audio y visual
    */
   public processSignal(value: number): HeartRateResult {
+    this.debugCounter++;
+    const shouldLog = (this.debugCounter % 15 === 0); // Log roughly every half second
+
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Input ppgValue: ${value.toFixed(4)}`);
+
     // Weak signal check
     if (this.isWeakSignal(value)) {
       return {
@@ -200,10 +206,10 @@ class HeartRateService {
       updatedMedianBuffer, 
       updatedMovingAvgBuffer 
     } = this.applyFilters(value);
-    
     this.medianBuffer = updatedMedianBuffer;
     this.movingAverageBuffer = updatedMovingAvgBuffer;
     this.smoothedValue = filteredValue;
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Filtered Value: ${filteredValue.toFixed(4)}`);
     
     // Update baseline
     if (this.baseline === 0) {
@@ -215,6 +221,7 @@ class HeartRateService {
     // Calculate derivative
     const derivative = filteredValue - this.lastValue;
     this.lastValue = filteredValue;
+    if (shouldLog) console.log(`[HRS ${this.debugCounter}] Normalized: ${derivative.toFixed(4)}, Baseline: ${this.baseline.toFixed(4)}`);
     
     // Find peaks
     const now = Date.now();
@@ -253,6 +260,7 @@ class HeartRateService {
           if (this.rrIntervalHistory.length > 20) {
             this.rrIntervalHistory.shift();
           }
+          if (shouldLog) console.log(`[HRS ${this.debugCounter}] New RR Interval: ${newInterval} ms`);
         }
       }
 
