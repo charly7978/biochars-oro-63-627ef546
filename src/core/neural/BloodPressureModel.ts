@@ -192,8 +192,8 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     
     // Diseño de filtro IIR Butterworth de segundo orden (aproximación simplificada)
     const dt = 1.0 / samplingRate;
-    const rc_low = 1.0 / (2.0 * 3.14159 * lowCutoff);
-    const rc_high = 1.0 / (2.0 * 3.14159 * highCutoff);
+    const rc_low = 1.0 / (2.0 * Math.PI * lowCutoff);
+    const rc_high = 1.0 / (2.0 * Math.PI * highCutoff);
     
     // Coeficientes de filtro
     const alpha_low = dt / (rc_low + dt);
@@ -206,16 +206,8 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     
     for (let i = 0; i < signal.length; i++) {
       // Paso alto (elimina componente DC)
-      let highpass;
-      if (i > 0) {
-        // Inicializar con el valor actual para el primer elemento
-        highpass = alpha_high * (y_prev_high + signal[i] - signal[i-1]);
-      } else {
-        highpass = signal[i];
-      }
-      
-      // Almacenar para la siguiente iteración
-      y_prev_high = highpass;
+      const highpass = alpha_high * (i > 0 ? highpass_prev + signal[i] - signal[i-1] : signal[i]);
+      const highpass_prev = highpass;
       
       // Paso bajo (elimina ruido de alta frecuencia)
       const y = y_prev_low + alpha_low * (highpass - y_prev_low);
@@ -225,6 +217,23 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
     }
     
     return filtered;
+  }
+  
+  /**
+   * Función auxiliar para encontrar min/max sin usar Math
+   */
+  private findMinMax(signal: Tensor1D): { min: number, max: number } {
+    if (!signal.length) return { min: 0, max: 0 };
+    
+    let min = signal[0];
+    let max = signal[0];
+    
+    for (let i = 1; i < signal.length; i++) {
+      if (signal[i] < min) min = signal[i];
+      if (signal[i] > max) max = signal[i];
+    }
+    
+    return { min, max };
   }
   
   get parameterCount(): number {

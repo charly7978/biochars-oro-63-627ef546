@@ -1,161 +1,106 @@
-
-import * as tf from '@tensorflow/tfjs';
-
 /**
- * Definiciones de tipos para facilitar la comprensión
+ * Base types and interfaces for neural network models
  */
+import * as tf from '@tensorflow/tfjs'; // Importar tfjs
+
+// Define 1D Tensor as simple number array for type safety
 export type Tensor1D = number[];
-export type Tensor2D = number[][];
-export type Tensor3D = number[][][];
+export type Tensor2D = Tensor1D[];
 
 /**
- * Interfaz para información de un modelo neuronal
- */
-export interface ModelInfo {
-  /** Nombre del modelo */
-  name: string;
-  
-  /** Versión del modelo */
-  version: string;
-  
-  /** Estado del modelo (cargado o no) */
-  isLoaded: boolean;
-  
-  /** Tiempo de predicción en ms */
-  predictionTime: number;
-  
-  /** Tiempo de carga en ms */
-  loadTime: number;
-  
-  /** Forma de entrada esperada */
-  inputShape: number[];
-  
-  /** Forma de salida esperada */
-  outputShape: number[];
-}
-
-/**
- * Clase base para todos los modelos neuronales
- * Define la interfaz común y comportamientos básicos
+ * Base class for all neural network models using external engines (TF.js/ONNX)
  */
 export abstract class BaseNeuralModel {
-  /** Nombre identificativo del modelo */
-  protected readonly modelName: string;
-  
-  /** Forma de entrada esperada */
-  protected readonly inputShape: number[];
-  
-  /** Forma de salida esperada */
-  protected readonly outputShape: number[];
-  
-  /** Versión del modelo */
-  protected readonly modelVersion: string;
-  
-  /** Instancia del modelo TensorFlow.js */
-  protected model: tf.LayersModel | tf.GraphModel | null = null;
-  
-  /** Indica si el modelo ha sido cargado */
+  // Properties for model metadata
+  private readonly _name: string;
+  private readonly _inputShape: number[]; // Puede ser informativo, la validación real la hace el modelo cargado
+  private readonly _outputShape: number[]; // Puede ser informativo
+  private readonly _version: string;
+  private _lastPredictionTime: number = 0;
+
+  // Propiedad para el modelo cargado (TF.js GraphModel o LayersModel)
+  protected model: tf.GraphModel | tf.LayersModel | null = null;
   protected isModelLoaded: boolean = false;
-  
-  /** Tiempo que tarda la última predicción (ms) */
-  protected lastPredictionTime: number = 0;
-  
-  /** Tiempo que tardó la carga del modelo (ms) */
-  protected modelLoadTime: number = 0;
-  
-  /**
-   * Constructor de modelo base
-   */
+
   constructor(
-    modelName: string,
-    inputShape: number[],
-    outputShape: number[],
-    modelVersion: string = '1.0.0'
+    name: string,
+    inputShape: number[], // Mantener para info, pero no para validación estricta aquí
+    outputShape: number[], // Mantener para info
+    version: string
   ) {
-    this.modelName = modelName;
-    this.inputShape = inputShape;
-    this.outputShape = outputShape;
-    this.modelVersion = modelVersion;
+    this._name = name;
+    this._inputShape = inputShape;
+    this._outputShape = outputShape;
+    this._version = version;
   }
   
   /**
-   * Carga el modelo (debe ser implementado por subclases)
+   * Método abstracto para cargar el modelo real (TF.js o ONNX)
+   * Debería ser implementado por las clases hijas.
    */
   abstract loadModel(): Promise<void>;
   
   /**
-   * Realiza una predicción (debe ser implementado por subclases)
+   * Abstract method for prediction that must be implemented
+   * Ahora espera un tf.Tensor como entrada y devuelve tf.Tensor.
+   * Las clases hijas deberán manejar la conversión desde/hacia Tensor1D si es necesario.
    */
+  // abstract predict(input: tf.Tensor): Promise<tf.Tensor>;
+  // --- Mantenemos firma original por ahora para minimizar cambios ---
+  // La conversión a/desde Tensor se hará en las implementaciones de predict hijas
   abstract predict(input: Tensor1D): Promise<Tensor1D>;
   
   /**
-   * Método para actualizar el tiempo de predicción
+   * Information about the model
    */
-  protected updatePredictionTime(startTime: number): void {
-    this.lastPredictionTime = Date.now() - startTime;
-  }
-  
-  /**
-   * Método para actualizar el tiempo de carga
-   */
-  protected updateLoadTime(startTime: number): void {
-    this.modelLoadTime = Date.now() - startTime;
-  }
-  
-  /**
-   * Obtiene información del modelo
-   */
-  public getModelInfo(): ModelInfo {
+  getModelInfo() {
     return {
-      name: this.modelName,
-      version: this.modelVersion,
-      isLoaded: this.isModelLoaded,
-      predictionTime: this.lastPredictionTime,
-      loadTime: this.modelLoadTime,
-      inputShape: this.inputShape,
-      outputShape: this.outputShape
+      name: this._name,
+      inputShape: this._inputShape,
+      outputShape: this._outputShape,
+      version: this._version,
+      architecture: this.architecture, // Delegar a la clase hija
+      parameterCount: this.parameterCount, // Delegar a la clase hija
+      isLoaded: this.isModelLoaded, // Nuevo estado
+      lastPredictionTime: this._lastPredictionTime
     };
   }
   
   /**
-   * Usa la función predict con validación
+   * Update prediction time for performance tracking
    */
-  public async process(input: Tensor1D): Promise<Tensor1D> {
-    // Validar dimensiones de entrada
-    if (input.length !== this.inputShape[0]) {
-      console.error(`Dimensiones de entrada incorrectas. Esperado: ${this.inputShape[0]}, Recibido: ${input.length}`);
-      return new Array(this.outputShape[0]).fill(0);
-    }
-    
-    // Llamar a la implementación específica de predict
-    return await this.predict(input);
+  protected updatePredictionTime(startTime: number): void {
+    const elapsed = Date.now() - startTime;
+    this._lastPredictionTime = elapsed;
+    // Opcional: Registrar tiempos de inferencia
+    // console.log(`${this._name} prediction time: ${elapsed}ms`);
   }
   
   /**
-   * Retorna si el modelo está cargado
+   * Get the last prediction time in ms
    */
-  public isLoaded(): boolean {
-    return this.isModelLoaded;
+  get lastPredictionTime(): number {
+    return this._lastPredictionTime;
   }
   
-  /**
-   * Número de parámetros del modelo (abstracto)
-   */
-  abstract get parameterCount(): number;
+  // Abstract properties that must be implemented by subclasses
+  abstract get parameterCount(): number; // Podría ser opcional o retornar 0 si no es aplicable/conocido
+  abstract get architecture(): string; // Nombre de la arquitectura (ej. 'TF.js GraphModel', 'ONNX Model')
   
-  /**
-   * Arquitectura del modelo (abstracto)
-   */
-  abstract get architecture(): string;
+  // Getters for model metadata
+  get name(): string {
+    return this._name;
+  }
   
-  /**
-   * Libera recursos del modelo
-   */
-  public dispose(): void {
-    if (this.model) {
-      this.model.dispose();
-      this.model = null;
-      this.isModelLoaded = false;
-    }
+  get inputShape(): number[] {
+    return this._inputShape;
+  }
+  
+  get outputShape(): number[] {
+    return this._outputShape;
+  }
+  
+  get version(): string {
+    return this._version;
   }
 }
