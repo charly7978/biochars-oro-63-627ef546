@@ -5,8 +5,8 @@
  * Utiliza procesamiento avanzado de señales para extraer información fisiológica real
  */
 
-import { KalmanFilter } from '../core/signal/filters/KalmanFilter';
-import { WaveletDenoiser } from '../core/signal/filters/WaveletDenoiser';
+import { KalmanFilter } from '@/core/signal/filters/KalmanFilter';
+import { WaveletDenoiser } from '@/core/signal/filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
 
 // Tipos para estructura de datos PPG
@@ -260,4 +260,4 @@ export class PPGProcessor {
    }
 }
 
-export default PPGProcessor; 
+export default PPGProcessor;
