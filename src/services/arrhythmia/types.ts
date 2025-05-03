@@ -1,28 +1,49 @@
 
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { ArrhythmiaData } from '@/types/arrhythmia';
 
-export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
-
+/**
+ * Represents the result of an arrhythmia detection operation
+ */
 export interface ArrhythmiaDetectionResult {
-  isArrhythmia: boolean;
+  timestamp: number;
   rmssd: number;
   rrVariation: number;
-  timestamp: number;
-  category?: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
+  isArrhythmia: boolean;
 }
 
+/**
+ * Represents a window of time where an arrhythmia was detected
+ */
+export interface ArrhythmiaWindow {
+  start: number;
+  end: number;
+  timestamp?: number;
+  rmssd?: number;
+  rrVariation?: number;
+  isArrhythmia?: boolean;
+}
+
+/**
+ * Current arrhythmia detection status
+ */
 export interface ArrhythmiaStatus {
-  arrhythmiaCount: number;
   statusMessage: string;
-  lastArrhythmiaData: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
-    category?: string;
-  } | null;
+  lastArrhythmiaData: ArrhythmiaData | null;
 }
 
+/**
+ * Listener for arrhythmia events
+ */
+export type ArrhythmiaListener = (result: ArrhythmiaDetectionResult) => void;
+
+/**
+ * User profile for personalized arrhythmia detection
+ */
 export interface UserProfile {
   age?: number;
-  condition?: 'athlete' | 'hypertension' | 'diabetes';
+  gender?: 'male' | 'female' | 'other';
+  rmssdThreshold?: number;
+  variationThreshold?: number;
+  baselineHeartRate?: number;
+  knownConditions?: string[];
 }

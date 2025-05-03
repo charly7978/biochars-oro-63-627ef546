@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -16,6 +17,7 @@ import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 import { getModel } from '../../core/neural/ModelRegistry';
 import { PeakDetector } from '../../core/signal/PeakDetector';
+import { BaseNeuralModel } from '../../core/neural/NeuralNetworkBase';
 
 /**
  * Main vital signs processor
@@ -181,9 +183,11 @@ export class VitalSignsProcessor {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const spo2Result = this.spo2Model.predict(currentSignalSlice); 
-          spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+          if (spo2Result && spo2Result.length > 0) {
+            spo2 = spo2Result[0]; // Asumiendo que predict devuelve number[]
+          }
+        } catch (error) {
+          console.error("Error predicting SpO2:", error);
         }
       } else {
         spo2 = 0; // No hay modelo disponible
@@ -194,15 +198,17 @@ export class VitalSignsProcessor {
         try {
           // Pasar el array directamente, el modelo maneja la conversión a Tensor
           const bpResultNN = this.bpModel.predict(currentSignalSlice); 
-          systolic = bpResultNN[0];
-          diastolic = bpResultNN[1];
-          if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
-            pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
-          } else {
-            pressure = "--/--";
+          if (bpResultNN && bpResultNN.length >= 2) {
+            systolic = bpResultNN[0];
+            diastolic = bpResultNN[1];
+            if (systolic > 0 && diastolic > 0 && systolic > diastolic) {
+              pressure = `${Math.round(systolic)}/${Math.round(diastolic)}`;
+            } else {
+              pressure = "--/--";
+            }
           }
-        } finally {
-          // La gestión de tensores debe ocurrir dentro del modelo
+        } catch (error) {
+          console.error("Error predicting blood pressure:", error);
         }
       } else {
         pressure = "--/--"; // No hay modelo disponible
