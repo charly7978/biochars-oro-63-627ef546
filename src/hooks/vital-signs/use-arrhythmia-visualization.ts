@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ArrhythmiaWindow } from '@/types/arrhythmia';
-import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
-import ArrhythmiaDetectionService from '../../services/arrhythmia';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
 
 /**
  * Hook for arrhythmia detection and visualization
@@ -11,16 +10,11 @@ export const useArrhythmiaVisualization = () => {
   const [arrhythmiaWindows, setArrhythmiaWindows] = useState<ArrhythmiaWindow[]>([]);
   
   // Detection state
-  const heartRateVariabilityRef = useRef<number[]>([]);
-  const stabilityCounterRef = useRef<number>(0);
   const lastRRIntervalsRef = useRef<number[]>([]);
   const lastIsArrhythmiaRef = useRef<boolean>(false);
   const lastArrhythmiaTriggeredRef = useRef<number>(0);
   const windowGenerationCounterRef = useRef<number>(0);
   const MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = 6000; // 6 seconds between notifications
-  
-  // Detection configuration
-  const DETECTION_THRESHOLD = 0.22; // Increased from 0.20 to 0.22 para reducir falsos positivos
   
   /**
    * Register a new arrhythmia window for visualization
@@ -72,6 +66,7 @@ export const useArrhythmiaVisualization = () => {
   
   /**
    * Analyze RR intervals to detect arrhythmias
+   * Now delegating to the centralized service
    */
   const detectArrhythmia = useCallback((rrIntervals: number[]) => {
     return ArrhythmiaDetectionService.detectArrhythmia(rrIntervals);
@@ -157,8 +152,6 @@ export const useArrhythmiaVisualization = () => {
    */
   const clearArrhythmiaWindows = useCallback(() => {
     setArrhythmiaWindows([]);
-    stabilityCounterRef.current = 0;
-    heartRateVariabilityRef.current = [];
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
@@ -171,8 +164,6 @@ export const useArrhythmiaVisualization = () => {
    */
   const reset = useCallback(() => {
     clearArrhythmiaWindows();
-    heartRateVariabilityRef.current = [];
-    stabilityCounterRef.current = 0;
     lastRRIntervalsRef.current = [];
     lastIsArrhythmiaRef.current = false;
     lastArrhythmiaTriggeredRef.current = 0;
