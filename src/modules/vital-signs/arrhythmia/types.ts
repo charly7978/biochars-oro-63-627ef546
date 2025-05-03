@@ -46,6 +46,7 @@ export interface ArrhythmiaProcessingResult {
   lastArrhythmiaData: { 
     timestamp: number; 
     rmssd: number; 
-    rrVariation: number; 
+    rrVariation: number;
+    category?: string; 
   } | null;
 }
