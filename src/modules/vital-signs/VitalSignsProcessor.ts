@@ -11,7 +11,7 @@ import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { RRIntervalData } from './arrhythmia/types';
-import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
 import { SpO2NeuralModel } from '../../core/neural/SpO2Model';
 import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 import { ModelRegistry } from '../../core/neural/ModelRegistry';
@@ -108,8 +108,8 @@ export class VitalSignsProcessor {
   }
   
   /**
-   * Processes the real PPG signal and calculates all vital signs
-   * Using ONLY direct measurements with no reference values or simulation
+   * Procesa la señal real de PPG y calcula todos los signos vitales
+   * Usando SOLO mediciones directas sin valores de referencia o simulación
    */
   public processSignal(
     ppgValue: number,
@@ -286,12 +286,12 @@ export class VitalSignsProcessor {
       });
     }
     
-    // Obtener el estado de arritmia MÁS RECIENTE del servicio
+    // Obtain the most recent arrhythmia status from the service
     const arrhythmiaServiceStatus = ArrhythmiaDetectionService.getArrhythmiaStatus();
     const arrhythmiaStatus = arrhythmiaServiceStatus.statusMessage;
     const lastArrhythmiaData = arrhythmiaServiceStatus.lastArrhythmiaData;
 
-    // Create result object using the factory - Ahora las variables de confianza siempre están definidas
+    // Create result object using the factory
     const result = ResultFactory.createResult(
       spo2,
       heartRate,
@@ -300,7 +300,12 @@ export class VitalSignsProcessor {
       glucose,
       glucoseConfidence,
       overallConfidence,
-      lastArrhythmiaData
+      lastArrhythmiaData ? {
+        timestamp: lastArrhythmiaData.timestamp,
+        rmssd: lastArrhythmiaData.rmssd || 0,
+        rrVariation: lastArrhythmiaData.rrVariation || 0,
+        category: lastArrhythmiaData.category
+      } : null
     );
     
     // Si tenemos al menos un valor válido, guardar como último válido

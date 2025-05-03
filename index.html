@@ -1,147 +1,19 @@
+
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#000000" />
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="fullscreen" content="yes">
-    <meta name="screen-orientation" content="portrait">
-    <!-- High DPI display support -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
-    <title>healthpulse-captain</title>
-    <!-- Scripts de inicialización de OpenCV.js -->
-    <script src="/opencv/opencv-init.js"></script>
-    <script async src="/opencv/opencv.js"></script>
-    <style>
-      :root {
-        --sat: env(safe-area-inset-top);
-        --sar: env(safe-area-inset-right);
-        --sab: env(safe-area-inset-bottom);
-        --sal: env(safe-area-inset-left);
-      }
-      
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        -webkit-tap-highlight-color: transparent;
-        touch-action: none;
-      }
-      
-      html {
-        height: 100%;
-        height: -webkit-fill-available;
-        width: 100%;
-        overflow: hidden;
-        position: fixed;
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-        text-rendering: optimizeLegibility;
-        -webkit-font-smoothing: antialiased;
-        -moz-osx-font-smoothing: grayscale;
-      }
-      
-      body {
-        min-height: 100%;
-        min-height: -webkit-fill-available;
-        width: 100vw;
-        background: #000;
-        overflow: hidden;
-        position: fixed;
-        inset: 0;
-        padding: var(--sat) var(--sar) var(--sab) var(--sal);
-        touch-action: none;
-        user-select: none;
-        -webkit-user-select: none;
-      }
-      
-      #root {
-        width: 100%;
-        height: 100%;
-        height: 100vh;
-        height: 100dvh;
-        height: -webkit-fill-available;
-        display: flex;
-        flex-direction: column;
-        background: #000;
-        overflow: hidden;
-        touch-action: none;
-      }
-
-      @supports (height: 100dvh) {
-        #root {
-          height: 100dvh;
-        }
-      }
-      
-      /* High resolution interface settings */
-      .high-res-interface {
-        transform-origin: top left;
-        image-rendering: -webkit-optimize-contrast;
-        image-rendering: crisp-edges;
-        backface-visibility: hidden;
-        -webkit-font-smoothing: subpixel-antialiased;
-      }
-      
-      @media screen and (min-width: 1024px) {
-        .high-res-interface {
-          transform: scale(1);
-        }
-      }
-      
-      @media screen and (min-width: 2048px) {
-        .high-res-interface {
-          transform: scale(0.5);
-          width: 200%;
-          height: 200%;
-        }
-      }
-      
-      @media screen and (min-width: 3840px) {
-        .high-res-interface {
-          transform: scale(0.25);
-          width: 400%;
-          height: 400%;
-        }
-      }
-      
-      /* Improve text rendering */
-      h1, h2, h3, h4, h5, h6, p, span, button {
-        text-rendering: geometricPrecision;
-      }
-      
-      /* Crisp UI elements */
-      svg, img, canvas {
-        image-rendering: crisp-edges;
-        shape-rendering: crispEdges;
-      }
-      
-      /* High density display optimizations */
-      @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-        body {
-          -webkit-font-smoothing: antialiased;
-          -moz-osx-font-smoothing: grayscale;
-        }
-        
-        button, input, select, textarea {
-          transform: translateZ(0);
-        }
-        
-        canvas, .ppg-graph {
-          backface-visibility: hidden;
-          will-change: transform;
-          transform: translate3d(0, 0, 0);
-        }
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Biochars AI - Monitoreo Avanzado de Signos Vitales</title>
+    <!-- OpenCV scripts con type="module" para resolver el error de Vite -->
+    <script src="/opencv/opencv-init.js" type="module"></script>
+    <script src="/opencv/opencv.js" type="module"></script>
+    <!-- Required Lovable script tag for enabling new features -->
+    <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
   </head>
   <body>
     <div id="root"></div>
-    <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
