@@ -1,3 +1,4 @@
+
 /**
  * Functions for detecting peaks in PPG signals
  */
@@ -29,25 +30,25 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic
+  // Peak detection logic - MEJORADO para mayor sensibilidad y menos falsos positivos
   const isPeak =
     derivative < config.derivativeThreshold &&
     normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.98;
+    lastValue > baseline * 0.96; // Reducido ligeramente para mejor detección
 
-  // Calculate confidence based on signal characteristics
+  // Calculate confidence based on signal characteristics - OPTIMIZADO
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.6), 0),
     1
   );
 
-  // Combined confidence score
-  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
+  // Combined confidence score - mejorado para darle más peso al derivativo (indicio mejor de cambio real)
+  const confidence = (amplitudeConfidence * 0.4 + derivativeConfidence * 0.6);
 
   return { isPeak, confidence };
 }
@@ -90,16 +91,16 @@ export function confirmPeak(
       const drop1 = peakValue - valueAfter1;
       const drop2 = valueAfter1 - valueAfter2;
 
-      // Requerir una bajada clara y consistente
-      const MIN_DROP_RATIO = 0.15; // Exigir que la bajada sea al menos 15% del valor del pico normalizado
+      // MEJORADO: algoritmo más sensible para detección de patrones de descenso
+      const MIN_DROP_RATIO = 0.12; // Reducido para mayor sensibilidad
       const isSignificantDrop = 
         drop1 > peakValue * MIN_DROP_RATIO || 
         drop2 > peakValue * MIN_DROP_RATIO;
         
       // Mantener la lógica anterior como respaldo si la señal es más ruidosa
-      const goingDownSimple = valueAfter2 < valueAfter1 || valueAfter1 < peakValue;
+      const goingDownSimple = valueAfter2 < valueAfter1 && valueAfter1 < peakValue;
 
-      if (isSignificantDrop || goingDownSimple) { // Priorizar bajada significativa
+      if (isSignificantDrop && goingDownSimple) { // Requiere ambas condiciones
         isConfirmedPeak = true;
         updatedLastConfirmedPeak = true;
       }
