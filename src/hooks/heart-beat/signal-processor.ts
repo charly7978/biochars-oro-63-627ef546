@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';

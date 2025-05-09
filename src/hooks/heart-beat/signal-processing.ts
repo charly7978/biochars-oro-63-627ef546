@@ -1,15 +1,25 @@
 
-import { useCallback, useRef } from 'react';
+import { useRef, useCallback } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
+
+// This file is now properly organized with correct imports and exports
+// Instead of self-importing, we should import directly from the relevant files
 import { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
-  createWeakSignalResult, 
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
-} from './signal-processing';
+  createWeakSignalResult,
+  resetSignalQualityState
+} from './signal-processing/signal-quality';
+
+import { 
+  handlePeakDetection 
+} from './signal-processing/peak-detection';
+
+import { 
+  updateLastValidBpm, 
+  processLowConfidenceResult 
+} from './signal-processing/result-processor';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -129,3 +139,14 @@ export function useSignalProcessor() {
     MAX_CONSECUTIVE_WEAK_SIGNALS
   };
 }
+
+// Re-export all functions from the individual modules to maintain backward compatibility
+export {
+  checkWeakSignal,
+  shouldProcessMeasurement,
+  createWeakSignalResult,
+  resetSignalQualityState,
+  handlePeakDetection,
+  updateLastValidBpm,
+  processLowConfidenceResult
+};
