@@ -80,6 +80,9 @@ export class ArrhythmiaProcessor {
    * No simulation or reference values are used
    */
   private detectArrhythmia(currentTime: number): void {
+    // LOG ADICIONAL PARA VERIFICAR INVOCACIÓN Y LONGITUD
+    console.log(`ArrhythmiaProcessor (detectArrhythmia): ENTERED. Current rrIntervals length: ${this.rrIntervals.length}`); // LOG AP.X
+
     if (this.rrIntervals.length < this.MIN_RR_INTERVALS) {
       console.log(`ArrhythmiaProcessor (detectArrhythmia): Not enough RR intervals. Got ${this.rrIntervals.length}, need ${this.MIN_RR_INTERVALS}`); // LOG AP.3
       return;
