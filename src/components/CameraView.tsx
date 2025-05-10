@@ -66,11 +66,17 @@ const CameraView = ({
   };
 
   const startCamera = async () => {
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("getUserMedia no está soportado");
-      }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      console.error("CameraView: navigator.mediaDevices.getUserMedia no está soportado en este navegador.");
+      return;
+    }
 
+    if (!window.isSecureContext) {
+      console.error("CameraView: No se puede acceder a la cámara. El contexto no es seguro (se requiere HTTPS o localhost).");
+      return;
+    }
+
+    try {
       const isAndroid = /android/i.test(navigator.userAgent);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isWindows = /windows nt/i.test(navigator.userAgent);
@@ -175,20 +181,20 @@ const CameraView = ({
             }
 
             if (advancedConstraints.length > 0) {
-              console.log("Aplicando configuraciones avanzadas:", advancedConstraints);
+              console.log("Aplicando configuraciones avanzadas (no-Android):", advancedConstraints);
               await videoTrack.applyConstraints({
                 advanced: advancedConstraints
               });
             }
 
             if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
+              console.log("Activando linterna para mejorar la señal PPG (no-Android)");
               await videoTrack.applyConstraints({
                 advanced: [{ torch: true }]
               });
               setTorchEnabled(true);
             } else {
-              console.log("La linterna no está disponible en este dispositivo");
+              console.log("La linterna no está disponible en este dispositivo (no-Android)");
             }
           }
           
@@ -198,7 +204,7 @@ const CameraView = ({
           }
           
         } catch (err) {
-          console.log("No se pudieron aplicar algunas optimizaciones:", err);
+          console.warn("No se pudieron aplicar algunas optimizaciones a la cámara:", err);
         }
       }
 
@@ -221,15 +227,30 @@ const CameraView = ({
       
       retryAttemptsRef.current = 0;
       
-    } catch (err) {
-      console.error("Error al iniciar la cámara:", err);
+    } catch (err: any) {
+      console.error("Error detallado al iniciar la cámara:", {
+        message: err.message,
+        name: err.name,
+        stack: err.stack,
+        errorObject: err
+      });
       
-      retryAttemptsRef.current++;
-      if (retryAttemptsRef.current <= maxRetryAttempts) {
-        console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
-        setTimeout(startCamera, 1000);
+      if (err instanceof TypeError || 
+          err.name === 'NotAllowedError' || 
+          err.name === 'SecurityError' ||
+          err.message === 'getUserMedia no está soportado' ||
+          !window.isSecureContext
+         ) {
+        console.error(`CameraView: Error fundamental de permisos o API. No se reintentará. Causa: ${err.name} - ${err.message}`);
+        retryAttemptsRef.current = maxRetryAttempts + 1;
       } else {
-        console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
+        retryAttemptsRef.current++;
+        if (retryAttemptsRef.current <= maxRetryAttempts) {
+          console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
+          setTimeout(startCamera, 1000);
+        } else {
+          console.error(`CameraView: Se alcanzó el máximo de ${maxRetryAttempts} intentos para iniciar la cámara sin éxito.`);
+        }
       }
     }
   };
