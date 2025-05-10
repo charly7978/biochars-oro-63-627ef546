@@ -27,6 +27,10 @@ export interface FingerDetectionConfig {
   openCvSkinLowerHsv: [number, number, number]; // Límite inferior HSV para piel
   openCvSkinUpperHsv: [number, number, number]; // Límite superior HSV para piel
   showToastFeedback: boolean; // NUEVO: Para controlar toasts de sonner
+  openCvMorphKernelSize: number; // Tamaño del kernel para operaciones morfológicas
+  openCvSolidityThreshold: number; // Umbral mínimo de solidez para ROI
+  openCvAspectRatioMin: number; // Relación de aspecto mínima (e.g. width/height)
+  openCvAspectRatioMax: number; // Relación de aspecto máxima
 }
 
 export interface FingerDetectionResult {
@@ -75,6 +79,10 @@ class FingerDetectionManager {
     openCvSkinLowerHsv: [0, 40, 30], // Ejemplo, ajustar
     openCvSkinUpperHsv: [40, 255, 255], // Ejemplo, ajustar
     showToastFeedback: false, // Por defecto no mostrar toasts, puede ser ruidoso
+    openCvMorphKernelSize: 3, // Kernel de 3x3 para morfología
+    openCvSolidityThreshold: 0.75, // Ejemplo: contorno debe ser al menos 75% sólido
+    openCvAspectRatioMin: 0.2, // Ejemplo: dedo más alto que ancho (o viceversa si se rota)
+    openCvAspectRatioMax: 1.5, // Ejemplo: evitar formas demasiado alargadas o cuadradas si no se esperan
   };
 
   private constructor() {
@@ -99,76 +107,88 @@ class FingerDetectionManager {
 
   // Método principal que podría recibir datos de imagen y PPG
   public processFrameAndSignal(
-    imageData?: ImageData, // Para OpenCV
-    ppgValue?: number, // Para análisis de señal PPG
-    cvReady?: boolean // Indica si OpenCV está listo para usarse
+    imageData?: ImageData,
+    ppgValue?: number,
+    cvReady?: boolean
   ): FingerDetectionResult {
     const currentTime = Date.now();
+    let ppgFilteredValue = this.lastProcessedPpgValue; // Valor por defecto
+    let ppgAmplitude = 0;
+    let roiDetected: FingerDetectionResult['roi'] | undefined = undefined;
+    let skinConfidence: number | undefined = undefined;
+    let rhythmResult = { isPatternConsistent: false, confidence: 0, peaksFound: [] };
+    let finalRhythmConfirmed = false;
+    let effectivePpgValue = ppgValue; // Valor PPG que se usará para análisis de señal
 
-    let ppgFilteredValue = 0;
-    if (ppgValue !== undefined) {
-      const kalmanFiltered = this.kalmanFilter.filter(ppgValue);
-      ppgFilteredValue = this.bandpassFilter.filter(kalmanFiltered);
-      this.lastProcessedPpgValue = ppgFilteredValue;
+    const DEBUG_OPENCV_OUTPUT = true; // <--- TEMPORAL DEBUG FLAG
 
+    // --- Lógica de OpenCV --- 
+    let cvAnalysisResults: { roi?: FingerDetectionResult['roi'], skinConfidence?: number, extractedPpgValue?: number} = {};
+    if (imageData && cvReady && (cv as any).Mat) {
+      cvAnalysisResults = this.analyzeImageWithOpenCVInternal(imageData);
+      roiDetected = cvAnalysisResults.roi;
+      skinConfidence = cvAnalysisResults.skinConfidence;
+      effectivePpgValue = cvAnalysisResults.extractedPpgValue ?? ppgValue; // Si CV extrajo, usarlo. Sino, el ppgValue de entrada.
+    } else {
+      effectivePpgValue = ppgValue;
+    }
+
+    if (typeof effectivePpgValue === 'number') {
+      ppgFilteredValue = this.bandpassFilter.filter(this.kalmanFilter.filter(effectivePpgValue));
       this.signalHistory.push({ time: currentTime, value: ppgFilteredValue });
-      // Mantener el historial PPG dentro de PPG_HISTORY_SIZE_MS
-      this.signalHistory = this.signalHistory.filter(
-        point => currentTime - point.time < this.PPG_HISTORY_SIZE_MS
-      );
+      while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
+        this.signalHistory.shift();
+      }
+      this.lastProcessedPpgValue = ppgFilteredValue; // Guardar el último valor filtrado procesado
+      const signalWindow = this.signalHistory.map(p => p.value);
+      if (signalWindow.length > 1) {
+        ppgAmplitude = Math.max(...signalWindow) - Math.min(...signalWindow);
+      }
     } else {
-      // Si no hay nuevo valor PPG, usar el último procesado para algunas lógicas
-      // o simplemente no actualizar las partes dependientes de PPG.
-      // Por ahora, usaremos el último valor procesado si existe historia.
-      ppgFilteredValue = this.signalHistory.length > 0 ? this.signalHistory[this.signalHistory.length - 1].value : 0;
+      // Si effectivePpgValue no es un número, no podemos procesar la señal PPG
+      // Usar el último valor conocido para ppgFilteredValue y ppgAmplitude o valores por defecto
+      ppgAmplitude = 0; // o alguna lógica para decaimiento
     }
-    
-    // 1. Detección de Patrón Rítmico (adaptado de useSignalQualityDetector)
-    const rhythmResult = this.detectRhythmicPatternInternal();
-    this.fingerConfirmedByRhythm = rhythmResult.isPatternConsistent;
-    if (rhythmResult.isPatternConsistent) {
-        this.detectedRhythmicPatternsCount = Math.min(
-            this.config.requiredConsistentPatterns + 2, // Allow some buffer
-            this.detectedRhythmicPatternsCount + 1
+
+    // --- Análisis de Señal PPG (Ritmo y Calidad) ---
+    // Solo realizar si tenemos un valor PPG efectivo
+    if (typeof effectivePpgValue === 'number') {
+        rhythmResult = this.detectRhythmicPatternInternal(); // Usa this.signalHistory
+        finalRhythmConfirmed = rhythmResult.isPatternConsistent && rhythmResult.confidence > 0.5;
+    }
+    const ppgQuality = this.calculatePpgSignalQuality(ppgFilteredValue, ppgAmplitude); // Usa el valor filtrado
+
+    // --- Sistema de Confianza Graduada y Detección Final ---
+    let overallConfidence = 0;
+    let isFingerActuallyDetected = false;
+
+    if (DEBUG_OPENCV_OUTPUT && imageData && cvReady && (cv as any).Mat) {
+        // **** MODO DEBUG OPENCV ****
+        // Basar la detección principalmente en la salida de OpenCV
+        if (roiDetected && skinConfidence !== undefined && skinConfidence >= this.config.openCvMinSkinConfidence) {
+            isFingerActuallyDetected = true;
+            overallConfidence = skinConfidence; // Usar confianza de piel como confianza general
+            console.log("FDM_DEBUG_CV: Dedo DETECTADO por CV (ROI y Piel OK)", {roi: roiDetected, skinConf: skinConfidence});
+        } else {
+            isFingerActuallyDetected = false;
+            overallConfidence = skinConfidence !== undefined ? skinConfidence * 0.5 : 0.2; // Baja confianza si CV falla
+            console.log("FDM_DEBUG_CV: Dedo NO DETECTADO por CV", {roi: roiDetected, skinConf: skinConfidence});
+        }
+        // Para depuración, la calidad y ritmo PPG se ignoran temporalmente para la decisión final
+        // pero aún se calculan y se incluyen en el resultado para logging.
+    } else {
+        // **** MODO NORMAL ****
+        overallConfidence = this.calculateOverallConfidence(
+          finalRhythmConfirmed,
+          rhythmResult.confidence,
+          ppgQuality,
+          roiDetected !== undefined,
+          skinConfidence
         );
-    } else {
-        this.detectedRhythmicPatternsCount = Math.max(0, this.detectedRhythmicPatternsCount -1);
-    }
-    const finalRhythmConfirmed = this.detectedRhythmicPatternsCount >= this.config.requiredConsistentPatterns;
-
-
-    // TODO: 2. Análisis de ROI y Color de Piel con OpenCV (usando imageData)
-    let roiDetected: FingerDetectionResult['roi'] = undefined;
-    let skinConfidence: FingerDetectionResult['skinConfidence'] = undefined;
-    
-    // Placeholder para la lógica de OpenCV dentro de FingerDetectionManager
-    if (imageData && cvReady /* && this.config.useOpenCV */) {
-      // const cvAnalysisResult = this.analyzeImageWithOpenCVInternal(imageData);
-      // roiDetected = cvAnalysisResult.roi;
-      // skinConfidence = cvAnalysisResult.skinConfidence;
-      // Por ahora, simulamos que si CV está listo y hay imagen, se detecta algo genérico
-      // Esto se reemplazará con la lógica real de OpenCV más adelante.
-      // roiDetected = { x: imageData.width * 0.3, y: imageData.height * 0.3, width: imageData.width * 0.4, height: imageData.height * 0.4 };
-      // skinConfidence = 0.75; // Simulación
+        isFingerActuallyDetected = overallConfidence >= 0.6; // Umbral normal
     }
 
-
-    // 3. Cálculo de Calidad de Señal PPG (a implementar/mejorar)
-    const ppgQuality = this.calculatePpgSignalQuality(ppgFilteredValue);
-
-
-    // 4. Sistema de Confianza Graduada y Detección Final
-    const overallConfidence = this.calculateOverallConfidence(
-      finalRhythmConfirmed,
-      rhythmResult.confidence, // confianza del detector de ritmo
-      ppgQuality,
-      roiDetected !== undefined, // bool si se detectó ROI
-      skinConfidence // confianza de piel de CV (0-1)
-    );
-
-    const isFingerActuallyDetected = overallConfidence >= 0.6; // Umbral de ejemplo
-
-    // 5. Generar Feedback
+    // --- Generar Feedback ---
     const feedback = this.generateUserFeedback(
         isFingerActuallyDetected, 
         ppgQuality, 
@@ -178,28 +198,7 @@ class FingerDetectionManager {
         imageData && cvReady && (cv as any).Mat ? true : false
     );
 
-    let effectivePpgValue = ppgFilteredValue;
-    if (imageData && cvReady) {
-      const cvAnalysisResults = this.analyzeImageWithOpenCVInternal(imageData);
-      roiDetected = cvAnalysisResults.roi;
-      skinConfidence = cvAnalysisResults.skinConfidence;
-      effectivePpgValue = cvAnalysisResults.extractedPpgValue ?? ppgFilteredValue;
-    }
-
-    // Asegurarse de que effectivePpgValue sea un número para el resto del procesamiento
-    const finalPpgValue = typeof effectivePpgValue === 'number' ? effectivePpgValue : this.lastProcessedPpgValue;
-    if (typeof effectivePpgValue === 'number') {
-      this.lastProcessedPpgValue = effectivePpgValue;
-       // Actualizar historial PPG si tenemos un valor efectivo
-      if (typeof finalPpgValue === 'number') {
-        const currentTime = Date.now();
-        this.signalHistory.push({ time: currentTime, value: finalPpgValue });
-        while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
-          this.signalHistory.shift();
-        }
-      }
-    }
-
+    // 5. Generar Resultado
     const result: FingerDetectionResult = {
       isFingerDetected: isFingerActuallyDetected,
       quality: ppgQuality,
@@ -211,7 +210,7 @@ class FingerDetectionManager {
       roi: roiDetected,
       skinConfidence,
       lastUpdate: currentTime,
-      rawValue: finalPpgValue // ASIGNAR el valor PPG efectivo usado
+      rawValue: effectivePpgValue // ASIGNAR el valor PPG efectivo usado
     };
 
     if (this.config.showToastFeedback) {
@@ -300,7 +299,7 @@ class FingerDetectionManager {
   }
 
   // Placeholder para la lógica de calidad de señal PPG
-  private calculatePpgSignalQuality(currentFilteredValue: number): number {
+  private calculatePpgSignalQuality(currentFilteredValue: number, ppgAmplitude: number): number {
     const history = this.signalHistory.map(p => p.value); // Usar el historial de señales filtradas
     if (history.length < 30) return 0; // Necesita suficientes datos
 
@@ -496,11 +495,24 @@ class FingerDetectionManager {
     let rgbMat: any = null;
     let hsvMat: any = null;
     let skinMask: any = null;
-    let contours: any = null;
+    let contours: any = null; 
     let hierarchy: any = null;
     let bestRoi: FingerDetectionResult['roi'] | undefined = undefined;
     let calculatedSkinConfidence: number | undefined = undefined;
     let ppgFromRoi: number | undefined = undefined;
+    let scoreForBestRoi = -1; 
+    let initialContoursCount = 0;
+    let bestContourIndex = -1;
+
+    console.log("FDM_CV_INTERNAL: Iniciando análisis de OpenCV. Configuración actual:", {
+      minContourArea: this.config.openCvMinContourArea,
+      solidityThreshold: this.config.openCvSolidityThreshold,
+      aspectRatioMin: this.config.openCvAspectRatioMin,
+      aspectRatioMax: this.config.openCvAspectRatioMax,
+      hsvLower: this.config.openCvSkinLowerHsv,
+      hsvUpper: this.config.openCvSkinUpperHsv,
+      morphKernel: this.config.openCvMorphKernelSize
+    });
 
     try {
       if (!(cv as any).Mat || !imageData) {
@@ -521,61 +533,102 @@ class FingerDetectionManager {
       upperSkin.delete();
 
       // Opcional: Operaciones morfológicas para limpiar la máscara
-      // let M = cv.Mat.ones(3, 3, cv.CV_8U);
-      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_OPEN, M, new cv.Point(-1,-1), 1);
-      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_CLOSE, M, new cv.Point(-1,-1), 1);
-      // M.delete();
+      let morphKernel = cv.Mat.ones(this.config.openCvMorphKernelSize, this.config.openCvMorphKernelSize, cv.CV_8U);
+      // MORPH_OPEN: Erosión seguida de Dilatación (elimina ruido pequeño)
+      cv.morphologyEx(skinMask, skinMask, cv.MORPH_OPEN, morphKernel, new cv.Point(-1,-1), 1);
+      // MORPH_CLOSE: Dilatación seguida de Erosión (cierra pequeños agujeros)
+      cv.morphologyEx(skinMask, skinMask, cv.MORPH_CLOSE, morphKernel, new cv.Point(-1,-1), 2); // Dos iteraciones pueden ser más efectivas
+      morphKernel.delete();
 
-      contours = new cv.MatVector();
-      hierarchy = new cv.Mat();
       cv.findContours(skinMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      initialContoursCount = contours.size();
 
       let largestContourArea = 0;
-      let bestContourIndex = -1;
 
       for (let i = 0; i < contours.size(); ++i) {
         const contour = contours.get(i);
         const area = cv.contourArea(contour);
-        if (area > this.config.openCvMinContourArea && area > largestContourArea) {
-          largestContourArea = area;
-          bestContourIndex = i;
+
+        if (area < this.config.openCvMinContourArea) {
+          contour.delete();
+          continue;
         }
-        contour.delete(); // Eliminar contorno individual después de usarlo si no es el mejor
+
+        const rect = cv.boundingRect(contour);
+        const aspectRatio = rect.width / rect.height;
+
+        let hull = new cv.Mat();
+        cv.convexHull(contour, hull, false, true);
+        const hullArea = cv.contourArea(hull);
+        const solidity = hullArea > 0 ? area / hullArea : 0;
+        hull.delete();
+
+        // Calcular puntuación para este contorno
+        let score = 0;
+        score += area / 1000; // Ponderar área (normalizar)
+
+        if (solidity >= this.config.openCvSolidityThreshold) {
+          score += solidity * 2; // Bonificación por buena solidez
+        } else {
+          score -= (1 - solidity) * 2; // Penalización por baja solidez
+        }
+
+        if (aspectRatio >= this.config.openCvAspectRatioMin && aspectRatio <= this.config.openCvAspectRatioMax) {
+          score += 1; // Bonificación por relación de aspecto aceptable
+        } else {
+          // Penalización leve si está fuera de rango, podría ser ruido
+          score -= 0.5 * Math.abs(aspectRatio - (this.config.openCvAspectRatioMin + this.config.openCvAspectRatioMax)/2);
+        }
+        
+        if (score > scoreForBestRoi) {
+          if (bestContourIndex !== -1) {
+            // El contorno anterior (no el mejor) ya fue eliminado o será eliminado si no es este.
+          }
+          scoreForBestRoi = score;
+          bestContourIndex = i; 
+          largestContourArea = area; 
+        } else {
+          contour.delete(); // No es el mejor, liberar este contorno
+        }
       }
 
       if (bestContourIndex !== -1) {
-        const fingerContour = contours.get(bestContourIndex);
-        const rect = cv.boundingRect(fingerContour);
-        bestRoi = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        const fingerContour = contours.get(bestContourIndex); // Obtener el mejor contorno FINAL
+        if (fingerContour && fingerContour.size && fingerContour.size().height > 0) { // Chequeo de validez
+          const rect = cv.boundingRect(fingerContour);
+          bestRoi = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 
-        // Calcular confianza de piel dentro de la ROI (ejemplo básico)
-        const roiMaskCv = new cv.Mat(skinMask.rows, skinMask.cols, cv.CV_8UC1, new cv.Scalar(0));
-        const roiContourVec = new cv.MatVector();
-        roiContourVec.push_back(fingerContour);
-        cv.drawContours(roiMaskCv, roiContourVec, 0, new cv.Scalar(255), cv.FILLED);
-        roiContourVec.delete();
-        
-        const skinPixelsInRoi = cv.countNonZero(skinMask.roi(rect)); // Píxeles de piel DENTRO de la ROI (usando skinMask original)
-        const totalPixelsInRoi = rect.width * rect.height;
-        if (totalPixelsInRoi > 0) {
-          calculatedSkinConfidence = skinPixelsInRoi / totalPixelsInRoi;
+          const roiMaskCv = new cv.Mat(skinMask.rows, skinMask.cols, cv.CV_8UC1, new cv.Scalar(0));
+          const roiContourVec = new cv.MatVector();
+          roiContourVec.push_back(fingerContour);
+          cv.drawContours(roiMaskCv, roiContourVec, 0, new cv.Scalar(255), cv.FILLED);
+          roiContourVec.delete();
+          
+          const skinPixelsInRoi = cv.countNonZero(skinMask.roi(rect)); // Píxeles de piel DENTRO de la ROI (usando skinMask original)
+          const totalPixelsInRoi = rect.width * rect.height;
+          if (totalPixelsInRoi > 0) {
+            calculatedSkinConfidence = skinPixelsInRoi / totalPixelsInRoi;
+          }
+          roiMaskCv.delete();
+          
+          // Extraer valor PPG (promedio canal rojo) de la ROI
+          const ppgRoiMat = rgbMat.roi(rect);
+          const meanColor = cv.mean(ppgRoiMat);
+          ppgFromRoi = meanColor[0]; // Canal Rojo
+          ppgRoiMat.delete();
+
+          fingerContour.delete(); // Liberar el mejor contorno después de usarlo
+        } else {
+           if(fingerContour) fingerContour.delete(); // Si se obtuvo pero no es válido
         }
-        roiMaskCv.delete();
-        
-        // Extraer valor PPG (promedio canal rojo) de la ROI
-        const ppgRoiMat = rgbMat.roi(rect);
-        const meanColor = cv.mean(ppgRoiMat);
-        ppgFromRoi = meanColor[0]; // Canal Rojo
-        ppgRoiMat.delete();
-
-        fingerContour.delete(); // Eliminar el contorno seleccionado
       }
       
-      // Asegurarse de liberar todos los contornos restantes si no se hizo en el bucle
-      if (bestContourIndex !== -1 && contours.size() > 0) {
-          // Si solo se eliminó el mejor, y quedaron otros, eliminarlos.
-          // Sin embargo, el bucle ya debería haberlos eliminado.
-      }
+      // Comentario sobre YCrCb
+      // Para una detección de piel potencialmente más robusta a la iluminación,
+      // se podría considerar el espacio de color YCrCb.
+      // 1. Convertir RGB a YCrCb: cv.cvtColor(rgbMat, ycrcbMat, cv.COLOR_RGB2YCrCb);
+      // 2. Aplicar umbrales a los canales Y, Cr, Cb.
+      //    Ej: Cr en [133, 173], Cb en [77, 127]
 
     } catch (e) {
       console.error("FingerDetectionManager: OpenCV analysis error:", e);
@@ -588,6 +641,16 @@ class FingerDetectionManager {
       contours?.delete(); // Asegurar liberación
       hierarchy?.delete();
     }
+
+    console.log("FDM_CV_INTERNAL: Resultados del análisis de OpenCV:", {
+      bestRoi: bestRoi,
+      calculatedSkinConfidence: calculatedSkinConfidence,
+      extractedPpgValue: ppgFromRoi,
+      bestScore: scoreForBestRoi,
+      contoursFoundInitial: initialContoursCount,
+      contoursAfterProcessing: bestContourIndex !== -1 ? 1 : 0
+    });
+
     return { roi: bestRoi, skinConfidence: calculatedSkinConfidence, extractedPpgValue: ppgFromRoi };
   }
 }

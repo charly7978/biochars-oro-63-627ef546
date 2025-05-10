@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { TensorFlowWorkerClient } from '../workers/tensorflow-worker-client';
 import { detectOptimalConfig } from '../core/neural/tensorflow/TensorFlowConfig';
@@ -21,6 +20,15 @@ export function useTensorFlowModel(modelType: string, autoLoad: boolean = true) 
   
   // Inicializar el worker si no existe
   useEffect(() => {
+    // SI EL MODELO ES VITAL-SIGNS-PPG, NO HACER NADA CON EL WORKER
+    if (modelType === 'vital-signs-ppg') {
+      console.warn(`[useTensorFlowModel] Worker y carga deshabilitados para ${modelType}`);
+      setIsLoading(false);
+      setIsReady(false); // Asegurarse de que no se considere listo
+      setError('Carga deshabilitada para este modelo');
+      return; // Salir temprano
+    }
+
     const initWorker = async () => {
       try {
         if (!workerClient) {

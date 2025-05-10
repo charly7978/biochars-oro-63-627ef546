@@ -1,4 +1,3 @@
-
 /**
  * Worker para TensorFlow.js
  * Permite ejecutar inferencias en un thread separado
@@ -45,6 +44,11 @@ async function initTensorFlow(backend: string) {
 
 // Cargar modelo
 async function loadModel(modelType: string): Promise<tf.LayersModel> {
+  if (modelType === 'vital-signs-ppg') {
+    console.warn(`[TF Worker] Carga del modelo '${modelType}' está deshabilitada intencionalmente.`);
+    throw new Error(`Carga del modelo '${modelType}' deshabilitada intencionalmente en el worker.`);
+  }
+
   if (models[modelType]) {
     return models[modelType];
   }
@@ -139,6 +143,11 @@ self.addEventListener('message', async (event) => {
         break;
         
       case 'load':
+        if (data.modelType === 'vital-signs-ppg') {
+          const errorMessage = `[TF Worker] Carga del modelo '${data.modelType}' está deshabilitada intencionalmente en el manejador de mensajes.`;
+          console.warn(errorMessage);
+          throw new Error(errorMessage); 
+        }
         await loadModel(data.modelType);
         result = { success: true, modelType: data.modelType };
         break;
