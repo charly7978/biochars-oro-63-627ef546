@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
-import CameraView from "@/components/CameraView";
+import CameraView from "@/components/camera/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
 import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";

@@ -5,6 +5,9 @@
  * SIN usar Math, ni funciones similares
  */
 
+// Use reference types from the type declarations file
+/// <reference path="../../src/types/opencv.d.ts" />
+
 declare global {
   interface Window {
     cv: any;
