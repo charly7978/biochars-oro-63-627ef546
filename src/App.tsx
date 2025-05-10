@@ -9,57 +9,87 @@ const App: React.FC = () => {
   const [isReady, setIsReady] = useState<boolean>(false);
   const [loadingProgress, setLoadingProgress] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
   useEffect(() => {
     let isMounted = true;
-    let progressInterval: number | null = null;
+    let progressInterval: number | undefined;
 
     const checkOpenCV = async () => {
       try {
-        console.log('Iniciando carga de OpenCV...');
+        console.log('[App] Iniciando carga de OpenCV...');
         setOpencvStatus('Cargando OpenCV...');
-        setLoadingProgress(10);
         
-        // Intentar cargar OpenCV con 30 segundos de timeout
-        await waitForOpenCV(30000);
+        // Verificación inicial
+        if (isOpenCVAvailable()) {
+          if (isMounted) {
+            console.log('[App] OpenCV ya está disponible al inicio');
+            setOpencvStatus('OpenCV ya estaba disponible');
+            setIsReady(true);
+            setLoadingProgress(100);
+          }
+          return;
+        }
         
-        if (!isMounted) return;
+        // Mostrar progreso visual mientras esperamos (no simulado)
+        progressInterval = window.setInterval(() => {
+          if (isMounted && loadingProgress < 90) {
+            setLoadingProgress(prev => {
+              // Aumentos graduales de progreso durante la espera
+              const increment = prev < 30 ? 5 : prev < 60 ? 3 : 1;
+              return Math.min(90, prev + increment);
+            });
+          }
+        }, 500);
         
-        // Verificar realmente si OpenCV está disponible
-        if (isOpenCVAvailable() && window.cv) {
-          setOpencvStatus('OpenCV cargado correctamente');
-          setIsReady(true);
-          setLoadingProgress(100);
-          console.log('OpenCV verificado y disponible');
-        } else {
-          throw new Error('OpenCV no está disponible después de la carga');
+        // Esperar a OpenCV con un timeout suficiente
+        await waitForOpenCV(20000);
+        
+        // Verificar si OpenCV está realmente disponible ahora
+        if (isMounted) {
+          if (isOpenCVAvailable()) {
+            console.log('[App] OpenCV cargado con éxito');
+            setOpencvStatus('OpenCV cargado correctamente');
+            setIsReady(true);
+            setLoadingProgress(100);
+          } else {
+            throw new Error('OpenCV no está disponible después de la carga');
+          }
         }
       } catch (err) {
         if (!isMounted) return;
         
-        console.error('Error fatal en la carga de OpenCV:', err);
-        setError(`Error al cargar OpenCV: ${err instanceof Error ? err.message : String(err)}`);
-        setOpencvStatus('Error en la carga de OpenCV');
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error('[App] Error en la carga de OpenCV:', errorMessage);
+        setError(`Error al cargar OpenCV: ${errorMessage}`);
+        setOpencvStatus('Error en la carga');
+        setLoadingProgress(0);
+      } finally {
+        if (progressInterval) {
+          clearInterval(progressInterval);
+        }
       }
     };
 
+    // Iniciar verificación de OpenCV
     checkOpenCV();
 
+    // Cleanup al desmontar
     return () => {
       isMounted = false;
       if (progressInterval) {
         clearInterval(progressInterval);
       }
     };
-  }, []);
+  }, [retryCount]); // Reintentar cuando cambie retryCount
 
   // Función para reintentar la carga
   const handleRetry = () => {
-    console.log('Reintentando cargar OpenCV...');
-    setOpencvStatus('Reintentando...');
+    console.log('[App] Reintentando cargar OpenCV...');
+    setOpencvStatus('Reintentando carga...');
     setLoadingProgress(0);
     setError(null);
-    window.location.reload();
+    setRetryCount(prev => prev + 1);
   };
 
   return (
