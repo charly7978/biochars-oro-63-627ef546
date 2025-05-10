@@ -22,14 +22,15 @@ if (!fs.existsSync(opencvDir)) {
   console.log('✅ Created OpenCV directory');
 }
 
-// Run the OpenCV setup script
+// Run the OpenCV setup script directly
 console.log('📦 Running OpenCV setup...');
 try {
-  execSync('node scripts/run-setup-opencv.js', { stdio: 'inherit' });
+  // Use require directly instead of execSync
+  require('./scripts/setup-opencv.cjs');
   console.log('✅ OpenCV setup completed successfully');
 } catch (error) {
   console.error('❌ OpenCV setup failed:', error.message);
-  console.log('Please run setup manually: node scripts/run-setup-opencv.js');
+  console.log('Please run setup manually: node scripts/setup-opencv.cjs');
 }
 
 console.log(`

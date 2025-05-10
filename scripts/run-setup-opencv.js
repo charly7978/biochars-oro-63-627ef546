@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs');
 const scriptDir = path.dirname(__filename);
 
-// Use explicit path
+// Use explicit path to the current directory
 const setupScriptPath = path.join(scriptDir, 'setup-opencv.cjs');
 console.log(`Trying to import setup script from: ${setupScriptPath}`);
 
