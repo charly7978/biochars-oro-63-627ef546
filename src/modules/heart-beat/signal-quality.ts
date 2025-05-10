@@ -1,43 +1,57 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE.
+ * Signal quality detection utilities
+ * Centralized functions for checking signal quality and finger detection
  */
 
-/**
- * Check for weak signal to detect finger removal - USANDO SOLO DATOS REALES
- */
+export interface SignalQualityOptions {
+  lowSignalThreshold?: number;
+  maxWeakSignalCount?: number;
+}
+
 export function checkSignalQuality(
   value: number,
-  consecutiveWeakSignalsCount: number,
-  config: {
-    lowSignalThreshold: number;
-    maxWeakSignalCount: number;
-  }
-): {
-  isWeakSignal: boolean;
-  updatedWeakSignalsCount: number;
-} {
-  const { lowSignalThreshold, maxWeakSignalCount } = config;
+  currentWeakSignalCount: number,
+  options: SignalQualityOptions = {}
+): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
+  // Default thresholds
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
   
-  // Si la señal está por debajo del umbral mínimo, incrementar contador
-  if (Math.abs(value) < lowSignalThreshold) {
-    const updatedCount = consecutiveWeakSignalsCount + 1;
-    return {
-      isWeakSignal: updatedCount >= maxWeakSignalCount,
-      updatedWeakSignalsCount: updatedCount
-    };
-  }
+  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
   
-  // Si la señal es suficientemente fuerte, resetear contador
+  // Update consecutive weak signals counter
+  let updatedWeakSignalsCount = isCurrentValueWeak 
+    ? currentWeakSignalCount + 1 
+    : 0;
+  
+  // Limit to max
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  
+  // Signal is considered weak if we have enough consecutive weak readings
+  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
+}
+
+export function shouldProcessMeasurement(
+  value: number,
+  weakSignalsCount: number,
+  options: SignalQualityOptions = {}
+): boolean {
+  const { isWeakSignal } = checkSignalQuality(value, weakSignalsCount, options);
+  return !isWeakSignal;
+}
+
+export function createWeakSignalResult(): { bpm: number; confidence: number; isPeak: boolean; arrhythmiaCount: number } {
   return {
-    isWeakSignal: false,
-    updatedWeakSignalsCount: 0
+    bpm: 0,
+    confidence: 0,
+    isPeak: false,
+    arrhythmiaCount: 0
   };
 }
 
-/**
- * Reset signal quality tracking state
- */
 export function resetSignalQualityState(): number {
-  return 0; // Reset weak signals counter to zero
+  return 0; // Reset the weak signals counter
 }
