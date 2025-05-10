@@ -2,8 +2,6 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { SpO2Processor } from './spo2-processor';
-import { BloodPressureProcessor } from './blood-pressure-processor';
 import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { ResultFactory } from './factories/result-factory';
@@ -24,8 +22,6 @@ import { PeakDetector } from '../../core/signal/PeakDetector';
  */
 export class VitalSignsProcessor {
   // Specialized processors
-  private spo2Processor: SpO2Processor;
-  private bpProcessor: BloodPressureProcessor;
   private signalProcessor: SignalProcessor;
   private glucoseProcessor: GlucoseProcessor;
   
@@ -69,8 +65,6 @@ export class VitalSignsProcessor {
     console.log("VitalSignsProcessor: Initializing new instance with direct measurement only");
     
     // Initialize specialized processors
-    this.spo2Processor = new SpO2Processor();
-    this.bpProcessor = new BloodPressureProcessor();
     this.signalProcessor = new SignalProcessor();
     this.glucoseProcessor = new GlucoseProcessor();
     
@@ -339,11 +333,11 @@ export class VitalSignsProcessor {
    * Reset all processors
    */
   public reset(): void {
-    this.spo2Processor.reset();
-    this.bpProcessor.reset();
+    console.log("VitalSignsProcessor: Resetting state");
     this.signalProcessor.reset();
-    this.glucoseProcessor.reset();
-
+    if (this.glucoseProcessor) {
+        this.glucoseProcessor.reset();
+    }
     // Resetear propiedades añadidas
     this.signalBufferRed = [];
     this.signalBufferIR = [];
