@@ -45,17 +45,20 @@ export class SpO2NeuralModel extends BaseNeuralModel {
       return;
     }
     try {
-      // const modelUrl = '/models/spo2/model.json'; // <- CAMBIA ESTO
-      // console.log(`Cargando modelo SpO2 desde: ${modelUrl}`);
-      // this.model = await tf.loadGraphModel(modelUrl);
+      const modelUrl = '/models/spo2/model.json'; // <- CAMBIA ESTO
+      console.log(`Cargando modelo SpO2 desde: ${modelUrl}`);
+      this.model = await tf.loadGraphModel(modelUrl);
       // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
-      console.warn('SpO2Model: Carga de modelo TF.js desactivada (placeholder).');
-      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
+      // console.warn('SpO2Model: Carga de modelo TF.js desactivada (placeholder).');
+      // await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
       this.isModelLoaded = true;
-      console.log('SpO2Model: Modelo cargado (simulado).');
+      console.log('SpO2Model: Modelo TF.js cargado exitosamente.');
     } catch (error) {
       console.error('Error cargando el modelo SpO2:', error);
       this.isModelLoaded = false;
+      // Es importante propagar el error o manejarlo de forma que la aplicación sepa que el modelo no está disponible
+      // Por ahora, el console.error y isModelLoaded = false es suficiente para el diagnóstico.
+      // throw error; // Opcionalmente, si quieres que el llamador maneje el error directamente
     }
   }
 
