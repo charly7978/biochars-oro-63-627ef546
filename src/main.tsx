@@ -3,17 +3,17 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
-// Asegurarse que el DOM está completamente cargado
+// Make sure DOM is fully loaded
 document.addEventListener('DOMContentLoaded', () => {
   const rootElement = document.getElementById("root");
   
   if (!rootElement) {
-    console.error("Elemento raíz no encontrado");
+    console.error("Root element not found");
     return;
   }
   
-  // Render the app
+  // Create root and render app
   createRoot(rootElement).render(<App />);
   
-  console.log("Aplicación renderizada correctamente");
+  console.log("Application rendered successfully");
 });

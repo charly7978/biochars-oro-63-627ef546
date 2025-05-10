@@ -20,7 +20,7 @@ const App: React.FC = () => {
         console.log('[App] Iniciando carga de OpenCV...');
         setOpencvStatus('Cargando OpenCV...');
         
-        // Verificación inicial
+        // Initial check
         if (isOpenCVAvailable()) {
           if (isMounted) {
             console.log('[App] OpenCV ya está disponible al inicio');
@@ -31,21 +31,21 @@ const App: React.FC = () => {
           return;
         }
         
-        // Mostrar progreso visual mientras esperamos (no simulado)
+        // Show visual progress while waiting (not simulated)
         progressInterval = window.setInterval(() => {
           if (isMounted && loadingProgress < 90) {
             setLoadingProgress(prev => {
-              // Aumentos graduales de progreso durante la espera
+              // Gradual progress increases during wait
               const increment = prev < 30 ? 5 : prev < 60 ? 3 : 1;
               return Math.min(90, prev + increment);
             });
           }
         }, 500);
         
-        // Esperar a OpenCV con un timeout suficiente
+        // Wait for OpenCV with sufficient timeout
         await waitForOpenCV(20000);
         
-        // Verificar si OpenCV está realmente disponible ahora
+        // Check if OpenCV is actually available now
         if (isMounted) {
           if (isOpenCVAvailable()) {
             console.log('[App] OpenCV cargado con éxito');
@@ -71,19 +71,19 @@ const App: React.FC = () => {
       }
     };
 
-    // Iniciar verificación de OpenCV
+    // Start OpenCV verification
     checkOpenCV();
 
-    // Cleanup al desmontar
+    // Cleanup when unmounting
     return () => {
       isMounted = false;
       if (progressInterval) {
         clearInterval(progressInterval);
       }
     };
-  }, [retryCount]); // Reintentar cuando cambie retryCount
+  }, [retryCount]); // Retry when retryCount changes
 
-  // Función para reintentar la carga
+  // Function to retry loading
   const handleRetry = () => {
     console.log('[App] Reintentando cargar OpenCV...');
     setOpencvStatus('Reintentando carga...');

@@ -1,17 +1,18 @@
 
-// Configuración de inicialización de OpenCV.js
+// Configuración de inicialización de OpenCV.js - Simplified and Robust
 var Module = {
   onRuntimeInitialized: function() {
     console.log('[OpenCV] Runtime inicializado correctamente.');
-    // Disparar evento cuando OpenCV esté listo
-    window.dispatchEvent(new CustomEvent('opencv-ready'));
-    // Establecer bandera global para facilitar verificación
+    // Set global flag first
     window.cv_ready = true;
+    // Then dispatch event
+    window.dispatchEvent(new CustomEvent('opencv-ready'));
+    console.log('[OpenCV] Event dispatched successfully');
   },
-  preRun: [],
-  postRun: [],
   print: function(text) { console.log('[OpenCV]:', text); },
   printErr: function(text) { console.error('[OpenCV Error]:', text); }
 };
 
-console.log('[OpenCV] Script de inicialización cargado.');
+// Set initial state
+window.cv_ready = false;
+console.log('[OpenCV] Script de inicialización cargado correctamente.');
