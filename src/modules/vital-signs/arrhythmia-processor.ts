@@ -12,7 +12,7 @@ import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
  */
 export class ArrhythmiaProcessor {
   // Conservative thresholds for direct measurement
-  private readonly MIN_RR_INTERVALS = 15; // Reducido para detectar antes
+  private readonly MIN_RR_INTERVALS = 10; // Reducido de 15 a 10 para coincidir con los datos de VitalSignsProcessor
   private readonly MIN_INTERVAL_MS = 500; // Reducido para detectar FC más altas
   private readonly MAX_INTERVAL_MS = 1500;
   private readonly MIN_VARIATION_PERCENT = 60; // Reducido para mayor sensibilidad
