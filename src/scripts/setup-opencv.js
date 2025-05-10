@@ -67,3 +67,6 @@ https.get(OPENCV_URL, response => {
   console.error(`Error downloading OpenCV.js: ${err.message}`);
   process.exit(1);
 });
+
+// For CommonJS compatibility
+export default {};
