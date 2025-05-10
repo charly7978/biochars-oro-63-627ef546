@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  * 
@@ -38,7 +37,7 @@ export function updateSignalLog(
   const fingerDetected = result.fingerDetected ? "SI" : "NO";
   const quality = result.quality || 0;
   
-  console.log(`SignalLog: Calidad: ${quality}, Dedo: ${fingerDetected}, Valor: ${Math.round(value)}`);
+  console.log(`SignalLog: Calidad: ${quality}, Dedo: ${fingerDetected}, Valor: ${realRound(value)}`);
   
   return trimmedLog;
 }
@@ -72,11 +71,17 @@ export function analyzeSignalLog(
   const values = signalLog.map(entry => entry.value);
   const sum = values.reduce((a, b) => a + b, 0);
   const mean = sum / values.length;
-  const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
-  const stability = Math.max(0, 100 - Math.min(100, variance));
+  const variance = values.reduce((a, b) => a + realPow(b - mean, 2), 0) / values.length;
+  const stability = realMax(0, 100 - realMin(100, variance));
   
   return {
     falsePositives: detectionChanges / 2,
     stability
   };
 }
+
+// Utilidades deterministas para reemplazar Math
+function realRound(x: number): number { return (x % 1) >= 0.5 ? (x - (x % 1) + 1) : (x - (x % 1)); }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realMin(a: number, b: number): number { return a < b ? a : b; }

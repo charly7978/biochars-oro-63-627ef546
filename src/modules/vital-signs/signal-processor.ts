@@ -1,358 +1,106 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { BaseProcessor } from './processors/base-processor';
-import { SignalFilter } from './processors/signal-filter';
-import { SignalQuality } from './processors/signal-quality';
-import { HeartRateDetector } from './processors/heart-rate-detector';
-import { SignalValidator } from './validators/signal-validator';
-import { KalmanFilter } from '@/core/signal/filters/KalmanFilter';
-import { BandpassFilter } from '@/core/signal/filters/BandpassFilter';
-import cv from '@techstark/opencv-js'; // Import OpenCV
-
-// Tipos para claridad, ajusta según tu definición exacta
-import { ProcessedSignal, ProcessingError } from '@/types/signal';
-
-// Ajustar la interfaz ProcessedSignal (idealmente en su propio archivo @/types/signal.d.ts)
-// pero lo añadimos aquí para referencia rápida del cambio necesario.
-interface ExtendedProcessedSignal extends ProcessedSignal {
-  preBandpassValue: number;
-}
+import { SignalFilter } from '../../core/signal-processing/filters/SignalFilter';
+import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
 
 /**
- * Signal processor for real PPG signals
- * Implements filtering and analysis techniques on real data only
- * Enhanced with rhythmic pattern detection for finger presence
- * No simulation or reference values are used
+ * Procesador de señales PPG real sin simulaciones
+ * Este procesador SOLO utiliza datos reales de cámara,
+ * sin ningún tipo de generación sintética o simulación.
  */
-export class SignalProcessor extends BaseProcessor {
-  private filter: SignalFilter;
-  private quality: SignalQuality;
-  private heartRateDetector: HeartRateDetector;
-  private signalValidator: SignalValidator;
-  private kalmanFilter: KalmanFilter;
-  private bandpassFilter: BandpassFilter;
+export class SignalProcessor {
+  private readonly ppgValues: number[] = [];
+  private readonly signalFilter: SignalFilter;
+  private readonly waveletDenoiser: WaveletDenoiser;
   
-  // Finger detection state
-  private rhythmBasedFingerDetection: boolean = false;
-  private fingerDetectionConfirmed: boolean = false;
-  private fingerDetectionStartTime: number | null = null;
+  // Buffers para filtrado adaptativo
+  private readonly bufferSize = 200;
+  private readonly smaBuffer: number[] = [];
+  private readonly emaBuffer: number[] = [];
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 35; // Reducido ligeramente, ROI puede ayudar
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3000; // Reducido ligeramente
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.01; // Ajustado para ser más sensible después del pasa-banda
-  
-  // Parámetros para detección de piel (HSV) - Ajustar según sea necesario
-  private readonly SKIN_LOWER = [0, 40, 30];   // Lower bound for HSV skin color
-  private readonly SKIN_UPPER = [40, 255, 255]; // Upper bound for HSV skin color
-  private readonly MIN_CONTOUR_AREA = 500; // Área mínima para considerar un contorno como dedo
-
-  // Estado de OpenCV
-  private cvReady: boolean = false;
-  private cvInitializing: boolean = false;
-  
-  constructor(
-    public onSignalReady?: (signal: ExtendedProcessedSignal) => void,
-    public onError?: (error: ProcessingError | { code: string; message: string; timestamp: number; }) => void
-  ) {
-    super();
-    this.filter = new SignalFilter();
-    this.quality = new SignalQuality();
-    this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(this.MIN_SIGNAL_AMPLITUDE);
-    this.kalmanFilter = new KalmanFilter();
-    this.bandpassFilter = new BandpassFilter(0.5, 4, 30);
-    this.initializeOpenCV(); // Iniciar carga de OpenCV
+  constructor() {
+    this.signalFilter = new SignalFilter();
+    this.waveletDenoiser = new WaveletDenoiser();
   }
   
   /**
-   * Inicializa OpenCV.js de forma asíncrona.
+   * Procesa el valor PPG con filtros adaptativos
+   * Solo utiliza datos reales sin simulación
    */
-  private async initializeOpenCV(): Promise<void> {
-    if (this.cvReady || this.cvInitializing) return;
-
-    console.log("SignalProcessor: Initializing OpenCV...");
-    this.cvInitializing = true;
-    try {
-      // Espera a que el módulo WASM/JS esté listo
-      await new Promise<void>((resolve, reject) => {
-        // @ts-ignore // Ignorar chequeo de tipo para cv.onRuntimeInitialized
-        if (cv.runtimeInitialized) {
-           resolve();
-        } else {
-           // @ts-ignore
-           cv.onRuntimeInitialized = resolve;
-           // Añadir un timeout por si acaso
-           setTimeout(() => reject(new Error("OpenCV initialization timed out")), 15000);
-        }
-      });
-      this.cvReady = true;
-      console.log("SignalProcessor: OpenCV initialized successfully.");
-    } catch (error) {
-      console.error("SignalProcessor: Failed to initialize OpenCV:", error);
-      this.onError?.({ code: 'OPENCV_INIT_FAILED', message: `Error initializing OpenCV: ${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
-    } finally {
-      this.cvInitializing = false;
-    }
-  }
-  
-  /**
-   * Apply Moving Average filter to real values
-   */
-  public applySMAFilter(value: number): number {
-    return this.filter.applySMAFilter(value, this.ppgValues);
-  }
-  
-  /**
-   * Apply Exponential Moving Average filter to real data
-   */
-  public applyEMAFilter(value: number, alpha?: number): number {
-    return this.filter.applyEMAFilter(value, this.ppgValues, alpha);
-  }
-  
-  /**
-   * Apply median filter to real data
-   */
-  public applyMedianFilter(value: number): number {
-    return this.filter.applyMedianFilter(value, this.ppgValues);
-  }
-  
-  /**
-   * Check if finger is detected based on rhythmic patterns
-   * Uses physiological characteristics (heartbeat rhythm)
-   */
-  public isFingerDetected(): boolean {
-    if (this.fingerDetectionConfirmed) {
-      return true;
+  public processPPG(value: number): number {
+    // 1. Aplicar denoising wavelet para preservar componentes importantes
+    const denoisedValue = this.waveletDenoiser.denoise(value);
+    
+    // 2. Aplicar filtro SMA para estabilizar señal real
+    this.smaBuffer.push(denoisedValue);
+    if (this.smaBuffer.length > 10) {
+      this.smaBuffer.shift();
     }
     
-    const currentQuality = this.quality.calculateSignalQuality(this.ppgValues);
-    const patternDetected = this.signalValidator.isFingerDetected();
-
-    if (patternDetected && currentQuality > this.MIN_QUALITY_FOR_FINGER) {
-      if (!this.fingerDetectionStartTime) {
-        this.fingerDetectionStartTime = Date.now();
-      } else if (Date.now() - this.fingerDetectionStartTime > this.MIN_PATTERN_CONFIRMATION_TIME) {
-        this.fingerDetectionConfirmed = true;
-        return true;
-      }
-    } else {
-      this.fingerDetectionStartTime = null;
+    const smaFiltered = this.signalFilter.applySMAFilter(denoisedValue, this.smaBuffer);
+    
+    // 3. Aplicar filtro EMA para suavizado final preservando la forma de onda real
+    this.emaBuffer.push(smaFiltered);
+    if (this.emaBuffer.length > 10) {
+      this.emaBuffer.shift();
     }
-    return false;
-  }
-  
-  /**
-   * Apply combined filtering for real signal processing
-   * No simulation is used
-   * Incorporates rhythmic pattern-based finger detection
-   */
-  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
-    this.ppgValues.push(value);
-    if (this.ppgValues.length > 100) {
+    
+    // Determinar alpha basado en la calidad de señal real
+    let alpha = 0.3;
+    
+    // Si hay datos suficientes, calcular varianza para adaptar alpha
+    if (this.emaBuffer.length > 5) {
+      const mean = this.emaBuffer.reduce((sum, val) => sum + val, 0) / this.emaBuffer.length;
+      let variance = 0;
+      for (let i = 0; i < this.emaBuffer.length; i++) {
+        const diff = this.emaBuffer[i] - mean;
+        variance += diff * diff;
+      }
+      variance /= this.emaBuffer.length;
+      
+      // Adaptar alpha basado en varianza real de la señal
+      if (variance < 0.0001) alpha = 0.15;       // Señal muy estable
+      else if (variance < 0.001) alpha = 0.2;    // Señal estable
+      else if (variance < 0.01) alpha = 0.3;     // Señal normal
+      else alpha = 0.5;                          // Señal con cambios rápidos
+    }
+    
+    const emaFiltered = this.signalFilter.applyEMAFilter(smaFiltered, alpha);
+    
+    // Actualizar buffer principal de valores PPG
+    this.ppgValues.push(emaFiltered);
+    if (this.ppgValues.length > this.bufferSize) {
       this.ppgValues.shift();
     }
-    this.signalValidator.trackSignalForPatternDetection(value);
-
-    const kalmanFiltered = this.kalmanFilter.filter(value);
-    const bandpassFiltered = this.bandpassFilter.filter(kalmanFiltered);
-
-    const finalFiltered = bandpassFiltered;
-
-    this.quality.updateNoiseLevel(value, finalFiltered);
-    const currentQuality = this.quality.calculateSignalQuality(this.ppgValues.map(v => this.bandpassFilter.filter(this.kalmanFilter.filter(v))));
-
-    const fingerDetected = this.isFingerDetected();
-
-    return {
-      filteredValue: finalFiltered,
-      quality: currentQuality,
-      fingerDetected: fingerDetected
-    };
+    
+    return emaFiltered;
   }
   
   /**
-   * Calculate heart rate from real PPG values
+   * Aplica filtro SMA directamente a un valor
    */
-  public calculateHeartRate(sampleRate: number = 30): number {
-    const filteredBuffer = this.ppgValues.map(v => this.bandpassFilter.filter(this.kalmanFilter.filter(v)));
-    return this.heartRateDetector.calculateHeartRate(filteredBuffer, sampleRate);
+  public applySMAFilter(value: number): number {
+    return this.signalFilter.applySMAFilter(value, this.smaBuffer);
   }
   
   /**
-   * Reset the signal processor
-   * Ensures all measurements start from zero
+   * Obtiene todos los valores PPG procesados
+   */
+  public getPPGValues(): number[] {
+    return [...this.ppgValues];
+  }
+  
+  /**
+   * Resetea todos los buffers y estados
    */
   public reset(): void {
-    super.reset();
-    this.filter = new SignalFilter();
-    this.quality.reset();
-    this.heartRateDetector.reset();
-    this.signalValidator.resetFingerDetection();
-    this.kalmanFilter.reset();
-    this.bandpassFilter.reset();
-    this.fingerDetectionConfirmed = false;
-    this.fingerDetectionStartTime = null;
-    this.rhythmBasedFingerDetection = false;
-    // No reiniciamos OpenCV aquí, debe seguir cargado.
-  }
-
-  /**
-   * Procesa un frame de vídeo usando OpenCV para detectar ROI y extraer señal.
-   * @param imageData Datos del frame de la cámara.
-   */
-  public processFrame(imageData: ImageData): void {
-    if (!this.cvReady) {
-      // console.warn("SignalProcessor: OpenCV not ready, skipping frame.");
-      // Podríamos encolar frames o simplemente esperar
-      if (!this.cvInitializing) {
-        this.initializeOpenCV(); // Intentar inicializar si no lo está haciendo ya
-      }
-      // Devolver valores por defecto o nulos mientras no esté listo
-      this.onError?.({ code: 'OPENCV_NOT_READY', message: 'OpenCV not ready.', timestamp: Date.now() });
-      // Opcional: llamar a onSignalReady con datos nulos/inválidos
-      // this.onSignalReady?.({ /* datos nulos o inválidos */ });
-      return;
-    }
-
-    let src: any = null;
-    let rgb: any = null; // Matriz intermedia para RGB
-    let hsv: any = null;
-    let mask: any = null;
-    let contours: any = null;
-    let hierarchy: any = null;
-    let roiMask: any = null;
-    let maskedSrc: any = null;
-    let rawValue = 0;
-    let roiFound = false;
-    let roiRect = { x: 0, y: 0, width: imageData.width, height: imageData.height };
-
-    try {
-      src = cv.matFromImageData(imageData);
-      rgb = new cv.Mat(); // Crear Mat para RGB
-
-      // Convertir RGBA a RGB y luego a HSV
-      cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB); // RGBA -> RGB
-      hsv = new cv.Mat();
-      cv.cvtColor(rgb, hsv, cv.COLOR_RGB2HSV); // RGB -> HSV (CORREGIDO)
-
-      // Crear máscara para tono de piel
-      mask = new cv.Mat();
-      const lower = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_LOWER);
-      const upper = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), this.SKIN_UPPER);
-      cv.inRange(hsv, lower, upper, mask);
-      lower.delete();
-      upper.delete();
-
-      // Opcional: Mejorar la máscara (Morphological Operations)
-      // let kernel = cv.Mat.ones(5, 5, cv.CV_8U);
-      // cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
-      // cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
-      // kernel.delete();
-
-      // Encontrar contornos
-      contours = new cv.MatVector();
-      hierarchy = new cv.Mat();
-      cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-      // Encontrar el contorno más grande (presumiblemente el dedo)
-      let largestContourIndex = -1;
-      let maxArea = 0;
-      for (let i = 0; i < contours.size(); ++i) {
-        const contour = contours.get(i);
-        const area = cv.contourArea(contour);
-        if (area > this.MIN_CONTOUR_AREA && area > maxArea) {
-          maxArea = area;
-          largestContourIndex = i;
-        }
-        contour.delete(); // Liberar contorno individual
-      }
-
-      if (largestContourIndex !== -1) {
-        roiFound = true;
-        const fingerContour = contours.get(largestContourIndex);
-        roiRect = cv.boundingRect(fingerContour);
-
-        // Crear una máscara solo para el ROI del dedo
-        roiMask = cv.Mat.zeros(src.rows, src.cols, cv.CV_8UC1);
-        const roiContours = new cv.MatVector();
-        roiContours.push_back(fingerContour);
-        cv.drawContours(roiMask, roiContours, 0, new cv.Scalar(255), cv.FILLED);
-        roiContours.delete(); // Liberar MatVector
-
-        // Aplicar máscara al frame original para aislar el dedo
-        maskedSrc = new cv.Mat();
-        src.copyTo(maskedSrc, roiMask); // Copia solo los píxeles donde roiMask es > 0
-
-        // Calcular la media del canal rojo DENTRO del ROI
-        // cv.mean devuelve [B, G, R, A]
-        const meanColor = cv.mean(src, roiMask);
-        rawValue = meanColor[2]; // Índice 2 para el canal Rojo
-
-        fingerContour.delete(); // Liberar el contorno usado
-      } else {
-        // No se encontró dedo/ROI válido, usar media global o valor por defecto?
-        // Usar media global puede ser ruidoso. Usar 0 indica falta de señal fiable.
-        rawValue = 0; // Opcional: meanColor = cv.mean(src); rawValue = meanColor[2];
-        // console.log("SignalProcessor: No suitable ROI found.");
-      }
-
-      // ---- Procesamiento de señal subsiguiente ----
-      // Añadir valor (extraído de ROI o 0) al buffer principal
-      this.ppgValues.push(rawValue);
-      if (this.ppgValues.length > 100) {
-        this.ppgValues.shift();
-      }
-      this.signalValidator.trackSignalForPatternDetection(rawValue); // Usar rawValue para patrón
-
-      // 1. Filtro Kalman (puede ayudar incluso con señal de ROI)
-      const kalmanFiltered = this.kalmanFilter.filter(rawValue);
-      const preBandpassValue = kalmanFiltered;
-
-      // 2. Filtro Pasa-Banda
-      const bandpassFiltered = this.bandpassFilter.filter(kalmanFiltered);
-      const finalFilteredValue = bandpassFiltered;
-
-      // 3. Calcular calidad (ahora basado en la señal del ROI procesada)
-      // Se podría mejorar la calidad usando el área del ROI, estabilidad, etc.
-      this.quality.updateNoiseLevel(rawValue, finalFilteredValue); // Comparar raw (ROI) con filtrado
-      const currentQuality = roiFound ? this.quality.calculateSignalQuality(this.ppgValues) : 0; // Calidad 0 si no hay ROI
-
-      // 4. Detectar dedo (basado en patrón y calidad)
-      const fingerDetected = this.isFingerDetected() && roiFound; // Requiere ROI y patrón/calidad
-
-      // 5. Preparar señal procesada para emitir
-      const processedSignal: ExtendedProcessedSignal = {
-        timestamp: Date.now(),
-        rawValue: rawValue,
-        preBandpassValue: preBandpassValue,
-        filteredValue: finalFilteredValue,
-        quality: currentQuality,
-        fingerDetected: fingerDetected,
-        roi: roiRect, // Incluir la info del ROI
-        // Opcional: añadir otros datos como perfusionIndex si se calculan
-      };
-
-      // Emitir señal procesada
-      if (this.onSignalReady) {
-        this.onSignalReady(processedSignal);
-      }
-
-    } catch (error) {
-      console.error("SignalProcessor: Error processing frame with OpenCV:", error);
-      this.onError?.({ code: 'OPENCV_PROCESS_ERROR', message: `Error during OpenCV processing: ${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
-    } finally {
-      // **MUY IMPORTANTE: Liberar todas las Mats creadas**
-      src?.delete();
-      rgb?.delete();
-      hsv?.delete();
-      mask?.delete();
-      contours?.delete();
-      hierarchy?.delete();
-      roiMask?.delete();
-      maskedSrc?.delete();
-    }
+    this.ppgValues.length = 0;
+    this.smaBuffer.length = 0;
+    this.emaBuffer.length = 0;
+    this.signalFilter.reset();
+    this.waveletDenoiser.reset();
   }
 }

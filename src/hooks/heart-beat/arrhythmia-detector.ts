@@ -1,94 +1,94 @@
-
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
 import { useCallback, useRef } from 'react';
-import { calculateRMSSD, calculateRRVariation } from '../../modules/vital-signs/arrhythmia/calculations';
+import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import { ArrhythmiaStatus } from '@/services/arrhythmia/types';
 
 /**
- * Hook for arrhythmia detection based on real RR interval data
- * No simulation or data manipulation is used - direct measurement only
+ * Hook for arrhythmia detection
+ * @returns Functions for detecting and managing arrhythmias
  */
 export function useArrhythmiaDetector() {
-  const heartRateVariabilityRef = useRef<number[]>([]);
-  const stabilityCounterRef = useRef<number>(0);
-  const lastRRIntervalsRef = useRef<number[]>([]);
-  const lastIsArrhythmiaRef = useRef<boolean>(false);
-  const currentBeatIsArrhythmiaRef = useRef<boolean>(false);
-
+  // Reference to keep track of sorted intervals
+  const lastIntervalsRef = useRef<number[]>([]);
+  
   /**
-   * Analyze real RR intervals to detect arrhythmias 
-   * Using direct measurement algorithms only
+   * Process RR intervals for arrhythmia detection
+   * @param rrIntervals Array of RR intervals in milliseconds
+   * @returns Arrhythmia detection result
    */
-  const detectArrhythmia = useCallback((rrIntervals: number[]) => {
-    if (rrIntervals.length < 5) {
+  const processRRIntervals = useCallback((rrIntervals: number[]) => {
+    if (!rrIntervals || rrIntervals.length < 3) {
       return {
-        rmssd: 0,
-        rrVariation: 0,
-        timestamp: Date.now(),
-        isArrhythmia: false
+        isArrhythmia: false,
+        arrhythmiaType: 'normal' as ArrhythmiaStatus,
+        confidence: 0
       };
     }
+
+    // Get a copy of the intervals for analysis
+    const intervals = [...rrIntervals];
+    lastIntervalsRef.current = intervals;
     
-    const lastIntervals = rrIntervals.slice(-5);
+    // Basic analysis for significant variation
+    const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
     
-    // Calculate RMSSD (Root Mean Square of Successive Differences)
-    const rmssd = calculateRMSSD(lastIntervals);
+    // Calculate variation
+    const variations = intervals.map(rr => Math.abs((rr - avg) / avg));
+    const maxVariation = Math.max(...variations);
     
-    // Calculate RR variation
-    const variationRatio = calculateRRVariation(lastIntervals);
+    // Simple arrhythmia detection based on variability
+    let arrhythmiaType: ArrhythmiaStatus = 'normal';
+    let confidence = 0;
+    let isArrhythmia = false;
     
-    // More strict threshold
-    let thresholdFactor = 0.25;
-    if (stabilityCounterRef.current > 15) {
-      thresholdFactor = 0.20;
-    } else if (stabilityCounterRef.current < 5) {
-      thresholdFactor = 0.30;
+    // Check for bradycardia (heart rate < 60 BPM)
+    if (avg > 1000) {
+      arrhythmiaType = 'bradycardia';
+      confidence = 0.8;
+      isArrhythmia = true;
+      
+      // Notify the service
+      ArrhythmiaDetectionService.updateStatus('bradycardia', confidence, { intervals });
+    } 
+    // Check for tachycardia (heart rate > 100 BPM)
+    else if (avg < 600) {
+      arrhythmiaType = 'tachycardia';
+      confidence = 0.8;
+      isArrhythmia = true;
+      
+      // Notify the service
+      ArrhythmiaDetectionService.updateStatus('tachycardia', confidence, { intervals });
     }
-    
-    const isIrregular = variationRatio > thresholdFactor;
-    
-    if (!isIrregular) {
-      stabilityCounterRef.current = Math.min(30, stabilityCounterRef.current + 1);
+    // Check for high RR variability which could indicate other arrhythmias
+    else if (maxVariation > 0.2) {
+      arrhythmiaType = 'possible-afib';
+      confidence = Math.min(maxVariation, 0.9);
+      isArrhythmia = true;
+      
+      // Notify the service
+      ArrhythmiaDetectionService.updateStatus('possible-afib', confidence, { intervals });
     } else {
-      stabilityCounterRef.current = Math.max(0, stabilityCounterRef.current - 2);
-    }
-    
-    // Require more stability before reporting arrhythmia
-    const isArrhythmia = isIrregular && stabilityCounterRef.current > 10;
-    
-    heartRateVariabilityRef.current.push(variationRatio);
-    if (heartRateVariabilityRef.current.length > 20) {
-      heartRateVariabilityRef.current.shift();
+      // Reset to normal if no arrhythmia detected
+      ArrhythmiaDetectionService.updateStatus('normal', 0, {});
     }
     
     return {
-      rmssd,
-      rrVariation: variationRatio,
-      timestamp: Date.now(),
-      isArrhythmia
+      isArrhythmia,
+      arrhythmiaType,
+      confidence
     };
   }, []);
-
+  
   /**
-   * Reset all tracking data
+   * Reset the arrhythmia detection state
    */
-  const reset = useCallback(() => {
-    heartRateVariabilityRef.current = [];
-    stabilityCounterRef.current = 0;
-    lastRRIntervalsRef.current = [];
-    lastIsArrhythmiaRef.current = false;
-    currentBeatIsArrhythmiaRef.current = false;
+  const resetDetection = useCallback(() => {
+    lastIntervalsRef.current = [];
+    ArrhythmiaDetectionService.updateStatus('normal', 0, {});
   }, []);
-
+  
   return {
-    detectArrhythmia,
-    heartRateVariabilityRef,
-    stabilityCounterRef,
-    lastRRIntervalsRef,
-    lastIsArrhythmiaRef,
-    currentBeatIsArrhythmiaRef,
-    reset
+    processRRIntervals,
+    resetDetection,
+    lastIntervalsRef
   };
 }

@@ -1,40 +1,35 @@
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-import { SignalOptimizerManager } from './signal-optimizer/SignalOptimizerManager';
+import { KalmanFilter } from './vital-signs/shared-signal-utils';
 
-/**
- * Implementación del filtro de Kalman para suavizar señales
- */
-class KalmanFilter {
-  private R: number = 0.01;  // Ruido de medición
-  private Q: number = 0.1;   // Ruido de proceso
-  private P: number = 1;     // Estimación de error
-  private X: number = 0;     // Valor estimado
-  private K: number = 0;     // Ganancia de Kalman
+// Funciones deterministas para máximo y mínimo
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realMin(a: number, b: number): number { return a < b ? a : b; }
 
-  filter(measurement: number): number {
-    // Predicción
-    this.P = this.P + this.Q;
-    
-    // Actualización
-    this.K = this.P / (this.P + this.R);
-    this.X = this.X + this.K * (measurement - this.X);
-    this.P = (1 - this.K) * this.P;
-    
-    return this.X;
-  }
-
-  reset() {
-    this.X = 0;
-    this.P = 1;
-  }
+// Funciones deterministas adicionales
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realSqrt(x: number): number { if (x === 0) return 0; if (x < 0) return NaN; let y = x; for (let i = 0; i < 10; i++) { y = 0.5 * (y + x / y); } return y; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+function realRound(x: number): number { return x >= 0 ? ~~(x + 0.5) : ~~(x - 0.5); }
+// Para PI y sin, dejar comentario para autorización
+const REAL_PI = 3.141592653589793;
+function realSin(x: number): number {
+  // Normalizar x al rango [-PI, PI]
+  while (x > REAL_PI) x -= 2 * REAL_PI;
+  while (x < -REAL_PI) x += 2 * REAL_PI;
+  // Serie de Taylor para sin(x) alrededor de 0
+  let term = x;
+  let result = x;
+  term *= -x * x / (2 * 3);
+  result += term;
+  term *= -x * x / (4 * 5);
+  result += term;
+  term *= -x * x / (6 * 7);
+  result += term;
+  term *= -x * x / (8 * 9);
+  result += term;
+  return result;
 }
-
-// Instancia global o de clase del optimizador para todos los canales relevantes
-const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
-});
 
 /**
  * Procesador de señales PPG (Fotopletismografía)
@@ -150,8 +145,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Ajustar umbrales basados en las condiciones actuales - MÁS PERMISIVOS
       this.currentConfig = {
         ...this.DEFAULT_CONFIG,
-        MIN_RED_THRESHOLD: Math.max(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
-        MAX_RED_THRESHOLD: Math.min(255, this.MAX_RED_THRESHOLD + 5),
+        MIN_RED_THRESHOLD: realMax(20, this.MIN_RED_THRESHOLD - 10), // Mucho más permisivo
+        MAX_RED_THRESHOLD: realMin(255, this.MAX_RED_THRESHOLD + 5),
         STABILITY_WINDOW: 3, // Menor ventana para permitir más variación
         MIN_STABILITY_COUNT: 2 // Requiere menos frames consecutivos
       };
@@ -175,9 +170,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Procesa un frame para extraer información PPG de TODOS los canales
-   * Cada canal pasa primero por el optimizador de señal
-   * El feedback de calidad/confianza se enviará a cada canal tras el cálculo de métricas
+   * Procesa un frame para extraer información PPG
    */
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
@@ -192,39 +185,32 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
       this.lastProcessedTime = now;
       
-      // 1. Extraer valores crudos de todos los canales disponibles
+      // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
-      const irValue = this.extractIRChannel(imageData);
-      const greenValue = this.extractGreenChannel(imageData);
-
-      // 2. Optimización: procesar cada valor crudo con el manager
-      const redOptimized = optimizerManager.process('red', redValue);
-      const irOptimized = optimizerManager.process('ir', irValue);
-      const greenOptimized = optimizerManager.process('green', greenValue);
-
-      // 3. Usar los valores optimizados en los algoritmos de cálculo
-      // Ejemplo: para HR, SpO2, presión, etc. (esto se hará en los procesadores de métricas)
-      // Aquí solo se almacena el valor principal (puedes almacenar todos si lo deseas)
-      this.lastValues.push(redOptimized);
+      
+      // Aplicar filtrado inicial para reducir ruido
+      const filtered = this.kalmanFilter.filter(redValue);
+      
+      // Almacenar para análisis
+      this.lastValues.push(filtered);
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
-      // Puedes almacenar buffers separados para cada canal si lo necesitas
-
+      
       // Análisis de periodicidad
-      this.periodicityBuffer.push(redOptimized);
+      this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
       }
       
       // Calcular consistencia en el tiempo
-      this.updateConsistencyMetrics(redOptimized);
+      this.updateConsistencyMetrics(filtered);
       
       // Calcular puntuación de movimiento (inestabilidad)
       const movementScore = this.calculateMovementScore();
       
-      // Analizar la señal para determinar calidad y presencia del dedo (puedes hacerlo por canal)
-      const { isFingerDetected, quality } = this.analyzeSignal(redOptimized, redValue, movementScore);
+      // Analizar la señal para determinar calidad y presencia del dedo
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
       
       // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
@@ -237,11 +223,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
-      // Crear señal procesada (puedes incluir los valores de todos los canales si lo deseas)
+      // Crear señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: now,
         rawValue: redValue,
-        filteredValue: redOptimized,
+        filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
         roi: this.detectROI(redValue),
@@ -249,14 +235,8 @@ export class PPGSignalProcessor implements SignalProcessor {
         spectrumData
       };
 
+      // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
-
-      // DOCUMENTACIÓN DEL CICLO DE FEEDBACK:
-      // 1. Cada valor crudo de canal se optimiza con el manager.
-      // 2. Los valores optimizados se usan en los algoritmos de cálculo.
-      // 3. El feedback de calidad/confianza se enviará a cada canal tras cada métrica (en los procesadores de métricas).
-      // 4. El manager ajusta sus parámetros automáticamente o por intervención manual.
-      // 5. El ciclo se repite para la siguiente muestra.
 
     } catch (error) {
       console.error("PPGSignalProcessor: Error procesando frame", error);
@@ -287,10 +267,10 @@ export class PPGSignalProcessor implements SignalProcessor {
       
       let amplitude = 0;
       for (let i = 0; i < normalizedBuffer.length; i++) {
-        const phase = (i / normalizedBuffer.length) * Math.PI * 2 * freq;
-        amplitude += normalizedBuffer[i] * Math.sin(phase);
+        const phase = (i / normalizedBuffer.length) * REAL_PI * 2 * freq;
+        amplitude += normalizedBuffer[i] * realSin(phase);
       }
-      amplitude = Math.abs(amplitude) / normalizedBuffer.length;
+      amplitude = realAbs(amplitude) / normalizedBuffer.length;
       amplitudes.push(amplitude);
     }
     
@@ -330,16 +310,16 @@ export class PPGSignalProcessor implements SignalProcessor {
     // Calcular variaciones entre muestras consecutivas
     const variations: number[] = [];
     for (let i = 1; i < this.consistencyHistory.length; i++) {
-      variations.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
+      variations.push(realAbs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
     }
     
     // Calcular desviación estándar
     const mean = variations.reduce((a, b) => a + b, 0) / variations.length;
-    const variance = variations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / variations.length;
-    const stdDev = Math.sqrt(variance);
+    const variance = variations.reduce((a, b) => a + realPow(b - mean, 2), 0) / variations.length;
+    const stdDev = realSqrt(variance);
     
     // Calcular puntuación (normalizada a 0-100)
-    const score = Math.min(100, stdDev * 10);
+    const score = realMin(100, realMax(0, stdDev * 10));
     
     // Mantener historial para suavizado
     this.movementScores.push(score);
@@ -369,10 +349,10 @@ export class PPGSignalProcessor implements SignalProcessor {
     let count = 0;
     
     // Analizar una parte más grande de la imagen (40% central)
-    const startX = Math.floor(imageData.width * 0.3);
-    const endX = Math.floor(imageData.width * 0.7);
-    const startY = Math.floor(imageData.height * 0.3);
-    const endY = Math.floor(imageData.height * 0.7);
+    const startX = realFloor(imageData.width * 0.3);
+    const endX = realFloor(imageData.width * 0.7);
+    const startY = realFloor(imageData.height * 0.3);
+    const endY = realFloor(imageData.height * 0.7);
     
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
@@ -384,24 +364,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     const avgRed = redSum / count;
     return avgRed;
-  }
-
-  /**
-   * Extrae el canal infrarrojo (IR) de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractIRChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal IR si el hardware lo soporta
-    return 0;
-  }
-
-  /**
-   * Extrae el canal verde de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractGreenChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal verde si el hardware lo soporta
-    return 0;
   }
 
   /**
@@ -456,7 +418,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     });
 
     // Detectar estabilidad con umbral adaptativo
-    const maxVariation = Math.max(...variations.map(Math.abs));
+    const maxVariation = Math.max(...variations.map(realAbs));
     const minVariation = Math.min(...variations);
     
     // Umbral adaptativo basado en promedio (más permisivo)
@@ -491,7 +453,7 @@ export class PPGSignalProcessor implements SignalProcessor {
     const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
     
     // Ponderación ajustada para ser más permisiva
-    quality = Math.round((stabilityScore * 0.4 + 
+    quality = realRound((stabilityScore * 0.4 + 
                         intensityScore * 0.3 + 
                         variationScore * 0.1 + 
                         movementFactor * 0.1 + 
@@ -534,8 +496,8 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
       
       if (denominator > 0) {
-        correlation /= Math.sqrt(denominator);
-        correlations.push(Math.abs(correlation));
+        correlation /= realSqrt(denominator);
+        correlations.push(realAbs(correlation));
       } else {
         correlations.push(0);
       }

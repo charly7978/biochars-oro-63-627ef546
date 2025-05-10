@@ -13,7 +13,14 @@
     <meta name="screen-orientation" content="portrait">
     <!-- High DPI display support -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
-    <title>healthpulse-captain</title>
+    <title>Vital Signs Monitoring</title>
+    
+    <!-- Primero cargar el script de inicialización -->
+    <script src="/opencv/opencv-init.js"></script>
+    
+    <!-- Luego el script principal de OpenCV -->
+    <script src="/opencv/opencv.js" async></script>
+    
     <style>
       :root {
         --sat: env(safe-area-inset-top);
@@ -85,28 +92,6 @@
         -webkit-font-smoothing: subpixel-antialiased;
       }
       
-      @media screen and (min-width: 1024px) {
-        .high-res-interface {
-          transform: scale(1);
-        }
-      }
-      
-      @media screen and (min-width: 2048px) {
-        .high-res-interface {
-          transform: scale(0.5);
-          width: 200%;
-          height: 200%;
-        }
-      }
-      
-      @media screen and (min-width: 3840px) {
-        .high-res-interface {
-          transform: scale(0.25);
-          width: 400%;
-          height: 400%;
-        }
-      }
-      
       /* Improve text rendering */
       h1, h2, h3, h4, h5, h6, p, span, button {
         text-rendering: geometricPrecision;
@@ -139,6 +124,7 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Add Lovable script tag to enable new features -->
     <script src="https://cdn.gpteng.co/gptengineer.js" type="module"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
