@@ -1,4 +1,9 @@
 
+/**
+ * Utilidades para cálculo y normalización de índices de perfusión
+ * Solo procesa datos reales, sin simulación
+ */
+
 export const calculatePerfusionIndex = (values: number[]): number => {
   if (values.length < 2) return 0;
   
