@@ -12,7 +12,7 @@ import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
  */
 export class ArrhythmiaProcessor {
   // Conservative thresholds for direct measurement
-  private readonly MIN_RR_INTERVALS = 10; // Reducido de 15 a 10 para coincidir con los datos de VitalSignsProcessor
+  private readonly MIN_RR_INTERVALS = 15; // Reducido para detectar antes
   private readonly MIN_INTERVAL_MS = 500; // Reducido para detectar FC más altas
   private readonly MAX_INTERVAL_MS = 1500;
   private readonly MIN_VARIATION_PERCENT = 60; // Reducido para mayor sensibilidad
@@ -80,9 +80,6 @@ export class ArrhythmiaProcessor {
    * No simulation or reference values are used
    */
   private detectArrhythmia(currentTime: number): void {
-    // LOG ADICIONAL PARA VERIFICAR INVOCACIÓN Y LONGITUD
-    console.log(`ArrhythmiaProcessor (detectArrhythmia): ENTERED. Current rrIntervals length: ${this.rrIntervals.length}`); // LOG AP.X
-
     if (this.rrIntervals.length < this.MIN_RR_INTERVALS) {
       console.log(`ArrhythmiaProcessor (detectArrhythmia): Not enough RR intervals. Got ${this.rrIntervals.length}, need ${this.MIN_RR_INTERVALS}`); // LOG AP.3
       return;
