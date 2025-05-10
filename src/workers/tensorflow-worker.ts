@@ -143,6 +143,11 @@ self.addEventListener('message', async (event) => {
         break;
         
       case 'load':
+        if (data.modelType === 'vital-signs-ppg') {
+          const errorMessage = `[TF Worker] Carga del modelo '${data.modelType}' está deshabilitada intencionalmente en el manejador de mensajes.`;
+          console.warn(errorMessage);
+          throw new Error(errorMessage); 
+        }
         await loadModel(data.modelType);
         result = { success: true, modelType: data.modelType };
         break;
