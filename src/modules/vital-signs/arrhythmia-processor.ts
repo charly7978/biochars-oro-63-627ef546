@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -42,7 +43,6 @@ export class ArrhythmiaProcessor {
     
     // Update RR intervals with real data
     if (rrData?.intervals && rrData.intervals.length > 0) {
-      console.log(`ArrhythmiaProcessor (processRRData): Received ${rrData.intervals.length} rrIntervals. Sample: ${JSON.stringify(rrData.intervals.slice(0,5))}`); // LOG AP.1
       this.rrIntervals = rrData.intervals;
       this.lastPeakTime = rrData.lastPeakTime;
       
@@ -59,7 +59,7 @@ export class ArrhythmiaProcessor {
         : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
     // Additional information only if there's active arrhythmia
-    const currentArrhythmiaData = this.arrhythmiaDetected 
+    const lastArrhythmiaData = this.arrhythmiaDetected 
       ? {
           timestamp: currentTime,
           rmssd: calculateRMSSD(this.rrIntervals.slice(-8)),
@@ -67,12 +67,10 @@ export class ArrhythmiaProcessor {
         } 
       : null;
     
-    const resultForLog = {
+    return {
       arrhythmiaStatus: arrhythmiaStatusMessage,
-      lastArrhythmiaData: currentArrhythmiaData
+      lastArrhythmiaData
     };
-    console.log("ArrhythmiaProcessor (processRRData): Returning result:", JSON.stringify(resultForLog)); // LOG AP.2
-    return resultForLog;
   }
 
   /**
@@ -80,11 +78,7 @@ export class ArrhythmiaProcessor {
    * No simulation or reference values are used
    */
   private detectArrhythmia(currentTime: number): void {
-    if (this.rrIntervals.length < this.MIN_RR_INTERVALS) {
-      console.log(`ArrhythmiaProcessor (detectArrhythmia): Not enough RR intervals. Got ${this.rrIntervals.length}, need ${this.MIN_RR_INTERVALS}`); // LOG AP.3
-      return;
-    }
-    console.log(`ArrhythmiaProcessor (detectArrhythmia): Processing ${this.rrIntervals.length} intervals. Sample: ${JSON.stringify(this.rrIntervals.slice(-5))}`); // LOG AP.4
+    if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
     
     // Take real intervals for analysis
     const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
@@ -111,7 +105,6 @@ export class ArrhythmiaProcessor {
     
     // Update pattern buffer with real data
     this.patternDetector.updatePatternBuffer(variation / 100);
-    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
     
     // Detect premature beat only if variation meets threshold
     const prematureBeat = variation > this.MIN_VARIATION_PERCENT;
@@ -133,41 +126,24 @@ export class ArrhythmiaProcessor {
       // Reducir el contador gradualmente para mantener la detección
       this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 0.5);
     }
-
-    console.log("ArrhythmiaProcessor (detectArrhythmia): Detection params", { // LOG AP.5
-      validIntervalsCount: validIntervals.length,
-      avgRR,
-      lastRR,
-      variation,
-      prematureBeat,
-      consecutiveAbnormalBeats: this.consecutiveAbnormalBeats,
-      patternDetected,
-      MIN_VARIATION_PERCENT: this.MIN_VARIATION_PERCENT,
-      CONSECUTIVE_THRESHOLD: this.CONSECUTIVE_THRESHOLD
-    });
-
-    // Check for arrhythmia confirmation
-    if (
-      (prematureBeat && this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD) || 
-      (patternDetected && this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD / 2) // Menor umbral si el patrón es fuerte
-    ) {
-      if (currentTime - this.lastArrhythmiaTime > this.MIN_ARRHYTHMIA_INTERVAL_MS) {
-        this.arrhythmiaDetected = true;
-        this.arrhythmiaCount++;
-        this.lastArrhythmiaTime = currentTime;
-        this.consecutiveAbnormalBeats = 0; // Reset after confirmation
-        console.log("ArrhythmiaProcessor: ARHYTHMIA DETECTED AND CONFIRMED", { // LOG AP.6
-          count: this.arrhythmiaCount,
-          variation,
-          patternDetected,
-          timestamp: currentTime
-        });
-      } else {
-        console.log("ArrhythmiaProcessor: Arrhythmia condition met but too soon after last one."); // LOG AP.7
-        this.arrhythmiaDetected = false; // No marcar si es muy pronto
-      }
-    } else {
-      this.arrhythmiaDetected = false;
+    
+    // Check if arrhythmia is confirmed with real data
+    const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
+    const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
+    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
+    
+    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia) {
+      this.arrhythmiaCount++;
+      this.arrhythmiaDetected = true;
+      this.lastArrhythmiaTime = currentTime;
+      this.consecutiveAbnormalBeats = 0;
+      this.patternDetector.resetPatternBuffer();
+      
+      console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA en datos reales", {
+        contadorArritmias: this.arrhythmiaCount,
+        tiempoDesdeUltima: timeSinceLastArrhythmia,
+        timestamp: currentTime
+      });
     }
   }
 

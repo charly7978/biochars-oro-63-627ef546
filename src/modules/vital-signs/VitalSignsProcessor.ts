@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -138,13 +139,8 @@ export class VitalSignsProcessor {
       pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
       
       // Arritmias - basado en intervalos RR - REGISTRO ADICIONAL
-      if (rrData && rrData.intervals && rrData.intervals.length > 0) { // LOG VSP.1
-        console.log(`VitalSignsProcessor: Passing ${rrData.intervals.length} rrIntervals to ArrhythmiaProcessor. Sample: ${JSON.stringify(rrData.intervals.slice(0,5))}`);
-      } else {
-        console.log("VitalSignsProcessor: No rrData or no intervals to pass to ArrhythmiaProcessor."); // LOG VSP.2
-      }
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-      console.log("VitalSignsProcessor: Result from ArrhythmiaProcessor:", JSON.stringify(arrhythmiaResult)); // LOG VSP.3
+      console.log("Resultado de procesamiento de arritmias:", arrhythmiaResult);
       
       // Glucosa - análisis espectral
       glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
@@ -202,7 +198,6 @@ export class VitalSignsProcessor {
       arrhythmiaResult.lastArrhythmiaData
     );
 
-    console.log("VitalSignsProcessor: Final result object being returned:", JSON.stringify(finalResult)); // LOG VSP.4
     this.lastValidResult = finalResult;
     return finalResult;
   }
