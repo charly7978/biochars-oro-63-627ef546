@@ -27,6 +27,10 @@ export interface FingerDetectionConfig {
   openCvSkinLowerHsv: [number, number, number]; // Límite inferior HSV para piel
   openCvSkinUpperHsv: [number, number, number]; // Límite superior HSV para piel
   showToastFeedback: boolean; // NUEVO: Para controlar toasts de sonner
+  openCvMorphKernelSize: number; // Tamaño del kernel para operaciones morfológicas
+  openCvSolidityThreshold: number; // Umbral mínimo de solidez para ROI
+  openCvAspectRatioMin: number; // Relación de aspecto mínima (e.g. width/height)
+  openCvAspectRatioMax: number; // Relación de aspecto máxima
 }
 
 export interface FingerDetectionResult {
@@ -75,6 +79,10 @@ class FingerDetectionManager {
     openCvSkinLowerHsv: [0, 40, 30], // Ejemplo, ajustar
     openCvSkinUpperHsv: [40, 255, 255], // Ejemplo, ajustar
     showToastFeedback: false, // Por defecto no mostrar toasts, puede ser ruidoso
+    openCvMorphKernelSize: 3, // Kernel de 3x3 para morfología
+    openCvSolidityThreshold: 0.75, // Ejemplo: contorno debe ser al menos 75% sólido
+    openCvAspectRatioMin: 0.2, // Ejemplo: dedo más alto que ancho (o viceversa si se rota)
+    openCvAspectRatioMax: 1.5, // Ejemplo: evitar formas demasiado alargadas o cuadradas si no se esperan
   };
 
   private constructor() {
@@ -521,10 +529,12 @@ class FingerDetectionManager {
       upperSkin.delete();
 
       // Opcional: Operaciones morfológicas para limpiar la máscara
-      // let M = cv.Mat.ones(3, 3, cv.CV_8U);
-      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_OPEN, M, new cv.Point(-1,-1), 1);
-      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_CLOSE, M, new cv.Point(-1,-1), 1);
-      // M.delete();
+      let morphKernel = cv.Mat.ones(this.config.openCvMorphKernelSize, this.config.openCvMorphKernelSize, cv.CV_8U);
+      // MORPH_OPEN: Erosión seguida de Dilatación (elimina ruido pequeño)
+      cv.morphologyEx(skinMask, skinMask, cv.MORPH_OPEN, morphKernel, new cv.Point(-1,-1), 1);
+      // MORPH_CLOSE: Dilatación seguida de Erosión (cierra pequeños agujeros)
+      cv.morphologyEx(skinMask, skinMask, cv.MORPH_CLOSE, morphKernel, new cv.Point(-1,-1), 2); // Dos iteraciones pueden ser más efectivas
+      morphKernel.delete();
 
       contours = new cv.MatVector();
       hierarchy = new cv.Mat();
@@ -532,50 +542,93 @@ class FingerDetectionManager {
 
       let largestContourArea = 0;
       let bestContourIndex = -1;
+      let bestScore = -1;
 
       for (let i = 0; i < contours.size(); ++i) {
         const contour = contours.get(i);
         const area = cv.contourArea(contour);
-        if (area > this.config.openCvMinContourArea && area > largestContourArea) {
-          largestContourArea = area;
-          bestContourIndex = i;
+
+        if (area < this.config.openCvMinContourArea) {
+          contour.delete();
+          continue;
         }
-        contour.delete(); // Eliminar contorno individual después de usarlo si no es el mejor
+
+        const rect = cv.boundingRect(contour);
+        const aspectRatio = rect.width / rect.height;
+
+        let hull = new cv.Mat();
+        cv.convexHull(contour, hull, false, true);
+        const hullArea = cv.contourArea(hull);
+        const solidity = hullArea > 0 ? area / hullArea : 0;
+        hull.delete();
+
+        // Calcular puntuación para este contorno
+        let score = 0;
+        score += area / 1000; // Ponderar área (normalizar)
+
+        if (solidity >= this.config.openCvSolidityThreshold) {
+          score += solidity * 2; // Bonificación por buena solidez
+        } else {
+          score -= (1 - solidity) * 2; // Penalización por baja solidez
+        }
+
+        if (aspectRatio >= this.config.openCvAspectRatioMin && aspectRatio <= this.config.openCvAspectRatioMax) {
+          score += 1; // Bonificación por relación de aspecto aceptable
+        } else {
+          // Penalización leve si está fuera de rango, podría ser ruido
+          score -= 0.5 * Math.abs(aspectRatio - (this.config.openCvAspectRatioMin + this.config.openCvAspectRatioMax)/2);
+        }
+        
+        if (score > bestScore) {
+          // Si hay un "mejor contorno" anterior, eliminarlo antes de reemplazarlo
+          if (bestContourIndex !== -1 && contours.get(bestContourIndex)) {
+            // contours.get(bestContourIndex).delete(); // Cuidado: esto puede causar problemas si el mismo índice se vuelve a obtener
+          }
+          bestScore = score;
+          bestContourIndex = i; 
+          largestContourArea = area; // Actualizar para referencia
+        } else {
+          contour.delete(); // No es el mejor, liberar este contorno
+        }
       }
 
       if (bestContourIndex !== -1) {
-        const fingerContour = contours.get(bestContourIndex);
-        const rect = cv.boundingRect(fingerContour);
-        bestRoi = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        const fingerContour = contours.get(bestContourIndex); // Obtener el mejor contorno FINAL
+        if (fingerContour && fingerContour.size && fingerContour.size().height > 0) { // Chequeo de validez
+          const rect = cv.boundingRect(fingerContour);
+          bestRoi = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 
-        // Calcular confianza de piel dentro de la ROI (ejemplo básico)
-        const roiMaskCv = new cv.Mat(skinMask.rows, skinMask.cols, cv.CV_8UC1, new cv.Scalar(0));
-        const roiContourVec = new cv.MatVector();
-        roiContourVec.push_back(fingerContour);
-        cv.drawContours(roiMaskCv, roiContourVec, 0, new cv.Scalar(255), cv.FILLED);
-        roiContourVec.delete();
-        
-        const skinPixelsInRoi = cv.countNonZero(skinMask.roi(rect)); // Píxeles de piel DENTRO de la ROI (usando skinMask original)
-        const totalPixelsInRoi = rect.width * rect.height;
-        if (totalPixelsInRoi > 0) {
-          calculatedSkinConfidence = skinPixelsInRoi / totalPixelsInRoi;
+          const roiMaskCv = new cv.Mat(skinMask.rows, skinMask.cols, cv.CV_8UC1, new cv.Scalar(0));
+          const roiContourVec = new cv.MatVector();
+          roiContourVec.push_back(fingerContour);
+          cv.drawContours(roiMaskCv, roiContourVec, 0, new cv.Scalar(255), cv.FILLED);
+          roiContourVec.delete();
+          
+          const skinPixelsInRoi = cv.countNonZero(skinMask.roi(rect)); // Píxeles de piel DENTRO de la ROI (usando skinMask original)
+          const totalPixelsInRoi = rect.width * rect.height;
+          if (totalPixelsInRoi > 0) {
+            calculatedSkinConfidence = skinPixelsInRoi / totalPixelsInRoi;
+          }
+          roiMaskCv.delete();
+          
+          // Extraer valor PPG (promedio canal rojo) de la ROI
+          const ppgRoiMat = rgbMat.roi(rect);
+          const meanColor = cv.mean(ppgRoiMat);
+          ppgFromRoi = meanColor[0]; // Canal Rojo
+          ppgRoiMat.delete();
+
+          fingerContour.delete(); // Liberar el mejor contorno después de usarlo
+        } else {
+           if(fingerContour) fingerContour.delete(); // Si se obtuvo pero no es válido
         }
-        roiMaskCv.delete();
-        
-        // Extraer valor PPG (promedio canal rojo) de la ROI
-        const ppgRoiMat = rgbMat.roi(rect);
-        const meanColor = cv.mean(ppgRoiMat);
-        ppgFromRoi = meanColor[0]; // Canal Rojo
-        ppgRoiMat.delete();
-
-        fingerContour.delete(); // Eliminar el contorno seleccionado
       }
       
-      // Asegurarse de liberar todos los contornos restantes si no se hizo en el bucle
-      if (bestContourIndex !== -1 && contours.size() > 0) {
-          // Si solo se eliminó el mejor, y quedaron otros, eliminarlos.
-          // Sin embargo, el bucle ya debería haberlos eliminado.
-      }
+      // Comentario sobre YCrCb
+      // Para una detección de piel potencialmente más robusta a la iluminación,
+      // se podría considerar el espacio de color YCrCb.
+      // 1. Convertir RGB a YCrCb: cv.cvtColor(rgbMat, ycrcbMat, cv.COLOR_RGB2YCrCb);
+      // 2. Aplicar umbrales a los canales Y, Cr, Cb.
+      //    Ej: Cr en [133, 173], Cb en [77, 127]
 
     } catch (e) {
       console.error("FingerDetectionManager: OpenCV analysis error:", e);
