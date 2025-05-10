@@ -13,10 +13,12 @@ export const useHeartBeatProcessor = () => {
     bpm: 0,
     confidence: 0,
     isPeak: false,
+    arrhythmiaCount: 0,
     rrData: { intervals: [], lastPeakTime: null }
   });
   
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
   
   const processorRef = useRef<HeartBeatProcessor | null>(null);
@@ -56,6 +58,7 @@ export const useHeartBeatProcessor = () => {
         confidence: 0,
         isPeak: false,
         filteredValue: value,
+        arrhythmiaCount: 0,
         rrData: { intervals: [], lastPeakTime: null }
       };
     }
@@ -84,14 +87,13 @@ export const useHeartBeatProcessor = () => {
       
       // Actualizar resultado y referencias
       lastBpmRef.current = result.bpm || lastBpmRef.current;
-      setHeartBeatResult(prevResult => ({
-        ...prevResult,
-        ...result,
-        rrData: {
-          intervals: lastRRIntervalsRef.current,
-          lastPeakTime: lastPeakTimeRef.current
-        }
-      }));
+      setHeartBeatResult(result);
+      
+      // Verificar arritmia
+      if (result.isArrhythmia) {
+        setIsArrhythmia(true);
+        setTimeout(() => setIsArrhythmia(false), 1500);
+      }
       
       return {
         ...result,
@@ -108,10 +110,11 @@ export const useHeartBeatProcessor = () => {
         confidence: 0,
         isPeak: false,
         filteredValue: value,
+        arrhythmiaCount: processorRef.current ? (processorRef.current.reset ? 0 : 0) : 0, // Safe fallback if no getArrhythmiaCounter
         rrData: { intervals: [], lastPeakTime: null }
       };
     }
-  }, [processorFunc, lastPeakTimeRef]);
+  }, [processorFunc, heartBeatResult.confidence, lastPeakTimeRef]);
 
   /**
    * Inicia el monitoreo de frecuencia cardíaca
@@ -125,6 +128,7 @@ export const useHeartBeatProcessor = () => {
       bpm: 0,
       confidence: 0,
       isPeak: false,
+      arrhythmiaCount: 0,
       rrData: { intervals: [], lastPeakTime: null }
     });
     setPpgData([]);
@@ -158,10 +162,12 @@ export const useHeartBeatProcessor = () => {
       bpm: 0,
       confidence: 0,
       isPeak: false,
+      arrhythmiaCount: 0,
       rrData: { intervals: [], lastPeakTime: null }
     });
     
     setPpgData([]);
+    setIsArrhythmia(false);
   }, [resetProcessor]);
 
   /**
@@ -191,6 +197,7 @@ export const useHeartBeatProcessor = () => {
     stopProcessing: stopMonitoring,
     processSignal,
     reset,
+    isArrhythmia,
     startMonitoring,
     stopMonitoring,
     lastBpm: lastBpmRef.current,
