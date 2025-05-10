@@ -6,7 +6,6 @@ console.log('🚀 Starting project setup...');
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 // Ensure scripts directory exists
 const scriptsDir = path.join(__dirname, 'scripts');
@@ -22,20 +21,10 @@ if (!fs.existsSync(opencvDir)) {
   console.log('✅ Created OpenCV directory');
 }
 
-// Run the OpenCV setup script directly using an absolute path
+// Run the OpenCV setup script directly
 console.log('📦 Running OpenCV setup...');
 try {
-  const setupScriptPath = path.join(__dirname, 'scripts', 'setup-opencv.cjs');
-  console.log(`Using script path: ${setupScriptPath}`);
-  
-  // Make sure file exists
-  if (!fs.existsSync(setupScriptPath)) {
-    console.error(`❌ Setup script not found at: ${setupScriptPath}`);
-    process.exit(1);
-  }
-  
-  // Use require with absolute path
-  require(setupScriptPath);
+  const setupOpenCV = require('./scripts/setup-opencv.cjs');
   console.log('✅ OpenCV setup completed successfully');
 } catch (error) {
   console.error('❌ OpenCV setup failed:', error.message);

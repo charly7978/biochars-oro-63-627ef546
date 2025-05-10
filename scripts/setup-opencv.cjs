@@ -8,6 +8,9 @@ const OUTPUT_DIR = path.join(path.resolve(__dirname, '..'), 'public', 'opencv');
 const OPENCV_PATH = path.join(OUTPUT_DIR, 'opencv.js');
 const OPENCV_INIT_PATH = path.join(OUTPUT_DIR, 'opencv-init.js');
 
+console.log('Starting OpenCV setup...');
+console.log(`Output directory: ${OUTPUT_DIR}`);
+
 // Create directory if it doesn't exist
 if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -24,7 +27,11 @@ var Module = {
     window.dispatchEvent(new CustomEvent('opencv-ready'));
     // Also set a global flag for easier checking
     window.cv_ready = true;
-  }
+  },
+  preRun: [],
+  postRun: [],
+  print: function(text) { console.log('OpenCV.js:', text); },
+  printErr: function(text) { console.warn('OpenCV.js Error:', text); }
 };
 console.log('OpenCV.js initialization script loaded.');
 `;
@@ -48,7 +55,9 @@ const file = fs.createWriteStream(OPENCV_PATH);
 https.get(OPENCV_URL, response => {
   if (response.statusCode !== 200) {
     console.error(`Failed to download OpenCV.js: HTTP status ${response.statusCode}`);
-    fs.unlinkSync(OPENCV_PATH); // Remove partial download
+    if (fs.existsSync(OPENCV_PATH)) {
+      fs.unlinkSync(OPENCV_PATH); // Remove partial download
+    }
     process.exit(1);
   }
   
@@ -67,8 +76,18 @@ https.get(OPENCV_URL, response => {
     3. Use the 'opencv-ready' event to know when OpenCV is ready to use
     `);
   });
+
+  file.on('error', err => {
+    console.error(`Error writing OpenCV.js: ${err.message}`);
+    if (fs.existsSync(OPENCV_PATH)) {
+      fs.unlinkSync(OPENCV_PATH); // Remove partial download
+    }
+    process.exit(1);
+  });
 }).on('error', err => {
-  fs.unlinkSync(OPENCV_PATH); // Remove partial download
   console.error(`Error downloading OpenCV.js: ${err.message}`);
+  if (fs.existsSync(OPENCV_PATH)) {
+    fs.unlinkSync(OPENCV_PATH); // Remove partial download
+  }
   process.exit(1);
 });
