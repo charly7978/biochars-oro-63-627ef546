@@ -1,40 +1,49 @@
 
-export const applyBandpassFilter = (values: number[], lowCut: number, highCut: number, sampleRate: number): number[] => {
-  // Simple implementation of a bandpass filter
-  return values.map(value => {
-    // Basic filtering logic - in practice you'd want to use a proper DSP library
-    const filtered = value * (highCut - lowCut) / sampleRate;
-    return Math.max(-1, Math.min(1, filtered));
-  });
-};
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
 
-export const applyLowpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
-  const alpha = cutoff / (sampleRate * 0.5);
-  const filtered: number[] = [];
+/**
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
+ */
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
+  }
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
+}
+
+/**
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
+ */
+export function amplifySignal(value: number, recentValues: number[]): number {
+  if (recentValues.length === 0) return value;
   
-  for (let i = 0; i < values.length; i++) {
-    if (i === 0) {
-      filtered.push(values[0]);
-    } else {
-      filtered.push(alpha * values[i] + (1 - alpha) * filtered[i - 1]);
-    }
+  // Calcular la amplitud reciente de datos reales
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
+  const recentRange = recentMax - recentMin;
+  
+  // Factor de amplificación para señales reales
+  let amplificationFactor = 1.0;
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5;
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8;
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4;
   }
   
-  return filtered;
-};
-
-export const applyHighpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
-  const alpha = cutoff / (sampleRate * 0.5);
-  const filtered: number[] = [];
-  let lastInput = 0;
-  let lastOutput = 0;
+  // Amplificar usando solo datos reales
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+  const centeredValue = value - mean;
+  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   
-  for (let i = 0; i < values.length; i++) {
-    const output = alpha * (lastOutput + values[i] - lastInput);
-    filtered.push(output);
-    lastInput = values[i];
-    lastOutput = output;
-  }
-  
-  return filtered;
-};
+  return amplifiedValue;
+}
