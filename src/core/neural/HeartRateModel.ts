@@ -1,4 +1,3 @@
-
 import * as tf from '@tensorflow/tfjs'; 
 import { BaseNeuralModel, Tensor1D } from './NeuralNetworkBase';
 
@@ -37,14 +36,9 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
       console.log('HeartRateNeuralModel: Modelo cargado exitosamente');
     } catch (error) {
       console.error('Error al cargar el modelo HeartRate:', error);
-      
-      // Crear un modelo de respaldo simple para desarrollo
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('HeartRateNeuralModel: Usando modelo de fallback para desarrollo');
-        this.isModelLoaded = true;
-      } else {
-        this.isModelLoaded = false;
-      }
+      // Siempre marcar como no cargado si hay error
+      this.isModelLoaded = false;
+      // Eliminar la lógica de fallback que establecía isModelLoaded = true en dev
     }
   }
   
@@ -54,33 +48,24 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
   async predict(input: Tensor1D): Promise<Tensor1D> {
     const startTime = Date.now();
     
+    // Si el modelo no está cargado o es nulo, intentar cargarlo de nuevo.
+    // Si sigue sin estar disponible, retornar un valor por defecto.
+    if (!this.isModelLoaded || !this.model) {
+      await this.loadModel(); // Intenta cargar si es necesario
+      if (!this.isModelLoaded || !this.model) {
+        console.error('HeartRateNeuralModel: Modelo no cargado, no se puede predecir.');
+        return [0]; // Devolver 0 o NaN si el modelo no está disponible
+      }
+    }
+    
     try {
-      if (!this.isModelLoaded) {
-        await this.loadModel();
-      }
-      
-      // Si no hay modelo o estamos en fallback
-      if (!this.model && process.env.NODE_ENV === 'development') {
-        // Simular procesamiento
-        await new Promise(resolve => setTimeout(resolve, 10));
-        
-        // Devolver un valor calculado en base a características básicas del input
-        // Esto NO es una simulación aleatoria, sino un cálculo determinista de fallback
-        const peak1 = Math.max(...input.slice(0, 30));
-        const peak2 = Math.max(...input.slice(30, 60));
-        const peak3 = Math.max(...input.slice(60));
-        const peaks = [peak1, peak2, peak3].filter(p => p > 0.05).length;
-        // Estimar BPM basado en número de picos detectados y longitud del input
-        const estimatedBpm = peaks > 0 ? 60 * (peaks / (input.length / 30)) : 0;
-        
-        this.updatePredictionTime(startTime);
-        return [estimatedBpm > 0 ? Math.min(180, Math.max(40, estimatedBpm)) : 0];
-      }
+      // La lógica de fallback de desarrollo se elimina, siempre se usa el modelo real o se falla.
       
       // Convertir entrada a tensor
       const inputTensor = tf.tensor2d([input], [1, input.length]);
       
       // Realizar predicción
+      // La aserción de no nulidad (!) es segura aquí debido a la comprobación anterior
       const outputTensor = this.model!.predict(inputTensor) as tf.Tensor;
       
       // Convertir resultado a array
