@@ -31,11 +31,6 @@ export class SignalProcessor extends BaseProcessor {
   private kalmanFilter: KalmanFilter;
   private bandpassFilter: BandpassFilter;
   
-  // Parámetros para detección de piel (HSV) - Ajustar según sea necesario
-  private readonly SKIN_LOWER = [0, 40, 30];   // Lower bound for HSV skin color
-  private readonly SKIN_UPPER = [40, 255, 255]; // Upper bound for HSV skin color
-  private readonly MIN_CONTOUR_AREA = 500; // Área mínima para considerar un contorno como dedo
-
   // Estado de OpenCV
   private cvReady: boolean = false;
   private cvInitializing: boolean = false;
@@ -157,12 +152,9 @@ export class SignalProcessor extends BaseProcessor {
    */
   public processFrame(imageData: ImageData): void {
     if (!this.cvReady) {
-      // console.warn("SignalProcessor: OpenCV not ready, skipping frame.");
-      // Podríamos encolar frames o simplemente esperar
       if (!this.cvInitializing) {
-        this.initializeOpenCV(); // Intentar inicializar si no lo está haciendo ya
+        this.initializeOpenCV();
       }
-      // Devolver valores por defecto o nulos mientras no esté listo
       this.onError?.({ code: 'OPENCV_NOT_READY', message: 'OpenCV not ready for vital-signs processor.', timestamp: Date.now() });
       const fallbackDetection = fingerDetectionManager.processFrameAndSignal(undefined, undefined, false);
       this.onSignalReady?.({
@@ -179,75 +171,21 @@ export class SignalProcessor extends BaseProcessor {
       return;
     }
 
-    let srcMat: any = null;
-    let rgbMat: any = null;
-    let hsvMat: any = null;
-    let skinMask: any = null;
-    let contours: any = null;
-    let hierarchy: any = null;
-    let ppgValueFromRoi = 0;
-    let roiRectForSignal: ProcessedSignal['roi'] = { x: 0, y: 0, width: imageData.width, height: imageData.height };
+    let ppgValueFromFDM = 0;
     let preBandpassVal = 0;
 
     try {
-      srcMat = cv.matFromImageData(imageData);
-      rgbMat = new cv.Mat();
-      cv.cvtColor(srcMat, rgbMat, cv.COLOR_RGBA2RGB);
-      hsvMat = new cv.Mat();
-      cv.cvtColor(rgbMat, hsvMat, cv.COLOR_RGB2HSV);
+      const detectionResult = fingerDetectionManager.processFrameAndSignal(imageData, undefined, this.cvReady);
 
-      skinMask = new cv.Mat();
-      const lowerSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), this.SKIN_LOWER);
-      const upperSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), this.SKIN_UPPER);
-      cv.inRange(hsvMat, lowerSkin, skinMask, skinMask);
-      lowerSkin.delete();
-      upperSkin.delete();
-      
-      contours = new cv.MatVector();
-      hierarchy = new cv.Mat();
-      cv.findContours(skinMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      ppgValueFromFDM = detectionResult.rawValue || 0; 
+      preBandpassVal = ppgValueFromFDM; 
 
-      let largestContourArea = 0;
-      let bestRect: cv.Rect | null = null;
-
-      for (let i = 0; i < contours.size(); ++i) {
-        const contour = contours.get(i);
-        const area = cv.contourArea(contour);
-        if (area > this.MIN_CONTOUR_AREA && area > largestContourArea) {
-          largestContourArea = area;
-          bestRect = cv.boundingRect(contour);
-        }
-        contour.delete(); 
-      }
-
-      if (bestRect) {
-        roiRectForSignal = { x: bestRect.x, y: bestRect.y, width: bestRect.width, height: bestRect.height };
-        const roiMat = rgbMat.roi(bestRect);
-        const meanColor = cv.mean(roiMat, new cv.Mat());
-        ppgValueFromRoi = meanColor[0];
-        roiMat.delete();
-      } else {
-        const centerX = Math.floor(imageData.width * 0.4);
-        const centerY = Math.floor(imageData.height * 0.4);
-        const fallbackWidth = Math.floor(imageData.width * 0.2);
-        const fallbackHeight = Math.floor(imageData.height * 0.2);
-        const fallbackRectCv = new cv.Rect(centerX, centerY, fallbackWidth, fallbackHeight);
-        roiRectForSignal = {x: centerX, y: centerY, width: fallbackWidth, height: fallbackHeight };
-        const fallbackRoiMat = rgbMat.roi(fallbackRectCv);
-        const meanColorFallback = cv.mean(fallbackRoiMat);
-        ppgValueFromRoi = meanColorFallback[0];
-        fallbackRoiMat.delete();
-      }
-      preBandpassVal = ppgValueFromRoi;
-
-      const detectionResult = fingerDetectionManager.processFrameAndSignal(imageData, ppgValueFromRoi, this.cvReady);
-
-      const kalmanFiltered = this.kalmanFilter.filter(ppgValueFromRoi);
+      const kalmanFiltered = this.kalmanFilter.filter(ppgValueFromFDM);
       const bandpassFiltered = this.bandpassFilter.filter(kalmanFiltered);
 
       const signal: ExtendedProcessedSignal = {
         timestamp: Date.now(),
-        rawValue: ppgValueFromRoi,
+        rawValue: ppgValueFromFDM,
         preBandpassValue: preBandpassVal,
         filteredValue: bandpassFiltered,
         quality: detectionResult.quality,
@@ -259,16 +197,8 @@ export class SignalProcessor extends BaseProcessor {
       this.onSignalReady?.(signal);
 
     } catch (error) {
-      console.error("SignalProcessor: Error processing frame with OpenCV:", error);
-      this.onError?.({ code: 'OPENCV_PROCESS_FRAME_ERROR', message: `Error en processFrame con OpenCV: ${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
-    } finally {
-      // **MUY IMPORTANTE: Liberar todas las Mats creadas**
-      srcMat?.delete();
-      rgbMat?.delete();
-      hsvMat?.delete();
-      skinMask?.delete();
-      contours?.delete();
-      hierarchy?.delete();
-    }
+      console.error("SignalProcessor (VitalSigns): Error en processFrame (post FDM call):", error);
+      this.onError?.({ code: 'FDM_CALL_ERROR', message: `Error procesando con FingerDetectionManager: ${error instanceof Error ? error.message : String(error)}`, timestamp: Date.now() });
+    } 
   }
 }

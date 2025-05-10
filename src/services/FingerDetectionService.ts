@@ -6,6 +6,7 @@
 import { KalmanFilter } from '../core/signal/filters/KalmanFilter';
 import { BandpassFilter } from '../core/signal/filters/BandpassFilter';
 import { toast } from 'sonner';
+import cv from '@techstark/opencv-js'; // Asegurar que OpenCV esté importado
 
 export interface FingerDetectionConfig {
   minSignalAmplitude: number; // Amplitud mínima de la señal PPG cruda o filtrada para ser considerada.
@@ -22,6 +23,10 @@ export interface FingerDetectionConfig {
   maxPeakIntervalMs: number; // Intervalo máximo entre picos (e.g., para min BPM)
   maxIntervalDeviationMs: number; // Máxima desviación permitida entre intervalos de picos para consistencia.
   openCvMinSkinConfidence: number; // Umbral mínimo de confianza de OpenCV para detección de piel.
+  openCvMinContourArea: number; // Área mínima de contorno para ser considerado ROI por OpenCV.
+  openCvSkinLowerHsv: [number, number, number]; // Límite inferior HSV para piel
+  openCvSkinUpperHsv: [number, number, number]; // Límite superior HSV para piel
+  showToastFeedback: boolean; // NUEVO: Para controlar toasts de sonner
 }
 
 export interface FingerDetectionResult {
@@ -35,6 +40,7 @@ export interface FingerDetectionResult {
   roi?: { x: number; y: number; width: number; height: number }; // ROI detectada por OpenCV
   skinConfidence?: number; // Confianza de detección de piel por OpenCV
   lastUpdate: number;
+  rawValue?: number; // NUEVO: Valor PPG crudo extraído (de CV o de entrada directa)
 }
 
 // Renombrar la clase y actualizar su lógica
@@ -54,17 +60,21 @@ class FingerDetectionManager {
   private lastProcessedPpgValue: number = 0;
   
   private config: FingerDetectionConfig = {
-    minSignalAmplitude: 0.01,
-    minQualityThreshold: 35,
+    minSignalAmplitude: 0.05,
+    minQualityThreshold: 30,
     rhythmPatternWindowMs: 3000,
-    minPeaksForRhythm: 4, // de useSignalQualityDetector
-    peakDetectionThreshold: 0.1, // Ajustar según normalización de señal de entrada
-    requiredConsistentPatterns: 4, // de useSignalQualityDetector
-    minSignalVariance: 0.005, // Ajustar este valor empíricamente
-    minPeakIntervalMs: 300,  // Corresponde a 200 BPM
-    maxPeakIntervalMs: 1500, // Corresponde a 40 BPM
-    maxIntervalDeviationMs: 150, // de useSignalQualityDetector
-    openCvMinSkinConfidence: 0.6,
+    minPeaksForRhythm: 4,
+    peakDetectionThreshold: 0.3,
+    requiredConsistentPatterns: 2,
+    minSignalVariance: 0.001,
+    minPeakIntervalMs: 250, // Corresponde a 240 BPM max
+    maxPeakIntervalMs: 1500, // Corresponde a 40 BPM min
+    maxIntervalDeviationMs: 150,
+    openCvMinSkinConfidence: 0.4,
+    openCvMinContourArea: 500, // Ajustar según resolución de cámara típica
+    openCvSkinLowerHsv: [0, 40, 30], // Ejemplo, ajustar
+    openCvSkinUpperHsv: [40, 255, 255], // Ejemplo, ajustar
+    showToastFeedback: false, // Por defecto no mostrar toasts, puede ser ruidoso
   };
 
   private constructor() {
@@ -164,11 +174,33 @@ class FingerDetectionManager {
         ppgQuality, 
         finalRhythmConfirmed,
         roiDetected,
-        skinConfidence
+        skinConfidence,
+        imageData && cvReady && (cv as any).Mat ? true : false
     );
 
+    let effectivePpgValue = ppgFilteredValue;
+    if (imageData && cvReady) {
+      const cvAnalysisResults = this.analyzeImageWithOpenCVInternal(imageData);
+      roiDetected = cvAnalysisResults.roi;
+      skinConfidence = cvAnalysisResults.skinConfidence;
+      effectivePpgValue = cvAnalysisResults.extractedPpgValue ?? ppgFilteredValue;
+    }
 
-    return {
+    // Asegurarse de que effectivePpgValue sea un número para el resto del procesamiento
+    const finalPpgValue = typeof effectivePpgValue === 'number' ? effectivePpgValue : this.lastProcessedPpgValue;
+    if (typeof effectivePpgValue === 'number') {
+      this.lastProcessedPpgValue = effectivePpgValue;
+       // Actualizar historial PPG si tenemos un valor efectivo
+      if (typeof finalPpgValue === 'number') {
+        const currentTime = Date.now();
+        this.signalHistory.push({ time: currentTime, value: finalPpgValue });
+        while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
+          this.signalHistory.shift();
+        }
+      }
+    }
+
+    const result: FingerDetectionResult = {
       isFingerDetected: isFingerActuallyDetected,
       quality: ppgQuality,
       confidence: overallConfidence,
@@ -179,7 +211,14 @@ class FingerDetectionManager {
       roi: roiDetected,
       skinConfidence,
       lastUpdate: currentTime,
+      rawValue: finalPpgValue // ASIGNAR el valor PPG efectivo usado
     };
+
+    if (this.config.showToastFeedback) {
+      this.handleUserFeedback(isFingerActuallyDetected, ppgQuality, finalRhythmConfirmed);
+    }
+
+    return result;
   }
   
   // Adaptación de detectPeaks de useSignalQualityDetector
@@ -405,18 +444,18 @@ class FingerDetectionManager {
     isDetected: boolean, 
     ppgQuality: number, 
     rhythmConfirmed: boolean,
-    roiFromCv?: FingerDetectionResult['roi'], // Añadido para feedback
-    skinConfFromCv?: number // Añadido para feedback
+    roiFromCv?: FingerDetectionResult['roi'],
+    skinConfFromCv?: number,
+    cvUsed?: boolean
   ): string {
     if (isDetected) return "Dedo detectado";
 
-    // Feedback de OpenCV (si se usó y falló)
-    // if (this.config.useOpenCV && this.isCvReady ) { // Asumiendo que imageData se pasó
-    //   if (roiFromCv === undefined) return "No se pudo localizar el dedo en la imagen.";
-    //   if (skinConfFromCv !== undefined && skinConfFromCv < this.config.openCvMinSkinConfidence) {
-    //     return "Color de piel no coincide. Asegure buena iluminación.";
-    //   }
-    // }
+    if (cvUsed) { // Solo dar feedback de CV si se intentó usar
+      if (roiFromCv === undefined) return "No se pudo localizar el dedo en la imagen (CV).";
+      if (skinConfFromCv !== undefined && skinConfFromCv < this.config.openCvMinSkinConfidence) {
+        return "Color de piel no coincide (CV). Asegure buena iluminación.";
+      }
+    }
 
     if (ppgQuality < this.config.minQualityThreshold && ppgQuality > 0) {
         return "Calidad de señal baja. Ajuste el dedo.";
@@ -450,6 +489,106 @@ class FingerDetectionManager {
     this.lastPeakTimes = [];
     this.lastProcessedPpgValue = 0;
     console.log("FingerDetectionManager: Reset completed");
+  }
+
+  private analyzeImageWithOpenCVInternal(imageData: ImageData): { roi?: FingerDetectionResult['roi'], skinConfidence?: number, extractedPpgValue?: number } {
+    let srcMat: any = null;
+    let rgbMat: any = null;
+    let hsvMat: any = null;
+    let skinMask: any = null;
+    let contours: any = null;
+    let hierarchy: any = null;
+    let bestRoi: FingerDetectionResult['roi'] | undefined = undefined;
+    let calculatedSkinConfidence: number | undefined = undefined;
+    let ppgFromRoi: number | undefined = undefined;
+
+    try {
+      if (!(cv as any).Mat || !imageData) {
+        console.warn("FingerDetectionManager: OpenCV Mat no disponible o imageData nula.");
+        return {};
+      }
+      srcMat = cv.matFromImageData(imageData); // RGBA
+      rgbMat = new cv.Mat();
+      cv.cvtColor(srcMat, rgbMat, cv.COLOR_RGBA2RGB);
+      hsvMat = new cv.Mat();
+      cv.cvtColor(rgbMat, hsvMat, cv.COLOR_RGB2HSV);
+
+      skinMask = new cv.Mat();
+      const lowerSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), this.config.openCvSkinLowerHsv);
+      const upperSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), this.config.openCvSkinUpperHsv);
+      cv.inRange(hsvMat, lowerSkin, skinMask);
+      lowerSkin.delete();
+      upperSkin.delete();
+
+      // Opcional: Operaciones morfológicas para limpiar la máscara
+      // let M = cv.Mat.ones(3, 3, cv.CV_8U);
+      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_OPEN, M, new cv.Point(-1,-1), 1);
+      // cv.morphologyEx(skinMask, skinMask, cv.MORPH_CLOSE, M, new cv.Point(-1,-1), 1);
+      // M.delete();
+
+      contours = new cv.MatVector();
+      hierarchy = new cv.Mat();
+      cv.findContours(skinMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+      let largestContourArea = 0;
+      let bestContourIndex = -1;
+
+      for (let i = 0; i < contours.size(); ++i) {
+        const contour = contours.get(i);
+        const area = cv.contourArea(contour);
+        if (area > this.config.openCvMinContourArea && area > largestContourArea) {
+          largestContourArea = area;
+          bestContourIndex = i;
+        }
+        contour.delete(); // Eliminar contorno individual después de usarlo si no es el mejor
+      }
+
+      if (bestContourIndex !== -1) {
+        const fingerContour = contours.get(bestContourIndex);
+        const rect = cv.boundingRect(fingerContour);
+        bestRoi = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+
+        // Calcular confianza de piel dentro de la ROI (ejemplo básico)
+        const roiMaskCv = new cv.Mat(skinMask.rows, skinMask.cols, cv.CV_8UC1, new cv.Scalar(0));
+        const roiContourVec = new cv.MatVector();
+        roiContourVec.push_back(fingerContour);
+        cv.drawContours(roiMaskCv, roiContourVec, 0, new cv.Scalar(255), cv.FILLED);
+        roiContourVec.delete();
+        
+        const skinPixelsInRoi = cv.countNonZero(skinMask.roi(rect)); // Píxeles de piel DENTRO de la ROI (usando skinMask original)
+        const totalPixelsInRoi = rect.width * rect.height;
+        if (totalPixelsInRoi > 0) {
+          calculatedSkinConfidence = skinPixelsInRoi / totalPixelsInRoi;
+        }
+        roiMaskCv.delete();
+        
+        // Extraer valor PPG (promedio canal rojo) de la ROI
+        const ppgRoiMat = rgbMat.roi(rect);
+        const meanColor = cv.mean(ppgRoiMat);
+        ppgFromRoi = meanColor[0]; // Canal Rojo
+        ppgRoiMat.delete();
+
+        fingerContour.delete(); // Eliminar el contorno seleccionado
+      }
+      
+      // Asegurarse de liberar todos los contornos restantes si no se hizo en el bucle
+      if (bestContourIndex !== -1 && contours.size() > 0) {
+          // Si solo se eliminó el mejor, y quedaron otros, eliminarlos.
+          // Sin embargo, el bucle ya debería haberlos eliminado.
+      }
+
+    } catch (e) {
+      console.error("FingerDetectionManager: OpenCV analysis error:", e);
+      // No hacer nada más, devolverá objeto vacío o lo que se haya procesado hasta ahora
+    } finally {
+      srcMat?.delete();
+      rgbMat?.delete();
+      hsvMat?.delete();
+      skinMask?.delete();
+      contours?.delete(); // Asegurar liberación
+      hierarchy?.delete();
+    }
+    return { roi: bestRoi, skinConfidence: calculatedSkinConfidence, extractedPpgValue: ppgFromRoi };
   }
 }
 
