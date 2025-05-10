@@ -1,3 +1,4 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalAmplifier } from '../modules/SignalAmplifier';
 
@@ -126,19 +127,13 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   processFrame(imageData: ImageData): void {
-    if (!this.isProcessing) return;
+    if (!this.isProcessing) {
+      console.log("PPGSignalProcessor: No está procesando");
+      return;
+    }
 
     try {
-      // Detect ROI first
-      const roi = this.detectROI(imageData); // Pass imageData
-
-      // Extract red channel using the detected ROI
-      const redValue = this.extractRedChannel(imageData, roi);
-
-      if (isNaN(redValue) || redValue === 0) {
-        console.log("PPGSignalProcessor: Valor de rojo inválido o cero");
-        return;
-      }
+      const redValue = this.extractRedChannel(imageData);
       
       // Establish baseline for better false positive rejection
       if (!this.hasEstablishedBaseline) {
@@ -237,7 +232,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: amplifiedValue,
         quality: combinedQuality,
         fingerDetected: finalFingerDetected,
-        roi: roi, // Use the calculated ROI
+        roi: this.detectROI(redValue),
         perfusionIndex
       };
 
@@ -280,29 +275,23 @@ export class PPGSignalProcessor implements SignalProcessor {
     return dc > 0 ? ac / dc : 0;
   }
 
-  private extractRedChannel(imageData: ImageData, roi: ProcessedSignal['roi']): number {
+  private extractRedChannel(imageData: ImageData): number {
     const data = imageData.data;
     let redSum = 0;
     let count = 0;
-
-    // Use ROI to define the area for analysis
-    // Clamp ROI coordinates and dimensions to image boundaries
-    const startX = Math.max(0, Math.floor(roi.x));
-    const endX = Math.min(imageData.width, Math.floor(roi.x + roi.width));
-    const startY = Math.max(0, Math.floor(roi.y));
-    const endY = Math.min(imageData.height, Math.floor(roi.y + roi.height));
-
+    
+    // Only analyze the center of the image (30% central)
+    const startX = Math.floor(imageData.width * 0.35);
+    const endX = Math.floor(imageData.width * 0.65);
+    const startY = Math.floor(imageData.height * 0.35);
+    const endY = Math.floor(imageData.height * 0.65);
+    
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
         redSum += data[i];  // Red channel
         count++;
       }
-    }
-
-    if (count === 0) {
-      // Avoid division by zero if ROI is outside image or has zero area after clamping
-      return 0; 
     }
     
     const avgRed = redSum / count;
@@ -386,98 +375,12 @@ export class PPGSignalProcessor implements SignalProcessor {
     return { isFingerDetected, quality };
   }
 
-  private detectROI(imageData: ImageData): ProcessedSignal['roi'] {
-    const { width: imageWidth, height: imageHeight, data } = imageData;
-
-    const GRID_SIZE_X = 10; // Dividir en 10 columnas
-    const GRID_SIZE_Y = 10; // Dividir en 10 filas
-    const cellWidth = imageWidth / GRID_SIZE_X;
-    const cellHeight = imageHeight / GRID_SIZE_Y;
-
-    let bestCell = {
-      x: imageWidth * 0.35, // Fallback al centro
-      y: imageHeight * 0.35,
-      width: imageWidth * 0.30,
-      height: imageHeight * 0.30,
-      avgRedIntensity: 0,
-      skinPixelCount: 0
-    };
-
-    // Umbrales para detección de piel (heurística simple)
-    const MIN_RED_FOR_SKIN = 60;
-    const MAX_RED_FOR_SKIN = 250; // Evitar píxeles completamente saturados o muy brillantes
-
-    for (let gy = 0; gy < GRID_SIZE_Y; gy++) {
-      for (let gx = 0; gx < GRID_SIZE_X; gx++) {
-        const cellX = gx * cellWidth;
-        const cellY = gy * cellHeight;
-        let currentCellRedSum = 0;
-        let pixelCountInCell = 0;
-        let skinPixelsInCell = 0;
-
-        for (let y = Math.floor(cellY); y < Math.floor(cellY + cellHeight); y++) {
-          for (let x = Math.floor(cellX); x < Math.floor(cellX + cellWidth); x++) {
-            if (x < 0 || x >= imageWidth || y < 0 || y >= imageHeight) continue;
-
-            const i = (y * imageWidth + x) * 4;
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-
-            // Filtro de piel simple y plausibilidad de señal PPG
-            if (r > MIN_RED_FOR_SKIN && r < MAX_RED_FOR_SKIN && r > g && r > b) {
-              currentCellRedSum += r;
-              skinPixelsInCell++;
-            }
-            pixelCountInCell++;
-          }
-        }
-
-        if (pixelCountInCell > 0 && skinPixelsInCell > (pixelCountInCell * 0.25)) { // Al menos 25% de píxeles de "piel"
-          const avgRedInCell = skinPixelsInCell > 0 ? currentCellRedSum / skinPixelsInCell : 0;
-
-          // Priorizar celdas con más píxeles de piel y luego mayor intensidad de rojo
-          if (skinPixelsInCell > bestCell.skinPixelCount) {
-            bestCell = {
-              x: cellX,
-              y: cellY,
-              width: cellWidth,
-              height: cellHeight,
-              avgRedIntensity: avgRedInCell,
-              skinPixelCount: skinPixelsInCell
-            };
-          } else if (skinPixelsInCell === bestCell.skinPixelCount && avgRedInCell > bestCell.avgRedIntensity) {
-             bestCell = {
-              x: cellX,
-              y: cellY,
-              width: cellWidth,
-              height: cellHeight,
-              avgRedIntensity: avgRedInCell,
-              skinPixelCount: skinPixelsInCell
-            };
-          }
-        }
-      }
-    }
-    
-    // Si la mejor celda sigue teniendo una intensidad muy baja, o pocos pixeles de piel, 
-    // podría ser indicativo de no dedo. Por ahora, usamos la mejor encontrada o el fallback inicial.
-    // Una mejora futura podría ser devolver una confianza o null si no se encuentra un ROI claro.
-    if (bestCell.skinPixelCount < ( (imageWidth/GRID_SIZE_X) * (imageHeight/GRID_SIZE_Y) * 0.1) && bestCell.avgRedIntensity < MIN_RED_FOR_SKIN + 20 ) {
-        // Fallback si la "mejor" celda no es convincente, volvemos al centro más grande.
-         return {
-            x: imageWidth * 0.35,
-            y: imageHeight * 0.35,
-            width: imageWidth * 0.30,
-            height: imageHeight * 0.30,
-        };
-    }
-
+  private detectROI(redValue: number): ProcessedSignal['roi'] {
     return {
-      x: bestCell.x,
-      y: bestCell.y,
-      width: bestCell.width,
-      height: bestCell.height,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
     };
   }
 
