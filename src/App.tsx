@@ -95,7 +95,9 @@ const App: React.FC = () => {
   return (
     <div className="App">
       <header className="App-header">
-        <h1>Monitoreo de Signos Vitales</h1>
+        <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-400 bg-clip-text text-transparent py-2 mb-4">
+          Monitoreo Avanzado de Signos Vitales
+        </h1>
         <p className="status">{opencvStatus}</p>
         
         <div className="loading-container">
