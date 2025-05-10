@@ -70,7 +70,7 @@ declare namespace cv {
 }
 
 // Global OpenCV objects
-interface Window {
+declare interface Window {
   cv: typeof cv;
   cv_ready: boolean;
 }

@@ -24,4 +24,7 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    exclude: ['opencv-wasm'] // Exclude OpenCV from optimization to prevent issues
+  }
 }));

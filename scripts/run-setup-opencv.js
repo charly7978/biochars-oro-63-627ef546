@@ -10,7 +10,7 @@ const fs = require('fs');
 const scriptDir = path.dirname(__filename);
 
 // Use explicit path
-const setupScriptPath = path.join(scriptDir, 'setup-opencv.js');
+const setupScriptPath = path.join(scriptDir, 'setup-opencv.cjs');
 console.log(`Trying to import setup script from: ${setupScriptPath}`);
 
 // Check if the file exists first

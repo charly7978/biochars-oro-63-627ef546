@@ -178,8 +178,8 @@ export function applyAdaptiveThreshold(signal: number[], method: string = 'GAUSS
   // Convertir a valores 0-255 para umbralización
   const normalizedSignal = signal.map(val => ((val - minVal) / range) * 255);
   
-  // Convertir el array a Mat de OpenCV (formato 8UC1 para umbralización)
-  const signalMat = new window.cv.Mat(1, signal.length, window.cv.CV_8UC1);
+  // Convertir el array a Mat de OpenCV (formato 8U para umbralización)
+  const signalMat = new window.cv.Mat(1, signal.length, window.cv.CV_8U);
   for (let i = 0; i < signal.length; i++) {
     signalMat.data[i] = normalizedSignal[i];
   }
@@ -509,4 +509,4 @@ export default {
   extractPPGFeatures,
   createKernel,
   applyCustomFilter
-}; 
+};
