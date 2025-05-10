@@ -1,36 +1,43 @@
 
-export const findPeaks = (values: number[], minPeakHeight = 0, minDistance = 1): number[] => {
+/**
+ * Utilidades para detección de picos y valles en señales PPG
+ * Solo trabaja con datos reales, sin simulación
+ */
+
+/**
+ * Encuentra picos en una señal PPG
+ * @param values Array de valores de señal PPG
+ * @param threshold Umbral para detección de picos
+ */
+export function findPeaks(values: number[], threshold = 0.02): number[] {
   const peaks: number[] = [];
   
+  // Algoritmo simplificado para detección de picos locales
   for (let i = 1; i < values.length - 1; i++) {
-    if (values[i] > values[i - 1] && 
-        values[i] > values[i + 1] && 
-        values[i] >= minPeakHeight) {
-      
-      // Check min distance from last peak
-      if (peaks.length === 0 || (i - peaks[peaks.length - 1]) >= minDistance) {
-        peaks.push(i);
-      }
+    const val = values[i];
+    if (val > values[i - 1] && val > values[i + 1] && val > threshold) {
+      peaks.push(i);
     }
   }
   
   return peaks;
-};
+}
 
-export const findValleys = (values: number[], maxValleyHeight = 0, minDistance = 1): number[] => {
+/**
+ * Encuentra valles en una señal PPG
+ * @param values Array de valores de señal PPG
+ * @param threshold Umbral para detección de valles
+ */
+export function findValleys(values: number[], threshold = 0.02): number[] {
   const valleys: number[] = [];
   
+  // Algoritmo simplificado para detección de valles locales
   for (let i = 1; i < values.length - 1; i++) {
-    if (values[i] < values[i - 1] && 
-        values[i] < values[i + 1] && 
-        values[i] <= maxValleyHeight) {
-      
-      // Check min distance from last valley
-      if (valleys.length === 0 || (i - valleys[valleys.length - 1]) >= minDistance) {
-        valleys.push(i);
-      }
+    const val = values[i];
+    if (val < values[i - 1] && val < values[i + 1] && val < threshold) {
+      valleys.push(i);
     }
   }
   
   return valleys;
-};
+}

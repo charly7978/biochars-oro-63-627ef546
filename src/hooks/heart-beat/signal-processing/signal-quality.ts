@@ -3,10 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { checkSignalQuality as checkBaseSignalQuality } from '../../../modules/heart-beat/signal-quality';
-
 /**
- * Check for weak signal to detect finger removal
+ * Check for weak signal to detect finger removal - USANDO SOLO DATOS REALES
  */
 export function checkWeakSignal(
   value: number,
@@ -19,11 +17,27 @@ export function checkWeakSignal(
   isWeakSignal: boolean;
   updatedWeakSignalsCount: number;
 } {
-  return checkBaseSignalQuality(value, consecutiveWeakSignalsCount, config);
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
+  
+  // Si la señal está por debajo del umbral mínimo, incrementar contador
+  if (Math.abs(value) < lowSignalThreshold) {
+    const updatedCount = consecutiveWeakSignalsCount + 1;
+    return {
+      isWeakSignal: updatedCount >= maxWeakSignalCount,
+      updatedWeakSignalsCount: updatedCount
+    };
+  }
+  
+  // Si la señal es suficientemente fuerte, resetear contador
+  return {
+    isWeakSignal: false,
+    updatedWeakSignalsCount: 0
+  };
 }
 
 /**
  * Determine if measurement should be processed based on signal quality
+ * SOLO DATOS REALES
  */
 export function shouldProcessMeasurement(
   value: number,
@@ -33,18 +47,21 @@ export function shouldProcessMeasurement(
     maxWeakSignalCount?: number;
   } = {}
 ): boolean {
-  const { isWeakSignal } = checkBaseSignalQuality(
+  const threshold = options.lowSignalThreshold || 0.01;
+  const maxWeakCount = options.maxWeakSignalCount || 5;
+  
+  const { isWeakSignal } = checkWeakSignal(
     value,
     weakSignalsCount,
-    options
+    { lowSignalThreshold: threshold, maxWeakSignalCount: maxWeakCount }
   );
   
-  return !isWeakSignal && Math.abs(value) > (options.lowSignalThreshold || 0.01);
+  return !isWeakSignal && Math.abs(value) > threshold;
 }
 
 /**
  * Create a safe result object for weak signal scenarios
- * No simulation, just empty result
+ * SOLO DATOS REALES - SIN SIMULACIÓN
  */
 export function createWeakSignalResult(arrhythmiaCount: number = 0): {
   bpm: number;
