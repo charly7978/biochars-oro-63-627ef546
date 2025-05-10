@@ -8,8 +8,9 @@ console.log('Running OpenCV setup script...');
 const path = require('path');
 const fs = require('fs');
 const scriptDir = path.dirname(__filename);
+const projectRoot = path.resolve(scriptDir, '..');
 
-// Use explicit path to the current directory
+// Use explicit absolute path to the setup script
 const setupScriptPath = path.join(scriptDir, 'setup-opencv.cjs');
 console.log(`Trying to import setup script from: ${setupScriptPath}`);
 
@@ -19,7 +20,7 @@ if (!fs.existsSync(setupScriptPath)) {
   process.exit(1);
 }
 
-// Use CommonJS require
+// Use CommonJS require with absolute path
 try {
   require(setupScriptPath);
   console.log('OpenCV setup script completed successfully.');

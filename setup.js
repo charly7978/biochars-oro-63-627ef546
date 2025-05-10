@@ -22,11 +22,20 @@ if (!fs.existsSync(opencvDir)) {
   console.log('✅ Created OpenCV directory');
 }
 
-// Run the OpenCV setup script directly
+// Run the OpenCV setup script directly using an absolute path
 console.log('📦 Running OpenCV setup...');
 try {
-  // Use require directly instead of execSync
-  require('./scripts/setup-opencv.cjs');
+  const setupScriptPath = path.join(__dirname, 'scripts', 'setup-opencv.cjs');
+  console.log(`Using script path: ${setupScriptPath}`);
+  
+  // Make sure file exists
+  if (!fs.existsSync(setupScriptPath)) {
+    console.error(`❌ Setup script not found at: ${setupScriptPath}`);
+    process.exit(1);
+  }
+  
+  // Use require with absolute path
+  require(setupScriptPath);
   console.log('✅ OpenCV setup completed successfully');
 } catch (error) {
   console.error('❌ OpenCV setup failed:', error.message);
