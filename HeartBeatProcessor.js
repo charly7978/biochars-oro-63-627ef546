@@ -1,4 +1,3 @@
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -38,6 +37,7 @@ export class HeartBeatProcessor {
   lastPeakTime = null;
   previousPeakTime = null;
   bpmHistory = [];
+  rrIntervalHistory = [];
   baseline = 0;
   lastValue = 0;
   values = [];
@@ -203,8 +203,7 @@ export class HeartBeatProcessor {
         bpm: 0,
         confidence: 0,
         isPeak: false,
-        filteredValue: smoothed,
-        arrhythmiaCount: 0
+        filteredValue: smoothed
       };
     }
 
@@ -256,8 +255,7 @@ export class HeartBeatProcessor {
       bpm: Math.round(this.getSmoothBPM()),
       confidence,
       isPeak: isConfirmedPeak && !this.isInWarmup(),
-      filteredValue: smoothed,
-      arrhythmiaCount: 0
+      filteredValue: smoothed
     };
   }
 
@@ -355,6 +353,14 @@ export class HeartBeatProcessor {
     const interval = this.lastPeakTime - this.previousPeakTime;
     if (interval <= 0) return;
 
+    // Almacenar el intervalo RR directamente
+    if (interval >= (60000 / this.MAX_BPM) && interval <= (60000 / this.MIN_BPM)) { // Filtrar intervalos fisiológicamente posibles
+        this.rrIntervalHistory.push(interval);
+        if (this.rrIntervalHistory.length > 20) { // Mantener un historial razonable para análisis de arritmias
+            this.rrIntervalHistory.shift();
+        }
+    }
+
     const instantBPM = 60000 / interval;
     if (instantBPM >= this.MIN_BPM && instantBPM <= this.MAX_BPM) {
       this.bpmHistory.push(instantBPM);
@@ -404,6 +410,7 @@ export class HeartBeatProcessor {
     this.movingAverageBuffer = [];
     this.peakConfirmationBuffer = [];
     this.bpmHistory = [];
+    this.rrIntervalHistory = [];
     this.values = [];
     this.smoothBPM = 0;
     this.lastPeakTime = null;
@@ -428,7 +435,7 @@ export class HeartBeatProcessor {
 
   getRRIntervals() {
     return {
-      intervals: [...this.bpmHistory],
+      intervals: [...this.rrIntervalHistory],
       lastPeakTime: this.lastPeakTime
     };
   }
