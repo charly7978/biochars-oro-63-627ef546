@@ -1,50 +1,47 @@
 
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import { waitForOpenCV } from './opencv/opencv-wrapper';
+import { waitForOpenCV, isOpenCVAvailable } from './opencv/opencv-wrapper';
 
 const App: React.FC = () => {
   const [opencvStatus, setOpencvStatus] = useState<string>('Cargando OpenCV...');
   const [isReady, setIsReady] = useState<boolean>(false);
-  const [loadingProgress, setLoadingProgress] = useState<number>(0);
+  const [loadingProgress, setLoadingProgress] = useState<number>(10);
 
   useEffect(() => {
-    let progressInterval: ReturnType<typeof setInterval>;
-    
-    // Simulate loading progress
-    progressInterval = setInterval(() => {
-      setLoadingProgress((prev) => {
-        const newProgress = prev + (1 + Math.floor((Math.random() * 5)));
-        return newProgress > 90 ? 90 : newProgress;
-      });
-    }, 300);
-
-    // Check if OpenCV is loaded
+    // Verificar OpenCV de forma real sin simulaciones
     const checkOpenCV = async () => {
       try {
         console.log('Intentando cargar OpenCV...');
+        setLoadingProgress(30);
         
-        // Longer timeout for initial load (10 seconds)
-        await waitForOpenCV(10000);
+        // Intentar cargar OpenCV con timeout de 15 segundos
+        await waitForOpenCV(15000);
         
-        setOpencvStatus('¡OpenCV está listo!');
-        setIsReady(true);
-        setLoadingProgress(100);
-        clearInterval(progressInterval);
-        
+        // Verificar directamente si OpenCV está realmente disponible
+        if (isOpenCVAvailable() && window.cv && window.cv_ready) {
+          setOpencvStatus('¡OpenCV está listo!');
+          setIsReady(true);
+          setLoadingProgress(100);
+          console.log('OpenCV cargado y verificado exitosamente.');
+        } else {
+          throw new Error('OpenCV no se cargó correctamente');
+        }
       } catch (error) {
-        setOpencvStatus(`Error al cargar OpenCV: ${error}`);
-        clearInterval(progressInterval);
+        console.error('Error al cargar OpenCV:', error);
+        setOpencvStatus(`Error al cargar OpenCV. Intente reiniciar la aplicación.`);
       }
     };
 
     checkOpenCV();
-
-    // Cleanup
-    return () => {
-      clearInterval(progressInterval);
-    };
   }, []);
+
+  // Función para reintentar la carga
+  const handleRetry = () => {
+    setOpencvStatus('Reintentando cargar OpenCV...');
+    setLoadingProgress(10);
+    window.location.reload();
+  };
 
   return (
     <div className="App">
@@ -65,7 +62,7 @@ const App: React.FC = () => {
         
         {!isReady && (
           <button 
-            onClick={() => window.location.reload()}
+            onClick={handleRetry}
             className="retry-button"
           >
             Reintentar
