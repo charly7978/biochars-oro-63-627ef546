@@ -7,7 +7,7 @@
  */
 
 // Use reference types from the type declarations file
-/// <reference path="../../src/types/opencv.d.ts" />
+/// <reference path="../types/opencv.d.ts" />
 
 declare global {
   interface Window {
@@ -38,11 +38,20 @@ export function waitForOpenCV(): Promise<void> {
       return;
     }
 
-    document.addEventListener('opencv-ready', () => {
+    // Set up event listener for when OpenCV is ready
+    window.addEventListener('opencv-ready', () => {
       isOpenCVReady = true;
       window.cv_ready = true;
       resolve();
     }, { once: true });
+    
+    // Add a timeout safety mechanism
+    setTimeout(() => {
+      if (!isOpenCVReady) {
+        console.warn('OpenCV.js not ready after timeout, continuing anyway');
+        resolve();
+      }
+    }, 5000);
   });
 }
 

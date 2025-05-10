@@ -33,6 +33,13 @@ console.log('OpenCV.js initialization script loaded.');
 fs.writeFileSync(OPENCV_INIT_PATH, initScriptContent);
 console.log(`OpenCV init script written to: ${OPENCV_INIT_PATH}`);
 
+// Check if OpenCV.js already exists
+if (fs.existsSync(OPENCV_PATH)) {
+  console.log(`OpenCV.js already exists at: ${OPENCV_PATH}`);
+  console.log('Setup complete!');
+  return;
+}
+
 // Download OpenCV.js
 console.log(`Downloading OpenCV.js from: ${OPENCV_URL}`);
 console.log(`This might take a few moments...`);
