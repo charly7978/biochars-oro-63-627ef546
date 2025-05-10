@@ -8,7 +8,6 @@ import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
-import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '@/core/analysis/HydrationEstimator';
@@ -45,7 +44,6 @@ export class VitalSignsProcessor {
   private hemoglobinEstimator: HemoglobinEstimator;
   
   // Validators and calculators
-  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   // Estado interno
@@ -71,7 +69,6 @@ export class VitalSignsProcessor {
     this.hemoglobinEstimator = new HemoglobinEstimator();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator();
     this.confidenceCalculator = new ConfidenceCalculator();
   }
   
@@ -248,14 +245,13 @@ export class VitalSignsProcessor {
     this.arrhythmiaProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.hemoglobinEstimator.reset();
     this.hydrationEstimator.reset();
-    this.signalValidator.resetFingerDetection();
+    this.hemoglobinEstimator.reset();
+    this.ppgBuffer = [];
+    this.processingCount = 0;
     
     const result = this.lastValidResult;
-    this.ppgBuffer = []; // Limpiar buffer principal
     this.lastValidResult = null;
-    this.processingCount = 0;
     
     return result; // Devolver último resultado válido antes del reset
   }
