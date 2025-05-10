@@ -387,18 +387,97 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   private detectROI(imageData: ImageData): ProcessedSignal['roi'] {
-    // Basic dynamic ROI: Use the central 30% of the image, similar to previous fixed logic.
-    // This sets the stage for more advanced ROI detection later.
-    const width = imageData.width * 0.30;
-    const height = imageData.height * 0.30;
-    const x = imageData.width * 0.35;
-    const y = imageData.height * 0.35;
+    const { width: imageWidth, height: imageHeight, data } = imageData;
+
+    const GRID_SIZE_X = 10; // Dividir en 10 columnas
+    const GRID_SIZE_Y = 10; // Dividir en 10 filas
+    const cellWidth = imageWidth / GRID_SIZE_X;
+    const cellHeight = imageHeight / GRID_SIZE_Y;
+
+    let bestCell = {
+      x: imageWidth * 0.35, // Fallback al centro
+      y: imageHeight * 0.35,
+      width: imageWidth * 0.30,
+      height: imageHeight * 0.30,
+      avgRedIntensity: 0,
+      skinPixelCount: 0
+    };
+
+    // Umbrales para detección de piel (heurística simple)
+    const MIN_RED_FOR_SKIN = 60;
+    const MAX_RED_FOR_SKIN = 250; // Evitar píxeles completamente saturados o muy brillantes
+
+    for (let gy = 0; gy < GRID_SIZE_Y; gy++) {
+      for (let gx = 0; gx < GRID_SIZE_X; gx++) {
+        const cellX = gx * cellWidth;
+        const cellY = gy * cellHeight;
+        let currentCellRedSum = 0;
+        let pixelCountInCell = 0;
+        let skinPixelsInCell = 0;
+
+        for (let y = Math.floor(cellY); y < Math.floor(cellY + cellHeight); y++) {
+          for (let x = Math.floor(cellX); x < Math.floor(cellX + cellWidth); x++) {
+            if (x < 0 || x >= imageWidth || y < 0 || y >= imageHeight) continue;
+
+            const i = (y * imageWidth + x) * 4;
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+
+            // Filtro de piel simple y plausibilidad de señal PPG
+            if (r > MIN_RED_FOR_SKIN && r < MAX_RED_FOR_SKIN && r > g && r > b) {
+              currentCellRedSum += r;
+              skinPixelsInCell++;
+            }
+            pixelCountInCell++;
+          }
+        }
+
+        if (pixelCountInCell > 0 && skinPixelsInCell > (pixelCountInCell * 0.25)) { // Al menos 25% de píxeles de "piel"
+          const avgRedInCell = skinPixelsInCell > 0 ? currentCellRedSum / skinPixelsInCell : 0;
+
+          // Priorizar celdas con más píxeles de piel y luego mayor intensidad de rojo
+          if (skinPixelsInCell > bestCell.skinPixelCount) {
+            bestCell = {
+              x: cellX,
+              y: cellY,
+              width: cellWidth,
+              height: cellHeight,
+              avgRedIntensity: avgRedInCell,
+              skinPixelCount: skinPixelsInCell
+            };
+          } else if (skinPixelsInCell === bestCell.skinPixelCount && avgRedInCell > bestCell.avgRedIntensity) {
+             bestCell = {
+              x: cellX,
+              y: cellY,
+              width: cellWidth,
+              height: cellHeight,
+              avgRedIntensity: avgRedInCell,
+              skinPixelCount: skinPixelsInCell
+            };
+          }
+        }
+      }
+    }
+    
+    // Si la mejor celda sigue teniendo una intensidad muy baja, o pocos pixeles de piel, 
+    // podría ser indicativo de no dedo. Por ahora, usamos la mejor encontrada o el fallback inicial.
+    // Una mejora futura podría ser devolver una confianza o null si no se encuentra un ROI claro.
+    if (bestCell.skinPixelCount < ( (imageWidth/GRID_SIZE_X) * (imageHeight/GRID_SIZE_Y) * 0.1) && bestCell.avgRedIntensity < MIN_RED_FOR_SKIN + 20 ) {
+        // Fallback si la "mejor" celda no es convincente, volvemos al centro más grande.
+         return {
+            x: imageWidth * 0.35,
+            y: imageHeight * 0.35,
+            width: imageWidth * 0.30,
+            height: imageHeight * 0.30,
+        };
+    }
 
     return {
-      x: x,
-      y: y,
-      width: width,
-      height: height
+      x: bestCell.x,
+      y: bestCell.y,
+      width: bestCell.width,
+      height: bestCell.height,
     };
   }
 
