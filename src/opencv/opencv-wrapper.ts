@@ -1,14 +1,12 @@
-
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Wrapper de OpenCV.js para procesamiento de señales PPG reales
  * 
- * Wrapper de OpenCV.js para procesamiento de señales PPG y latidos cardíacos
- * SIN usar Math, ni funciones similares
+ * Sin simulación alguna - mediciones estrictamente reales
  */
 
-// Use reference types from the type declarations file
 /// <reference path="../types/opencv.d.ts" />
 
+// Declarar el tipo Module de OpenCV para TypeScript
 declare global {
   interface Window {
     cv: typeof cv;
@@ -19,105 +17,99 @@ declare global {
   }
 }
 
-// Estado para verificar disponibilidad de OpenCV
+// Variables para controlar el estado de OpenCV
 let isOpenCVReady = false;
 let isWaitingForOpenCV = false;
 
 /**
- * Espera a que OpenCV.js esté listo para usar con mejor manejo de errores
+ * Espera hasta que OpenCV.js esté completamente cargado y listo
  */
-export function waitForOpenCV(timeoutMs: number = 10000): Promise<void> {
-  // Si ya está listo, resolvemos inmediatamente
-  if (window.cv_ready || isOpenCVReady) {
-    console.log('OpenCV ya está disponible');
+export function waitForOpenCV(timeoutMs: number = 20000): Promise<void> {
+  // Si OpenCV ya está cargado y listo
+  if (window.cv && typeof window.cv === 'object' && window.cv_ready) {
+    console.log('OpenCV ya está cargado y listo');
     isOpenCVReady = true;
     return Promise.resolve();
   }
 
-  // Evitamos múltiples esperas simultáneas
+  // Si ya hay un proceso de espera activo
   if (isWaitingForOpenCV) {
-    console.log('Ya hay una espera activa para OpenCV');
-    return new Promise((resolve) => {
-      const checkInterval = setInterval(() => {
+    console.log('Ya hay una espera activa para OpenCV, agregando a la cola');
+    return new Promise((resolve, reject) => {
+      let waited = 0;
+      const interval = setInterval(() => {
         if (isOpenCVReady) {
-          clearInterval(checkInterval);
+          clearInterval(interval);
           resolve();
+        } else if (waited >= timeoutMs) {
+          clearInterval(interval);
+          reject(new Error('Tiempo de espera agotado para OpenCV'));
         }
-      }, 200);
-
-      // Safety timeout
-      setTimeout(() => {
-        clearInterval(checkInterval);
-        console.warn('OpenCV espera concurrente expirada, continuando de todos modos');
-        resolve();
-      }, timeoutMs);
+        waited += 500;
+      }, 500);
     });
   }
 
+  // Iniciar nuevo proceso de espera
+  console.log(`Esperando a OpenCV con timeout de ${timeoutMs}ms...`);
   isWaitingForOpenCV = true;
-  console.log('Iniciando espera para OpenCV...');
 
-  return new Promise((resolve) => {
-    // Check first if it's already available
+  return new Promise((resolve, reject) => {
+    // Verificación inmediata por si se cargó entre verificaciones
     if (window.cv && typeof window.cv === 'object') {
-      console.log('OpenCV ya está cargado en window.cv');
       isOpenCVReady = true;
-      window.cv_ready = true;
       isWaitingForOpenCV = false;
+      console.log('OpenCV encontrado durante la verificación inicial');
       resolve();
       return;
     }
 
-    console.log('Configurando listener para evento opencv-ready');
-    
-    // Set up event listener for when OpenCV is ready
-    const opencvReadyListener = () => {
+    // Primero verificamos si el objeto global Module ya existe
+    if (!window.Module) {
+      window.Module = {
+        onRuntimeInitialized: function() {
+          console.log('OpenCV.js inicializado desde wrapper');
+          isOpenCVReady = true;
+          window.cv_ready = true;
+          window.dispatchEvent(new CustomEvent('opencv-ready'));
+        }
+      };
+      console.log('Module configurado desde el wrapper');
+    }
+
+    // Escuchar evento opencv-ready
+    const readyHandler = () => {
       console.log('Evento opencv-ready recibido');
       isOpenCVReady = true;
-      window.cv_ready = true;
       isWaitingForOpenCV = false;
       resolve();
     };
-    
-    window.addEventListener('opencv-ready', opencvReadyListener, { once: true });
-    
-    // Add a timeout safety mechanism
-    setTimeout(() => {
-      if (!isOpenCVReady) {
-        console.warn('Tiempo de espera para OpenCV agotado después de', timeoutMs, 'ms');
-        
-        // Verificar una última vez antes de resolver
-        if (window.cv && typeof window.cv === 'object') {
-          console.log('OpenCV encontrado en tiempo de espera');
-          isOpenCVReady = true;
-          window.cv_ready = true;
-        } else {
-          console.error('OpenCV no disponible después del tiempo de espera. La aplicación podría no funcionar correctamente.');
-        }
-        
-        isWaitingForOpenCV = false;
-        window.removeEventListener('opencv-ready', opencvReadyListener);
-        resolve(); // Resolvemos de todos modos para no bloquear la aplicación
+
+    window.addEventListener('opencv-ready', readyHandler);
+
+    // Timeout como mecanismo de seguridad
+    const timeoutId = setTimeout(() => {
+      window.removeEventListener('opencv-ready', readyHandler);
+      isWaitingForOpenCV = false;
+      
+      // Intento final de verificación
+      if (window.cv && typeof window.cv === 'object') {
+        console.log('OpenCV encontrado en timeout final');
+        isOpenCVReady = true;
+        resolve();
+      } else {
+        console.error('OpenCV no disponible después del tiempo de espera');
+        reject(new Error('Timeout esperando OpenCV'));
       }
     }, timeoutMs);
-    
-    // Intentar inicializar manualmente si es necesario
-    if (window.Module && !window.Module.onRuntimeInitialized) {
-      window.Module.onRuntimeInitialized = () => {
-        console.log('OpenCV.js inicializado manualmente');
-        isOpenCVReady = true;
-        window.cv_ready = true;
-        window.dispatchEvent(new CustomEvent('opencv-ready'));
-      };
-    }
   });
 }
 
 /**
- * Verifica si OpenCV está listo
+ * Verifica si OpenCV está realmente disponible para usar
  */
 export function isOpenCVAvailable(): boolean {
-  return isOpenCVReady || window.cv_ready || false;
+  return Boolean(window.cv && typeof window.cv === 'object' && window.cv_ready);
 }
 
 /**
