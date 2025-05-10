@@ -8,7 +8,7 @@ import { execSync } from "child_process";
 // Run OpenCV setup during build
 try {
   // Use a path relative to the project root
-  execSync('node src/scripts/run-setup-opencv.js', { stdio: 'inherit' });
+  execSync('node scripts/run-setup-opencv.js', { stdio: 'inherit' });
 } catch (error) {
   console.warn("Warning: OpenCV setup script failed. You may need to run it manually.");
 }
