@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "node scripts/setup-opencv.js"
+    "postinstall": "node scripts/setup-opencv.cjs"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
