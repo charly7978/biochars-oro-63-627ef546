@@ -30,8 +30,17 @@ export function waitForOpenCV(): Promise<void> {
       return;
     }
 
+    // Check first if it's already available
+    if (window.cv && typeof window.cv === 'object') {
+      isOpenCVReady = true;
+      window.cv_ready = true;
+      resolve();
+      return;
+    }
+
     document.addEventListener('opencv-ready', () => {
       isOpenCVReady = true;
+      window.cv_ready = true;
       resolve();
     }, { once: true });
   });
