@@ -13,6 +13,9 @@ declare global {
   interface Window {
     cv: typeof cv;
     cv_ready: boolean;
+    Module: {
+      onRuntimeInitialized?: () => void;
+    };
   }
 }
 
