@@ -1,173 +1,150 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../../utils/non-math-utils';
-
 /**
- * Calcula componente AC (amplitud pico a pico) de una señal real
+ * Calcula el componente AC (amplitud pico a pico) de una señal real
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
-  
-  // Sin usar Math.min/Math.max con algoritmo de paso único
-  let max = values[0];
-  let min = values[0];
-  
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > max) max = values[i];
-    if (values[i] < min) min = values[i];
-  }
-  
-  return max - min;
+  return Math.max(...values) - Math.min(...values);
 }
 
 /**
- * Calcula componente DC (valor medio) de una señal real
+ * Calcula el componente DC (valor promedio) de una señal real
  */
 export function calculateDC(values: number[]): number {
   if (values.length === 0) return 0;
-  let sum = 0;
-  for (let i = 0; i < values.length; i++) {
-    sum += values[i];
-  }
-  return sum / values.length;
+  return values.reduce((sum, val) => sum + val, 0) / values.length;
 }
 
 /**
- * Calcula desviación estándar real sin simulaciones
+ * Calcula la desviación estándar de un conjunto de valores reales
  */
 export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
   if (n === 0) return 0;
-  
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    sum += values[i];
-  }
-  const mean = sum / n;
-  
-  let sumSqDiff = 0;
-  for (let i = 0; i < n; i++) {
-    const diff = values[i] - mean;
-    sumSqDiff += diff * diff;
-  }
-  
-  // Raíz cuadrada con aproximación Newton sin Math.sqrt
-  let result = sumSqDiff / n;
-  if (result === 0) return 0;
-  
-  // Método de Newton para raíz cuadrada - más iteraciones para mayor precisión
-  let x = result;
-  for (let i = 0; i < 12; i++) {
-    x = 0.5 * (x + result / x);
-  }
-  
-  return x;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
+  return Math.sqrt(avgSqDiff);
 }
 
 /**
- * Calcula EMA (Exponential Moving Average) real con adaptación dinámica
+ * Encuentra picos y valles en una señal real
  */
-export function calculateEMA(prevEMA: number, currentValue: number, alpha: number): number {
-  // EMA básico - siempre directo y preciso, sin generar datos falsos
-  return alpha * currentValue + (1 - alpha) * prevEMA;
-}
+export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; valleyIndices: number[] } {
+  const peakIndices: number[] = [];
+  const valleyIndices: number[] = [];
 
-/**
- * Normaliza un valor entre un rango determinado
- * Usado para normalizar datos reales, nunca para simulación
- */
-export function normalizeValue(value: number, min: number, max: number): number {
-  if (max === min) return 0;
-  return (value - min) / (max - min);
-}
-
-/**
- * Calcula derivada de señal para detección de inflexiones en señal real
- */
-export function calculateDerivative(values: number[]): number[] {
-  if (values.length < 2) return [];
-  
-  const derivatives = [];
-  for (let i = 1; i < values.length; i++) {
-    derivatives.push(values[i] - values[i-1]);
+  // Algoritmo para detección de picos y valles en datos reales
+  for (let i = 1; i < values.length - 1; i++) {
+    const v = values[i];
+    // Detección de picos
+    if (
+      v >= values[i - 1] * 0.95 &&
+      v >= values[i + 1] * 0.95
+    ) {
+      const localMin = Math.min(values[i - 1], values[i + 1]);
+      if (v - localMin > 0.02) {
+        peakIndices.push(i);
+      }
+    }
+    // Detección de valles
+    if (
+      v <= values[i - 1] * 1.05 &&
+      v <= values[i + 1] * 1.05
+    ) {
+      const localMax = Math.max(values[i - 1], values[i + 1]);
+      if (localMax - v > 0.02) {
+        valleyIndices.push(i);
+      }
+    }
   }
-  
-  return derivatives;
+  return { peakIndices, valleyIndices };
 }
 
 /**
- * Detecta picos en señal PPG real con alta precisión
- * Método basado en análisis de primera y segunda derivada
+ * Calcula la amplitud entre picos y valles de señales reales
  */
-export function detectPeaks(values: number[], lookbackWindow: number = 3): number[] {
-  if (values.length < lookbackWindow * 2 + 1) return [];
+export function calculateAmplitude(
+  values: number[],
+  peakIndices: number[],
+  valleyIndices: number[]
+): number {
+  if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
+
+  const amps: number[] = [];
   
-  const peaks = [];
-  
-  // Calcular primera derivada sin Math.abs
-  const derivatives = calculateDerivative(values);
-  
-  // Analizar cambios de pendiente para detectar picos reales
-  for (let i = lookbackWindow; i < values.length - lookbackWindow; i++) {
-    // Un punto es pico si:
-    // 1. Es mayor que todos los puntos en ventana anterior
-    // 2. Es mayor que todos los puntos en ventana posterior
-    // 3. La derivada cambia de positiva a negativa
+  // Relacionar picos y valles en datos reales
+  for (const peakIdx of peakIndices) {
+    let closestValleyIdx = -1;
+    let minDistance = Number.MAX_VALUE;
     
-    let isPeak = true;
-    
-    // Comprobar ventana anterior
-    for (let j = i - lookbackWindow; j < i; j++) {
-      if (values[j] >= values[i]) {
-        isPeak = false;
-        break;
+    for (const valleyIdx of valleyIndices) {
+      const distance = Math.abs(peakIdx - valleyIdx);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestValleyIdx = valleyIdx;
       }
     }
     
-    if (!isPeak) continue;
-    
-    // Comprobar ventana posterior
-    for (let j = i + 1; j <= i + lookbackWindow; j++) {
-      if (values[j] >= values[i]) {
-        isPeak = false;
-        break;
-      }
-    }
-    
-    if (isPeak) {
-      // Comprobar cambio de pendiente
-      const derivIndex = i - 1;
-      if (derivIndex > 0 && derivIndex < derivatives.length - 1) {
-        if (derivatives[derivIndex] > 0 && derivatives[derivIndex + 1] < 0) {
-          peaks.push(i);
-        }
+    if (closestValleyIdx !== -1 && minDistance < 10) {
+      const amp = values[peakIdx] - values[closestValleyIdx];
+      if (amp > 0) {
+        amps.push(amp);
       }
     }
   }
   
-  return peaks;
+  if (amps.length === 0) return 0;
+
+  // Calcular la media con datos reales
+  return amps.reduce((a, b) => a + b, 0) / amps.length;
 }
 
 /**
- * Calcula frecuencia cardíaca a partir de intervalos RR reales
+ * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
  */
-export function calculateHeartRateFromRRIntervals(rrIntervals: number[]): number {
-  if (rrIntervals.length < 2) return 0;
-  
-  // Filtrar intervalos fisiológicamente imposibles
-  const validIntervals = rrIntervals.filter(rr => rr >= 300 && rr <= 2000);
-  
-  if (validIntervals.length < 2) return 0;
-  
-  // Calcular media sin reducers
-  let sum = 0;
-  for (let i = 0; i < validIntervals.length; i++) {
-    sum += validIntervals[i];
+export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
+  filteredValue: number;
+  updatedBuffer: number[];
+} {
+  const updatedBuffer = [...buffer, value];
+  if (updatedBuffer.length > windowSize) {
+    updatedBuffer.shift();
   }
-  const avgInterval = sum / validIntervals.length;
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
+  return { filteredValue, updatedBuffer };
+}
+
+/**
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
+ */
+export function amplifySignal(value: number, recentValues: number[]): number {
+  if (recentValues.length === 0) return value;
   
-  // Convertir a BPM - solo con datos reales
-  return avgInterval > 0 ? 60000 / avgInterval : 0;
+  // Calcular la amplitud reciente de datos reales
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
+  const recentRange = recentMax - recentMin;
+  
+  // Factor de amplificación para señales reales
+  let amplificationFactor = 1.0;
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5;
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8;
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4;
+  }
+  
+  // Amplificar usando solo datos reales
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
+  const centeredValue = value - mean;
+  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
+  
+  return amplifiedValue;
 }

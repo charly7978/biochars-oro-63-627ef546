@@ -1,16 +1,30 @@
+
 /**
  * Central Signal Processing Module
  * Handles core signal processing functionality with separate channels for different vital signs
  */
-import { SignalChannel } from './SignalChannel';
+import { SignalChannel, FeedbackData } from './SignalChannel';
 import { SignalFilter } from './filters/SignalFilter';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
 
 export interface SignalProcessingConfig {
   bufferSize: number;
   sampleRate: number;
   channels: string[];
 }
+
+// Standard vital sign channel names
+export const VITAL_SIGN_CHANNELS = {
+  HEARTBEAT: 'heartbeat',
+  SPO2: 'spo2',
+  BLOOD_PRESSURE: 'bloodPressure',
+  ARRHYTHMIA: 'arrhythmia',
+  GLUCOSE: 'glucose',
+  LIPIDS: 'lipids',
+  HEMOGLOBIN: 'hemoglobin',
+  HYDRATION: 'hydration',
+  RAW: 'raw',
+  FILTERED: 'filtered'
+};
 
 export class SignalCoreProcessor {
   private channels: Map<string, SignalChannel> = new Map();
@@ -19,25 +33,29 @@ export class SignalCoreProcessor {
   private readonly bufferSize: number;
   private readonly filter: SignalFilter;
   private lastProcessTime: number = 0;
+  private config: SignalProcessingConfig;
   
   constructor(config: SignalProcessingConfig) {
+    this.config = config;
     this.bufferSize = config.bufferSize || 300;
     this.filter = new SignalFilter();
     
-    // Initialize channels
+    // Initialize standard channels
+    Object.values(VITAL_SIGN_CHANNELS).forEach(channelName => {
+      this.createChannel(channelName);
+    });
+    
+    // Initialize additional channels if provided
     if (config.channels) {
       config.channels.forEach(channelName => {
-        this.createChannel(channelName);
+        if (!this.channels.has(channelName)) {
+          this.createChannel(channelName);
+        }
       });
     }
     
-    // Create default channels if none provided
-    if (!config.channels || config.channels.length === 0) {
-      this.createChannel('heartbeat');
-      this.createChannel('spo2');
-      this.createChannel('arrhythmia');
-      this.createChannel('bloodPressure');
-    }
+    // Set up inter-channel subscriptions
+    this.setupChannelSubscriptions();
     
     console.log("SignalCoreProcessor: Initialized with channels:", 
       Array.from(this.channels.keys()).join(', '));
@@ -57,6 +75,57 @@ export class SignalCoreProcessor {
   }
   
   /**
+   * Setup inter-channel subscriptions for data flow
+   */
+  private setupChannelSubscriptions(): void {
+    // Set up raw to filtered subscription
+    const rawChannel = this.getChannel(VITAL_SIGN_CHANNELS.RAW);
+    const filteredChannel = this.getChannel(VITAL_SIGN_CHANNELS.FILTERED);
+    
+    if (rawChannel && filteredChannel) {
+      rawChannel.subscribe((value, metadata) => {
+        const filtered = this.applyFilters(value);
+        filteredChannel.addValue(filtered, {
+          ...metadata,
+          rawValue: value
+        });
+      });
+    }
+    
+    // Filtered channel feeds into all vital sign channels
+    if (filteredChannel) {
+      filteredChannel.subscribe((value, metadata) => {
+        // Feed into heartbeat channel
+        const heartbeatChannel = this.getChannel(VITAL_SIGN_CHANNELS.HEARTBEAT);
+        if (heartbeatChannel) {
+          heartbeatChannel.addValue(value, metadata);
+        }
+        
+        // Feed into spo2 channel
+        const spo2Channel = this.getChannel(VITAL_SIGN_CHANNELS.SPO2);
+        if (spo2Channel) {
+          spo2Channel.addValue(value, metadata);
+        }
+        
+        // Feed into other vital sign channels
+        [
+          VITAL_SIGN_CHANNELS.BLOOD_PRESSURE,
+          VITAL_SIGN_CHANNELS.ARRHYTHMIA,
+          VITAL_SIGN_CHANNELS.GLUCOSE,
+          VITAL_SIGN_CHANNELS.LIPIDS,
+          VITAL_SIGN_CHANNELS.HEMOGLOBIN,
+          VITAL_SIGN_CHANNELS.HYDRATION
+        ].forEach(channelName => {
+          const channel = this.getChannel(channelName);
+          if (channel) {
+            channel.addValue(value, metadata);
+          }
+        });
+      });
+    }
+  }
+  
+  /**
    * Process a raw PPG signal
    * Core method that applies filtering and distributes to channels
    */
@@ -65,16 +134,26 @@ export class SignalCoreProcessor {
     const timeDelta = this.lastProcessTime ? currentTime - this.lastProcessTime : 0;
     this.lastProcessTime = currentTime;
     
-    // Add to raw buffer
+    // Add to raw buffer and channel
     this.rawBuffer.push(value);
     if (this.rawBuffer.length > this.bufferSize) {
       this.rawBuffer.shift();
     }
     
-    // Apply common filtering - CORREGIDO: se pasa un solo argumento
+    // Add to raw channel
+    const rawChannel = this.getChannel(VITAL_SIGN_CHANNELS.RAW);
+    if (rawChannel) {
+      rawChannel.addValue(value, {
+        quality: 100, // Raw signal always has perfect "quality" since it's what we measure
+        timestamp: currentTime,
+        timeDelta
+      });
+    }
+    
+    // Apply common filtering for backward compatibility
     const filtered = this.applyFilters(value);
     
-    // Add to filtered buffer
+    // Add to filtered buffer for backward compatibility
     this.filteredBuffer.push(filtered);
     if (this.filteredBuffer.length > this.bufferSize) {
       this.filteredBuffer.shift();
@@ -83,18 +162,8 @@ export class SignalCoreProcessor {
     // Calculate signal quality
     const quality = this.calculateSignalQuality(filtered);
     
-    // Update all channels
-    this.channels.forEach(channel => {
-      channel.addValue(filtered, {
-        quality,
-        timestamp: currentTime,
-        timeDelta,
-        rawValue: value
-      });
-    });
-    
     // Specialized processing for the heartbeat channel
-    const heartbeatChannel = this.channels.get('heartbeat');
+    const heartbeatChannel = this.channels.get(VITAL_SIGN_CHANNELS.HEARTBEAT);
     if (heartbeatChannel) {
       // Perform peak detection on the heartbeat channel
       this.processHeartbeatChannel(heartbeatChannel, filtered, currentTime);
@@ -162,14 +231,20 @@ export class SignalCoreProcessor {
           // Store heart rate
           if (heartRate >= 40 && heartRate <= 200) {
             channel.setMetadata('heartRate', heartRate);
-          }
-          
-          // Use centralized arrhythmia detection
-          if (rrIntervals.length >= 4) {
-            // Detect arrhythmia with centralized service
-            const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(rrIntervals);
-            channel.setMetadata('isArrhythmia', arrhythmiaResult.isArrhythmia);
-            channel.setMetadata('arrhythmiaCategory', arrhythmiaResult.category);
+            
+            // Provide feedback to the filtered channel for optimization
+            const filteredChannel = this.getChannel(VITAL_SIGN_CHANNELS.FILTERED);
+            if (filteredChannel) {
+              filteredChannel.provideFeedback({
+                source: VITAL_SIGN_CHANNELS.HEARTBEAT,
+                timestamp: currentTime,
+                calibrationFactor: 1.0, // Default, no adjustment
+                confidenceScore: 0.8,
+                qualityMetrics: {
+                  heartRate
+                }
+              });
+            }
           }
         }
       }
@@ -180,7 +255,7 @@ export class SignalCoreProcessor {
    * Apply multiple filtering techniques to the signal
    */
   private applyFilters(value: number): number {
-    return this.filter.applyFilters(value);
+    return this.filter.applyFilters(value, this.rawBuffer);
   }
   
   /**
@@ -191,33 +266,35 @@ export class SignalCoreProcessor {
     
     // Basic quality calculation
     const recentValues = this.filteredBuffer.slice(-10);
-    
-    // Usar nuestras funciones personalizadas en lugar de Math.min/max
-    let min = recentValues[0];
-    let max = recentValues[0];
-    
-    for (let i = 1; i < recentValues.length; i++) {
-      if (recentValues[i] < min) min = recentValues[i];
-      if (recentValues[i] > max) max = recentValues[i];
-    }
-    
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
     const range = max - min;
     
     // Calculate noise level
     let noiseLevel = 0;
     for (let i = 1; i < recentValues.length; i++) {
-      noiseLevel += recentValues[i] > recentValues[i-1] ? 
-        recentValues[i] - recentValues[i-1] : 
-        recentValues[i-1] - recentValues[i]; // abs sin Math.abs
+      noiseLevel += Math.abs(recentValues[i] - recentValues[i-1]);
     }
     noiseLevel /= (recentValues.length - 1);
     
     // Signal-to-noise ratio based quality
     const signalToNoise = range / (noiseLevel || 0.001);
     
-    // Convert to 0-100 scale, sin usar Math.min/max
-    const scaledValue = signalToNoise * 20;
-    return scaledValue > 100 ? 100 : (scaledValue < 0 ? 0 : scaledValue);
+    // Convert to 0-100 scale
+    return Math.min(100, Math.max(0, signalToNoise * 20));
+  }
+  
+  /**
+   * Provide feedback from a vital sign processor to optimize the signal chain
+   */
+  public provideFeedback(channelName: string, feedback: FeedbackData): void {
+    const channel = this.getChannel(channelName);
+    if (channel) {
+      channel.provideFeedback(feedback);
+      console.log(`Feedback provided to channel "${channelName}"`, feedback);
+    } else {
+      console.warn(`Attempted to provide feedback to non-existent channel "${channelName}"`);
+    }
   }
   
   /**
@@ -225,6 +302,13 @@ export class SignalCoreProcessor {
    */
   public getChannel(channelName: string): SignalChannel | undefined {
     return this.channels.get(channelName);
+  }
+  
+  /**
+   * Get all channels
+   */
+  public getChannels(): Map<string, SignalChannel> {
+    return new Map(this.channels);
   }
   
   /**

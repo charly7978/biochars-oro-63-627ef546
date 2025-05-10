@@ -1,13 +1,22 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Utilidades para cálculo y normalización de índices de perfusión
+ * Solo procesa datos reales, sin simulación
  */
 
-/**
- * Calculate perfusion index based on real AC and DC components
- * No simulation is used
- */
-export function calculatePerfusionIndex(ac: number, dc: number): number {
-  if (dc === 0) return 0;
-  return ac / dc;
-}
+export const calculatePerfusionIndex = (values: number[]): number => {
+  if (values.length < 2) return 0;
+  
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const ac = max - min;
+  const dc = (max + min) / 2;
+  
+  return dc !== 0 ? (ac / dc) * 100 : 0;
+};
+
+export const normalizePerfusion = (perfusionIndex: number): number => {
+  // Normalize to 0-1 range, capping at reasonable physiological limits
+  const maxNormalPI = 10; // Maximum normal perfusion index
+  return Math.min(1, Math.max(0, perfusionIndex / maxNormalPI));
+};
