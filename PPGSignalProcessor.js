@@ -1,4 +1,3 @@
-
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
 import { SignalAmplifier } from '../modules/SignalAmplifier';
 
@@ -127,13 +126,19 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   processFrame(imageData: ImageData): void {
-    if (!this.isProcessing) {
-      console.log("PPGSignalProcessor: No está procesando");
-      return;
-    }
+    if (!this.isProcessing) return;
 
     try {
-      const redValue = this.extractRedChannel(imageData);
+      // Detect ROI first
+      const roi = this.detectROI(imageData); // Pass imageData
+
+      // Extract red channel using the detected ROI
+      const redValue = this.extractRedChannel(imageData, roi);
+
+      if (isNaN(redValue) || redValue === 0) {
+        console.log("PPGSignalProcessor: Valor de rojo inválido o cero");
+        return;
+      }
       
       // Establish baseline for better false positive rejection
       if (!this.hasEstablishedBaseline) {
@@ -232,7 +237,7 @@ export class PPGSignalProcessor implements SignalProcessor {
         filteredValue: amplifiedValue,
         quality: combinedQuality,
         fingerDetected: finalFingerDetected,
-        roi: this.detectROI(redValue),
+        roi: roi, // Use the calculated ROI
         perfusionIndex
       };
 
@@ -275,23 +280,29 @@ export class PPGSignalProcessor implements SignalProcessor {
     return dc > 0 ? ac / dc : 0;
   }
 
-  private extractRedChannel(imageData: ImageData): number {
+  private extractRedChannel(imageData: ImageData, roi: ProcessedSignal['roi']): number {
     const data = imageData.data;
     let redSum = 0;
     let count = 0;
-    
-    // Only analyze the center of the image (30% central)
-    const startX = Math.floor(imageData.width * 0.35);
-    const endX = Math.floor(imageData.width * 0.65);
-    const startY = Math.floor(imageData.height * 0.35);
-    const endY = Math.floor(imageData.height * 0.65);
-    
+
+    // Use ROI to define the area for analysis
+    // Clamp ROI coordinates and dimensions to image boundaries
+    const startX = Math.max(0, Math.floor(roi.x));
+    const endX = Math.min(imageData.width, Math.floor(roi.x + roi.width));
+    const startY = Math.max(0, Math.floor(roi.y));
+    const endY = Math.min(imageData.height, Math.floor(roi.y + roi.height));
+
     for (let y = startY; y < endY; y++) {
       for (let x = startX; x < endX; x++) {
         const i = (y * imageData.width + x) * 4;
         redSum += data[i];  // Red channel
         count++;
       }
+    }
+
+    if (count === 0) {
+      // Avoid division by zero if ROI is outside image or has zero area after clamping
+      return 0; 
     }
     
     const avgRed = redSum / count;
@@ -375,12 +386,19 @@ export class PPGSignalProcessor implements SignalProcessor {
     return { isFingerDetected, quality };
   }
 
-  private detectROI(redValue: number): ProcessedSignal['roi'] {
+  private detectROI(imageData: ImageData): ProcessedSignal['roi'] {
+    // Basic dynamic ROI: Use the central 30% of the image, similar to previous fixed logic.
+    // This sets the stage for more advanced ROI detection later.
+    const width = imageData.width * 0.30;
+    const height = imageData.height * 0.30;
+    const x = imageData.width * 0.35;
+    const y = imageData.height * 0.35;
+
     return {
-      x: 0,
-      y: 0,
-      width: 100,
-      height: 100
+      x: x,
+      y: y,
+      width: width,
+      height: height
     };
   }
 
