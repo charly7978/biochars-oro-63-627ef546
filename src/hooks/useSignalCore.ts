@@ -1,10 +1,11 @@
-
 /**
  * Central Signal Processing Hook - provides access to the core signal processor
- * Fase 3 y 4: Solo datos reales, sin manipulaciones
+ * with dedicated channels for each vital sign and bidirectional feedback
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createSignalProcessor, SignalChannel } from '../core/signal-processing';
+import { VITAL_SIGN_CHANNELS } from '../core/signal-processing/SignalCoreProcessor';
+import { VitalSignIntegrator } from '../core/integration/VitalSignIntegrator';
 
 export interface SignalCoreResult {
   channels: Map<string, SignalChannel>;
@@ -19,8 +20,16 @@ export interface SignalCoreResult {
 }
 
 export function useSignalCore(options = {}) {
-  // Create processor instance
-  const processorRef = useRef(createSignalProcessor());
+  // Create processor instance with dedicated channels
+  const processorRef = useRef(createSignalProcessor({
+    bufferSize: 300,
+    sampleRate: 30,
+    channels: Object.values(VITAL_SIGN_CHANNELS)
+  }));
+  
+  // Initialize the VitalSignIntegrator
+  const integratorRef = useRef<VitalSignIntegrator | null>(null);
+  
   const [isProcessing, setIsProcessing] = useState(false);
   const processingStatsRef = useRef({
     processedFrames: 0,
@@ -41,6 +50,18 @@ export function useSignalCore(options = {}) {
       fps: 0
     }
   });
+
+  // Initialize the VitalSignIntegrator
+  useEffect(() => {
+    integratorRef.current = VitalSignIntegrator.getInstance(processorRef.current);
+    
+    return () => {
+      // Clean up when unmounting
+      if (integratorRef.current) {
+        integratorRef.current.dispose();
+      }
+    };
+  }, []);
 
   /**
    * Start signal processing
@@ -66,7 +87,7 @@ export function useSignalCore(options = {}) {
   }, []);
 
   /**
-   * Process a raw PPG value - Fase 3: Implementar paso directo
+   * Process a raw PPG value
    */
   const processValue = useCallback((value: number) => {
     if (!isProcessing) return null;
@@ -80,17 +101,28 @@ export function useSignalCore(options = {}) {
       if (now - processingStatsRef.current.lastUpdateTime > 1000) {
         const elapsed = now - processingStatsRef.current.lastUpdateTime;
         const framesDelta = processingStatsRef.current.processedFrames;
-        // Calcular FPS sin funciones Math
         processingStatsRef.current.fps = (framesDelta / elapsed) * 1000;
         processingStatsRef.current.lastUpdateTime = now;
         processingStatsRef.current.processedFrames = 0;
       }
       
-      // Process the value directly
-      const channels = processorRef.current.processSignal(value);
+      // First add to RAW channel directly
+      const rawChannel = processorRef.current.getChannel(VITAL_SIGN_CHANNELS.RAW);
+      if (rawChannel) {
+        rawChannel.addValue(value, {
+          quality: 100,
+          timestamp: now
+        });
+      } else {
+        // Process through traditional method if RAW channel doesn't exist
+        processorRef.current.processSignal(value);
+      }
+      
+      // Get all channels using the public method
+      const channels = processorRef.current.getChannels();
       
       // Get heartbeat channel for quality
-      const heartbeatChannel = channels.get('heartbeat');
+      const heartbeatChannel = channels.get(VITAL_SIGN_CHANNELS.HEARTBEAT);
       const quality = heartbeatChannel?.getLastMetadata()?.quality || 0;
       
       // Update state (limit updates to reduce render overhead)
@@ -120,7 +152,7 @@ export function useSignalCore(options = {}) {
   }, [isProcessing]);
 
   /**
-   * Process a frame from camera - Fase 3: Pasar datos directos sin manipulación
+   * Process a frame from camera
    */
   const processFrame = useCallback((imageData: ImageData) => {
     if (!isProcessing) return null;
@@ -132,16 +164,14 @@ export function useSignalCore(options = {}) {
       let count = 0;
       
       // Sample center region for better results
-      const width = imageData.width;
-      const height = imageData.height;
-      const startX = ~~(width * 0.3);
-      const endX = ~~(width * 0.7);
-      const startY = ~~(height * 0.3);
-      const endY = ~~(height * 0.7);
+      const startX = Math.floor(imageData.width * 0.3);
+      const endX = Math.floor(imageData.width * 0.7);
+      const startY = Math.floor(imageData.height * 0.3);
+      const endY = Math.floor(imageData.height * 0.7);
       
       for (let y = startY; y < endY; y += 2) { // Skip pixels for performance
         for (let x = startX; x < endX; x += 2) {
-          const i = (y * width + x) * 4;
+          const i = (y * imageData.width + x) * 4;
           redSum += data[i]; // Red channel
           count++;
         }
@@ -149,13 +179,32 @@ export function useSignalCore(options = {}) {
       
       const redAvg = redSum / count;
       
-      // Process the value directly
+      // Process the value
       return processValue(redAvg);
     } catch (error) {
       console.error("SignalCore: Error processing frame", error);
       return null;
     }
   }, [isProcessing, processValue]);
+
+  /**
+   * Register processor metrics for bidirectional feedback
+   */
+  const registerProcessorMetrics = useCallback((processorName: string, metrics: any) => {
+    if (integratorRef.current) {
+      integratorRef.current.registerProcessorMetrics(processorName, metrics);
+    }
+  }, []);
+
+  /**
+   * Subscribe to a vital sign channel
+   */
+  const subscribeToVitalSign = useCallback((vitalSign: string, callback: (value: number, metadata: any) => void) => {
+    if (integratorRef.current) {
+      return integratorRef.current.subscribeToVitalSign(vitalSign, callback);
+    }
+    return () => {}; // No-op unsubscribe
+  }, []);
 
   /**
    * Reset all processing state
@@ -189,6 +238,20 @@ export function useSignalCore(options = {}) {
     return processorRef.current.getChannel(channelName);
   }, []);
 
+  /**
+   * Get data from a vital sign channel
+   */
+  const getVitalSignData = useCallback((vitalSign: string) => {
+    if (integratorRef.current) {
+      return integratorRef.current.getVitalSignData(vitalSign);
+    }
+    return {
+      values: [],
+      latestValue: null,
+      metadata: {}
+    };
+  }, []);
+
   return {
     signalState,
     startProcessing,
@@ -197,6 +260,10 @@ export function useSignalCore(options = {}) {
     processFrame,
     reset,
     getChannel,
-    isProcessing
+    isProcessing,
+    registerProcessorMetrics,
+    subscribeToVitalSign,
+    getVitalSignData,
+    VITAL_SIGN_CHANNELS
   };
 }

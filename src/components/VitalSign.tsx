@@ -1,6 +1,7 @@
 
-import React, { ReactNode } from 'react';
+import React, { ReactNode, useEffect, useRef } from 'react';
 import { cn } from "@/lib/utils";
+import { animations } from '@/theme/animations';
 
 interface VitalSignProps {
   label: string;
@@ -19,6 +20,23 @@ const VitalSign: React.FC<VitalSignProps> = ({
   compact = false,
   icon
 }) => {
+  const prevValueRef = useRef<string | number>('--');
+  const valueRef = useRef<HTMLDivElement>(null);
+  
+  useEffect(() => {
+    // Detector de cambios para animación
+    if (value !== prevValueRef.current && valueRef.current && highlighted) {
+      // Aplicar clase de animación y remover después
+      valueRef.current.classList.add('value-updated');
+      
+      setTimeout(() => {
+        valueRef.current?.classList.remove('value-updated');
+      }, 1500);
+    }
+    
+    prevValueRef.current = value;
+  }, [value, highlighted]);
+
   const getValueTextSize = () => {
     if (compact) return "text-xl";
     
@@ -29,74 +47,55 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // MODIFICADO: Mejorada la detección de valores para mostrar
-  // Consideramos valores reales > 0 o cadenas que no son indicadores de falta de datos
-  const hasValue = value !== undefined && value !== null && 
-                  (typeof value === 'number' ? value > 0 : 
-                   (value !== '--' && value !== '--/--' && value !== ''));
-  
-  // Format function to handle all types of values properly
-  const formattedValue = () => {
-    // Handle numeric values
-    if (typeof value === 'number') {
-      if (value <= 0) return "--"; // Valor no medido o inválido
-      
-      if (label === "HIDRATACIÓN" || label === "SPO2") {
-        // These are percentages, show as integers
-        return Math.round(value);
-      } else if (label === "HEMOGLOBINA") {
-        // For hemoglobin, show one decimal place
-        return value.toFixed(1);
-      }
-      return Math.round(value);
-    }
-    
-    // Handle string values
-    if (typeof value === 'string' && value !== undefined) {
-      return value;
-    }
-    
-    // Default placeholder
-    return "--";
-  };
+  // Determinar si es un valor real o un placeholder
+  const isRealValue = value !== '--' && value !== 0 && value !== '0' && value !== '--/--';
 
   return (
     <div 
       className={cn(
-        "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300",
-        highlighted 
-          ? "bg-gray-900/60 border border-gray-700/40" 
-          : "bg-gray-900/40",
+        "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300 relative",
+        highlighted && isRealValue
+          ? "bg-gray-900/80 border border-gray-800/50 shadow-lg" 
+          : "bg-gray-100/20",
         compact ? "h-auto" : "h-full"
       )}
-      style={{
-        transition: "all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
-        transform: highlighted ? "translateY(0)" : "translateY(0)",
-        boxShadow: highlighted ? "0 0 15px rgba(0, 0, 0, 0.3)" : "none"
-      }}
     >
-      <div className="text-xs sm:text-sm font-medium text-gray-400 uppercase tracking-wide mb-1">
+      {/* Badge para valores reales */}
+      {highlighted && isRealValue && (
+        <div className="absolute top-1 right-1 h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+      )}
+      
+      <div className="text-xs sm:text-sm font-medium text-gray-700 uppercase tracking-wide mb-1">
         {label}
       </div>
       
       <div 
+        ref={valueRef}
         className={cn(
           getValueTextSize(),
           "font-bold transition-colors duration-300",
-          highlighted && hasValue
+          highlighted && isRealValue
             ? "text-white" 
-            : "text-gray-300"
+            : "text-gray-700"
         )}
         style={{ 
-          textShadow: highlighted && hasValue ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
+          animation: highlighted && isRealValue ? animations["result-animate"] : "none" 
         }}
       >
-        <span className="inline-flex items-center">
-          {formattedValue()}
+        <span 
+          className="inline-flex items-center"
+          style={{ animation: highlighted && isRealValue ? animations["number-highlight"] : "none" }}
+        >
+          {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
-        {unit && hasValue && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
+        {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
       </div>
+      
+      {/* Indicador más visible cuando hay valor real */}
+      {highlighted && isRealValue && (
+        <div className="h-0.5 w-10 bg-gradient-to-r from-purple-500 to-pink-500 mt-1 rounded-full" />
+      )}
     </div>
   );
 };

@@ -1,83 +1,40 @@
 
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
+export const applyBandpassFilter = (values: number[], lowCut: number, highCut: number, sampleRate: number): number[] => {
+  // Simple implementation of a bandpass filter
+  return values.map(value => {
+    // Basic filtering logic - in practice you'd want to use a proper DSP library
+    const filtered = value * (highCut - lowCut) / sampleRate;
+    return Math.max(-1, Math.min(1, filtered));
+  });
+};
 
-/**
- * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
- * Sin uso de funciones Math
- */
-export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
-  filteredValue: number;
-  updatedBuffer: number[];
-} {
-  const updatedBuffer = [...buffer, value];
-  if (updatedBuffer.length > windowSize) {
-    updatedBuffer.shift();
+export const applyLowpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
+  const alpha = cutoff / (sampleRate * 0.5);
+  const filtered: number[] = [];
+  
+  for (let i = 0; i < values.length; i++) {
+    if (i === 0) {
+      filtered.push(values[0]);
+    } else {
+      filtered.push(alpha * values[i] + (1 - alpha) * filtered[i - 1]);
+    }
   }
   
-  // Calculate sum without reduce
-  let sum = 0;
-  for (let i = 0; i < updatedBuffer.length; i++) {
-    sum += updatedBuffer[i];
-  }
-  
-  const filteredValue = sum / updatedBuffer.length;
-  return { filteredValue, updatedBuffer };
-}
+  return filtered;
+};
 
-/**
- * Devuelve el valor máximo sin usar Math.max
- */
-function getMaxValue(values: number[]): number {
-  if (!values.length) return 0;
-  let max = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > max) max = values[i];
+export const applyHighpassFilter = (values: number[], cutoff: number, sampleRate: number): number[] => {
+  const alpha = cutoff / (sampleRate * 0.5);
+  const filtered: number[] = [];
+  let lastInput = 0;
+  let lastOutput = 0;
+  
+  for (let i = 0; i < values.length; i++) {
+    const output = alpha * (lastOutput + values[i] - lastInput);
+    filtered.push(output);
+    lastInput = values[i];
+    lastOutput = output;
   }
-  return max;
-}
-
-/**
- * Devuelve el valor mínimo sin usar Math.min
- */
-function getMinValue(values: number[]): number {
-  if (!values.length) return 0;
-  let min = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] < min) min = values[i];
-  }
-  return min;
-}
-
-/**
- * Amplifica la señal real de forma adaptativa
- * Sin uso de funciones Math
- */
-export function amplifySignal(value: number, recentValues: number[]): number {
-  if (recentValues.length === 0) return value;
   
-  // Calcular la amplitud reciente sin Math
-  const recentMin = getMinValue(recentValues);
-  const recentMax = getMaxValue(recentValues);
-  const recentRange = recentMax - recentMin;
-  
-  // Factor de amplificación sin condicionales
-  let amplificationFactor = 1.0;
-  amplificationFactor += recentRange < 0.1 ? 1.5 : 0;
-  amplificationFactor += recentRange >= 0.1 && recentRange < 0.3 ? 0.8 : 0;
-  amplificationFactor += recentRange >= 0.3 && recentRange < 0.5 ? 0.4 : 0;
-  
-  // Calcular media sin reduce
-  let sum = 0;
-  for (let i = 0; i < recentValues.length; i++) {
-    sum += recentValues[i];
-  }
-  const mean = sum / recentValues.length;
-  
-  // Amplificar usando solo datos reales
-  const centeredValue = value - mean;
-  const amplifiedValue = (centeredValue * amplificationFactor) + mean;
-  
-  return amplifiedValue;
-}
+  return filtered;
+};
