@@ -36,14 +36,14 @@ export class GlucoseNeuralModel extends BaseNeuralModel {
       return;
     }
     try {
-      // const modelUrl = '/models/glucose/model.json'; // <- CAMBIA ESTO
-      // console.log(`Cargando modelo Glucose desde: ${modelUrl}`);
-      // this.model = await tf.loadGraphModel(modelUrl); 
+      const modelUrl = '/models/glucose/model.json'; // <- CAMBIA ESTO
+      console.log(`Cargando modelo Glucose desde: ${modelUrl}`);
+      this.model = await tf.loadGraphModel(modelUrl); 
       // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
-      console.warn('GlucoseModel: Carga de modelo TF.js desactivada (placeholder).');
-      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
+      // console.warn('GlucoseModel: Carga de modelo TF.js desactivada (placeholder).');
+      // await new Promise(resolve => setTimeout(resolve, 50)); // Simulación Eliminada
       this.isModelLoaded = true;
-      console.log('GlucoseModel: Modelo cargado (simulado).');
+      console.log('GlucoseModel: Modelo TF.js cargado exitosamente.');
     } catch (error) {
       console.error('Error cargando el modelo Glucose:', error);
       this.isModelLoaded = false;

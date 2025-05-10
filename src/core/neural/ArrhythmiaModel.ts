@@ -24,13 +24,13 @@ export class ArrhythmiaNeuralModel extends BaseNeuralModel {
       return;
     }
     try {
-      // const modelUrl = '/models/arrhythmia/model.json'; // <- CAMBIA ESTO si aplica
-      // console.log(`Cargando modelo Arrhythmia desde: ${modelUrl}`);
-      // this.model = await tf.loadGraphModel(modelUrl);
-      console.warn('ArrhythmiaModel: Carga de modelo TF.js desactivada (placeholder). Lógica principal en servicio TS.');
-      await new Promise(resolve => setTimeout(resolve, 10)); // Simulación muy rápida
-      this.isModelLoaded = true; // Marcar como cargado aunque sea placeholder
-      console.log('ArrhythmiaModel: Modelo cargado (simulado/placeholder).');
+      const modelUrl = '/models/arrhythmia/model.json'; // <- CAMBIA ESTO si aplica
+      console.log(`Cargando modelo Arrhythmia desde: ${modelUrl}`);
+      this.model = await tf.loadGraphModel(modelUrl);
+      // console.warn('ArrhythmiaModel: Carga de modelo TF.js desactivada (placeholder). Lógica principal en servicio TS.');
+      // await new Promise(resolve => setTimeout(resolve, 10)); // Simulación Eliminada
+      this.isModelLoaded = true; 
+      console.log('ArrhythmiaModel: Modelo TF.js cargado exitosamente.');
     } catch (error) {
       console.error('Error cargando el modelo Arrhythmia:', error);
       this.isModelLoaded = false;

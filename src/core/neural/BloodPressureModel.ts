@@ -37,14 +37,14 @@ export class BloodPressureNeuralModel extends BaseNeuralModel {
       return;
     }
     try {
-      // const modelUrl = '/models/blood_pressure/model.json'; // <- CAMBIA ESTO
-      // console.log(`Cargando modelo BloodPressure desde: ${modelUrl}`);
-      // this.model = await tf.loadGraphModel(modelUrl);
+      const modelUrl = '/models/blood-pressure/model.json'; // Corregido para apuntar a blood-pressure
+      console.log(`Cargando modelo BloodPressure desde: ${modelUrl}`);
+      this.model = await tf.loadGraphModel(modelUrl);
       // // O si es un LayersModel: this.model = await tf.loadLayersModel(modelUrl);
-      console.warn('BloodPressureModel: Carga de modelo TF.js desactivada (placeholder).');
-      await new Promise(resolve => setTimeout(resolve, 50)); // Simulación
+      // console.warn('BloodPressureModel: Carga de modelo TF.js desactivada (placeholder).');
+      // await new Promise(resolve => setTimeout(resolve, 50)); // Simulación Eliminada
       this.isModelLoaded = true;
-      console.log('BloodPressureModel: Modelo cargado (simulado).');
+      console.log('BloodPressureModel: Modelo TF.js cargado exitosamente.');
     } catch (error) {
       console.error('Error cargando el modelo BloodPressure:', error);
       this.isModelLoaded = false;
