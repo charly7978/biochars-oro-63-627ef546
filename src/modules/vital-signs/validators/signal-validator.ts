@@ -19,8 +19,8 @@ export class SignalValidator {
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
-  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
+  private readonly MIN_PEAKS_FOR_PATTERN = 5; // Increased from 4
+  private readonly REQUIRED_PATTERNS = 5; // Increased from 4
   private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
   
   /**
@@ -154,15 +154,15 @@ export class SignalValidator {
         interval >= 333 && interval <= 1500 // 40-180 BPM
       );
       
-      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
-        // If less than 70% of intervals are physiologically plausible, reject the pattern
+      if (validIntervals.length < Math.floor(intervals.length * 0.8)) { // Increased from 0.7 (70% to 80%)
+        // If less than 80% of intervals are physiologically plausible, reject the pattern
         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
         return;
       }
       
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
+      const maxDeviation = 120; // Reduced from 150ms - tighter consistency check
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
