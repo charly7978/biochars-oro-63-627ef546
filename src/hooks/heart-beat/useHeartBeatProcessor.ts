@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
@@ -13,11 +14,13 @@ export const useHeartBeatProcessor = () => {
     bpm: 0,
     confidence: 0,
     isPeak: false,
+    arrhythmiaCount: 0,
     rrData: { intervals: [], lastPeakTime: null }
   });
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [ppgData, setPpgData] = useState<number[]>([]);
+  const [isArrhythmia, setIsArrhythmia] = useState(false);
   
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const isMonitoringRef = useRef<boolean>(false);
@@ -55,6 +58,7 @@ export const useHeartBeatProcessor = () => {
         bpm: 0,
         confidence: 0,
         isPeak: false,
+        arrhythmiaCount: 0,
         filteredValue: value,
         rrData: { intervals: [], lastPeakTime: null }
       };
@@ -93,6 +97,11 @@ export const useHeartBeatProcessor = () => {
         }
       }));
       
+      // Actualizar estado de arritmia
+      if (result.isArrhythmia !== undefined) {
+        setIsArrhythmia(result.isArrhythmia);
+      }
+      
       return {
         ...result,
         filteredValue: value,
@@ -107,11 +116,12 @@ export const useHeartBeatProcessor = () => {
         bpm: lastBpmRef.current || 0,
         confidence: 0,
         isPeak: false,
+        arrhythmiaCount: 0,
         filteredValue: value,
         rrData: { intervals: [], lastPeakTime: null }
       };
     }
-  }, [processorFunc, lastPeakTimeRef]);
+  }, [processorFunc, lastPeakTimeRef, heartBeatResult.confidence]);
 
   /**
    * Inicia el monitoreo de frecuencia cardíaca
@@ -125,9 +135,11 @@ export const useHeartBeatProcessor = () => {
       bpm: 0,
       confidence: 0,
       isPeak: false,
+      arrhythmiaCount: 0,
       rrData: { intervals: [], lastPeakTime: null }
     });
     setPpgData([]);
+    setIsArrhythmia(false);
   }, [resetProcessor]);
 
   /**
@@ -153,11 +165,13 @@ export const useHeartBeatProcessor = () => {
     lastBpmRef.current = 0;
     lastRRIntervalsRef.current = [];
     currentBeatIsArrhythmiaRef.current = false;
+    setIsArrhythmia(false);
     
     setHeartBeatResult({
       bpm: 0,
       confidence: 0,
       isPeak: false,
+      arrhythmiaCount: 0,
       rrData: { intervals: [], lastPeakTime: null }
     });
     
@@ -193,6 +207,7 @@ export const useHeartBeatProcessor = () => {
     reset,
     startMonitoring,
     stopMonitoring,
+    isArrhythmia,
     lastBpm: lastBpmRef.current,
     lastValidBpm: lastValidBpmRef.current,
     hasBpmData: lastValidBpmRef.current > 0,

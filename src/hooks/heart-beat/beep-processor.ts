@@ -1,50 +1,86 @@
 
-import { useState, useCallback, useRef } from 'react';
+import { useRef, useCallback } from 'react';
+import { AudioService } from '../../services/AudioService';
+
+type BeepRequest = {
+  timestamp: number;
+  intensity: number;
+  isArrhythmia: boolean;
+};
 
 export function useBeepProcessor() {
-  const pendingBeepsQueue = useRef<{time: number, value: number}[]>([]);
-  const beepProcessorTimeoutRef = useRef<number | null>(null);
+  const pendingBeepsQueue = useRef<BeepRequest[]>([]);
   const lastBeepTimeRef = useRef<number>(0);
-  
-  const MIN_BEEP_INTERVAL_MS = 500;
-  
-  const processBeepQueue = useCallback((
-    isMonitoringRef: React.MutableRefObject<boolean>,
-    lastSignalQualityRef: React.MutableRefObject<number>,
-    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
-    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
-    missedBeepsCounter: React.MutableRefObject<number>,
-    playBeep: (volume: number) => boolean | Promise<boolean>
-  ) => {
-    // Todo el procesamiento de beeps ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
-    console.log("BeepProcessor: Completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
-    pendingBeepsQueue.current = []; // Vaciar cola
-    return;
+  const beepProcessorTimeoutRef = useRef<number | null>(null);
+
+  const requestImmediateBeep = useCallback((value: number): boolean => {
+    try {
+      const now = Date.now();
+      const MIN_BEEP_INTERVAL = 250; // milisegundos
+      
+      // Evitar beeps demasiado frecuentes
+      if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL) {
+        return false;
+      }
+
+      // Encolar la solicitud de beep
+      pendingBeepsQueue.current.push({
+        timestamp: now,
+        intensity: Math.min(1.0, Math.abs(value) / 10),
+        isArrhythmia: false
+      });
+
+      // Procesar inmediatamente si no hay procesamiento pendiente
+      if (!beepProcessorTimeoutRef.current) {
+        processBeepQueue();
+      }
+      
+      return true;
+    } catch (e) {
+      console.error("Error solicitando beep:", e);
+      return false;
+    }
   }, []);
 
-  const requestImmediateBeep = useCallback((
-    value: number,
-    isMonitoringRef: React.MutableRefObject<boolean>,
-    lastSignalQualityRef: React.MutableRefObject<number>,
-    consecutiveWeakSignalsRef: React.MutableRefObject<number>,
-    MAX_CONSECUTIVE_WEAK_SIGNALS: number,
-    missedBeepsCounter: React.MutableRefObject<number>,
-    playBeep: (volume: number) => boolean | Promise<boolean>
-  ): boolean => {
-    // Todo el código de beep ha sido eliminado
-    // El sonido es manejado exclusivamente por PPGSignalMeter
-    console.log("BeepProcessor: Beep completamente eliminado - sonido manejado exclusivamente por PPGSignalMeter");
-    return false;
+  const processBeepQueue = useCallback(() => {
+    if (pendingBeepsQueue.current.length === 0) {
+      beepProcessorTimeoutRef.current = null;
+      return;
+    }
+
+    const now = Date.now();
+    const MIN_BEEP_INTERVAL = 250; // milisegundos
+    
+    // Procesar el beep más antiguo primero
+    const nextBeep = pendingBeepsQueue.current[0];
+    
+    if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL) {
+      // Reproducir el beep con la intensidad correspondiente
+      try {
+        AudioService.playHeartbeatSound();
+        lastBeepTimeRef.current = now;
+      } catch (e) {
+        console.error("Error reproduciendo beep:", e);
+      }
+      
+      // Quitar el beep procesado de la cola
+      pendingBeepsQueue.current.shift();
+    }
+    
+    // Continuar procesando la cola
+    if (pendingBeepsQueue.current.length > 0) {
+      beepProcessorTimeoutRef.current = window.setTimeout(processBeepQueue, MIN_BEEP_INTERVAL);
+    } else {
+      beepProcessorTimeoutRef.current = null;
+    }
   }, []);
 
   const cleanup = useCallback(() => {
-    pendingBeepsQueue.current = [];
-    
     if (beepProcessorTimeoutRef.current) {
       clearTimeout(beepProcessorTimeoutRef.current);
       beepProcessorTimeoutRef.current = null;
     }
+    pendingBeepsQueue.current = [];
   }, []);
 
   return {
