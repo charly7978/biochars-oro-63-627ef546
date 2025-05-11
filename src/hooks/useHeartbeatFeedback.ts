@@ -1,5 +1,5 @@
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import FeedbackService from '@/services/FeedbackService';
 
 /**
@@ -14,15 +14,34 @@ export type HeartbeatFeedbackType = 'normal' | 'arrhythmia';
  */
 export function useHeartbeatFeedback(enabled: boolean = true) {
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const oscillatorRef = useRef<OscillatorNode | null>(null);
+  const lastFeedbackTimeRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Configurar contexto de audio si está disponible
+    if (typeof window !== 'undefined' && !audioCtxRef.current) {
+      try {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContext) {
+          audioCtxRef.current = new AudioContext();
+          console.log("useHeartbeatFeedback: Audio context initialized");
+        }
+      } catch (err) {
+        console.error("useHeartbeatFeedback: Error initializing audio context", err);
+      }
     }
     
-    // Cleanup al desmontar
+    // Prueba de sonido y vibración al inicializar
+    const testFeedbackOnLoad = async () => {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      console.log("useHeartbeatFeedback: Testing feedback");
+      FeedbackService.vibrate(100);
+      FeedbackService.playSound('notification');
+    };
+    
+    testFeedbackOnLoad();
+    
     return () => {
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
         audioCtxRef.current.close().catch(err => {
@@ -36,36 +55,29 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
    * Activa la retroalimentación táctil y auditiva
    * @param type Tipo de retroalimentación: normal o arritmia
    */
-  const trigger = (type: HeartbeatFeedbackType = 'normal') => {
-    if (!enabled || !audioCtxRef.current) return;
+  const trigger = useCallback((type: HeartbeatFeedbackType = 'normal') => {
+    if (!enabled) return;
 
-    // Generar un bip con características según el tipo
-    const ctx = audioCtxRef.current;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    if (type === 'normal') {
-      // Tono normal para latido regular
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    } else if (type === 'arrhythmia') {
-      // Tono más grave y duradero para arritmia
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    const now = Date.now();
+    // Limitar la frecuencia de retroalimentación a máximo 1 cada 250ms
+    if (now - lastFeedbackTimeRef.current < 250) {
+      return;
     }
+    lastFeedbackTimeRef.current = now;
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    // Mayor duración para arritmias
-    osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+    console.log(`useHeartbeatFeedback: Triggering ${type} feedback`);
     
-    // Agregar vibración sincronizada
-    FeedbackService.vibrateHeartbeat(type === 'arrhythmia');
-  };
+    // Reproducir sonido según el tipo
+    FeedbackService.playSound('heartbeat');
+    
+    // Aplicar vibración según el tipo
+    if (type === 'normal') {
+      FeedbackService.vibrate(50); // Vibración corta para latido normal
+    } else if (type === 'arrhythmia') {
+      FeedbackService.vibrate([50, 100, 50]); // Patrón para arritmia
+    }
+    
+  }, [enabled]);
 
   return trigger;
 }

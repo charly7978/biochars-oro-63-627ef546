@@ -5,6 +5,7 @@ import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
 import FeedbackService from '@/services/FeedbackService';
+import { AudioService } from '@/services/AudioService';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -108,22 +109,19 @@ const PPGSignalMeter = memo(({
   }, []);
 
   useEffect(() => {
-    const initAudio = async () => {
-      try {
-        if (!audioContextRef.current && typeof AudioContext !== 'undefined') {
-          console.log("PPGSignalMeter: Inicializando Audio Context");
-          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
-          
-          if (audioContextRef.current.state !== 'running') {
-            await audioContextRef.current.resume();
-          }
-        }
-      } catch (err) {
-        console.error("PPGSignalMeter: Error inicializando audio context:", err);
-      }
+    const initAudioSystem = async () => {
+      console.log("PPGSignalMeter: Initializing audio system");
+      await AudioService.initializeAudio();
+      
+      // Play a test beep to verify audio works
+      setTimeout(() => {
+        console.log("PPGSignalMeter: Playing test notification sound");
+        FeedbackService.playNotificationSound();
+        FeedbackService.vibrate(50);
+      }, 1000);
     };
     
-    initAudio();
+    initAudioSystem();
     
     return () => {
       if (audioContextRef.current) {
@@ -142,6 +140,9 @@ const PPGSignalMeter = memo(({
         return false;
       }
 
+      console.log(`PPGSignalMeter: Playing beep (${isArrhythmia ? 'arrhythmia' : 'normal'})`);
+      
+      // Use the heartbeat feedback hook which handles both sound and vibration
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
 
       lastBeepTimeRef.current = now;
@@ -385,11 +386,17 @@ const PPGSignalMeter = memo(({
       );
       
       if (!tooClose) {
+        // New peak detected - should trigger sound immediately
+        if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+          console.log("PPGSignalMeter: New peak detected, playing beep");
+          playBeep(1.0, peak.isArrhythmia);
+        }
+        
         peaksRef.current.push({
           time: peak.time,
           value: peak.value,
           isArrhythmia: peak.isArrhythmia,
-          beepPlayed: false
+          beepPlayed: true // Mark as played since we triggered it immediately
         });
       }
     }
@@ -399,7 +406,7 @@ const PPGSignalMeter = memo(({
     peaksRef.current = peaksRef.current
       .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
       .slice(-MAX_PEAKS_TO_DISPLAY);
-  }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY]);
+  }, [isPointInArrhythmiaSegment, MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, isFingerDetected, REQUIRED_FINGER_FRAMES, playBeep]);
 
   const updateArrhythmiaSegments = useCallback((isCurrentArrhythmia: boolean, now: number) => {
     if (isCurrentArrhythmia !== lastArrhythmiaStateRef.current) {

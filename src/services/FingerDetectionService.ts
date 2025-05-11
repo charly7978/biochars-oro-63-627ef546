@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import cv from '@techstark/opencv-js';
-import { calculateSNR, evaluateSignalStability } from '@/modules/vital-signs/utils/signal-analysis-utils';
+import { calculateSNR, evaluateSignalStability } from '@/hooks/heart-beat/signal-processing/signal-quality';
 
 // Define a simple autocorrelation function since it's missing from the utilities
 function calculateAutocorrelation(signal: number[]): number {
@@ -133,7 +132,7 @@ class FingerDetectionService {
   public processFrameAndSignal(
     imageData?: ImageData,
     signalValue?: number,
-    useOpenCV: boolean = false
+    useOpenCV: boolean = true
   ): FingerDetectionResult {
     const now = Date.now();
     const timeSinceLastUpdate = now - this.lastUpdateTime;

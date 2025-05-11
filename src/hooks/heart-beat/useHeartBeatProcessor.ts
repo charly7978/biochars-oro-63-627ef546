@@ -46,6 +46,12 @@ export const useHeartBeatProcessor = () => {
         window.heartBeatProcessor = processorRef.current;
       }
     }
+    
+    // Test sound at initialization
+    setTimeout(() => {
+      console.log("useHeartBeatProcessor: Testing audio");
+      AudioService.playNotificationSound();
+    }, 1500);
   }, []);
 
   /**
@@ -83,8 +89,8 @@ export const useHeartBeatProcessor = () => {
         ...prevResult,
         ...result,
         rrData: {
-          intervals: result.rrData.intervals,
-          lastPeakTime: result.rrData.lastPeakTime
+          intervals: result.rrData?.intervals || [],
+          lastPeakTime: result.rrData?.lastPeakTime || null
         }
       }));
       
@@ -97,8 +103,8 @@ export const useHeartBeatProcessor = () => {
         ...result,
         filteredValue: value,
         rrData: {
-          intervals: result.rrData.intervals,
-          lastPeakTime: result.rrData.lastPeakTime
+          intervals: result.rrData?.intervals || [],
+          lastPeakTime: result.rrData?.lastPeakTime || null
         }
       };
     } catch (e) {
@@ -131,6 +137,11 @@ export const useHeartBeatProcessor = () => {
     });
     setPpgData([]);
     setIsArrhythmia(false);
+    
+    // Test sound when starting monitoring
+    setTimeout(() => {
+      AudioService.playHeartbeatSound();
+    }, 500);
   }, [resetProcessor]);
 
   /**
@@ -179,6 +190,7 @@ export const useHeartBeatProcessor = () => {
     try {
       // Solo reproducir sonido si estamos procesando y tenemos buena calidad
       if (lastValidBpmRef.current > 40 && value > 0.2) {
+        console.log("useHeartBeatProcessor: Requesting heartbeat sound");
         AudioService.playHeartbeatSound();
         return true;
       }
@@ -203,6 +215,7 @@ export const useHeartBeatProcessor = () => {
     lastValidBpm: lastValidBpmRef.current,
     hasBpmData: lastValidBpmRef.current > 0,
     isMonitoring: isMonitoringRef.current,
-    ppgData
+    ppgData,
+    requestImmediateBeep
   };
 };

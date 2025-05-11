@@ -1,6 +1,7 @@
 
 import { useRef, useCallback } from 'react';
 import { AudioService } from '../../services/AudioService';
+import FeedbackService from '@/services/FeedbackService';
 
 type BeepRequest = {
   timestamp: number;
@@ -22,6 +23,8 @@ export function useBeepProcessor() {
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL) {
         return false;
       }
+
+      console.log("useBeepProcessor: Requesting beep with value:", value);
 
       // Encolar la solicitud de beep
       pendingBeepsQueue.current.push({
@@ -57,7 +60,10 @@ export function useBeepProcessor() {
     if (now - lastBeepTimeRef.current >= MIN_BEEP_INTERVAL) {
       // Reproducir el beep con la intensidad correspondiente
       try {
+        console.log("useBeepProcessor: Playing heartbeat sound");
         AudioService.playHeartbeatSound();
+        // Además vibrar
+        FeedbackService.vibrateHeartbeat(nextBeep.isArrhythmia);
         lastBeepTimeRef.current = now;
       } catch (e) {
         console.error("Error reproduciendo beep:", e);
