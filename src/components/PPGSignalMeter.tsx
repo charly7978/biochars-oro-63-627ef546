@@ -116,7 +116,7 @@ const PPGSignalMeter = memo(({
       // Play a test beep to verify audio works
       setTimeout(() => {
         console.log("PPGSignalMeter: Playing test notification sound");
-        FeedbackService.playNotificationSound();
+        FeedbackService.playSound('notification'); // Updated to use the standard playSound method
         FeedbackService.vibrate(50);
       }, 1000);
     };
