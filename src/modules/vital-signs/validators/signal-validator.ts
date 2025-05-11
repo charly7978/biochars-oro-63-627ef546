@@ -137,4 +137,60 @@ export class SignalValidator {
     this.lastPatternDetection = 0;
     this.consecutiveGoodPatterns = 0;
   }
+  
+  /**
+   * Método para verificar si la señal es válida
+   * @param value El valor de la señal PPG
+   * @returns true si la señal es válida, false en caso contrario
+   */
+  public isValidSignal(value: number): boolean {
+    // Una señal es válida si no es NaN, no es infinito y tiene un valor mínimo
+    if (isNaN(value) || !isFinite(value)) return false;
+    
+    // Verificar magnitud mínima para considerar señal válida
+    return Math.abs(value) >= 0.01;
+  }
+  
+  /**
+   * Verifica si tenemos suficientes datos para procesar
+   * @param values Los valores de la señal PPG
+   * @returns true si hay suficientes datos, false en caso contrario
+   */
+  public hasEnoughData(values: number[]): boolean {
+    // Necesitamos al menos 30 muestras para un cálculo confiable
+    return values.length >= 30;
+  }
+  
+  /**
+   * Verifica si la señal tiene amplitud suficiente
+   * @param values Los valores de la señal PPG
+   * @returns true si la señal tiene amplitud suficiente, false en caso contrario
+   */
+  public hasValidAmplitude(values: number[]): boolean {
+    if (values.length < 5) return false;
+    
+    // Calcular amplitud como diferencia entre máximo y mínimo
+    const recentValues = values.slice(-15);
+    const min = Math.min(...recentValues);
+    const max = Math.max(...recentValues);
+    const amplitude = max - min;
+    
+    // La amplitud debe ser mayor a un umbral para detectar señal válida
+    return amplitude >= 0.1;
+  }
+  
+  /**
+   * Registra y muestra resultados de validación
+   * @param isValid Si la validación fue exitosa
+   * @param amplitude La amplitud de la señal
+   * @param values Los valores de la señal
+   */
+  public logValidationResults(isValid: boolean, amplitude: number, values: number[]): void {
+    console.log("SignalValidator: Validation results", {
+      isValid,
+      amplitude,
+      sampleCount: values.length,
+      time: new Date().toISOString()
+    });
+  }
 }

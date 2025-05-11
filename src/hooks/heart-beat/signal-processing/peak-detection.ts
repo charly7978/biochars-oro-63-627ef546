@@ -5,6 +5,8 @@
  * Functions for peak detection logic, working with real data only
  */
 
+import FeedbackService from '../../../services/FeedbackService';
+
 /**
  * Determines if a measurement should be processed based on signal strength
  * Only processes real measurements
@@ -59,8 +61,7 @@ export function handlePeakDetection(
     
     // SIEMPRE activar vibración si estamos monitoreando
     if (isMonitoringRef.current) {
-      // QUITAR toda condición adicional y FORZAR la vibración
-      const FeedbackService = require('../../../services/FeedbackService').default;
+      // FORZAR la vibración siempre que haya un pico
       FeedbackService.vibrate(50);
       
       // Solicitar beep para este latido - asegurando que se active

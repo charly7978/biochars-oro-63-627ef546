@@ -178,6 +178,7 @@ const CameraView = ({
   }, [isMonitoring]);
 
   // Determine actual finger status using both provided detection and brightness
+  // Modificado para ser más estricto y eliminar falsos positivos
   const actualFingerStatus = isFingerDetected && (
     avgBrightness < 60 || // Dark means finger is likely present
     signalQuality > 50    // Good quality signal confirms finger
@@ -185,13 +186,15 @@ const CameraView = ({
 
   // Registrar cada cambio de estado de dedo para depuración
   useEffect(() => {
-    console.log("CameraView: actualFingerStatus changed:", {
-      actualFingerStatus,
-      providedFingerDetection: isFingerDetected,
-      avgBrightness,
-      signalQuality,
-      timestamp: new Date().toISOString()
-    });
+    if (actualFingerStatus !== isFingerDetected) {
+      console.log("CameraView: Estado de dedo recalculado difiere del proporcionado", {
+        actualFingerStatus,
+        providedFingerDetection: isFingerDetected,
+        avgBrightness,
+        signalQuality,
+        timestamp: new Date().toISOString()
+      });
+    }
   }, [actualFingerStatus, isFingerDetected, avgBrightness, signalQuality]);
 
   return (
