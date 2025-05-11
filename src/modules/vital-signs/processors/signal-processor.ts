@@ -31,10 +31,9 @@ export class SignalProcessor extends BaseProcessor {
   private readonly MIN_SIGNAL_AMPLITUDE = 0.05; // Umbral para la amplitud de la señal AC
   
   private dcBaseline: number = 0;
-  private readonly DC_BASELINE_ALPHA = 0.01; // Adaptación lenta para la línea base DC
-  private rawSignalBuffer: number[] = []; // Para calcular la línea base DC de forma más robusta
-  private readonly RAW_BUFFER_SIZE = 50; // Usar 50 muestras para la línea base DC
-  
+  private readonly DC_BASELINE_ALPHA_SLOW = 0.005; // Adaptación muy lenta para línea base estable
+  private readonly DC_BASELINE_ALPHA_FAST = 0.1;   // Adaptación más rápida para cambios grandes (dedo puesto/quitado)
+
   // Buffers para las etapas de filtrado de la señal AC
   private acSignalRawBuffer: number[] = [];
   private medianFilteredAcSignalBuffer: number[] = [];
@@ -52,20 +51,21 @@ export class SignalProcessor extends BaseProcessor {
   }
   
   private updateDcBaseline(rawValue: number): void {
-    this.rawSignalBuffer.push(rawValue);
-    if (this.rawSignalBuffer.length > this.RAW_BUFFER_SIZE) {
-      this.rawSignalBuffer.shift();
+    if (this.dcBaseline === 0) { // Primera vez o después de un reset
+      this.dcBaseline = rawValue;
+    } else {
+      // Si la señal es muy diferente de la línea base (ej. dedo puesto/quitado), adaptar más rápido
+      const diff = Math.abs(rawValue - this.dcBaseline);
+      // Ajustar el umbral de diferencia para reactividad; 10-15 podría ser un buen punto de partida.
+      // Si el rawValue es por ejemplo 150, y dcBaseline es 100, diff es 50. dcBaseline * 0.1 es 10. 50 > 10.
+      const adaptFastThreshold = Math.max(10, this.dcBaseline * 0.15); // umbral mínimo de 10, o 15% de la línea base
+
+      if (diff > adaptFastThreshold && this.dcBaseline > 0) { 
+           this.dcBaseline = this.dcBaseline * (1 - this.DC_BASELINE_ALPHA_FAST) + rawValue * this.DC_BASELINE_ALPHA_FAST;
+      } else {
+           this.dcBaseline = this.dcBaseline * (1 - this.DC_BASELINE_ALPHA_SLOW) + rawValue * this.DC_BASELINE_ALPHA_SLOW;
+      }
     }
-    if (this.rawSignalBuffer.length < this.RAW_BUFFER_SIZE / 2) { // Esperar a tener suficientes muestras
-        if (this.dcBaseline === 0) this.dcBaseline = rawValue; // Primera estimación
-        else this.dcBaseline = this.dcBaseline * (1 - 0.1) + rawValue * 0.1; // Adaptación más rápida al inicio
-        return;
-    }
-    // Usar promedio móvil para la línea base una vez que el buffer está lleno
-    this.dcBaseline = this.rawSignalBuffer.reduce((sum, val) => sum + val, 0) / this.rawSignalBuffer.length;
-    // O una EMA más lenta:
-    // if (this.dcBaseline === 0) this.dcBaseline = rawValue;
-    // else this.dcBaseline = this.dcBaseline * (1 - this.DC_BASELINE_ALPHA) + rawValue * this.DC_BASELINE_ALPHA;
   }
 
   private addToBuffer(buffer: number[], value: number, maxSize: number): void {
@@ -254,7 +254,6 @@ export class SignalProcessor extends BaseProcessor {
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
     this.dcBaseline = 0; // Resetear DC baseline
-    this.rawSignalBuffer = []; // Resetear buffer de señal raw
     this.acSignalRawBuffer = [];
     this.medianFilteredAcSignalBuffer = [];
     this.emaFilteredAcSignalBuffer = [];
