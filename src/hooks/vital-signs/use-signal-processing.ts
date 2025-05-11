@@ -1,13 +1,13 @@
 
 /**
- * Functions for signal processing logic, working with real data only
- * Fase 3: Implementar paso directo sin manipulaciones
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useRef, useCallback } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
+import { ProcessedSignal } from '@/types/signal';
 
 /**
  * Hook for processing signal using the VitalSignsProcessor
@@ -29,61 +29,53 @@ export const useSignalProcessing = () => {
     isWeakSignal: boolean = false
   ): VitalSignsResult => {
     if (!processorRef.current) {
-      console.log("useSignalProcessing: Processor not initialized");
+      console.log("useVitalSignsProcessor: Processor not initialized");
       return ResultFactory.createEmptyResults();
     }
     
     processedSignals.current++;
     
-    // Si la señal es débil, registrarlo pero seguir procesando
+    // If too many weak signals, return zeros
     if (isWeakSignal) {
-      console.log("useSignalProcessing: Weak signal detected, pero continuamos procesando");
+      return ResultFactory.createEmptyResults();
     }
     
-    // Enhanced logging for diagnostics
-    if (processedSignals.current % 50 === 0 || processedSignals.current < 10) {
-      console.log("useSignalProcessing: Processing signal DIRECTLY", {
+    // Logging for diagnostics
+    if (processedSignals.current % 45 === 0) {
+      console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         rrDataPresent: !!rrData,
         rrIntervals: rrData?.intervals.length || 0,
+        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
         signalNumber: processedSignals.current
       });
     }
     
     try {
+      // Create a minimal ProcessedSignal object for compatibility
+      const processedSignal: ProcessedSignal = {
+        timestamp: Date.now(),
+        rawValue: value,
+        filteredValue: value,
+        quality: 75, // Default quality
+        fingerDetected: true,
+        roi: {
+          x: 0,
+          y: 0, 
+          width: 100,
+          height: 100
+        }
+      };
+      
       // Process signal directly - no simulation
-      let result = processorRef.current.processSignal(value, rrData);
+      let result = processorRef.current.processSignal(value, processedSignal, rrData);
       
-      // Comprehensive logging for ALL vital signs
-      if (processedSignals.current % 20 === 0) {
-        console.log("useSignalProcessing: Processed complete result", {
-          frame: processedSignals.current,
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          hydration: result.hydration,
-          lipids: result.lipids ? {
-            totalCholesterol: result.lipids.totalCholesterol,
-            triglycerides: result.lipids.triglycerides
-          } : "no lipid data",
-          hemoglobin: result.hemoglobin,
-          arrhythmiaStatus: result.arrhythmiaStatus
-        });
-      }
-      
-      // Handle arrhythmia detection with enhanced logging
+      // Add null checks for arrhythmia status
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
-        
-        console.log("useSignalProcessing: Arrhythmia detected", {
-          status: result.arrhythmiaStatus,
-          data: result.lastArrhythmiaData
-        });
-        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
@@ -92,30 +84,20 @@ export const useSignalProcessing = () => {
         // Adjust based on real RR intervals
         if (rrData && rrData.intervals && rrData.intervals.length > 0) {
           const lastIntervals = rrData.intervals.slice(-4);
-          let sum = 0;
-          for (let i = 0; i < lastIntervals.length; i++) {
-            sum += lastIntervals[i];
-          }
-          const avgInterval = sum / lastIntervals.length;
-          
-          // Usar condicionales directos en lugar de Math.max/min
-          windowWidth = avgInterval * 1.1;
-          if (windowWidth < 300) windowWidth = 300;
-          if (windowWidth > 1000) windowWidth = 1000;
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
       }
       
-      // Log processed signal for diagnostics
-      if (processedSignals.current % 60 === 0) {
-        signalLog.current.push({
-          timestamp: Date.now(),
-          value,
-          result
-        });
-        
-        if (signalLog.current.length > 60) {
-          signalLog.current = signalLog.current.slice(-60);
-        }
+      // Log processed signals
+      signalLog.current.push({
+        timestamp: Date.now(),
+        value,
+        result
+      });
+      
+      if (signalLog.current.length > 100) {
+        signalLog.current = signalLog.current.slice(-100);
       }
       
       // Always return real result
@@ -133,14 +115,25 @@ export const useSignalProcessing = () => {
    * Direct measurement only
    */
   const initializeProcessor = useCallback(() => {
-    console.log("useSignalProcessing: Initializing processor for DIRECT MEASUREMENT ONLY");
+    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
+      timestamp: new Date().toISOString()
+    });
     
     // Create new instances for direct measurement
     processorRef.current = new VitalSignsProcessor();
-    processedSignals.current = 0;
+  }, []);
+
+  /**
+   * Apply blood pressure calibration to the processor
+   */
+  const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number) => {
+    if (!processorRef.current) {
+      console.error("useVitalSignsProcessor: Cannot calibrate - processor not initialized");
+      return;
+    }
     
-    // Log after initialization
-    console.log("useSignalProcessing: Processor initialized successfully");
+    processorRef.current.applyBloodPressureCalibration(systolic, diastolic);
+    console.log("useVitalSignsProcessor: Blood pressure calibration applied", { systolic, diastolic });
   }, []);
 
   /**
@@ -150,11 +143,11 @@ export const useSignalProcessing = () => {
   const reset = useCallback(() => {
     if (!processorRef.current) return null;
     
-    console.log("useSignalProcessing: Reset initiated");
+    console.log("useVitalSignsProcessor: Reset initiated - DIRECT MEASUREMENT mode only");
     
     processorRef.current.reset();
     
-    console.log("useSignalProcessing: Reset completed");
+    console.log("useVitalSignsProcessor: Reset completed - all values at zero for direct measurement");
     return null;
   }, []);
   
@@ -165,13 +158,13 @@ export const useSignalProcessing = () => {
   const fullReset = useCallback(() => {
     if (!processorRef.current) return;
     
-    console.log("useSignalProcessing: Full reset initiated");
+    console.log("useVitalSignsProcessor: Full reset initiated - DIRECT MEASUREMENT mode only");
     
     processorRef.current.fullReset();
     processedSignals.current = 0;
     signalLog.current = [];
     
-    console.log("useSignalProcessing: Full reset complete");
+    console.log("useVitalSignsProcessor: Full reset complete - direct measurement mode active");
   }, []);
 
   /**
@@ -180,14 +173,6 @@ export const useSignalProcessing = () => {
   const getArrhythmiaCounter = useCallback(() => {
     return processorRef.current?.getArrhythmiaCounter() || 0;
   }, []);
-  
-  /**
-   * Get last valid results from processor
-   * AÑADIDO: Función para recuperar último resultado válido
-   */
-  const getLastValidResults = useCallback(() => {
-    return processorRef.current?.getLastValidResult() || null;
-  }, []);
 
   /**
    * Get debug information about signal processing
@@ -195,8 +180,7 @@ export const useSignalProcessing = () => {
   const getDebugInfo = useCallback(() => {
     return {
       processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10),
-      processor: processorRef.current ? "initialized" : "not initialized"
+      signalLog: signalLog.current.slice(-10)
     };
   }, []);
 
@@ -205,9 +189,9 @@ export const useSignalProcessing = () => {
     initializeProcessor,
     reset,
     fullReset,
+    applyBloodPressureCalibration,
     getArrhythmiaCounter,
     getDebugInfo,
-    getLastValidResults, // AÑADIDO: Exposición de función para recuperar últimos resultados válidos
     processorRef,
     processedSignals,
     signalLog

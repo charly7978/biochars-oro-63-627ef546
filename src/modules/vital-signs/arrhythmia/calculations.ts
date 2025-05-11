@@ -4,111 +4,105 @@
  */
 
 /**
- * Calculate RMSSD from real RR intervals without using Math functions
+ * Calcula la raíz cuadrada de las diferencias cuadráticas medias entre intervalos RR sucesivos.
+ * Indicador clave de variabilidad del ritmo cardíaco para detectar arritmias.
+ * 
+ * @param intervals Array de intervalos RR en milisegundos
+ * @returns RMSSD del conjunto de intervalos
  */
 export function calculateRMSSD(intervals: number[]): number {
-  if (intervals.length < 2) return 0;
+  if (intervals.length < 2) {
+    return 0;
+  }
   
   let sumSquaredDiff = 0;
+  let countDiffs = 0;
+  
   for (let i = 1; i < intervals.length; i++) {
-    const diff = intervals[i] - intervals[i-1];
+    const diff = intervals[i] - intervals[i - 1];
     sumSquaredDiff += diff * diff;
+    countDiffs++;
   }
   
-  // Square root approximation without Math.sqrt
-  if (sumSquaredDiff === 0) return 0;
-  
-  const n = intervals.length - 1;
-  const mean = sumSquaredDiff / n;
-  
-  // Newton's method for square root
-  let result = mean;
-  for (let i = 0; i < 10; i++) {
-    if (result === 0) break;
-    result = 0.5 * (result + mean / result);
+  if (countDiffs === 0) {
+    return 0;
   }
   
-  return result;
+  return Math.sqrt(sumSquaredDiff / countDiffs);
 }
 
 /**
- * Calculate RR interval variation from real data without Math functions
+ * Calcula la variación relativa de los intervalos RR
+ * Útil para identificar patrones irregulares en la frecuencia cardíaca
+ * 
+ * @param intervals Array de intervalos RR en milisegundos
+ * @returns Índice de variación de los intervalos RR (0-1)
  */
 export function calculateRRVariation(intervals: number[]): number {
-  if (intervals.length < 2) return 0;
-  
-  // Calculate mean without reduce
-  let sum = 0;
-  for (let i = 0; i < intervals.length; i++) {
-    sum += intervals[i];
+  if (intervals.length < 3) {
+    return 0;
   }
-  const mean = sum / intervals.length;
   
-  const lastRR = intervals[intervals.length - 1];
-  const diff = lastRR - mean;
+  // Calcular promedio
+  const avg = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
   
-  // Absolute value without Math.abs
-  const absDiff = diff >= 0 ? diff : -diff;
+  // Calcular desviación absoluta promedio
+  let sumAbsDev = 0;
+  for (const interval of intervals) {
+    sumAbsDev += Math.abs(interval - avg);
+  }
   
-  return absDiff / mean;
+  const avgAbsDev = sumAbsDev / intervals.length;
+  
+  // Normalizar respecto al promedio
+  return avgAbsDev / avg;
 }
 
 /**
- * Calculate pNN50 metric (percentage of successive RR intervals that differ by more than 50ms)
+ * Detecta arritmias específicas basadas en patrones de intervalos RR
+ * 
+ * @param intervals Array de intervalos RR en milisegundos
+ * @returns Tipo de arritmia detectada o null
  */
-export function calculatePNN50(intervals: number[]): number {
-  if (intervals.length < 2) return 0;
+export function detectArrhythmiaType(intervals: number[]): string | null {
+  if (intervals.length < 5) {
+    return null;
+  }
   
-  // Count significant differences without using Math.abs
-  let countSignificantDiffs = 0;
-  for (let i = 1; i < intervals.length; i++) {
-    // Using let instead of const for a value that needs to be modified
-    let absDiff = intervals[i] - intervals[i-1];
-    if (absDiff < 0) absDiff = -absDiff;  // abs without Math.abs
+  const avgRR = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+  const rmssd = calculateRMSSD(intervals);
+  const variation = calculateRRVariation(intervals);
+  
+  // Criterios basados en investigación clínica
+  if (avgRR < 500) { // FC > 120 lpm
+    return "tachycardia";
+  }
+  
+  if (avgRR > 1200) { // FC < 50 lpm
+    return "bradycardia";
+  }
+  
+  // Patrón bigeminy: alternancia de intervalos cortos y largos
+  let bigeminyCount = 0;
+  for (let i = 1; i < intervals.length - 1; i += 2) {
+    const pattern1 = intervals[i] - intervals[i-1];
+    const pattern2 = intervals[i+1] - intervals[i];
     
-    if (absDiff > 50) {  // >50ms is clinically significant
-      countSignificantDiffs++;
+    if (Math.sign(pattern1) !== Math.sign(pattern2) && 
+        Math.abs(pattern1) > 100 && 
+        Math.abs(pattern2) > 100) {
+      bigeminyCount++;
     }
   }
   
-  // Calculate pNN50
-  return intervals.length > 1 ? countSignificantDiffs / (intervals.length - 1) : 0;
-}
-
-/**
- * Advanced measure: Poincaré plot analysis for HRV
- * Returns SD1 (short-term variability)
- */
-export function calculatePoincareSd1(intervals: number[]): number {
-  if (intervals.length < 2) return 0;
-  
-  // Calculate successive differences
-  const successiveDiffs = [];
-  for (let i = 1; i < intervals.length; i++) {
-    successiveDiffs.push(intervals[i] - intervals[i-1]);
+  if (bigeminyCount >= Math.floor(intervals.length / 4)) {
+    return "bigeminy";
   }
   
-  // Calculate variance of successive differences
-  let sum = 0;
-  for (const diff of successiveDiffs) {
-    sum += diff;
-  }
-  const meanDiff = sum / successiveDiffs.length;
-  
-  let variance = 0;
-  for (const diff of successiveDiffs) {
-    const dev = diff - meanDiff;
-    variance += dev * dev;
-  }
-  variance /= successiveDiffs.length;
-  
-  // SD1 is related to the standard deviation of successive differences
-  // SD1 = sqrt(variance/2)
-  let sd1 = variance / 2;
-  for (let i = 0; i < 10; i++) {
-    if (sd1 === 0) break;
-    sd1 = 0.5 * (sd1 + (variance/2) / sd1);
+  // Fibrilación auricular: alta variabilidad y ausencia de patrón
+  if (rmssd > 50 && variation > 0.2) {
+    return "possible-afib";
   }
   
-  return sd1;
+  return "arrhythmia";
 }
