@@ -1,10 +1,9 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import cv from '@techstark/opencv-js';
-import { evaluateSignalStability, calculateSNR, calculateAutocorrelation } from '@/modules/vital-signs/utils';
+import { calculateSNR, calculateAutocorrelation, evaluateSignalStability } from '@/modules/vital-signs/utils/signal-analysis-utils';
 
 interface FingerDetectionConfig {
   // Umbrales de color para detección de piel en espacio HSV
