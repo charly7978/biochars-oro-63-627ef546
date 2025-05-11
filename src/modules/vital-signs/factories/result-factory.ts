@@ -10,6 +10,7 @@ export class ResultFactory {
    */
   public static createResult(
     spo2: number,
+    heartRate: number,
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
@@ -23,6 +24,7 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
+      heartRate,
       pressure,
       arrhythmiaStatus,
       glucose,
@@ -42,6 +44,7 @@ export class ResultFactory {
   public static createEmptyResults(): VitalSignsResult {
     return {
       spo2: 0,
+      heartRate: 0,
       pressure: "--/--",
       arrhythmiaStatus: "--",
       glucose: 0,
