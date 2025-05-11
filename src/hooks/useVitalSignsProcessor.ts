@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -78,7 +77,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
     // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
+    const { isWeak, updatedWeakSignalCount } = checkSignalQuality(
       value,
       weakSignalsCountRef.current,
       {
@@ -87,11 +86,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       }
     );
     
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
+    weakSignalsCountRef.current = updatedWeakSignalCount;
     
     // Process signal directly - no simulation
     try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
+      let result = processVitalSignal(value, rrData, isWeak);
       
       // Process and handle arrhythmia events with our centralized system
       if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {

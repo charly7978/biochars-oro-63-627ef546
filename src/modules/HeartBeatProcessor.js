@@ -7,7 +7,7 @@ import { applyFilterPipeline } from './heart-beat/signal-filters';
 import { detectPeak, confirmPeak } from './heart-beat/peak-detector';
 import { updateBPMHistory, calculateCurrentBPM, smoothBPM, calculateFinalBPM } from './heart-beat/bpm-calculator';
 import { HeartbeatAudioManager } from './heart-beat/audio-manager';
-import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality';
+import { checkSignalQuality } from './heart-beat/signal-quality';
 
 export class HeartBeatProcessor {
   // Import configuration from config module
@@ -259,6 +259,17 @@ export class HeartBeatProcessor {
   
   getArrhythmiaCounter() {
     return this.arrhythmiaCounter;
+  }
+  
+  resetDetectionStates() {
+    this.lastPeakTime = null;
+    this.previousPeakTime = null;
+    this.lastConfirmedPeak = false;
+    this.peakCandidateIndex = null;
+    this.peakCandidateValue = 0;
+    this.peakConfirmationBuffer = [];
+    this.values = [];
+    console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
   
   reset() {
