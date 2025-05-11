@@ -2,7 +2,6 @@
 /**
  * Signal quality detection utilities
  * Centralized functions for checking signal quality and finger detection
- * IMPROVED: Ultra strict thresholds to eliminate false positives
  */
 
 export interface SignalQualityOptions {
@@ -16,9 +15,9 @@ export function checkSignalQuality(
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds - ULTRA-STRICT to eliminate false positives
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.65; // Increased from 0.45 to 0.65
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 5; // Decreased to 5 for faster response
+  // Default thresholds
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.45;
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 5;
   const STRICT_MODE = options.strictMode !== undefined ? options.strictMode : true;
   
   const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
@@ -37,10 +36,20 @@ export function checkSignalQuality(
   }
   
   // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS + 2, updatedWeakSignalsCount);
   
   // Signal is considered weak if we have enough consecutive weak readings
   const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
+  
+  // Debug log para verificar que este método se está usando
+  console.log("signal-quality checkSignalQuality:", {
+    value,
+    threshold: LOW_SIGNAL_THRESHOLD,
+    isCurrentValueWeak,
+    updatedWeakSignalsCount,
+    isWeakSignal,
+    maxCount: MAX_WEAK_SIGNALS
+  });
   
   return { isWeakSignal, updatedWeakSignalsCount };
 }

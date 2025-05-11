@@ -28,10 +28,10 @@ export function handlePeakDetection(
       
       lastPeakTimeRef.current = now;
       
-      // CORREGIDO: Siempre activar vibración para cada pico detectado
+      // FORZAR la vibración para cada pico detectado sin condiciones adicionales
       FeedbackService.vibrate(50);
       
-      console.log("signal-processor: Peak detected, activating haptic feedback", {
+      console.log("signal-processor: Peak detected, VIBRATION ACTIVATED", {
         time: new Date().toISOString(),
         peakValue: result.peakValue || 'unknown'
       });
@@ -134,15 +134,20 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection with vibration
+      // Handle peak detection with vibration - AQUÍ ES DONDE REALMENTE NECESITAMOS ACTIVAR LA VIBRACIÓN
       if (result.isPeak && isMonitoringRef.current) {
-        // Si detectamos un pico y estamos en modo monitoreo, activar vibración
+        const now = Date.now();
+        // Si detectamos un pico y estamos en modo monitoreo, SIEMPRE activar vibración
         if (lastPeakTimeRef.current === null || 
-            (Date.now() - lastPeakTimeRef.current) > 350) {  // 350ms min entre latidos
-          lastPeakTimeRef.current = Date.now();
+            (now - lastPeakTimeRef.current) > 350) {  // 350ms min entre latidos
+          lastPeakTimeRef.current = now;
           
-          // CORREGIDO: Siempre usar el servicio de feedback para vibración por latido
+          // FORZAR vibración sin condiciones adicionales
           FeedbackService.vibrate(50);
+          console.log("VIBRACIÓN ACTIVADA POR LATIDO DETECTADO", {
+            tiempo: new Date(now).toISOString(),
+            valor: value
+          });
           
           // También intentamos el beep si está disponible
           requestImmediateBeep(value);

@@ -53,30 +53,23 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Solo actualizar tiempo del pico si es un pico real con confianza suficiente
-  if (result.isPeak && result.confidence > 0.05) {
+  if (result.isPeak && result.confidence > 0) {
     // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // CORREGIDO: Activar vibración si estamos monitoreando
-    // y ha pasado suficiente tiempo desde el último pico
-    if (isMonitoringRef.current && 
-        (lastPeakTimeRef.current === null || 
-         (now - lastPeakTimeRef.current) > 350)) {
+    // SIEMPRE activar vibración si estamos monitoreando
+    if (isMonitoringRef.current) {
+      // QUITAR toda condición adicional y FORZAR la vibración
+      const FeedbackService = require('../../../services/FeedbackService').default;
+      FeedbackService.vibrate(50);
       
       // Solicitar beep para este latido - asegurando que se active
-      const beepRequested = requestBeepCallback(value);
+      requestBeepCallback(value);
       
-      console.log("Peak-detection: Pico detectado con solicitud de beep", {
+      console.log("Peak-detection: VIBRACIÓN FORZADA", {
         confianza: result.confidence,
         valor: value,
         tiempo: new Date(now).toISOString(),
-        beepSolicitado: beepRequested,
-        // Log transition state if present
-        transicion: result.transition ? {
-          activa: result.transition.active,
-          progreso: result.transition.progress,
-          direccion: result.transition.direction
-        } : 'no hay transición',
         isArrhythmia: result.isArrhythmia || false
       });
     }

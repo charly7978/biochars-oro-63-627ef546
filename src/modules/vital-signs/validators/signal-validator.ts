@@ -4,225 +4,137 @@
  */
 
 /**
- * Validates PPG signals to ensure they meet requirements
- * Works with real data only, no simulation
- * Enhanced with rhythmic pattern detection for finger detection
+ * Clase para validación de señal PPG usando un enfoque basado en patrones rítmicos
+ * Implementa detección de patrones basado en análisis de señal real sin simulación
  */
 export class SignalValidator {
-  // Thresholds for physiological detection
-  private readonly MIN_SIGNAL_AMPLITUDE: number;
-  private readonly MIN_PPG_VALUES: number;
+  private signalBuffer: number[] = [];
+  private readonly bufferSize: number = 60;
+  private readonly minQuality: number = 0.02;
+  private readonly minPatterns: number = 15;
+  private patternCount: number = 0;
+  private fingerDetected: boolean = false;
+  private lastPatternDetection: number = 0;
+  private consecutiveGoodPatterns: number = 0;
   
-  // Signal history for rhythmic pattern detection
-  private signalHistory: Array<{time: number, value: number}> = [];
-  private peakTimes: number[] = [];
-  private detectedPatternCount: number = 0;
-  private fingerDetectionConfirmed: boolean = false;
-  
-  // Constants for pattern detection - made more strict
-  private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
-  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
-  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
-  
-  /**
-   * Create a new signal validator with custom thresholds
-   */
-  constructor(
-    minSignalAmplitude: number = 0.02, // Increased from 0.01
-    minPpgValues: number = 15
-  ) {
-    this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
-    this.MIN_PPG_VALUES = minPpgValues;
+  constructor(minQuality: number = 0.02, minPatterns: number = 15) {
+    this.minQuality = minQuality;
+    this.minPatterns = minPatterns;
   }
   
   /**
-   * Check if there are enough PPG values to process
-   */
-  public hasEnoughData(ppgValues: number[]): boolean {
-    return ppgValues.length >= this.MIN_PPG_VALUES;
-  }
-  
-  /**
-   * Check if signal amplitude is sufficient
-   */
-  public hasValidAmplitude(ppgValues: number[]): boolean {
-    if (ppgValues.length < this.MIN_PPG_VALUES) {
-      return false;
-    }
-    
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
-    const amplitude = signalMax - signalMin;
-    
-    return amplitude >= this.MIN_SIGNAL_AMPLITUDE;
-  }
-  
-  /**
-   * Validate that the signal is strong enough
-   */
-  public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
-  }
-  
-  /**
-   * Add value to signal history for pattern detection
+   * Añade un valor a la detección de patrones
    */
   public trackSignalForPatternDetection(value: number): void {
-    const now = Date.now();
-    this.signalHistory.push({ time: now, value });
+    this.signalBuffer.push(value);
     
-    // Keep only recent signals
-    this.signalHistory = this.signalHistory.filter(
-      point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS * 2
-    );
-    
-    // Attempt to detect rhythmic patterns
-    this.detectRhythmicPatterns();
-  }
-  
-  /**
-   * Check if a finger is detected based on rhythmic patterns
-   */
-  public isFingerDetected(): boolean {
-    // If already confirmed, maintain detection unless reset
-    if (this.fingerDetectionConfirmed) {
-      return true;
+    // Mantener buffer de tamaño fijo
+    if (this.signalBuffer.length > this.bufferSize) {
+      this.signalBuffer.shift();
     }
     
-    // Otherwise, check if we've detected enough consistent patterns
-    return this.detectedPatternCount >= this.REQUIRED_PATTERNS;
+    // Detectar patrones solo si tenemos suficientes datos
+    if (this.signalBuffer.length >= 30) {
+      const now = Date.now();
+      
+      // Solo detectar cada 500ms para mejorar rendimiento
+      if (this.lastPatternDetection === 0 || now - this.lastPatternDetection >= 500) {
+        this.lastPatternDetection = now;
+        this.detectPatterns();
+      }
+    }
   }
   
   /**
-   * Reset finger detection state
+   * Detecta patrones rítmicos en la señal usando análisis de autocorrelación
    */
-  public resetFingerDetection(): void {
-    this.signalHistory = [];
-    this.peakTimes = [];
-    this.detectedPatternCount = 0;
-    this.fingerDetectionConfirmed = false;
-    console.log("Finger detection reset");
-  }
-  
-  /**
-   * Detect rhythmic patterns in the signal history
-   * Uses physiological heartbeat patterns to detect finger presence
-   */
-  private detectRhythmicPatterns(): void {
-    const now = Date.now();
-    const recentSignals = this.signalHistory.filter(
-      point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS
-    );
+  private detectPatterns(): void {
+    // Calcular la calidad del patrón
+    const patternQuality = this.calculatePatternQuality();
     
-    if (recentSignals.length < 15) return; // Need more data (increased from 10)
-    
-    // Check for minimum signal variance (reject near-constant signals)
-    const values = recentSignals.map(s => s.value);
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-    
-    if (variance < this.MIN_SIGNAL_VARIANCE) {
-      // Signal variance too low - likely not a physiological signal
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+    // Si no hay suficiente calidad, decrementar contador de patrones
+    if (patternQuality < this.minQuality) {
+      this.patternCount = Math.max(0, this.patternCount - 1);
+      this.consecutiveGoodPatterns = 0;
       return;
     }
     
-    // Look for peaks in the signal
-    const peaks: number[] = [];
-    const peakThreshold = 0.25; // Increased from 0.2
+    // Si hay buena calidad, incrementar contador
+    this.patternCount = Math.min(this.minPatterns + 5, this.patternCount + 1);
+    this.consecutiveGoodPatterns++;
     
-    for (let i = 2; i < recentSignals.length - 2; i++) {
-      const current = recentSignals[i];
-      const prev1 = recentSignals[i - 1];
-      const prev2 = recentSignals[i - 2];
-      const next1 = recentSignals[i + 1];
-      const next2 = recentSignals[i + 2];
-      
-      // Check if this point is a peak (higher than surrounding points)
-      // Also require the peak to be significantly higher (20% higher)
-      if (current.value > prev1.value * 1.2 && 
-          current.value > prev2.value * 1.2 &&
-          current.value > next1.value * 1.2 && 
-          current.value > next2.value * 1.2 &&
-          Math.abs(current.value) > peakThreshold) {
-        peaks.push(current.time);
+    // Si hay suficientes detecciones consistentes, confirmar detección de dedo
+    // IMPORTANTE: Aquí aumentamos la validación para evitar falsos positivos
+    if (this.patternCount >= this.minPatterns && this.consecutiveGoodPatterns >= 5) {
+      if (!this.fingerDetected) {
+        console.log("SignalValidator: Finger detection confirmed by signal pattern", {
+          patternQuality,
+          patternCount: this.patternCount,
+          time: new Date().toISOString()
+        });
       }
-    }
-    
-    // Need enough peaks to establish a pattern
-    if (peaks.length >= this.MIN_PEAKS_FOR_PATTERN) {
-      // Calculate intervals between peaks
-      const intervals: number[] = [];
-      for (let i = 1; i < peaks.length; i++) {
-        intervals.push(peaks[i] - peaks[i - 1]);
-      }
-      
-      // Check for physiologically plausible heart rate (40-180 BPM)
-      const validIntervals = intervals.filter(interval => 
-        interval >= 333 && interval <= 1500 // 40-180 BPM
-      );
-      
-      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
-        // If less than 70% of intervals are physiologically plausible, reject the pattern
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-        return;
-      }
-      
-      // Check for consistency in intervals (rhythm)
-      let consistentIntervals = 0;
-      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
-      
-      for (let i = 1; i < validIntervals.length; i++) {
-        if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
-          consistentIntervals++;
-        }
-      }
-      
-      // If we have consistent intervals, increment pattern counter
-      if (consistentIntervals >= this.MIN_PEAKS_FOR_PATTERN - 1) {
-        this.peakTimes = peaks;
-        this.detectedPatternCount++;
-        
-        // If enough consistent patterns, confirm finger detection
-        if (this.detectedPatternCount >= this.REQUIRED_PATTERNS && !this.fingerDetectionConfirmed) {
-          this.fingerDetectionConfirmed = true;
-          console.log("Finger detection confirmed by consistent heartbeat rhythm!", 
-                     {
-                       time: new Date(now).toISOString(), 
-                       patterns: this.detectedPatternCount,
-                       consistentIntervals,
-                       peakCount: peaks.length,
-                       meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
-                       variance
-                     });
-        }
-      } else {
-        // Reduce counter if pattern not consistent
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-      }
-    } else {
-      // Decrement pattern count if we don't have enough peaks
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      this.fingerDetected = true;
+    } else if (this.patternCount < Math.max(2, this.minPatterns / 2)) {
+      // Si cae mucho, desactivar detección
+      this.fingerDetected = false;
     }
   }
   
   /**
-   * Log validation results
+   * Calcula la calidad de patrones rítmicos en la señal
+   * Utiliza técnicas de autocorrelación para detectar periodicidad típica de PPG real
    */
-  public logValidationResults(isValidAmplitude: boolean, amplitude: number, ppgValues: number[]): void {
-    if (!isValidAmplitude) {
-      console.log("VitalSignsProcessor: Signal amplitude too low", {
-        amplitude,
-        threshold: this.MIN_SIGNAL_AMPLITUDE
-      });
+  private calculatePatternQuality(): number {
+    const values = this.signalBuffer.slice(-30);
+    
+    // Calcular la varianza para verificar que hay suficiente señal
+    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    
+    // Si la varianza es muy baja, no hay señal significativa
+    if (variance < 0.001) {
+      return 0;
     }
     
-    if (ppgValues.length < this.MIN_PPG_VALUES) {
-      console.log("VitalSignsProcessor: Insufficient data points", {
-        have: ppgValues.length,
-        need: this.MIN_PPG_VALUES
-      });
+    // Calcular la autocorrelación para detectar periodicidad
+    // La periodicidad es un indicador de señal PPG real
+    let maxCorrelation = 0;
+    // Buscar correlación en rangos de 500ms a 1500ms (40-120 BPM)
+    for (let delay = 5; delay <= 15; delay++) {
+      let correlation = 0;
+      let count = 0;
+      
+      for (let i = 0; i < values.length - delay; i++) {
+        correlation += values[i] * values[i + delay];
+        count++;
+      }
+      
+      if (count > 0) {
+        correlation /= count;
+        maxCorrelation = Math.max(maxCorrelation, correlation);
+      }
     }
+    
+    // Normalizar y aplicar umbral
+    const quality = maxCorrelation / (variance || 0.001);
+    return quality;
+  }
+  
+  /**
+   * Verifica si se ha detectado un dedo
+   */
+  public isFingerDetected(): boolean {
+    return this.fingerDetected;
+  }
+  
+  /**
+   * Reinicia la detección de dedo
+   */
+  public resetFingerDetection(): void {
+    this.signalBuffer = [];
+    this.patternCount = 0;
+    this.fingerDetected = false;
+    this.lastPatternDetection = 0;
+    this.consecutiveGoodPatterns = 0;
   }
 }
