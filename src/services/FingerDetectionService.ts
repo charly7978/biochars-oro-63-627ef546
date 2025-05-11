@@ -70,7 +70,7 @@ class FingerDetectionManager {
     minPeaksForRhythm: 5,
     peakDetectionThreshold: 0.3,
     requiredConsistentPatterns: 3,
-    minSignalVariance: 0.001,
+    minSignalVariance: 0.005,
     minPeakIntervalMs: 250, // Corresponde a 240 BPM max
     maxPeakIntervalMs: 1500, // Corresponde a 40 BPM min
     maxIntervalDeviationMs: 120,
@@ -117,55 +117,107 @@ class FingerDetectionManager {
     let finalRhythmConfirmed = false;
     let effectivePpgValue = ppgValue; // Valor PPG que se usará para análisis de señal
 
-    // --- Extracción de PPG (si imageData está presente) ---
+    // --- Extracción de PPG (si imageData está presente y ppgValue no) ---
     if (imageData && typeof effectivePpgValue === 'undefined') {
-        // Lógica simple para extraer PPG de imageData si no se provee ppgValue directamente
-        // Esto es un fallback y podría necesitar ser más robusto o configurable
         const data = imageData.data;
         let sum = 0;
-        const centerX = Math.floor(imageData.width / 2);
-        const centerY = Math.floor(imageData.height / 2);
-        const R = Math.min(centerX, centerY, 10); // Radio pequeño alrededor del centro
+        const width = imageData.width;
+        const height = imageData.height;
+        const centerX = Math.floor(width / 2);
+        const centerY = Math.floor(height / 2);
+        // Usar un ROI un poco más grande para promediar, pero no demasiado
+        const roiSize = Math.min(width, height, 20) / 2; // Radio de 10px max, o más pequeño si la imagen es pequeña
         let count = 0;
-        for (let y = centerY - R; y < centerY + R; y++) {
-          for (let x = centerX - R; x < centerX + R; x++) {
-            if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
-              const i = (y * imageData.width + x) * 4;
+        for (let y = Math.floor(centerY - roiSize); y < Math.ceil(centerY + roiSize); y++) {
+          for (let x = Math.floor(centerX - roiSize); x < Math.ceil(centerX + roiSize); x++) {
+            if (x >= 0 && x < width && y >= 0 && y < height) {
+              const i = (y * width + x) * 4;
               sum += data[i]; // Canal Rojo
               count++;
             }
           }
         }
-        if (count > 0) effectivePpgValue = sum / count;
-        else effectivePpgValue = 0;
+        if (count > 0) {
+            effectivePpgValue = sum / count;
+            // Si el valor extraído es muy bajo o casi constante (poco cambio), podría ser ruido.
+            // Esta es una heurística simple. Una mejor sería analizar varianza en el ROI.
+            if (effectivePpgValue < 10) { // Asumiendo que la señal PPG útil es mayor que 10 (en escala 0-255)
+                effectivePpgValue = undefined; // Tratar como no señal
+            }
+        } else {
+            effectivePpgValue = undefined; // No se pudo extraer nada
+        }
     }
 
-    if (typeof effectivePpgValue === 'number') {
-      // Usar VitalSignsSignalProcessor para obtener valor filtrado y calidad base
-      const processingResult = this.vsSignalProcessor.applyFilters(effectivePpgValue);
-      ppgFilteredValue = processingResult.filteredValue;
-      ppgQualityFromVSProcessor = processingResult.quality; // Calidad calculada por VitalSignsSignalProcessor
+    // --- Chequeo Primario de Señal Válida ---
+    if (typeof effectivePpgValue !== 'number' || Math.abs(effectivePpgValue) < (this.config.minSignalAmplitude / 5)) { // Umbral muy bajo para considerar señal nula
+      this.signalHistory = [];
+      this.lastProcessedPpgValue = 0;
+      this.detectedRhythmicPatternsCount = 0;
+      this.fingerConfirmedByRhythm = false;
+      this.lastPeakTimes = [];
+      return {
+        isFingerDetected: false,
+        quality: 0,
+        confidence: 0,
+        rhythmDetected: false,
+        rhythmConfidence: 0,
+        signalStrength: 0,
+        feedback: "No se detecta señal (dedo no presente o señal muy débil)",
+        lastUpdate: currentTime,
+        rawValue: effectivePpgValue ?? 0
+      };
+    }
 
-      this.signalHistory.push({ time: currentTime, value: ppgFilteredValue });
-      while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
-        this.signalHistory.shift();
-      }
-      this.lastProcessedPpgValue = ppgFilteredValue; // Guardar el último valor filtrado procesado
-      const signalWindow = this.signalHistory.map(p => p.value);
-      if (signalWindow.length > 1) {
-        ppgAmplitude = Math.max(...signalWindow) - Math.min(...signalWindow);
-      }
+    // Usar VitalSignsSignalProcessor para obtener valor filtrado y calidad base
+    const processingResult = this.vsSignalProcessor.applyFilters(effectivePpgValue);
+    ppgFilteredValue = processingResult.filteredValue;
+    ppgQualityFromVSProcessor = processingResult.quality;
+
+    this.signalHistory.push({ time: currentTime, value: ppgFilteredValue });
+    while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
+      this.signalHistory.shift();
+    }
+    this.lastProcessedPpgValue = ppgFilteredValue; 
+    
+    const signalWindow = this.signalHistory.map(p => p.value);
+    if (signalWindow.length > 1) {
+      ppgAmplitude = Math.max(...signalWindow) - Math.min(...signalWindow);
     } else {
       ppgAmplitude = 0;
-      ppgQualityFromVSProcessor = 0;
+    }
+
+    // --- Segundo Chequeo de Amplitud después del filtrado ---
+    if (ppgAmplitude < this.config.minSignalAmplitude / 2) {
+        // Si la amplitud es consistentemente muy baja, incluso después del filtrado, es probable que no haya dedo.
+        // Reducir gradualmente la confianza en el ritmo.
+        this.detectedRhythmicPatternsCount = Math.max(0, this.detectedRhythmicPatternsCount -1);
+        if(this.detectedRhythmicPatternsCount === 0) {
+            this.fingerConfirmedByRhythm = false;
+        }
+        // No retornar inmediatamente aquí, permitir que la calidad y confianza reflejen esto.
     }
 
     // --- Análisis de Señal PPG (Ritmo) ---
-    if (typeof effectivePpgValue === 'number') { // Solo si hay valor PPG
+    // Solo si la amplitud da alguna esperanza.
+    if (ppgAmplitude > this.config.minSignalAmplitude / 3) {
         rhythmResult = this.detectRhythmicPatternInternal(); 
         finalRhythmConfirmed = rhythmResult.isPatternConsistent && rhythmResult.confidence > 0.5;
+        if (!finalRhythmConfirmed && this.fingerConfirmedByRhythm) { // Si el ritmo se pierde
+             this.detectedRhythmicPatternsCount = 0; // Resetear contador de patrones
+             this.fingerConfirmedByRhythm = false; // Perder confirmación de ritmo
+        } else if (finalRhythmConfirmed && !this.fingerConfirmedByRhythm) {
+            // Si se detecta un nuevo ritmo consistente
+            this.fingerConfirmedByRhythm = true;
+            // this.detectedRhythmicPatternsCount se maneja dentro de detectRhythmicPatternInternal
+        }
+    } else { // Si la amplitud es demasiado baja, no hay ritmo.
+        rhythmResult = { isPatternConsistent: false, confidence: 0, peaksFound: [] };
+        finalRhythmConfirmed = false;
+        this.fingerConfirmedByRhythm = false;
+        this.detectedRhythmicPatternsCount = 0;
     }
-    // La calidad de la señal PPG ahora puede combinar la de vsSignalProcessor y la propia
+    
     const combinedPpgQuality = this.calculateCombinedPpgSignalQuality(ppgQualityFromVSProcessor, ppgFilteredValue, ppgAmplitude);
 
     // --- Sistema de Confianza Graduada y Detección Final ---
@@ -175,9 +227,23 @@ class FingerDetectionManager {
     overallConfidence = this.calculateOverallConfidence(
       finalRhythmConfirmed,
       rhythmResult.confidence,
-      combinedPpgQuality, // Usar calidad combinada
+      combinedPpgQuality, 
     );
-    isFingerActuallyDetected = overallConfidence >= 0.60; 
+    
+    // Si la calidad combinada es muy baja, forzar no detección independientemente de la confianza calculada.
+    if (combinedPpgQuality < this.config.minQualityThreshold / 2) { // ej. si minQuality es 30, umbral aquí es 15
+        isFingerActuallyDetected = false;
+        overallConfidence = Math.min(overallConfidence, 0.1); // Reducir confianza drásticamente
+    } else {
+        isFingerActuallyDetected = overallConfidence >= 0.60; 
+    }
+    
+    // Si no se detecta el dedo, resetear la confirmación por ritmo para la próxima vez
+    if (!isFingerActuallyDetected) {
+        this.fingerConfirmedByRhythm = false;
+        // No resetear detectedRhythmicPatternsCount aquí directamente, 
+        // se maneja por la falta de confirmación y la baja amplitud.
+    }
 
     // --- Generar Feedback ---
     const feedback = this.generateUserFeedback(
@@ -224,8 +290,9 @@ class FingerDetectionManager {
     const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
 
     if (variance < this.config.minSignalVariance) {
-      // console.log("FingerDetectionManager: Signal variance too low", variance);
-      return { isPatternConsistent: false, confidence: 0.1, peaksFound: [] }; // Baja confianza si la varianza es baja
+      this.fingerConfirmedByRhythm = false; // Añadido: si varianza baja, no hay ritmo confirmado
+      this.detectedRhythmicPatternsCount = 0; // Añadido: resetear contador de patrones
+      return { isPatternConsistent: false, confidence: 0.1, peaksFound: [] }; 
     }
 
     const peaks: { time: number; value: number }[] = [];
@@ -277,25 +344,37 @@ class FingerDetectionManager {
     // La confianza del ritmo podría basarse en qué tan consistentes son los intervalos
     const rhythmConfidence = (validIntervals.length > 0) ? (consistentIntervalCount / validIntervals.length) * 0.8 + 0.2 : 0.2;
 
-
-    if (consistentIntervalCount >= this.config.minPeaksForRhythm - 1) { // -1 porque son N picos, N-1 intervalos
-      // console.log("FingerDetectionManager: Consistent rhythm detected");
+    if (consistentIntervalCount >= this.config.minPeaksForRhythm - 1) { 
+      this.detectedRhythmicPatternsCount++; // Incrementar aquí los patrones consistentes
+      if(this.detectedRhythmicPatternsCount >= this.config.requiredConsistentPatterns){
+        this.fingerConfirmedByRhythm = true; // Confirmar dedo por ritmo si se alcanzan suficientes patrones
+      }
       return { isPatternConsistent: true, confidence: Math.max(0.5, rhythmConfidence) , peaksFound: this.lastPeakTimes };
     }
-    // console.log("FingerDetectionManager: Rhythm not consistent enough", consistentIntervalCount);
+    // Si no es consistente, reducir el contador de patrones detectados
+    this.detectedRhythmicPatternsCount = Math.max(0, this.detectedRhythmicPatternsCount -1);
+    if (this.detectedRhythmicPatternsCount < this.config.requiredConsistentPatterns) {
+        this.fingerConfirmedByRhythm = false; // Perder confirmación si cae por debajo
+    }
     return { isPatternConsistent: false, confidence: rhythmConfidence, peaksFound: this.lastPeakTimes };
   }
 
   // Renombrar y ajustar para que reciba la calidad del VitalSignsSignalProcessor
   private calculateCombinedPpgSignalQuality(qualityFromVSProcessor: number, currentFilteredValue: number, ppgAmplitude: number): number {
     const history = this.signalHistory.map(p => p.value); 
-    if (history.length < 30) return Math.min(15, qualityFromVSProcessor / 4); // Si no hay historial, devolver algo basado en VSProcessor pero bajo
+    
+    // Si la amplitud es casi nula, la calidad es cero.
+    if (ppgAmplitude < this.config.minSignalAmplitude / 4) { // Umbral más estricto aquí
+        return 0;
+    }
+
+    if (history.length < 30) return Math.min(15, qualityFromVSProcessor / 4);
 
     const range = Math.max(...history) - Math.min(...history);
     const amplitudeScore = Math.min(1, range / (this.config.minSignalAmplitude * 2.5)); 
 
-    if (amplitudeScore < 0.2 && range < this.config.minSignalAmplitude * 0.8) {
-        return Math.min(10, qualityFromVSProcessor / 5); // Muy baja si amplitud es muy pequeña
+    if (amplitudeScore < 0.1) { // Si la puntuación de amplitud es muy baja
+        return Math.min(5, qualityFromVSProcessor / 10); // Calidad muy baja, influenciada mínimamente por VS processor
     }
 
     const mean = history.reduce((sum, val) => sum + val, 0) / history.length;
