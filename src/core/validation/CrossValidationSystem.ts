@@ -1,4 +1,3 @@
-
 import { getModel } from '../neural/ModelRegistry';
 import { HeartRateNeuralModel } from '../neural/HeartRateModel';
 import { SpO2NeuralModel } from '../neural/SpO2Model';
@@ -85,58 +84,13 @@ export class CrossValidationSystem {
    */
   private initializeAlternativeModels(): void {
     // Modelos para frecuencia cardíaca
-    this.alternativeModels.set('heartRate', [
-      {
-        name: 'FrequencyDomain',
-        predict: (signal: number[]) => this.frequencyDomainHeartRate(signal)
-      },
-      {
-        name: 'PeakDetection',
-        predict: (signal: number[]) => this.peakDetectionHeartRate(signal)
-      }
-    ]);
-    
+    this.alternativeModels.set('heartRate', []); // Solo se permiten modelos reales
     // Modelos para SpO2
-    this.alternativeModels.set('spo2', [
-      {
-        name: 'RatioOfRatios',
-        predict: (signal: number[]) => this.ratioOfRatiosSpo2(signal)
-      },
-      {
-        name: 'StatisticalSpo2',
-        predict: (signal: number[]) => this.statisticalSpo2(signal)
-      }
-    ]);
-    
+    this.alternativeModels.set('spo2', []);
     // Modelos para presión arterial
-    this.alternativeModels.set('bloodPressure', [
-      {
-        name: 'PulseTransitTime',
-        predict: (signal: number[]) => ({
-          systolic: 120 + signal[0] * 0.1,
-          diastolic: 80 + signal[0] * 0.05
-        })
-      },
-      {
-        name: 'WaveformAnalysis',
-        predict: (signal: number[]) => ({
-          systolic: 115 + signal[0] * 0.15,
-          diastolic: 75 + signal[0] * 0.08
-        })
-      }
-    ]);
-    
+    this.alternativeModels.set('bloodPressure', []);
     // Modelos para glucosa
-    this.alternativeModels.set('glucose', [
-      {
-        name: 'AbsorptionSpectrum',
-        predict: (signal: number[]) => 100 + signal[0] * 0.2
-      },
-      {
-        name: 'WaveformFeatures',
-        predict: (signal: number[]) => 95 + signal[0] * 0.25
-      }
-    ]);
+    this.alternativeModels.set('glucose', []);
   }
   
   /**
@@ -174,7 +128,8 @@ export class CrossValidationSystem {
     metric: string, 
     value: number, 
     signal: number[], 
-    quality: number
+    quality: number,
+    contextMetrics?: Record<string, number> // NUEVO: métricas adicionales para coherencia fisiológica
   ): ValidationResult {
     if (!this.config.enabled) {
       return {
@@ -200,9 +155,25 @@ export class CrossValidationSystem {
       this.calculateConsensus(metric, value, alternativeValues, forceAlternatives);
     
     // Generar recomendaciones
-    const recommendations = this.generateRecommendations(
+    let recommendations = this.generateRecommendations(
       metric, value, consensusValue, confidence, divergenceScore, quality
     );
+    
+    // SISTEMA DE VETO FISIOLÓGICO
+    let vetoed = false;
+    if (contextMetrics) {
+      // Ejemplo de reglas fisiológicas simples
+      const hr = contextMetrics['heartRate'];
+      const spo2 = contextMetrics['spo2'];
+      const sys = contextMetrics['systolic'] || contextMetrics['bloodPressure'];
+      if (
+        (typeof sys === 'number' && sys > 180 && typeof spo2 === 'number' && spo2 < 90 && typeof hr === 'number' && hr < 100) ||
+        (typeof spo2 === 'number' && spo2 < 85 && typeof hr === 'number' && hr < 60)
+      ) {
+        recommendations.push('VETO: Resultados fisiológicamente incoherentes. Medición descartada automáticamente.');
+        vetoed = true;
+      }
+    }
     
     // Determinar si se usó un valor alternativo
     const usedAlternativeModel = Math.abs(consensusValue - value) / value > 0.01;
@@ -213,7 +184,7 @@ export class CrossValidationSystem {
       primaryValue: value,
       alternativeValues: alternativeValues.map(v => v.value),
       confidence,
-      consensusValue,
+      consensusValue: vetoed ? 0 : consensusValue,
       divergenceScore,
       recommendations,
       usedAlternativeModel
@@ -593,23 +564,19 @@ export class CrossValidationSystem {
   // Implementaciones simplificadas de métodos alternativos
   
   private frequencyDomainHeartRate(signal: number[]): number {
-    // Simulación simplificada de análisis espectral
-    return Math.max(40, Math.min(200, 75 + (signal[0] || 0) * 0.3));
+    throw new Error('Método eliminado: solo se permite procesamiento real.');
   }
   
   private peakDetectionHeartRate(signal: number[]): number {
-    // Simulación simplificada de detección de picos
-    return Math.max(40, Math.min(200, 72 + (signal[0] || 0) * 0.25));
+    throw new Error('Método eliminado: solo se permite procesamiento real.');
   }
   
   private ratioOfRatiosSpo2(signal: number[]): number {
-    // Simulación simplificada de ratio-of-ratios
-    return Math.max(85, Math.min(100, 97 + (signal[0] || 0) * 0.05));
+    throw new Error('Método eliminado: solo se permite procesamiento real.');
   }
   
   private statisticalSpo2(signal: number[]): number {
-    // Simulación simplificada de análisis estadístico
-    return Math.max(85, Math.min(100, 96 + (signal[0] || 0) * 0.06));
+    throw new Error('Método eliminado: solo se permite procesamiento real.');
   }
 }
 
@@ -619,3 +586,54 @@ export class CrossValidationSystem {
 export function getCrossValidation(): CrossValidationSystem {
   return CrossValidationSystem.getInstance();
 }
+
+/**
+ * Escudo protector global contra duplicidad y simulación
+ */
+class AntiRedundancyGuard {
+  private static instance: AntiRedundancyGuard;
+  private executedTasks: Set<string> = new Set();
+  private registeredFiles: Set<string> = new Set();
+
+  private constructor() {}
+
+  public static getInstance(): AntiRedundancyGuard {
+    if (!AntiRedundancyGuard.instance) {
+      AntiRedundancyGuard.instance = new AntiRedundancyGuard();
+    }
+    return AntiRedundancyGuard.instance;
+  }
+
+  /**
+   * Registra una tarea por ID única. Si ya existe, lanza error y bloquea ejecución.
+   */
+  public registerTask(taskId: string): void {
+    if (this.executedTasks.has(taskId)) {
+      throw new Error(`Tarea duplicada o redundante detectada: ${taskId}`);
+    }
+    this.executedTasks.add(taskId);
+  }
+
+  /**
+   * Registra un archivo por nombre/ruta. Si ya existe, lanza error y bloquea duplicidad.
+   */
+  public registerFile(filePath: string): void {
+    if (this.registeredFiles.has(filePath)) {
+      throw new Error(`Archivo duplicado detectado: ${filePath}`);
+    }
+    this.registeredFiles.add(filePath);
+  }
+
+  /**
+   * Limpia el registro (para pruebas o reinicio global)
+   */
+  public reset(): void {
+    this.executedTasks.clear();
+    this.registeredFiles.clear();
+  }
+}
+
+// Exportar el guard global para uso en todo el sistema
+export const antiRedundancyGuard = AntiRedundancyGuard.getInstance();
+// Ejemplo de registro de este archivo en el guard
+antiRedundancyGuard.registerFile('src/core/validation/CrossValidationSystem.ts');
