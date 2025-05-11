@@ -1,9 +1,8 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useSignalQualityDetector } from '../../hooks/vital-signs/use-signal-quality-detector';
+import { SignalQualityDetector } from '../vital-signs/quality/SignalQualityDetector';
 
 /**
  * Esta función es un puente para mantener compatibilidad con el código existente.
@@ -13,11 +12,9 @@ export function checkSignalQuality(value: number, weakSignalCount: number, optio
   isWeak: boolean;
   updatedWeakSignalCount: number;
 } {
-  // Crear una instancia temporal del detector para mantener compatibilidad hacia atrás
-  const { detectWeakSignal } = useSignalQualityDetector();
-  
-  const isWeak = detectWeakSignal(value);
-  
+  // Usar la clase SignalQualityDetector para mantener compatibilidad
+  const detector = new SignalQualityDetector(options);
+  const isWeak = detector.detectWeakSignal(value);
   return {
     isWeak,
     updatedWeakSignalCount: isWeak ? weakSignalCount + 1 : Math.max(0, weakSignalCount - 1)
@@ -28,15 +25,12 @@ export function checkSignalQuality(value: number, weakSignalCount: number, optio
  * Solo para compatibilidad con código existente
  */
 export function isFingerDetectedByPattern(signals: any[]): boolean {
-  // Si no hay suficientes señales, no podemos detectar patrones
   if (!signals || signals.length < 10) {
     return false;
   }
-  
-  // Crear una instancia temporal del detector
-  const { isFingerDetected } = useSignalQualityDetector();
-  
-  return isFingerDetected();
+  const detector = new SignalQualityDetector();
+  signals.forEach(s => detector.detectWeakSignal(s.value));
+  return detector.isFingerDetected();
 }
 
 /**
