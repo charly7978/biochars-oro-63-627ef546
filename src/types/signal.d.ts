@@ -1,3 +1,4 @@
+
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 
 /**
@@ -26,8 +27,6 @@ export interface ProcessedSignal {
   windowValues?: number[];  // Ventana de valores para análisis
   minValue?: number;        // Valor mínimo de la señal
   maxValue?: number;        // Valor máximo de la señal
-  confidence?: number;      // NUEVO: Confianza general de detección (0-1)
-  feedback?: string;        // NUEVO: Mensajes de feedback para el usuario
 }
 
 /**

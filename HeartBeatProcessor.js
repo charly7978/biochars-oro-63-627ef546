@@ -1,5 +1,3 @@
-// import { checkSignalQuality, resetSignalQualityState } from './heart-beat/signal-quality'; // ELIMINADO
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -50,8 +48,6 @@ export class HeartBeatProcessor {
   BPM_ALPHA = 0.2;
   peakCandidateIndex = null;
   peakCandidateValue = 0;
-
-  MIN_QUALITY_FOR_HB_PROCESSING = 20; // Nuevo: Umbral de calidad mínimo para procesar latidos
 
   constructor() {
     this.initAudio();
@@ -189,23 +185,7 @@ export class HeartBeatProcessor {
     return this.smoothedValue;
   }
 
-  processSignal(value, fingerDetected, signalQuality) { // Parámetros añadidos
-    // Si no hay dedo o la calidad es muy baja, no procesar para BPM
-    if (!fingerDetected || signalQuality < this.MIN_QUALITY_FOR_HB_PROCESSING) {
-      // Aún así, aplicar filtros básicos para que el valor suavizado esté disponible si se necesita
-      const medVal = this.medianFilter(value);
-      const movAvgVal = this.calculateMovingAverage(medVal);
-      const smoothedFallback = this.calculateEMA(movAvgVal);
-      // Podríamos resetear algunos estados de BPM aquí si la señal se pierde por mucho tiempo
-      // this.resetBpmStates(); // Función hipotética
-      return {
-        bpm: 0,
-        confidence: 0,
-        isPeak: false,
-        filteredValue: smoothedFallback // Devolver valor filtrado básico
-      };
-    }
-
+  processSignal(value) {
     // Aplicar filtros para reducir ruido
     const medVal = this.medianFilter(value);
     const movAvgVal = this.calculateMovingAverage(medVal);
@@ -233,7 +213,7 @@ export class HeartBeatProcessor {
 
     // Normalizar señal
     const normalizedValue = smoothed - this.baseline;
-    // this.autoResetIfSignalIsLow(Math.abs(normalizedValue)); // Lógica de autoreset basada en calidad externa ahora
+    this.autoResetIfSignalIsLow(Math.abs(normalizedValue));
 
     // Calcular derivada para detección de picos
     this.values.push(smoothed);
@@ -283,7 +263,7 @@ export class HeartBeatProcessor {
     if (amplitude < this.LOW_SIGNAL_THRESHOLD) {
       this.lowSignalCount++;
       if (this.lowSignalCount >= this.LOW_SIGNAL_FRAMES) {
-        this.resetDetectionStates(); // Esto resetea estados de PICO, puede mantenerse
+        this.resetDetectionStates();
       }
     } else {
       this.lowSignalCount = 0;
@@ -298,8 +278,7 @@ export class HeartBeatProcessor {
     this.peakCandidateValue = 0;
     this.peakConfirmationBuffer = [];
     this.values = [];
-    // No resetear bpmHistory o rrIntervalHistory aquí, se manejan por separado o en reset() general
-    console.log("HeartBeatProcessor: auto-reset peak detection states (low signal).");
+    console.log("HeartBeatProcessor: auto-reset detection states (low signal).");
   }
 
   detectPeak(normalizedValue, derivative) {
