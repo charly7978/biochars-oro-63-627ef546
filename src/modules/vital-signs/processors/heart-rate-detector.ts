@@ -3,205 +3,165 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import FeedbackService from '../../../services/FeedbackService';
-
 /**
- * Heart rate detection functions for real PPG signals
- * All methods work with real data only, no simulation
- * Enhanced for natural rhythm detection and clear beats
+ * Detector de frecuencia cardíaca basado en procesamiento directo de señal PPG
+ * Sin simulación ni manipulación de datos
  */
 export class HeartRateDetector {
-  // Store recent peaks for consistent timing analysis
   private peakTimes: number[] = [];
-  private lastProcessTime: number = 0;
-  private lastBeepTime: number = 0;
-  private readonly MIN_BEEP_INTERVAL = 300; // ms
+  private lastPeakIndex: number = -1;
+  private lastBpm: number = 0;
   
   /**
-   * Calculate heart rate from real PPG values with enhanced peak detection
+   * Calcula la frecuencia cardíaca a partir de los valores PPG directos
+   * @param ppgValues Array de valores PPG
+   * @param sampleRate Tasa de muestreo en Hz
+   * @returns Frecuencia cardíaca en BPM
    */
   public calculateHeartRate(ppgValues: number[], sampleRate: number = 30): number {
-    if (ppgValues.length < sampleRate * 1.0) { // Reducido para detección más rápida
-      return 0;
+    if (ppgValues.length < 10) {
+      return this.lastBpm;
     }
     
-    const now = Date.now();
+    // Detectar picos en la señal PPG
+    this.detectPeaks(ppgValues, sampleRate);
     
-    // Track processing time for natural timing
-    const timeDiff = now - this.lastProcessTime;
-    this.lastProcessTime = now;
+    // Calcular intervalos RR
+    const rrIntervals = this.calculateRRIntervals();
     
-    // Get recent real data - analizamos más datos para mejor detección
-    const recentData = ppgValues.slice(-Math.min(ppgValues.length, sampleRate * 6)); // Aumentado para mejor detección
-    
-    // Calculate signal statistics for adaptive thresholding
-    const mean = recentData.reduce((sum, val) => sum + val, 0) / recentData.length;
-    const stdDev = Math.sqrt(
-      recentData.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentData.length
-    );
-    
-    // Find peaks in real data with adaptive threshold
-    const peaks = this.findPeaksEnhanced(recentData, mean, stdDev);
-    
-    if (peaks.length < 2) {
-      return 0;
+    if (rrIntervals.length < 3) {
+      return this.lastBpm;
     }
     
-    // Convert peak indices to timestamps for natural timing
-    const sampleDuration = timeDiff / recentData.length;
-    const peakTimes = peaks.map(idx => now - (recentData.length - idx) * sampleDuration);
+    // Calcular BPM promedio a partir de intervalos RR
+    const validIntervals = this.getValidRRIntervals(rrIntervals);
     
-    // Activar vibración para cada nuevo pico detectado
-    if (peakTimes.length > 0) {
-      const latestPeakTime = Math.max(...peakTimes);
-      
-      // Verificar si este pico es nuevo y no ha sido procesado antes
-      const isNewPeak = !this.peakTimes.some(existingPeakTime => 
-        Math.abs(existingPeakTime - latestPeakTime) < 200
-      );
-      
-      // Si es un nuevo pico y ha pasado suficiente tiempo desde el último beep, activar retroalimentación
-      if (isNewPeak && (now - this.lastBeepTime > this.MIN_BEEP_INTERVAL)) {
-        this.lastBeepTime = now;
-        console.log("HeartRateDetector: Nuevo pico detectado, activando feedback", {
-          tiempo: new Date().toISOString()
-        });
-        
-        // Usar el servicio central de feedback
-        FeedbackService.triggerHeartbeat();
-      }
+    if (validIntervals.length < 3) {
+      return this.lastBpm;
     }
     
-    // Update stored peak times
-    this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-15); // Aumentado para mejor análisis
+    const averageRR = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
+    const bpm = Math.round(60000 / averageRR); // Convertir a BPM
     
-    // Calculate intervals between consecutive peaks
-    const intervals: number[] = [];
-    for (let i = 1; i < this.peakTimes.length; i++) {
-      const interval = this.peakTimes[i] - this.peakTimes[i-1];
-      // Only use physiologically plausible intervals (30-240 BPM)
-      if (interval >= 250 && interval <= 2000) { // Ampliado para detectar FC más altas
-        intervals.push(interval);
-      }
+    // Validar que el BPM esté en un rango fisiológico razonable
+    if (bpm >= 40 && bpm <= 200) {
+      this.lastBpm = bpm;
     }
     
-    if (intervals.length < 2) {
-      // Fall back to sample-based calculation if not enough timestamp-based intervals
-      let totalInterval = 0;
-      for (let i = 1; i < peaks.length; i++) {
-        totalInterval += peaks[i] - peaks[i - 1];
-      }
-      
-      const avgInterval = totalInterval / (peaks.length - 1);
-      return Math.round(60 / (avgInterval / sampleRate));
-    }
-    
-    // Calculate average interval with outlier rejection - mejora en el filtrado
-    intervals.sort((a, b) => a - b);
-    const filteredIntervals = intervals.slice(
-      Math.floor(intervals.length * 0.1), // Más inclusivo
-      Math.ceil(intervals.length * 0.9)   // Más inclusivo
-    );
-    
-    if (filteredIntervals.length === 0) {
-      return 0;
-    }
-    
-    const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
-    
-    // Convert to beats per minute
-    return Math.round(60000 / avgInterval);
+    return this.lastBpm;
   }
   
   /**
-   * Enhanced peak detection with real data and adaptive thresholding
-   * Mejorado para sincronización natural entre visualización y beeps
+   * Detecta picos en la señal PPG
+   * @param ppgValues Array de valores PPG
+   * @param sampleRate Tasa de muestreo en Hz
    */
-  public findPeaksEnhanced(values: number[], mean: number, stdDev: number): number[] {
-    const peaks: number[] = [];
-    const minPeakDistance = 5; // Más sensible para detección natural de picos
+  private detectPeaks(ppgValues: number[], sampleRate: number): void {
+    const now = Date.now();
+    const msPerSample = 1000 / sampleRate;
     
-    // Dynamic threshold based on real signal statistics
-    // Asegurar que stdDev no sea tan pequeño que el umbral sea casi cero, o demasiado sensible.
-    // Si la señal AC es, por ejemplo, +/- 0.1, stdDev podría ser ~0.05. Umbral = 0.05 * 0.2 = 0.01
-    // Si la señal AC es +/- 0.02, stdDev podría ser ~0.01. Umbral = 0.01 * 0.2 = 0.002
-    // Esto parece razonable. Un ajuste podría ser añadir una pequeña constante al umbral para evitar que sea demasiado bajo.
-    const calculatedThreshold = mean + (stdDev * 0.2);
-    const peakThreshold = Math.max(calculatedThreshold, 0.01); // Asegurar un umbral mínimo absoluto para la señal AC
+    // Buscar picos solo en la parte más reciente de la señal
+    const startIdx = Math.max(0, ppgValues.length - 10);
     
-    // First pass: identify all potential peaks
-    const potentialPeaks: number[] = [];
-    for (let i = 2; i < values.length - 2; i++) {
-      const current = values[i];
-      
-      // Check if this point is a peak in real data
-      if (current > values[i - 1] && 
-          current > values[i - 2] &&
-          current > values[i + 1] && 
-          current > values[i + 2] &&
-          current > peakThreshold) {
+    for (let i = startIdx + 2; i < ppgValues.length - 2; i++) {
+      // Un punto es un pico si es mayor que sus vecinos
+      if (ppgValues[i] > ppgValues[i - 1] && 
+          ppgValues[i] > ppgValues[i - 2] &&
+          ppgValues[i] > ppgValues[i + 1] &&
+          ppgValues[i] > ppgValues[i + 2]) {
         
-        potentialPeaks.push(i);
-      }
-    }
-    
-    // Second pass: filter for natural rhythm with minimum distance
-    if (potentialPeaks.length === 0) {
-      return peaks;
-    }
-    
-    // Always include the first peak
-    peaks.push(potentialPeaks[0]);
-    
-    // Filter other peaks based on minimum distance
-    for (let i = 1; i < potentialPeaks.length; i++) {
-      const current = potentialPeaks[i];
-      const prev = peaks[peaks.length - 1];
-      
-      // Enforce minimum distance between peaks for physiological plausibility
-      if (current - prev >= minPeakDistance) {
-        peaks.push(current);
-      } else {
-        // If peaks are too close, keep the stronger one
-        if (values[current] > values[prev]) {
-          peaks.pop();
-          peaks.push(current);
+        // Calcular el tiempo aproximado de este pico
+        const peakTime = now - (ppgValues.length - 1 - i) * msPerSample;
+        
+        // Verificar la distancia mínima entre picos (250ms = 240bpm máx)
+        const lastPeakTime = this.peakTimes.length > 0 ? this.peakTimes[this.peakTimes.length - 1] : 0;
+        
+        if (this.peakTimes.length === 0 || (peakTime - lastPeakTime) > 250) {
+          this.peakTimes.push(peakTime);
+          this.lastPeakIndex = i;
+          
+          // Mantener solo los últimos N picos
+          if (this.peakTimes.length > 10) {
+            this.peakTimes.shift();
+          }
         }
       }
     }
-    
-    return peaks;
   }
   
   /**
-   * Original peak finder with real data
+   * Calcula intervalos RR
+   * @returns Array de intervalos RR en ms
    */
-  public findPeaks(values: number[]): number[] {
-    const peaks: number[] = [];
-    
-    // Simple peak detector for real data
-    for (let i = 1; i < values.length - 1; i++) {
-      if (values[i] > values[i - 1] && values[i] > values[i + 1]) {
-        peaks.push(i);
-      }
+  private calculateRRIntervals(): number[] {
+    if (this.peakTimes.length < 2) {
+      return [];
     }
     
-    return peaks;
+    const intervals: number[] = [];
+    for (let i = 1; i < this.peakTimes.length; i++) {
+      const interval = this.peakTimes[i] - this.peakTimes[i - 1];
+      intervals.push(interval);
+    }
+    
+    return intervals;
   }
   
   /**
-   * Reset the heart rate detector
+   * Filtra intervalos RR válidos
+   * @param intervals Array de intervalos RR
+   * @returns Array de intervalos RR válidos
+   */
+  private getValidRRIntervals(intervals: number[]): number[] {
+    // Filtrar intervalos fisiológicamente plausibles (300-1500ms = 40-200bpm)
+    const physiologicalIntervals = intervals.filter(
+      interval => interval >= 300 && interval <= 1500
+    );
+    
+    if (physiologicalIntervals.length < 3) {
+      return physiologicalIntervals;
+    }
+    
+    // Calcular cuartiles para filtrar outliers
+    const sorted = [...physiologicalIntervals].sort((a, b) => a - b);
+    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+    const iqr = q3 - q1;
+    
+    // Filtrar outliers (fuera de 1.5 IQR)
+    return physiologicalIntervals.filter(
+      interval => interval >= (q1 - 1.5 * iqr) && interval <= (q3 + 1.5 * iqr)
+    );
+  }
+  
+  /**
+   * Obtiene los tiempos de picos detectados
+   * @returns Array de tiempos de picos
+   */
+  public getPeakTimes(): number[] {
+    return [...this.peakTimes];
+  }
+  
+  /**
+   * Obtiene los intervalos RR y el último tiempo de pico
+   * @returns Objeto con intervalos RR y último tiempo de pico
+   */
+  public getRRIntervals(): { intervals: number[], lastPeakTime: number | null } {
+    const intervals = this.calculateRRIntervals();
+    const validIntervals = this.getValidRRIntervals(intervals);
+    
+    return {
+      intervals: validIntervals,
+      lastPeakTime: this.peakTimes.length > 0 ? this.peakTimes[this.peakTimes.length - 1] : null
+    };
+  }
+  
+  /**
+   * Reinicia el detector
    */
   public reset(): void {
     this.peakTimes = [];
-    this.lastProcessTime = 0;
-    this.lastBeepTime = 0;
-  }
-
-  /**
-   * Get the detected peak times
-   */
-  public getPeakTimes(): number[] {
-    return [...this.peakTimes]; // Devuelve una copia para evitar mutaciones externas
+    this.lastPeakIndex = -1;
+    this.lastBpm = 0;
   }
 }

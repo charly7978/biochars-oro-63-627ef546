@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -30,12 +31,19 @@ export class SignalProcessor extends BaseProcessor {
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
   private readonly MIN_SIGNAL_AMPLITUDE = 0.25;
   
+  // Added properties for raw signal and DC baseline
+  private rawSignalBuffer: number[] = [];
+  private readonly RAW_BUFFER_SIZE = 50;
+  private dcBaseline: number = 0;
+  
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15);
+    this.rawSignalBuffer = [];
+    this.dcBaseline = 0;
   }
   
   /**
@@ -88,7 +96,23 @@ export class SignalProcessor extends BaseProcessor {
    * No simulation is used
    * Incorporates rhythmic pattern-based finger detection
    */
-  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
+  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean, acSignalValue: number, dcBaseline: number } {
+    // Track the raw value
+    this.rawSignalBuffer.push(value);
+    if (this.rawSignalBuffer.length > this.RAW_BUFFER_SIZE) {
+      this.rawSignalBuffer.shift();
+    }
+    
+    // Update DC baseline with a slow EMA
+    if (this.dcBaseline === 0) {
+      this.dcBaseline = value;
+    } else {
+      this.dcBaseline = 0.95 * this.dcBaseline + 0.05 * value;
+    }
+    
+    // Calculate AC component
+    const acSignalValue = value - this.dcBaseline;
+    
     // Seguir la señal para detección de patrones
     this.signalValidator.trackSignalForPatternDetection(value);
     
@@ -177,7 +201,9 @@ export class SignalProcessor extends BaseProcessor {
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
+      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed,
+      acSignalValue: acSignalValue,
+      dcBaseline: this.dcBaseline
     };
   }
   
@@ -189,15 +215,32 @@ export class SignalProcessor extends BaseProcessor {
   }
   
   /**
+   * Get RR intervals data
+   */
+  public getRRIntervals(): { intervals: number[], lastPeakTime: number | null } {
+    return this.heartRateDetector.getRRIntervals();
+  }
+  
+  /**
+   * Get raw signal buffer
+   */
+  public getRawSignalBuffer(): number[] {
+    return [...this.rawSignalBuffer];
+  }
+  
+  /**
    * Reset the signal processor
    * Ensures all measurements start from zero
    */
   public reset(): void {
     super.reset();
     this.quality.reset();
+    this.heartRateDetector.reset();
     this.signalValidator.resetFingerDetection();
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
+    this.rawSignalBuffer = [];
+    this.dcBaseline = 0;
   }
 }

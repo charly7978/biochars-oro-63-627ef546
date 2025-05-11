@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -70,23 +71,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * Process PPG signal directly
    * No simulation or reference values
    */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    // // Check for weak signal to detect finger removal using centralized function // Eliminar este bloque
-    // const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-    //   value,
-    //   weakSignalsCountRef.current,
-    //   {
-    //     lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-    //     maxWeakSignalCount: MAX_WEAK_SIGNALS
-    //   }
-    // );
-    // 
-    // weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Process signal directly - no simulation
+  const processSignal = (value: number): VitalSignsResult => {
     try {
-      // let result = processVitalSignal(value, rrData, isWeakSignal); // isWeakSignal ya no es parámetro
-      let result = processVitalSignal(value, rrData);
+      // Process signal directly - no simulation - fixed parameter count
+      let result = processVitalSignal(value);
       const currentTime = Date.now();
       
       // Add safe null check for arrhythmiaStatus
@@ -99,13 +87,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         
         // Window based on real heart rate
         let windowWidth = 400;
-        
-        // Adjust based on real RR intervals
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-        }
         
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
@@ -142,7 +123,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     resetProcessor();
     clearArrhythmiaWindows();
     setLastValidResults(null);
-    // weakSignalsCountRef.current = 0; // Eliminar
     
     return null;
   };
@@ -155,7 +135,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullResetProcessor();
     setLastValidResults(null);
     clearArrhythmiaWindows();
-    // weakSignalsCountRef.current = 0; // Eliminar
     clearLog();
   };
 

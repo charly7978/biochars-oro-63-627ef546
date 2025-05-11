@@ -3,7 +3,36 @@
  */
 
 import { useRef, useState, useCallback } from 'react';
-import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
+
+/**
+ * Implementación interna de verificación de calidad de señal
+ */
+function checkSignalQuality(
+  value: number,
+  currentWeakCount: number,
+  config: {
+    lowSignalThreshold: number;
+    maxWeakSignalCount: number;
+  }
+): {
+  isWeakSignal: boolean;
+  updatedWeakSignalsCount: number;
+} {
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
+  
+  const isCurrentValueWeak = Math.abs(value) < lowSignalThreshold;
+  
+  let updatedCount = isCurrentValueWeak
+    ? currentWeakCount + 1
+    : Math.max(0, currentWeakCount - 1);
+  
+  const isWeakSignal = updatedCount >= maxWeakSignalCount;
+  
+  return {
+    isWeakSignal,
+    updatedWeakSignalsCount: updatedCount
+  };
+}
 
 /**
  * Enhanced hook that detects finger presence based on consistent rhythmic patterns
