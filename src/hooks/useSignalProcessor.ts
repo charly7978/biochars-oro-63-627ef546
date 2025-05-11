@@ -16,6 +16,7 @@ import useFingerDetection from '../services/FingerDetectionService';
 export const useSignalProcessor = () => {
   // Acceso al servicio centralizado de detección de dedo
   const fingerDetection = useFingerDetection();
+  const cleanupCalledRef = useRef(false);
 
   // Create processor instance
   const [processor] = useState(() => {
@@ -80,9 +81,16 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
+      // Avoid multiple calls to cleanup functions that cause infinite loops
+      if (cleanupCalledRef.current) return;
+      cleanupCalledRef.current = true;
+      
       processor.stop();
-      // Reset detector de dedo centralizado
-      fingerDetection.resetDetection();
+      
+      // Use setTimeout to prevent state update during unmount cleanup cycles
+      setTimeout(() => {
+        fingerDetection.resetDetection();
+      }, 0);
     };
   }, [processor, fingerDetection]);
 
@@ -101,8 +109,9 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset detector de dedo centralizado
+    // Reset finger detection status before starting
     fingerDetection.resetDetection();
+    cleanupCalledRef.current = false;
     
     processor.start();
   }, [processor, fingerDetection]);
@@ -116,8 +125,10 @@ export const useSignalProcessor = () => {
     setIsProcessing(false);
     processor.stop();
     
-    // Reset detector de dedo centralizado
-    fingerDetection.resetDetection();
+    // Use setTimeout to prevent react update cycle issues
+    setTimeout(() => {
+      fingerDetection.resetDetection();
+    }, 0);
   }, [processor, fingerDetection]);
 
   /**

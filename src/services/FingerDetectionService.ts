@@ -83,6 +83,7 @@ interface FingerDetectionState {
   addSignalPoint: (point: SignalPoint) => void;
   setPeakTimes: (peaks: number[]) => void;
   incrementDetectedPatterns: () => void;
+  decrementDetectedPatterns: () => void;
   resetDetectedPatterns: () => void;
   setConsecutiveWeakSignals: (count: number) => void;
   incrementConsecutiveWeakSignals: () => void;
@@ -97,9 +98,6 @@ interface FingerDetectionState {
     perfusionIndex?: number;
   }) => void;
   resetDetection: () => void;
-  
-  // Method to decrease detected patterns (adding the missing method)
-  decrementDetectedPatterns: () => void;
   
   // Método principal de procesamiento
   processSignal: (value: number, quality?: number) => boolean;
@@ -118,6 +116,9 @@ const DEFAULT_CONFIG: FingerDetectionConfig = {
   minQualityForFingerDetection: 45,
   requiredConsecutiveFrames: 3
 };
+
+// Flag para evitar reinicios múltiples que causan ciclos infinitos
+let isResettingState = false;
 
 /**
  * Servicio centralizado para la detección de dedo usando Zustand
@@ -167,7 +168,6 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
     detectedPatterns: state.detectedPatterns + 1 
   })),
   
-  // Adding the missing decrementDetectedPatterns method
   decrementDetectedPatterns: () => set(state => ({
     detectedPatterns: Math.max(0, state.detectedPatterns - 1)
   })),
@@ -199,20 +199,34 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
     perfusionIndex: metrics.perfusionIndex ?? state.perfusionIndex
   })),
   
-  resetDetection: () => set({
-    isFingerDetected: false,
-    fingerConfirmed: false,
-    fingerDetectionStartTime: null,
-    signalHistory: [],
-    peakTimes: [],
-    detectedPatterns: 0,
-    consecutiveWeakSignals: 0,
-    consecutiveGoodFrames: 0,
-    lastDetectionConfidence: 0,
-    lastSignalAmplitude: 0,
-    lastSignalVariance: 0,
-    perfusionIndex: 0
-  }),
+  resetDetection: () => {
+    // Avoid potential infinite loops by checking if already resetting
+    if (isResettingState) return;
+    
+    try {
+      isResettingState = true;
+      
+      set({
+        isFingerDetected: false,
+        fingerConfirmed: false,
+        fingerDetectionStartTime: null,
+        signalHistory: [],
+        peakTimes: [],
+        detectedPatterns: 0,
+        consecutiveWeakSignals: 0,
+        consecutiveGoodFrames: 0,
+        lastDetectionConfidence: 0,
+        lastSignalAmplitude: 0,
+        lastSignalVariance: 0,
+        perfusionIndex: 0
+      });
+    } finally {
+      // Reset the flag after a short delay to ensure any pending state updates are processed
+      setTimeout(() => {
+        isResettingState = false;
+      }, 0);
+    }
+  },
   
   /**
    * Función principal para procesar la señal y detectar dedo
@@ -222,6 +236,9 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
    * @returns Estado de detección de dedo actualizado
    */
   processSignal: (value, quality) => {
+    // Avoid processing signals during reset operations
+    if (isResettingState) return false;
+    
     const state = get();
     const now = Date.now();
     
