@@ -9,6 +9,7 @@ import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
+import useFingerDetection from "@/services/FingerDetectionService";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -30,6 +31,9 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
+  
+  // Usar el detector de dedo centralizado
+  const fingerDetection = useFingerDetection();
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
@@ -75,9 +79,15 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
+      // Procesar la señal con el detector de dedo centralizado
+      const isFingerDetected = fingerDetection.processSignal(
+        lastSignal.filteredValue,
+        lastSignal.quality
+      );
+      
       const minQualityThreshold = 40;
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      if (isFingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
         if (heartBeatResult.confidence > 0.4) {
@@ -97,14 +107,14 @@ const Index = () => {
       } else {
         setSignalQuality(lastSignal.quality);
         
-        if (!lastSignal.fingerDetected && heartRate > 0) {
+        if (!isFingerDetected && heartRate > 0) {
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, fingerDetection]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -162,6 +172,9 @@ const Index = () => {
     setElapsedTime(0);
     setSignalQuality(0);
     setHeartRate(0);
+    
+    // Reset detector de dedo centralizado
+    fingerDetection.resetDetection();
   };
 
   const handleReset = () => {
@@ -194,6 +207,9 @@ const Index = () => {
       hydration: 0
     });
     setSignalQuality(0);
+    
+    // Reset detector de dedo centralizado
+    fingerDetection.resetDetection();
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -301,7 +317,7 @@ const Index = () => {
           <CameraView 
             onStreamReady={handleStreamReady}
             isMonitoring={isCameraOn}
-            isFingerDetected={lastSignal?.fingerDetected}
+            isFingerDetected={fingerDetection.isFingerDetected}
             signalQuality={signalQuality}
           />
         </div>
@@ -312,7 +328,7 @@ const Index = () => {
               Calidad: {signalQuality}
             </div>
             <div className="text-white text-sm">
-              {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
+              {fingerDetection.isFingerDetected ? "Huella Detectada" : "Huella No Detectada"}
             </div>
           </div>
 
@@ -320,7 +336,7 @@ const Index = () => {
             <PPGSignalMeter 
               value={lastSignal?.filteredValue || 0}
               quality={lastSignal?.quality || 0}
-              isFingerDetected={lastSignal?.fingerDetected || false}
+              isFingerDetected={fingerDetection.isFingerDetected}
               onStartMeasurement={startMonitoring}
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
