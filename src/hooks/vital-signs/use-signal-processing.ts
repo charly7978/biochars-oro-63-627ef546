@@ -22,8 +22,7 @@ export const useSignalProcessing = () => {
    * No simulation or reference values
    */
   const processSignal = useCallback((
-    value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null }
+    value: number 
   ): VitalSignsResult => {
     if (!processorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
@@ -36,8 +35,6 @@ export const useSignalProcessing = () => {
     if (processedSignals.current % 45 === 0) {
       console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
-        rrDataPresent: !!rrData,
-        rrIntervals: rrData?.intervals.length || 0,
         arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
         signalNumber: processedSignals.current
       });
@@ -45,8 +42,7 @@ export const useSignalProcessing = () => {
     
     try {
       // Process signal directly - no simulation
-      // Important: We've changed this to handle sync processing only, avoiding Promise issues
-      let result = processorRef.current.processSignal(value, rrData);
+      let result = processorRef.current.processSignal(value);
       
       // Add null checks for arrhythmia status
       if (result && 
@@ -60,11 +56,11 @@ export const useSignalProcessing = () => {
         let windowWidth = 400;
         
         // Adjust based on real RR intervals
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-        }
+        // if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+        //   const lastIntervals = rrData.intervals.slice(-4);
+        //   const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+        //   windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
+        // }
       }
       
       // Log processed signals

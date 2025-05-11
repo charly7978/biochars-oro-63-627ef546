@@ -57,7 +57,7 @@ export class VitalSignsProcessor {
    */
   public processSignal(
     ppgValue: number,
-    rrData?: { intervals: number[]; lastPeakTime: number | null }
+    // rrData?: { intervals: number[]; lastPeakTime: number | null } // Eliminar este parámetro, se obtiene internamente
   ): VitalSignsResult {
     // Apply filtering and get quality/finger detection status from SignalProcessor
     const { filteredValue, quality: signalQuality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
@@ -75,12 +75,15 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
+    // Obtener datos RR del procesador de señal principal
+    const rrDataFromSignalProcessor = this.signalProcessor.getRRIntervals();
+
     // Process arrhythmia data if available and valid
-    const arrhythmiaResult = rrData && 
-                           rrData.intervals && 
-                           rrData.intervals.length >= 3 && 
-                           rrData.intervals.every(i => i > 300 && i < 2000) ?
-                           this.arrhythmiaProcessor.processRRData(rrData) :
+    const arrhythmiaResult = rrDataFromSignalProcessor && 
+                           rrDataFromSignalProcessor.intervals && 
+                           rrDataFromSignalProcessor.intervals.length >= 3 && 
+                           rrDataFromSignalProcessor.intervals.every(i => i > 300 && i < 2000) ? // Validar cada intervalo
+                           this.arrhythmiaProcessor.processRRData(rrDataFromSignalProcessor) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
     // Get PPG values for processing (already updated by applyFilters in signalProcessor)
