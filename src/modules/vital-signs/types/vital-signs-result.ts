@@ -6,6 +6,9 @@ export interface VitalSignsResult {
   // Blood oxygen saturation percentage
   spo2: number;
   
+  // Heart rate in BPM
+  heartRate: number;
+  
   // Blood pressure in format "systolic/diastolic"
   pressure: string;
   
@@ -15,21 +18,20 @@ export interface VitalSignsResult {
   // Blood glucose level in mg/dL
   glucose: number;
   
-  // Blood lipid levels
+  // Hydration level as percentage
+  hydration: number;
+  
+  // Lipid profile data
   lipids: {
     totalCholesterol: number;
     triglycerides: number;
   };
   
-  // Hemoglobin level (g/dL)
+  // Hemoglobin level in g/dL
   hemoglobin: number;
   
-  // Hydration level (percentage)
-  hydration: number;
-  
-  // Individual confidence values (as separate properties)
+  // Individual confidence values
   glucoseConfidence?: number;
-  lipidsConfidence?: number;
   overallConfidence?: number;
   
   // Information about the last detected arrhythmia event

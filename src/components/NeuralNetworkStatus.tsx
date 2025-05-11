@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,11 +38,6 @@ export function NeuralNetworkStatus({
             {enabled ? "Activada" : "Desactivada"}
           </Badge>
         </div>
-        <CardDescription>
-          {ready 
-            ? "Modelos TensorFlow.js listos para procesamiento" 
-            : "Inicializando modelos..."}
-        </CardDescription>
       </CardHeader>
       <CardContent>
         {/* Estado de procesamiento */}

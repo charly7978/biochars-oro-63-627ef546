@@ -1,201 +1,60 @@
 
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+.App {
   text-align: center;
+  background-color: #282c34;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(10px + 2vmin);
+  color: white;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.App-header {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.status {
+  margin: 20px 0;
+  font-weight: bold;
+}
+
+.loading-container {
+  width: 100%;
+  height: 10px;
+  background-color: #444;
+  border-radius: 5px;
+  margin: 20px 0;
+  overflow: hidden;
+}
+
+.loading-bar {
+  height: 100%;
+  background-color: #61dafb;
+  transition: width 0.3s ease;
+}
+
+.retry-button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background-color: #61dafb;
+  border: none;
+  border-radius: 5px;
+  color: #282c34;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.retry-button:hover {
+  background-color: #4fa8d1;
+}
+
+@media (max-width: 600px) {
+  .App-header {
+    padding: 10px;
   }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
-
-/* Medical Data Display Optimizations */
-.vital-display {
-  font-feature-settings: "tnum";
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  font-weight: 600;
-  text-rendering: geometricPrecision;
-  will-change: transform, opacity;
-  contain: content;
-}
-
-.medical-value {
-  font-feature-settings: "tnum";
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-  -webkit-font-smoothing: subpixel-antialiased;
-  text-rendering: geometricPrecision;
-  will-change: contents;
-  contain: content;
-}
-
-/* Value States */
-.value-critical {
-  font-feature-settings: "tnum", "cv01", "cv02", "cv03";
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-weight: 700;
-  color: #ea384c;
-}
-
-.value-warning {
-  font-feature-settings: "tnum", "cv01", "cv02";
-  font-variant-numeric: tabular-nums slashed-zero;
-  font-weight: 600;
-  color: #f97316;
-}
-
-.value-normal {
-  font-feature-settings: "tnum", "cv01";
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  color: #22c55e;
-}
-
-/* Clinical data presentation */
-.clinical-data {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-feature-settings: "tnum", "salt", "ss01";
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-  text-rendering: optimizeLegibility;
-}
-
-/* Units display */
-.unit-text {
-  font-size: 0.65em;
-  font-weight: 400;
-  opacity: 0.8;
-  margin-left: 0.15em;
-  vertical-align: baseline;
-}
-
-/* Medical measurements */
-.measurements-grid {
-  display: grid;
-  font-feature-settings: "tnum";
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  contain: layout;
-}
-
-/* Precision number display */
-.precision-number {
-  font-feature-settings: "tnum", "zero";
-  font-variant-numeric: tabular-nums slashed-zero;
-  letter-spacing: -0.02em;
-  word-spacing: -0.05em;
-}
-
-/* Enhanced animations */
-@media (prefers-reduced-motion: no-preference) {
-  .vital-display {
-    transition: all 0.15s cubic-bezier(0.1, 0.7, 0.1, 1);
-  }
-}
-
-/* Glassmorphism styles */
-.glass-panel {
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  border-radius: 16px;
-}
-
-.glass-panel-dark {
-  background: rgba(20, 20, 28, 0.65);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
-  border-radius: 16px;
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.glass-card:hover {
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  transform: translateY(-2px);
-}
-
-.glass-medical-panel {
-  background: rgba(240, 248, 255, 0.1);
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border: 1px solid rgba(240, 248, 255, 0.15);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  border-radius: 16px;
-}
-
-.glass-vital-card {
-  background: rgba(30, 30, 40, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  transition: all 0.3s ease;
-}
-
-.glass-vital-card:hover {
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  background: rgba(30, 30, 40, 0.65);
-}
-
-.inner-glow {
-  box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.15);
-}
-
-.depth-shadow {
-  box-shadow: 
-    0 2px 4px rgba(0, 0, 0, 0.1),
-    0 8px 16px rgba(0, 0, 0, 0.1);
-}
-
-.text-shadow-sm {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }

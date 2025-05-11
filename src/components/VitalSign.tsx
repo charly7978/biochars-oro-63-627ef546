@@ -1,7 +1,6 @@
 
 import React, { ReactNode } from 'react';
 import { cn } from "@/lib/utils";
-import { animations } from '@/theme/animations';
 
 interface VitalSignProps {
   label: string;
@@ -30,17 +29,53 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
+  // MODIFICADO: Mejorada la detección de valores para mostrar
+  // Consideramos valores reales > 0 o cadenas que no son indicadores de falta de datos
+  const hasValue = value !== undefined && value !== null && 
+                  (typeof value === 'number' ? value > 0 : 
+                   (value !== '--' && value !== '--/--' && value !== ''));
+  
+  // Format function to handle all types of values properly
+  const formattedValue = () => {
+    // Handle numeric values
+    if (typeof value === 'number') {
+      if (value <= 0) return "--"; // Valor no medido o inválido
+      
+      if (label === "HIDRATACIÓN" || label === "SPO2") {
+        // These are percentages, show as integers
+        return Math.round(value);
+      } else if (label === "HEMOGLOBINA") {
+        // For hemoglobin, show one decimal place
+        return value.toFixed(1);
+      }
+      return Math.round(value);
+    }
+    
+    // Handle string values
+    if (typeof value === 'string' && value !== undefined) {
+      return value;
+    }
+    
+    // Default placeholder
+    return "--";
+  };
+
   return (
     <div 
       className={cn(
         "rounded-lg p-2 flex flex-col items-center justify-center transition-all duration-300",
         highlighted 
-          ? "bg-gradient-to-br from-[hsl(var(--medical-panel))] to-[hsl(var(--medical-bg))] border border-[hsl(var(--medical-border))]" 
-          : "bg-gray-800/30",
+          ? "bg-gray-900/60 border border-gray-700/40" 
+          : "bg-gray-900/40",
         compact ? "h-auto" : "h-full"
       )}
+      style={{
+        transition: "all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)",
+        transform: highlighted ? "translateY(0)" : "translateY(0)",
+        boxShadow: highlighted ? "0 0 15px rgba(0, 0, 0, 0.3)" : "none"
+      }}
     >
-      <div className="text-xs sm:text-sm font-medium text-[hsl(var(--medical-subdued))] uppercase tracking-wide mb-1">
+      <div className="text-xs sm:text-sm font-medium text-gray-400 uppercase tracking-wide mb-1">
         {label}
       </div>
       
@@ -48,22 +83,19 @@ const VitalSign: React.FC<VitalSignProps> = ({
         className={cn(
           getValueTextSize(),
           "font-bold transition-colors duration-300",
-          highlighted 
-            ? "text-[hsl(var(--medical-text))] medical-text-dark" 
+          highlighted && hasValue
+            ? "text-white" 
             : "text-gray-300"
         )}
         style={{ 
-          animation: highlighted ? animations["result-animate"] : "none" 
+          textShadow: highlighted && hasValue ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
         }}
       >
-        <span 
-          className="inline-flex items-center"
-          style={{ animation: highlighted ? animations["number-highlight"] : "none" }}
-        >
-          {value}
+        <span className="inline-flex items-center">
+          {formattedValue()}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
-        {unit && <span className="text-sm font-medium ml-1 text-[hsl(var(--medical-subdued))]">{unit}</span>}
+        {unit && hasValue && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
       </div>
     </div>
   );

@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -15,8 +14,8 @@ export const useSignalQualityDetector = () => {
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
   // Increased thresholds to reduce false positives
-  const WEAK_SIGNAL_THRESHOLD = 0.25; // Increased from 0.15
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5; // Increased from 4
+  const WEAK_SIGNAL_THRESHOLD = 0.4; // Aumentado de 0.35
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 8; // Aumentado de 6
   
   // Signal pattern detection for finger presence
   const signalHistoryRef = useRef<Array<{time: number, value: number}>>([]);
@@ -25,12 +24,12 @@ export const useSignalQualityDetector = () => {
   const fingerDetectionConfirmedRef = useRef<boolean>(false);
   
   // Constants for pattern detection - made more strict
-  const PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds window for pattern detection
-  const MIN_PEAKS_FOR_RHYTHM = 4; // Increased from 3 - need more peaks
-  const PEAK_DETECTION_THRESHOLD = 0.25; // Increased from 0.2
-  const REQUIRED_CONSISTENT_PATTERNS = 4; // Increased from 3
-  const MIN_SIGNAL_VARIANCE = 0.04; // New: minimum variance threshold to reject noise
-  
+  const PATTERN_DETECTION_WINDOW_MS = 4500; // Aumentado para mejor detección
+  const MIN_PEAKS_FOR_RHYTHM = 6; // Aumentado para más precisión
+  const PEAK_DETECTION_THRESHOLD = 0.4; // Aumentado de 0.35
+  const REQUIRED_CONSISTENT_PATTERNS = 6; // Aumentado para más confiabilidad
+  const MIN_SIGNAL_VARIANCE = 0.08; // Aumentado para mejor discriminación
+
   /**
    * Detect peaks in the signal history
    */

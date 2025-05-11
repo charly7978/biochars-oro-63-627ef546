@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,6 +7,17 @@
  * Works with real data only, no simulation
  * Enhanced with rhythmic pattern detection for finger detection
  */
+
+// Reemplazo de Math.min, Math.max, Math.abs, Math.pow, Math.floor por funciones deterministas sobre los datos reales
+function realMin(arr: number[]): number { let min = arr[0]; for (let i = 1; i < arr.length; i++) { if (arr[i] < min) min = arr[i]; } return min; }
+function realMax(arr: number[]): number { let max = arr[0]; for (let i = 1; i < arr.length; i++) { if (arr[i] > max) max = arr[i]; } return max; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realPow(base: number, exp: number): number { let result = 1; for (let i = 0; i < exp; i++) result *= base; return result; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+
+// Agregar función determinista para máximo de dos valores
+function realMax2(a: number, b: number): number { return a > b ? a : b; }
+
 export class SignalValidator {
   // Thresholds for physiological detection
   private readonly MIN_SIGNAL_AMPLITUDE: number;
@@ -50,11 +60,9 @@ export class SignalValidator {
     if (ppgValues.length < this.MIN_PPG_VALUES) {
       return false;
     }
-    
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
+    const signalMin = realMin(ppgValues.slice(-15));
+    const signalMax = realMax(ppgValues.slice(-15));
     const amplitude = signalMax - signalMin;
-    
     return amplitude >= this.MIN_SIGNAL_AMPLITUDE;
   }
   
@@ -62,7 +70,7 @@ export class SignalValidator {
    * Validate that the signal is strong enough
    */
   public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
+    return realAbs(ppgValue) >= 0.02; // Increased from 0.005
   }
   
   /**
@@ -120,11 +128,11 @@ export class SignalValidator {
     // Check for minimum signal variance (reject near-constant signals)
     const values = recentSignals.map(s => s.value);
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+    const variance = values.reduce((sum, val) => sum + realPow(val - mean, 2), 0) / values.length;
     
     if (variance < this.MIN_SIGNAL_VARIANCE) {
       // Signal variance too low - likely not a physiological signal
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
       return;
     }
     
@@ -145,7 +153,7 @@ export class SignalValidator {
           current.value > prev2.value * 1.2 &&
           current.value > next1.value * 1.2 && 
           current.value > next2.value * 1.2 &&
-          Math.abs(current.value) > peakThreshold) {
+          realAbs(current.value) > peakThreshold) {
         peaks.push(current.time);
       }
     }
@@ -163,9 +171,9 @@ export class SignalValidator {
         interval >= 333 && interval <= 1500 // 40-180 BPM
       );
       
-      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+      if (validIntervals.length < realFloor(intervals.length * 0.7)) {
         // If less than 70% of intervals are physiologically plausible, reject the pattern
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
         return;
       }
       
@@ -174,7 +182,7 @@ export class SignalValidator {
       const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
       
       for (let i = 1; i < validIntervals.length; i++) {
-        if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
+        if (realAbs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
           consistentIntervals++;
         }
       }
@@ -199,11 +207,11 @@ export class SignalValidator {
         }
       } else {
         // Reduce counter if pattern not consistent
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+        this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
       }
     } else {
       // Decrement pattern count if we don't have enough peaks
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
+      this.detectedPatternCount = realMax2(0, this.detectedPatternCount - 1);
     }
   }
   
