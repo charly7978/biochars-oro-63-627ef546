@@ -3,14 +3,14 @@
  */
 
 /**
- * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
+ * Signal quality assessment
  * All methods work with real data only, no simulation
  * Improved to reduce false positives
  */
 export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3 to 5
+  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5;
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -36,23 +36,22 @@ export class SignalQuality {
    * Adds validation to reduce false positives
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    console.log("SignalQuality: calculateSignalQuality called. ppgValues length:", ppgValues.length);
+    // console.log("SignalQuality: calculateSignalQuality called. ppgValues length:", ppgValues.length);
     if (ppgValues.length < 5) {
-      console.log("SignalQuality: Not enough values for quality calc, returning 0.");
+      // console.log("SignalQuality: Not enough values for quality calc, returning 0.");
       return 0;
     }
     
     const recentPpgValues = ppgValues.slice(-10);
-    console.log("SignalQuality: Recent PPG values for quality:", JSON.stringify(recentPpgValues));
+    // console.log("SignalQuality: Recent PPG values for quality:", JSON.stringify(recentPpgValues));
 
     const min = Math.min(...recentPpgValues);
     const max = Math.max(...recentPpgValues);
     const amplitude = max - min;
-    console.log("SignalQuality: Min:", min, "Max:", max, "Amplitude:", amplitude);
-    
-    // Only consider valid signals with sufficient amplitude
-    if (amplitude < 0.02) { // Reducido de 0.05 a 0.02 para mayor sensibilidad a la señal AC
-      console.log("SignalQuality: Amplitude < 0.02, resetting strong signals, returning 0 quality.");
+    // console.log("SignalQuality: Min:", min, "Max:", max, "Amplitude:", amplitude);
+        
+    if (amplitude < 0.02) { 
+      // console.log("SignalQuality: Amplitude < 0.02, resetting strong signals, returning 0 quality.");
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
@@ -60,18 +59,17 @@ export class SignalQuality {
         this.MIN_STRONG_SIGNALS_REQUIRED + 2, 
         this.consecutiveStrongSignals + 1
       );
-      console.log("SignalQuality: Amplitude OK. Consecutive strong signals:", this.consecutiveStrongSignals);
+      // console.log("SignalQuality: Amplitude OK. Consecutive strong signals:", this.consecutiveStrongSignals);
     }
     
-    // Only return positive quality after we've seen enough strong signals
     if (this.consecutiveStrongSignals < this.MIN_STRONG_SIGNALS_REQUIRED) {
-      console.log("SignalQuality: Not enough consecutive strong signals, returning 0 quality. Required:", this.MIN_STRONG_SIGNALS_REQUIRED);
+      // console.log("SignalQuality: Not enough consecutive strong signals, returning 0 quality. Required:", this.MIN_STRONG_SIGNALS_REQUIRED);
       return 0;
     }
     
-    const weightedQuality = this.calculateWeightedQuality(ppgValues);
-    console.log("SignalQuality: Calculated weighted quality:", weightedQuality);
-    return weightedQuality;
+    const weightedQuality = this.calculateWeightedQuality(ppgValues); // Esto devuelve 0-100
+    // console.log("SignalQuality: Calculated weighted quality:", weightedQuality);
+    return Math.round(weightedQuality); // Asegurar que es un entero
   }
   
   /**
@@ -81,24 +79,19 @@ export class SignalQuality {
   private calculateWeightedQuality(ppgValues: number[]): number {
     if (ppgValues.length < 10) return 0;
     
-    // Get recent values for analysis
     const recentValues = ppgValues.slice(-10);
     
-    // Calculate signal amplitude (min to max) - real data only
     const min = Math.min(...recentValues);
     const max = Math.max(...recentValues);
     const amplitude = max - min;
     
-    // Calculate average and standard deviation - real data only
     const avg = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
     const stdDev = Math.sqrt(
       recentValues.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / recentValues.length
     );
     
-    // Calculate noise to signal ratio - real data only
     const noiseToSignalRatio = this.noiseLevel / (amplitude + 0.001);
     
-    // Calculate consistency of peak spacing - real data only
     let peakConsistency = 0;
     let lastPeakIndex = -1;
     let peakSpacings = [];
@@ -114,24 +107,21 @@ export class SignalQuality {
     
     if (peakSpacings.length >= 2) {
       const avgSpacing = peakSpacings.reduce((sum, val) => sum + val, 0) / peakSpacings.length;
-      const spacingVariance = peakSpacings.reduce((sum, val) => sum + Math.pow(val - avgSpacing, 2), 0) / peakSpacings.length;
-      const spacingCoeffOfVar = Math.sqrt(spacingVariance) / avgSpacing;
+      const spacingStdDev = Math.sqrt(peakSpacings.reduce((sum, val) => sum + Math.pow(val - avgSpacing, 2), 0) / peakSpacings.length);
+      const spacingCoeffOfVar = avgSpacing > 0 ? spacingStdDev / avgSpacing : 1; // Evitar división por cero
       peakConsistency = Math.max(0, 1 - spacingCoeffOfVar);
     }
     
-    // Calculate overall quality score with weighted components - real data only
-    const amplitudeScore = Math.min(1, amplitude / 0.2);  // Normalizar amplitud por 0.2 (asumiendo que una buena AC es ~0.2)
-    const stdDevScore = Math.min(1, Math.max(0, 1 - noiseToSignalRatio));  // Lower noise is better
+    const amplitudeScore = Math.min(1, amplitude / 0.2);  // Divisor 0.2 para sensibilidad
+    const stdDevScore = Math.min(1, Math.max(0, 1 - noiseToSignalRatio));  
     
-    // Weight the factors to get overall quality
     const weightedScore = (
-      amplitudeScore * 0.4 +          // 40% amplitude
-      stdDevScore * 0.4 +             // 40% signal-to-noise
-      peakConsistency * 0.2           // 20% peak consistency
+      amplitudeScore * 0.4 +
+      stdDevScore * 0.4 +
+      peakConsistency * 0.2
     );
     
-    // Normalize to 0-1 range and multiply by 100 for percentage
-    return Math.max(0, Math.min(1, weightedScore));
+    return Math.max(0, Math.min(1, weightedScore)) * 100; // Devolver como porcentaje 0-100
   }
   
   /**

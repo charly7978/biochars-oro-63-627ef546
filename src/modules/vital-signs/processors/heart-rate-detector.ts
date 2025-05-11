@@ -95,8 +95,13 @@ export class HeartRateDetector {
     const peaks: number[] = [];
     const minPeakDistance = 5; // Más sensible para detección natural de picos
     
-    // Dynamic threshold based on real signal statistics - umbral más sensible
-    const peakThreshold = mean + (stdDev * 0.2); // Más sensible
+    // Dynamic threshold based on real signal statistics
+    // Asegurar que stdDev no sea tan pequeño que el umbral sea casi cero, o demasiado sensible.
+    // Si la señal AC es, por ejemplo, +/- 0.1, stdDev podría ser ~0.05. Umbral = 0.05 * 0.2 = 0.01
+    // Si la señal AC es +/- 0.02, stdDev podría ser ~0.01. Umbral = 0.01 * 0.2 = 0.002
+    // Esto parece razonable. Un ajuste podría ser añadir una pequeña constante al umbral para evitar que sea demasiado bajo.
+    const calculatedThreshold = mean + (stdDev * 0.2);
+    const peakThreshold = Math.max(calculatedThreshold, 0.01); // Asegurar un umbral mínimo absoluto para la señal AC
     
     // First pass: identify all potential peaks
     const potentialPeaks: number[] = [];

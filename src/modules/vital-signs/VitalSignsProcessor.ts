@@ -56,11 +56,9 @@ export class VitalSignsProcessor {
    * Using ONLY direct measurements with no reference values or simulation
    */
   public processSignal(
-    ppgValue: number,
-    // rrData?: { intervals: number[]; lastPeakTime: number | null } // Eliminar este parámetro, se obtiene internamente
+    ppgValue: number
   ): VitalSignsResult {
-    // Apply filtering and get quality/finger detection status from SignalProcessor
-    const { filteredValue, quality: signalQuality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
+    const { filteredValue, quality: signalQuality, fingerDetected, acSignalValue, dcBaseline } = this.signalProcessor.applyFilters(ppgValue);
 
     if (!fingerDetected) {
       console.log("VitalSignsProcessor: Finger not detected by SignalProcessor, returning empty results.", { ppgValue, signalQuality });
@@ -75,7 +73,44 @@ export class VitalSignsProcessor {
       return ResultFactory.createEmptyResults();
     }
     
-    // Obtener datos RR del procesador de señal principal
+    const ppgValues = this.signalProcessor.getPPGValues(); // Estos son AC filtrados
+    const rawSignalRecent = this.signalProcessor.getRawSignalBuffer(); // Estos son raw (antes de DC removal)
+
+    const MIN_DATA_FOR_PROCESSING = 90; 
+    // La comprobación de ppgValues.length se mantiene para BP, Lipids, Hydration que usan la AC filtrada.
+    if (ppgValues.length < MIN_DATA_FOR_PROCESSING) { 
+      console.log("VitalSignsProcessor: Insufficient AC signal data for full processing, returning empty.", { bufferLength: ppgValues.length });
+      return ResultFactory.createEmptyResults();
+    }
+    
+    // Calculate SpO2: usa raw signal buffer. RAW_BUFFER_SIZE en SignalProcessor es 50.
+    const spo2 = (rawSignalRecent.length >= 45) 
+                  ? Math.round(this.spo2Processor.calculateSpO2(rawSignalRecent.slice(-45)))
+                  : 0; 
+    
+    // Calculate blood pressure: usa AC signal filtrada (ppgValues)
+    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90)); 
+    const pressure = bp.systolic > 0 && bp.diastolic > 0 
+      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
+      : "--/--";
+    
+    // Calculate glucose: usa raw signal buffer. RAW_BUFFER_SIZE es 50.
+    const glucose = (rawSignalRecent.length >= 50) 
+                  ? Math.round(this.glucoseProcessor.calculateGlucose(rawSignalRecent)) // Usar el buffer completo si es apropiado
+                  : 0; 
+    const glucoseConfidence = this.glucoseProcessor.getConfidence();
+    
+    // Calculate lipids: usa AC signal filtrada (ppgValues)
+    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
+    const lipidsConfidence = this.lipidProcessor.getConfidence();
+    
+    // Calculate hydration: usa AC signal filtrada (ppgValues)
+    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
+    
+    // Calculate heart rate: usa AC signal filtrada (ppgValues)
+    const heartRate = Math.round(this.signalProcessor.calculateHeartRate());
+
+    // Obtener datos RR del procesador de señal principal (basado en AC filtrada)
     const rrDataFromSignalProcessor = this.signalProcessor.getRRIntervals();
 
     // Process arrhythmia data if available and valid
@@ -86,53 +121,11 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrDataFromSignalProcessor) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing (already updated by applyFilters in signalProcessor)
-    const ppgValues = this.signalProcessor.getPPGValues();
-    
-    // Check if we have enough data points (SignalProcessor's internal buffer is used by its sub-processors)
-    // This specific check might be redundant if sub-processors handle insufficient data.
-    // For now, keeping a general check based on the buffer length used by processors.
-    // A common buffer length for analysis is around 30-90 samples.
-    // The sub-processors (spo2, bp, glucose, lipids) slice ppgValues, e.g. ppgValues.slice(-45).
-    // So, ensure ppgValues has enough data for the longest slice.
-    const MIN_DATA_FOR_PROCESSING = 90; // Example, should match max slice needed by sub-processors
-    if (ppgValues.length < MIN_DATA_FOR_PROCESSING) {
-      console.log("VitalSignsProcessor: Insufficient data in buffer for full processing, returning empty.", { bufferLength: ppgValues.length });
-      return ResultFactory.createEmptyResults();
-    }
-    
-    // The fingerDetected check at the beginning (using this.signalProcessor.applyFilters)
-    // already incorporates amplitude and other signal validity checks from SignalProcessor and SignalValidator.
-    // Thus, explicit amplitude checks here are likely redundant.
-
-    // Calculate SpO2 using real data only
-    const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
-    
-    // Calculate blood pressure using real signal characteristics only
-    const bp = this.bpProcessor.calculateBloodPressure(ppgValues.slice(-90));
-    const pressure = bp.systolic > 0 && bp.diastolic > 0 
-      ? `${Math.round(bp.systolic)}/${Math.round(bp.diastolic)}` 
-      : "--/--";
-    
-    // Calculate glucose with real data only
-    const glucose = Math.round(this.glucoseProcessor.calculateGlucose(ppgValues));
-    const glucoseConfidence = this.glucoseProcessor.getConfidence();
-    
-    // Calculate lipids with real data only
-    const lipids = this.lipidProcessor.calculateLipids(ppgValues);
-    const lipidsConfidence = this.lipidProcessor.getConfidence();
-    
-    // Calculate hydration with real PPG data
-    const hydration = Math.round(this.hydrationEstimator.analyze(ppgValues));
-    
     // Calculate overall confidence
     const overallConfidence = this.confidenceCalculator.calculateOverallConfidence(
       glucoseConfidence,
       lipidsConfidence
     );
-
-    // Calculate heart rate using the signal processor
-    const heartRate = Math.round(this.signalProcessor.calculateHeartRate());
 
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
