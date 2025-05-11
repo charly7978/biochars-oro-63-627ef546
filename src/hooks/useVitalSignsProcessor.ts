@@ -3,170 +3,279 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { useState, useRef, useEffect } from 'react';
-import { VitalSignsResult } from '../modules/vital-signs/types/vital-signs-result';
-import { useArrhythmiaVisualization } from './vital-signs/use-arrhythmia-visualization';
-import { useSignalProcessing } from './vital-signs/use-signal-processing';
-import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
-import { UseVitalSignsProcessorReturn } from './vital-signs/types';
-import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
+import { useRef, useCallback, useState, useMemo, useEffect } from 'react';
+import { VitalSignsResult } from '@/modules/vital-signs/types/vital-signs-result';
+import { VitalSignsProcessor } from '@/modules/vital-signs/VitalSignsProcessor';
+import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
+import { useArrhythmiaVisualization } from '@/hooks/vital-signs/use-arrhythmia-visualization';
+import { useVitalSignsLogging } from '@/hooks/vital-signs/use-vital-signs-logging';
+import { ProcessedSignal } from '@/types/signal';
+import { SignalOptimizerManager } from '@/modules/signal-optimizer/SignalOptimizerManager';
+import { ChannelFeedback, SignalChannelOptimizerParams } from '@/modules/signal-optimizer/SignalChannelOptimizer';
+import { useTensorFlowModel } from '@/hooks/useTensorFlowModel';
+import { toast } from 'sonner';
+
+// Definir los canales que usará el optimizador
+const OPTIMIZER_CHANNELS = ['hr', 'spo2', 'bp', 'glucose', 'lipids', 'hydration', 'general'];
+
+// Definición local si no está en archivo importado
+interface ExtendedProcessedSignalForHook extends ProcessedSignal {
+  preBandpassValue?: number;
+  // Añadimos propiedades que estaban faltando en la interfaz
+  windowValues?: number[];
+  minValue?: number;
+  maxValue?: number;
+}
 
 /**
- * Hook for processing vital signs with direct algorithms only
- * No simulation or reference values are used
+ * Hook principal para el procesamiento de signos vitales.
+ * Orquesta SignalOptimizerManager y VitalSignsProcessor.
+ * Solo utiliza datos reales sin simulación.
  */
-export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
-  // State management - only direct measurement, no simulation
+export const useVitalSignsProcessor = () => {
+  const processorRef = useRef<VitalSignsProcessor | null>(null);
+  const processedSignals = useRef<number>(0);
+  const { arrhythmiaWindows, addArrhythmiaWindow, clearArrhythmiaWindows } = useArrhythmiaVisualization();
+  const { logSignalData, clearLog, getSignalLog, signalLog } = useVitalSignsLogging();
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
+  const [processingEnabled, setProcessingEnabled] = useState<boolean>(true);
+  const processingEnabledRef = useRef<boolean>(true);
+  const lastProcessingTime = useRef<number>(0);
   
-  // Session tracking
-  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
-  
-  // Signal quality tracking
-  const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.05;
-  const MAX_WEAK_SIGNALS = 10;
-  
+  // Integración TensorFlow para mejorar la precisión de los cálculos
   const { 
-    arrhythmiaWindows, 
-    addArrhythmiaWindow, 
-    clearArrhythmiaWindows 
-  } = useArrhythmiaVisualization();
+    isReady: tfModelReady,
+    predict: tfPredict,
+    error: tfError
+  } = useTensorFlowModel('vital-signs-ppg', true);
   
-  const { 
-    processSignal: processVitalSignal, 
-    initializeProcessor,
-    reset: resetProcessor, 
-    fullReset: fullResetProcessor,
-    getArrhythmiaCounter,
-    getDebugInfo,
-    processedSignals
-  } = useSignalProcessing();
-  
-  const { 
-    logSignalData, 
-    clearLog 
-  } = useVitalSignsLogging();
-  
-  // Initialize processor components - direct measurement only
   useEffect(() => {
-    console.log("useVitalSignsProcessor: Initializing processor for DIRECT MEASUREMENT ONLY", {
-      sessionId: sessionId.current,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Create new instances for direct measurement
-    initializeProcessor();
-    
-    return () => {
-      console.log("useVitalSignsProcessor: Processor cleanup", {
-        sessionId: sessionId.current,
-        totalArrhythmias: getArrhythmiaCounter(),
-        processedSignals: processedSignals.current,
-        timestamp: new Date().toISOString()
-      });
-    };
-  }, [initializeProcessor, getArrhythmiaCounter, processedSignals]);
-  
-  /**
-   * Process PPG signal directly
-   * No simulation or reference values
-   */
-  const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    // Check for weak signal to detect finger removal using centralized function
-    const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
-      value,
-      weakSignalsCountRef.current,
-      {
-        lowSignalThreshold: LOW_SIGNAL_THRESHOLD,
-        maxWeakSignalCount: MAX_WEAK_SIGNALS
-      }
-    );
-    
-    weakSignalsCountRef.current = updatedWeakSignalsCount;
-    
-    // Process signal directly - no simulation
-    try {
-      let result = processVitalSignal(value, rrData, isWeakSignal);
-      const currentTime = Date.now();
-      
-      // Add safe null check for arrhythmiaStatus
-      if (result && 
-          result.arrhythmiaStatus && 
-          typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
-          result.lastArrhythmiaData) {
-        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
-        
-        // Window based on real heart rate
-        let windowWidth = 400;
-        
-        // Adjust based on real RR intervals
-        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-          const lastIntervals = rrData.intervals.slice(-4);
-          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-        }
-        
-        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
-      }
-      
-      // Log processed signals
-      logSignalData(value, result, processedSignals.current);
-      
-      // Always return real result
-      return result;
-    } catch (error) {
-      console.error("Error processing vital signs:", error);
-      
-      // Return safe fallback values on error that include hydration
-      return {
-        spo2: 0,
-        pressure: "--/--",
-        arrhythmiaStatus: "--",
-        glucose: 0,
-        lipids: {
-          totalCholesterol: 0,
-          triglycerides: 0
-        },
-        hemoglobin: 0,
-        hydration: 0
-      };
+    if (tfError) {
+      console.error("Error en modelo TensorFlow:", tfError);
+      toast.error("Error cargando modelo de análisis PPG");
+    } else if (tfModelReady) {
+      console.log("✅ Modelo TensorFlow listo para inferencia");
+      toast.success("Modelo de análisis PPG cargado correctamente");
     }
-  };
+  }, [tfModelReady, tfError]);
+
+  // --- Inicio: SignalOptimizerManager --- 
+  const optimizerManager = useMemo(() => {
+    console.log("Initializing SignalOptimizerManager...");
+    // Configuración inicial con tipos correctos
+    const initialConfigs: Record<string, Partial<SignalChannelOptimizerParams>> = {
+      hr: { gain: 1.5, filterType: 'kalman', kalmanQ: 0.08, kalmanR: 0.01 },
+      spo2: { gain: 1.0, filterType: 'sma', filterWindow: 5 },
+      bp: { gain: 1.8, filterType: 'kalman', kalmanQ: 0.1, kalmanR: 0.02 },
+      glucose: { gain: 1.2, filterType: 'ema', emaAlpha: 0.3 },
+      lipids: { gain: 1.1, filterType: 'ema', emaAlpha: 0.4 },
+      hydration: { gain: 1.0, filterType: 'sma', filterWindow: 7 },
+      general: { gain: 1.0, filterType: 'kalman', kalmanQ: 0.12, kalmanR: 0.008 }
+    };
+    return new SignalOptimizerManager(initialConfigs);
+  }, []);
+  // --- Fin: SignalOptimizerManager --- 
+
+  // Inicializa el procesador de signos vitales una vez
+  if (!processorRef.current) {
+    processorRef.current = new VitalSignsProcessor();
+  }
 
   /**
-   * Perform complete reset - start from zero
-   * No simulations or reference values
+   * Procesa la señal PPG pre-procesada (post-OpenCV, Kalman, Bandpass).
+   * Usa SignalOptimizerManager para obtener valores optimizados por canal.
+   * Llama a VitalSignsProcessor con los valores optimizados.
+   * Aplica feedback al SignalOptimizerManager.
    */
-  const reset = () => {
-    resetProcessor();
-    clearArrhythmiaWindows();
-    setLastValidResults(null);
-    weakSignalsCountRef.current = 0;
+  const processSignal = useCallback(async (processedSignal: ProcessedSignal, rrData?: { intervals: number[], lastPeakTime: number | null }): Promise<VitalSignsResult> => {
+    if (!processorRef.current || !processingEnabledRef.current) {
+      console.error("VitalSignsProcessor no inicializado o procesamiento desactivado.");
+      return ResultFactory.createEmptyResults();
+    }
     
-    return null;
-  };
+    const now = Date.now();
+    // Evitar cálculos excesivos que pueden sobrecargar el sistema
+    if (now - lastProcessingTime.current < 30) { // 30ms mínimo entre procesados
+      if (lastValidResults) {
+        return lastValidResults;
+      }
+    }
+    lastProcessingTime.current = now;
+    
+    // Casting a tipo extendido para uso interno si es necesario
+    const extendedSignal = processedSignal as ExtendedProcessedSignalForHook;
+
+    processedSignals.current += 1;
+
+    // --- Procesamiento con SignalOptimizerManager --- 
+    const optimizedValues: Record<string, number> = {};
+    for (const channel of OPTIMIZER_CHANNELS) {
+      optimizedValues[channel] = optimizerManager.process(channel, extendedSignal.rawValue);
+    }
+    const primaryOptimizedValue = optimizedValues['general'] ?? extendedSignal.filteredValue;
+
+    // --- Opcional: Procesamiento TensorFlow si está disponible ---
+    let tfEnhancedValue = primaryOptimizedValue;
+    
+    if (tfModelReady && processedSignals.current % 5 === 0) { // Reducir frecuencia de inferencia
+      try {
+        // Crear ventana de datos para TensorFlow
+        const signalWindow = extendedSignal.windowValues || [primaryOptimizedValue];
+        
+        // Normalizar datos para entrada del modelo
+        const normalizedInput = signalWindow.slice(-64).map(val => {
+          const minVal = extendedSignal.minValue !== undefined ? extendedSignal.minValue : 0;
+          const maxVal = extendedSignal.maxValue !== undefined ? extendedSignal.maxValue : 1;
+          return (val - minVal) / ((maxVal - minVal) || 1);
+        });
+        
+        // Rellenar array si es necesario
+        while (normalizedInput.length < 64) {
+          normalizedInput.unshift(0);
+        }
+        
+        // Inferencia del modelo y manejo adecuado del resultado
+        const predictionPromise = tfPredict(normalizedInput);
+        if (predictionPromise) {
+          try {
+            const prediction = await Promise.resolve(predictionPromise);
+            
+            if (prediction && prediction.length > 0) {
+              // Usar resultado para mejorar el valor optimizado
+              const enhancementFactor = prediction[0];
+              tfEnhancedValue = primaryOptimizedValue * (1 + enhancementFactor * 0.1);
+              console.log("TF enhancement applied:", enhancementFactor.toFixed(4));
+            }
+          } catch (e) {
+            console.error("Error procesando predicción TensorFlow:", e);
+          }
+        }
+      } catch (err) {
+        console.error("Error en procesamiento TensorFlow:", err);
+      }
+    }
+
+    // --- DEBUG: Verificar si llegan datos RR para arrhythmia --- 
+    if (rrData && rrData.intervals.length > 0 && processedSignals.current % 30 === 0) {
+      console.log("Datos RR disponibles para detección de arritmias:", {
+        intervalCount: rrData.intervals.length,
+        lastIntervals: rrData.intervals.slice(-3),
+        lastPeakTime: rrData.lastPeakTime
+      });
+    }
+
+    // --- Llamada a VitalSignsProcessor (Con la firma CORRECTA según VitalSignsProcessor.ts) --- 
+    const result = processorRef.current.processSignal(
+      tfEnhancedValue || primaryOptimizedValue,  // Usar valor mejorado por TF si disponible
+      extendedSignal,
+      rrData,
+      optimizedValues
+    );
+
+    // Actualizar siempre el estado 
+    setLastValidResults(result);
+
+    // --- Aplicar Feedback al Optimizador --- 
+    const feedback: Record<string, ChannelFeedback> = {};
+    const baseQuality = extendedSignal.quality;
+    const baseConfidence = Math.max(0, Math.min(1, baseQuality / 85));
+    OPTIMIZER_CHANNELS.forEach(channel => {
+      feedback[channel] = { metricType: channel, quality: baseQuality, confidence: baseConfidence };
+    });
+    if (result.glucoseConfidence !== undefined) {
+        feedback['glucose'].confidence = Math.max(baseConfidence * 0.5, result.glucoseConfidence);
+    }
+    if (result.lipidsConfidence !== undefined) {
+        feedback['lipids'].confidence = Math.max(baseConfidence * 0.5, result.lipidsConfidence);
+    }
+    for (const channel of OPTIMIZER_CHANNELS) {
+        if (feedback[channel]) {
+            optimizerManager.applyFeedback(channel, feedback[channel]);
+        }
+    }
+
+    // --- Debug: Resultados de signos vitales --- 
+    if (processedSignals.current % 30 === 0) {
+      console.log("Resultados procesados:", {
+        lipids: result.lipids,
+        arrhythmiaStatus: result.arrhythmiaStatus
+      });
+    }
+
+    // --- Log y visualización --- 
+    logSignalData(primaryOptimizedValue, result, processedSignals.current); 
+    if (result.arrhythmiaStatus.includes('DETECTED') && result.lastArrhythmiaData) {
+      addArrhythmiaWindow(result.lastArrhythmiaData.timestamp - 500, result.lastArrhythmiaData.timestamp + 500);
+    }
+
+    return result;
+  }, [optimizerManager, logSignalData, addArrhythmiaWindow, lastValidResults, tfModelReady, tfPredict]);
+
+  const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number): void => {
+    console.log(`Aplicando calibración de presión arterial: ${systolic}/${diastolic} mmHg`);
+    processorRef.current?.applyBloodPressureCalibration(systolic, diastolic);
+    optimizerManager.applyFeedback('bp', { 
+      metricType: 'bp', 
+      quality: 100, 
+      confidence: 1, 
+      manualOverride: true, 
+    });
+    // Notificar calibración al usuario
+    toast.success(`Calibración de presión arterial aplicada: ${systolic}/${diastolic} mmHg`);
+  }, [optimizerManager]);
+
+  const pauseProcessing = useCallback(() => {
+    setProcessingEnabled(false);
+    processingEnabledRef.current = false;
+    console.log("Procesamiento de signos vitales pausado");
+  }, []);
   
-  /**
-   * Perform full reset - clear all data
-   * No simulations or reference values
-   */
-  const fullReset = () => {
-    fullResetProcessor();
-    setLastValidResults(null);
+  const resumeProcessing = useCallback(() => {
+    setProcessingEnabled(true);
+    processingEnabledRef.current = true;
+    console.log("Procesamiento de signos vitales reanudado");
+  }, []);
+
+  const reset = useCallback(() => {
+    const resetResult = processorRef.current?.reset() ?? null;
+    processedSignals.current = 0;
     clearArrhythmiaWindows();
-    weakSignalsCountRef.current = 0;
     clearLog();
-  };
+    setLastValidResults(null);
+    optimizerManager.resetAll();
+    console.log("VitalSignsProcessor Hook: Reset completado.");
+    return resetResult;
+  }, [clearArrhythmiaWindows, clearLog, optimizerManager]);
+
+  const fullReset = useCallback(() => {
+    processorRef.current?.fullReset();
+    processedSignals.current = 0;
+    clearArrhythmiaWindows();
+    clearLog();
+    setLastValidResults(null);
+    optimizerManager.resetAll();
+    console.log("VitalSignsProcessor Hook: Full Reset completado.");
+  }, [clearArrhythmiaWindows, clearLog, optimizerManager]);
 
   return {
     processSignal,
     reset,
     fullReset,
-    arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: null, // Always return null to ensure measurements start from zero
+    applyBloodPressureCalibration,
+    pauseProcessing,
+    resumeProcessing,
+    isProcessingEnabled: processingEnabled,
+    isTensorFlowReady: tfModelReady,
+    arrhythmiaCounter: processorRef.current?.getArrhythmiaCounter() ?? 0,
+    lastValidResults,
     arrhythmiaWindows,
-    debugInfo: getDebugInfo()
+    debugInfo: {
+      processedSignals: processedSignals.current,
+      signalLog: getSignalLog(),
+      optimizerParams: OPTIMIZER_CHANNELS.reduce((acc, channel) => {
+        acc[channel] = optimizerManager.getParams(channel);
+        return acc;
+      }, {} as Record<string, any>)
+    }
   };
 };

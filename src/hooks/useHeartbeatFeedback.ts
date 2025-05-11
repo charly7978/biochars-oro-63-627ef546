@@ -1,5 +1,6 @@
 
 import { useEffect, useRef } from 'react';
+import FeedbackService from '@/services/FeedbackService';
 
 /**
  * Tipos de retroalimentación para latidos
@@ -38,17 +39,6 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled || !audioCtxRef.current) return;
 
-    // Patrones de vibración
-    if ('vibrate' in navigator) {
-      if (type === 'normal') {
-        // Vibración simple para latido normal
-        navigator.vibrate(50);
-      } else if (type === 'arrhythmia') {
-        // Patrón de vibración distintivo para arritmia (pulso doble)
-        navigator.vibrate([50, 100, 100]);
-      }
-    }
-
     // Generar un bip con características según el tipo
     const ctx = audioCtxRef.current;
     const osc = ctx.createOscillator();
@@ -72,6 +62,9 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     osc.start();
     // Mayor duración para arritmias
     osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+    
+    // Agregar vibración sincronizada
+    FeedbackService.vibrateHeartbeat(type === 'arrhythmia');
   };
 
   return trigger;

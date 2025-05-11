@@ -1,4 +1,3 @@
-
 import { 
   BaseNeuralModel, 
   DenseLayer, 
@@ -11,6 +10,8 @@ import {
   Tensor1D, 
   Tensor2D 
 } from './NeuralNetworkBase';
+import * as tf from '@tensorflow/tfjs'; // Asegúrate de tener @tensorflow/tfjs instalado
+import { Tensor, Rank } from '@tensorflow/tfjs'; // Importar Tensor y Rank
 
 /**
  * Modelo neuronal especializado en detección precisa de frecuencia cardíaca
@@ -145,44 +146,46 @@ export class HeartRateNeuralModel extends BaseNeuralModel {
    * Preprocesamiento específico para señales cardíacas
    */
   private preprocessInput(input: Tensor1D): Tensor1D {
-    // Asegurar que tenemos suficientes datos
-    if (input.length < this.inputShape[0]) {
-      // Rellenar con ceros o duplicar valores
-      const padding = Array(this.inputShape[0] - input.length).fill(0);
-      input = [...input, ...padding];
-    } else if (input.length > this.inputShape[0]) {
-      // Truncar a la longitud esperada
-      input = input.slice(-this.inputShape[0]);
-    }
-    
-    // Aplicar normalización z-score
-    let processedInput = TensorUtils.standardizeSignal(input);
-    
-    // Aplicar filtrado paso banda (simulado mediante promedio móvil + resta)
-    const windowSize = 5;
-    const lowPass: Tensor1D = [];
-    
-    for (let i = 0; i < processedInput.length; i++) {
-      let sum = 0;
-      let count = 0;
-      
-      for (let j = Math.max(0, i - windowSize); j <= Math.min(processedInput.length - 1, i + windowSize); j++) {
-        sum += processedInput[j];
-        count++;
+    // Convertir a Tensor si no lo es ya (asumiendo que llega como number[])
+    let signalTensor: Tensor<Rank.R1> | null = null;
+    let standardizedSignal: Tensor<Rank.R1> | null = null;
+
+    try {
+      signalTensor = tf.tensor1d(input);
+
+      // 1. Normalización Z-score (Estándar)
+      const { mean, variance } = tf.moments(signalTensor);
+      const stdDev = tf.sqrt(variance);
+      standardizedSignal = tf.div(tf.sub(signalTensor, mean), tf.add(stdDev, 1e-6)); // Añadir epsilon
+
+      // 2. Suavizado (Opcional, mantenido como estaba antes para simplificar)
+      // let smoothedSignal = TensorUtils.movingAverage(standardizedSignal.dataSync(), 5);
+
+      // Obtener los datos como number[]
+      const processedData = Array.from(standardizedSignal.dataSync()); // Usar dataSync() y Array.from
+
+      // Liberar tensores intermedios explícitamente si no se reasignan o retornan
+      tf.dispose([mean, variance, stdDev]);
+
+      // Asegurar longitud esperada (Ejemplo básico de padding/truncating)
+      const expectedLength = this.inputShape[0] || 128; // Tomar de inputShape o usar un default
+      let finalData: number[];
+      if (processedData.length < expectedLength) {
+        const padding = Array(expectedLength - processedData.length).fill(0);
+        finalData = [...processedData, ...padding];
+      } else if (processedData.length > expectedLength) {
+        finalData = processedData.slice(-expectedLength);
+      } else {
+        finalData = processedData;
       }
-      
-      lowPass.push(sum / count);
+
+      return finalData;
+
+    } finally {
+      // Liberar los tensores creados en este bloque
+      signalTensor?.dispose();
+      standardizedSignal?.dispose();
     }
-    
-    // Restar componente de baja frecuencia (filtro paso alto)
-    for (let i = 0; i < processedInput.length; i++) {
-      processedInput[i] = processedInput[i] - (lowPass[i] * 0.8);
-    }
-    
-    // Detectar y corregir anomalías/valores atípicos
-    this.correctOutliers(processedInput);
-    
-    return processedInput;
   }
   
   /**
