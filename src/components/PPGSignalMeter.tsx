@@ -53,10 +53,10 @@ const PPGSignalMeter = memo(({
   const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
   
   // Configuración optimizada para visualización de señal PPG
-  const WINDOW_WIDTH_MS = 4500;
-  const CANVAS_WIDTH = 700;
-  const CANVAS_HEIGHT = 1000;
-  const GRID_SIZE_X = 10;
+  const WINDOW_WIDTH_MS = 5500;
+  const CANVAS_WIDTH = 1000;
+  const CANVAS_HEIGHT = 900;
+  const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
   const VERTICAL_SCALE = 76.0;
   const SMOOTHING_FACTOR = 1.5;
@@ -68,8 +68,8 @@ const PPGSignalMeter = memo(({
   const USE_OFFSCREEN_CANVAS = true;
   
   // Parámetros refinados para visualización precisa de picos
-  const PEAK_DISPLAY_RADIUS = 5;  // Tamaño del círculo para mejor visibilidad
-  const PEAK_TEXT_OFFSET = 22;    // Distancia optimizada para texto
+  const PEAK_DISPLAY_RADIUS = 6;  // Tamaño del círculo para mejor visibilidad
+  const PEAK_TEXT_OFFSET = 18;    // Distancia optimizada para texto
   const PEAK_VALUE_FONT = '11px Inter';  // Fuente legible
   const PEAK_VISIBLE_MARGIN = 10;  // Margen reducido para mantener visibilidad sin cortar picos
 

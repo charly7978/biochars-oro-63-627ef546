@@ -1,6 +1,6 @@
 
 import { useCallback, useRef } from 'react';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
 /**
  * Hook for arrhythmia detection in heart beat signals

@@ -2,7 +2,7 @@
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating VitalSignsResult objects
+ * Factory for creating standardized vital signs results without using Math functions
  */
 export class ResultFactory {
   public static createResult(
@@ -11,12 +11,13 @@ export class ResultFactory {
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
+    lipids: { totalCholesterol: number; triglycerides: number },
+    hemoglobin: number,
+    hydration: number,
     glucoseConfidence?: number,
+    lipidsConfidence?: number,
     overallConfidence?: number,
-    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null,
-    hydration: number = 0,
-    lipids: { totalCholesterol: number; triglycerides: number } = { totalCholesterol: 0, triglycerides: 0 },
-    hemoglobin: number = 0
+    lastArrhythmiaData?: { timestamp: number; rmssd: number; rrVariation: number } | null
   ): VitalSignsResult {
     return {
       spo2,
@@ -24,31 +25,30 @@ export class ResultFactory {
       pressure,
       arrhythmiaStatus,
       glucose,
-      glucoseConfidence,
-      overallConfidence,
-      lastArrhythmiaData,
-      hydration,
       lipids,
-      hemoglobin
+      hemoglobin,
+      hydration,
+      glucoseConfidence,
+      lipidsConfidence,
+      overallConfidence,
+      lastArrhythmiaData
     };
   }
 
   public static createEmptyResults(): VitalSignsResult {
+    // Valores vacíos para representar ausencia de medición
     return {
       spo2: 0,
       heartRate: 0,
-      pressure: '--/--',
-      arrhythmiaStatus: '--',
+      pressure: "--/--",
+      arrhythmiaStatus: "--",
       glucose: 0,
-      glucoseConfidence: 0,
-      overallConfidence: 0,
-      lastArrhythmiaData: null,
-      hydration: 0,
       lipids: {
         totalCholesterol: 0,
         triglycerides: 0
       },
-      hemoglobin: 0
+      hemoglobin: 0,
+      hydration: 0
     };
   }
 }

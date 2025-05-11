@@ -4,7 +4,6 @@
  */
 import { SignalChannel } from './SignalChannel';
 import { SignalFilter } from './filters/SignalFilter';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
 
 export interface SignalProcessingConfig {
   bufferSize: number;
@@ -163,14 +162,6 @@ export class SignalCoreProcessor {
           if (heartRate >= 40 && heartRate <= 200) {
             channel.setMetadata('heartRate', heartRate);
           }
-          
-          // Use centralized arrhythmia detection
-          if (rrIntervals.length >= 4) {
-            // Detect arrhythmia with centralized service
-            const arrhythmiaResult = ArrhythmiaDetectionService.detectArrhythmia(rrIntervals);
-            channel.setMetadata('isArrhythmia', arrhythmiaResult.isArrhythmia);
-            channel.setMetadata('arrhythmiaCategory', arrhythmiaResult.category);
-          }
         }
       }
     }
@@ -178,6 +169,7 @@ export class SignalCoreProcessor {
   
   /**
    * Apply multiple filtering techniques to the signal
+   * CORREGIDO: Eliminado el segundo parámetro que causaba el error
    */
   private applyFilters(value: number): number {
     return this.filter.applyFilters(value);

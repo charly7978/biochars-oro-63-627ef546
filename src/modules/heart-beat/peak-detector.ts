@@ -53,113 +53,64 @@ export function detectPeak(
 }
 
 /**
- * Detecta y confirma un pico potencial en la señal PPG normalizada.
- * Incorpora umbral adaptativo y realiza una confirmación simple.
+ * Confirms a peak by examining neighboring samples
  */
-export function detectAndConfirmPeak(
+export function confirmPeak(
+  isPeak: boolean,
   normalizedValue: number,
-  derivative: number,
-  lastValue: number, 
-  currentTime: number,
-  state: PeakDetectionState,
-  config: {
-    minPeakTimeMs: number;
-    derivativeThreshold: number;
-    minConfidence: number; // Añadir minConfidence aquí
-  }
-): { 
-    isPeakCandidate: boolean; // Si cumple condiciones iniciales
-    isPeakConfirmed: boolean; // Si pasa la confirmación simple
-    confidence: number; 
-    updatedState: PeakDetectionState 
+  lastConfirmedPeak: boolean,
+  peakConfirmationBuffer: number[],
+  minConfidence: number,
+  confidence: number
+): {
+  isConfirmedPeak: boolean;
+  updatedBuffer: number[];
+  updatedLastConfirmedPeak: boolean;
 } {
-  let isPeakCandidate = false;
-  let isPeakConfirmed = false;
-  let confidence = 0;
-  let updatedState = { ...state }; // Copiar estado para modificar
+  // Add value to confirmation buffer
+  const updatedBuffer = [...peakConfirmationBuffer, normalizedValue];
+  if (updatedBuffer.length > 5) {
+    updatedBuffer.shift();
+  }
 
-  // 1. Condición básica de pico candidato
-  if (normalizedValue > updatedState.adaptiveThreshold && 
-      normalizedValue > updatedState.minPeakValue && 
-      derivative < config.derivativeThreshold && 
-      lastValue >= normalizedValue) { 
-    
-    // 2. Verificar período refractario y tiempo mínimo entre picos
-    if (updatedState.lastPeakTime === null || (currentTime - updatedState.lastPeakTime) >= config.minPeakTimeMs) {
-        isPeakCandidate = true;
-        confidence = Math.min(1, normalizedValue / (updatedState.adaptiveThreshold * 2)); 
+  let isConfirmedPeak = false;
+  let updatedLastConfirmedPeak = lastConfirmedPeak;
+
+  // Only proceed with peak confirmation if needed
+  if (isPeak && !lastConfirmedPeak && confidence >= minConfidence) {
+    // Need enough samples in buffer for confirmation
+    if (updatedBuffer.length >= 3) {
+      const len = updatedBuffer.length;
+      
+      // Confirmar pico si los valores posteriores descienden significativamente
+      const peakValue = updatedBuffer[len - 3]; // Asumiendo que el pico es el 3er último valor del buffer
+      const valueAfter1 = updatedBuffer[len - 2];
+      const valueAfter2 = updatedBuffer[len - 1];
+      
+      const drop1 = peakValue - valueAfter1;
+      const drop2 = valueAfter1 - valueAfter2;
+
+      // Requerir una bajada clara y consistente
+      const MIN_DROP_RATIO = 0.15; // Exigir que la bajada sea al menos 15% del valor del pico normalizado
+      const isSignificantDrop = 
+        drop1 > peakValue * MIN_DROP_RATIO || 
+        drop2 > peakValue * MIN_DROP_RATIO;
         
-        // 3. Confirmación SIMPLE (para depuración):
-        // Confirmar si es candidato y supera la confianza mínima.
-        // (La validación de no confirmar picos consecutivos se hará en HeartRateService)
-        if (confidence >= config.minConfidence) {
-            isPeakConfirmed = true;
-            // Actualizar lastPeakTime en el estado *solo si se confirma*
-            updatedState.lastPeakTime = currentTime; 
-        }
-    }
-  }
+      // Mantener la lógica anterior como respaldo si la señal es más ruidosa
+      const goingDownSimple = valueAfter2 < valueAfter1 || valueAfter1 < peakValue;
 
-  // 4. Actualizar umbral adaptativo (se hace independientemente de si hay pico)
-  if (normalizedValue > updatedState.minPeakValue * 0.5) {
-      updatedState.recentAmplitudes.push(normalizedValue);
-      if (updatedState.recentAmplitudes.length > AMPLITUDE_BUFFER_SIZE) {
-          updatedState.recentAmplitudes.shift();
+      if (isSignificantDrop || goingDownSimple) { // Priorizar bajada significativa
+        isConfirmedPeak = true;
+        updatedLastConfirmedPeak = true;
       }
-  }
-  if (updatedState.recentAmplitudes.length > ADAPTIVE_THRESHOLD_WINDOW) {
-      const recentSorted = [...updatedState.recentAmplitudes].sort((a, b) => a - b);
-      const percentileIndex = Math.floor(recentSorted.length * 0.65);
-      const amplitudeBase = recentSorted[percentileIndex];
-      const newAdaptiveThreshold = Math.max(
-          updatedState.minPeakValue, 
-          amplitudeBase * 0.4 + updatedState.noiseLevelEstimate 
-      );
-      updatedState.adaptiveThreshold = updatedState.adaptiveThreshold * 0.8 + newAdaptiveThreshold * 0.2;
+    }
+  } else if (!isPeak) {
+    updatedLastConfirmedPeak = false;
   }
 
-  return { isPeakCandidate, isPeakConfirmed, confidence, updatedState };
+  return {
+    isConfirmedPeak,
+    updatedBuffer,
+    updatedLastConfirmedPeak
+  };
 }
-
-/**
- * Obtiene el estado inicial para la detección de picos.
- */
-export function getInitialPeakDetectionState(): PeakDetectionState {
-    return JSON.parse(JSON.stringify(PEAK_STATE_DEFAULTS));
-}
-
-// --- Constantes y Tipos --- 
-
-// Estado para umbral adaptativo
-interface PeakDetectionState {
-  lastPeakTime: number | null;
-  adaptiveThreshold: number;
-  noiseLevelEstimate: number;
-  recentAmplitudes: number[]; 
-  minPeakValue: number; 
-}
-
-// Estado de confirmación eliminado por ahora
-/*
-export interface PeakConfirmationState {
-  buffer: number[]; 
-  lastConfirmedPeak: boolean;
-}
-*/
-
-const PEAK_STATE_DEFAULTS: PeakDetectionState = {
-  lastPeakTime: null,
-  adaptiveThreshold: HeartBeatConfig.SIGNAL_THRESHOLD, 
-  noiseLevelEstimate: 0.05, 
-  recentAmplitudes: [],
-  minPeakValue: HeartBeatConfig.SIGNAL_THRESHOLD * 0.4 
-};
-
-// Constantes para lógica
-const ADAPTIVE_THRESHOLD_WINDOW = 15; 
-const AMPLITUDE_BUFFER_SIZE = 20;
-// Constantes de confirmación no usadas directamente ahora
-// const CONFIRMATION_WINDOW_SIZE = 5;
-// const MIN_PEAK_PROMINENCE_FACTOR = 0.4; 
-// const MAX_PEAK_WIDTH_SAMPLES = 8; 
-const REFRACTORY_PERIOD_MS = HeartBeatConfig.MIN_PEAK_TIME_MS * 0.6; 
