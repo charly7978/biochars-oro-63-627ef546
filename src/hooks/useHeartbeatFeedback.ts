@@ -29,7 +29,6 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
     if (!enabled) return;
     
-    // Usar el nuevo método que centraliza la gestión de audio
     AudioFeedbackService.triggerHeartbeatFeedback(type);
   };
 

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
-import HeartRateService from '../services/HeartRateService';
-import { PeakData } from '@/types/peak';
+import AudioFeedbackService from '../services/AudioFeedbackService';
+import ArrhythmiaDetectionService from '../services/ArrhythmiaDetectionService';
+import { ArrhythmiaWindow } from '../hooks/vital-signs/types';
 
 interface PPGSignalMeterProps {
   value: number;
@@ -43,84 +44,92 @@ const PPGSignalMeter = memo(({
   const lastValueRef = useRef<number | null>(null);
   const animationFrameRef = useRef<number>();
   const lastRenderTimeRef = useRef<number>(0);
-  const showArrhythmiaAlertRef = useRef<boolean>(false);
+  const lastArrhythmiaTime = useRef<number>(0);
+  const arrhythmiaCountRef = useRef<number>(0);
+  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed?: boolean}[]>([]);
   const [showArrhythmiaAlert, setShowArrhythmiaAlert] = useState(false);
   const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const qualityHistoryRef = useRef<number[]>([]);
   const consecutiveFingerFramesRef = useRef<number>(0);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const currentArrhythmiaSegmentRef = useRef<ArrhythmiaWindow | null>(null);
+  const lastArrhythmiaStateRef = useRef<boolean>(false);
+  const lastBeepTimeRef = useRef<number>(0);
+  const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
-  const peaksRef = useRef<{time: number, value: number, isArrhythmia: boolean, beepPlayed: boolean}[]>([]);
-  
-  // Configuración optimizada para visualización de señal PPG
+
   const WINDOW_WIDTH_MS = 4500;
-  const CANVAS_WIDTH = 700;
-  const CANVAS_HEIGHT = 1000;
-  const GRID_SIZE_X = 10;
+  const CANVAS_WIDTH = 1100;
+  const CANVAS_HEIGHT = 1200;
+  const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const VERTICAL_SCALE = 76.0;
-  const SMOOTHING_FACTOR = 1.5;
+  const verticalScale = 76.0;
+  const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
   const BUFFER_SIZE = 600;
+  const PEAK_DETECTION_WINDOW = 8;
+  const PEAK_THRESHOLD = 3;
+  const MIN_PEAK_DISTANCE_MS = 350;
+  const IMMEDIATE_RENDERING = true;
+  const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
   const REQUIRED_FINGER_FRAMES = 3;
   const USE_OFFSCREEN_CANVAS = true;
-  
-  // Parámetros refinados para visualización precisa de picos
-  const PEAK_DISPLAY_RADIUS = 5;  // Tamaño del círculo para mejor visibilidad
-  const PEAK_TEXT_OFFSET = 22;    // Distancia optimizada para texto
-  const PEAK_VALUE_FONT = '11px Inter';  // Fuente legible
-  const PEAK_VISIBLE_MARGIN = 10;  // Margen reducido para mantener visibilidad sin cortar picos
+  const MIN_BEEP_INTERVAL_MS = 350;
 
-  // Constantes para análisis de picos
-  const MIN_PEAK_AMPLITUDE = 3.0;  // Amplitud mínima para considerar un pico como significativo
-  const MIN_PEAK_DISTANCE = 300;   // Distancia mínima entre picos en ms (200ms = 300BPM máximo)
+  const playBeep = useCallback(async (volume: number = 0.7, isArrhythmic: boolean = false) => {
+    const now = Date.now();
+    if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+      return false;
+    }
+    
+    AudioFeedbackService.playBeep(isArrhythmic ? 'arrhythmia' : 'normal', volume);
+    lastBeepTimeRef.current = now;
+    return true;
+  }, [MIN_BEEP_INTERVAL_MS]);
 
   useEffect(() => {
-    const handlePeakDetection = (peakData: PeakData) => {
+    const handleArrhythmiaWindow = (window: ArrhythmiaWindow) => {
       const now = Date.now();
-      
-      // Solo almacenar picos con valores reales y medidos
-      if (peakData && peakData.timestamp && peakData.value) {
-        peaksRef.current.push({
-          time: peakData.timestamp,
-          value: peakData.value * VERTICAL_SCALE,
-          isArrhythmia: peakData.isArrhythmia || false,
-          beepPlayed: true
-        });
-        
-        // Mantener una cantidad razonable de picos en memoria
-        while (peaksRef.current.length > 20) {
-          peaksRef.current.shift();
-        }
-        
-        if (peakData.isArrhythmia && !showArrhythmiaAlert) {
-          setShowArrhythmiaAlert(true);
-          showArrhythmiaAlertRef.current = true;
-        }
-        
-        console.log("PPGSignalMeter: Peak received from service", {
-          timestamp: new Date(peakData.timestamp).toISOString(),
-          isArrhythmia: peakData.isArrhythmia,
-          value: peakData.value
-        });
+      if (Math.abs(now - window.start) < 1000 || Math.abs(now - window.end) < 1000) {
+        playBeep(0.8, true);
       }
     };
     
-    HeartRateService.addPeakListener(handlePeakDetection);
+    ArrhythmiaDetectionService.addArrhythmiaListener(handleArrhythmiaWindow);
     
     return () => {
-      HeartRateService.removePeakListener(handlePeakDetection);
+      ArrhythmiaDetectionService.removeArrhythmiaListener(handleArrhythmiaWindow);
     };
-  }, []);
+  }, [playBeep]);
+
+  useEffect(() => {
+    console.log("PPGSignalMeter: Arrhythmia windows updated:", {
+      windowCount: arrhythmiaWindows.length,
+      windows: arrhythmiaWindows.map(w => ({
+        start: new Date(w.start).toISOString(),
+        end: new Date(w.end).toISOString(),
+        duration: w.end - w.start
+      }))
+    });
+    
+    if (arrhythmiaWindows.length > 0) {
+      const now = Date.now();
+      const recentWindows = arrhythmiaWindows.filter(w => 
+        Math.abs(now - w.start) < 1000 || Math.abs(now - w.end) < 1000
+      );
+      
+      if (recentWindows.length > 0) {
+        playBeep(0.8, true);
+      }
+    }
+  }, [arrhythmiaWindows, playBeep]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
       dataBufferRef.current = new CircularBuffer<PPGDataPointExtended>(BUFFER_SIZE);
     }
-    
-    HeartRateService.setMonitoring(isFingerDetected);
     
     if (preserveResults && !isFingerDetected) {
       setResultsVisible(true);
@@ -202,36 +211,44 @@ const PPGSignalMeter = memo(({
     return 'Señal débil';
   }, [getAverageQuality, preserveResults]);
 
-  // Función para suavizar valores sin simulación, utilizando solo los datos reales entrantes
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
     return previousValue + SMOOTHING_FACTOR * (currentValue - previousValue);
   }, []);
 
-  // Dibujo del grid base sin simulación
   const drawGrid = useCallback((ctx: CanvasRenderingContext2D) => {
-    // Cambio a fondo negro
-    ctx.fillStyle = '#000000';
+    const gradient = ctx.createLinearGradient(0, 0, 0, CANVAS_HEIGHT);
+    
+    gradient.addColorStop(0, '#FFE8E8');
+    gradient.addColorStop(0.14, '#FFECDA');
+    gradient.addColorStop(0.28, '#FEF7CD');
+    gradient.addColorStop(0.42, '#E2FFDA');
+    gradient.addColorStop(0.56, '#D6F3FF');
+    gradient.addColorStop(0.70, '#E4DAFF');
+    gradient.addColorStop(0.84, '#F2D6FF');
+    gradient.addColorStop(1, '#3255a4');
+    
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     
     ctx.globalAlpha = 0.03;
     for (let i = 0; i < CANVAS_WIDTH; i += 20) {
       for (let j = 0; j < CANVAS_HEIGHT; j += 20) {
-        ctx.fillStyle = j % 40 === 0 ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)';
+        ctx.fillStyle = j % 40 === 0 ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)';
         ctx.fillRect(i, j, 10, 10);
       }
     }
     ctx.globalAlpha = 1.0;
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
     ctx.lineWidth = 0.5;
     
     for (let x = 0; x <= CANVAS_WIDTH; x += GRID_SIZE_X) {
       ctx.moveTo(x, 0);
       ctx.lineTo(x, CANVAS_HEIGHT);
       if (x % (GRID_SIZE_X * 5) === 0) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'center';
         ctx.fillText(x.toString(), x, CANVAS_HEIGHT - 5);
@@ -242,7 +259,7 @@ const PPGSignalMeter = memo(({
       ctx.moveTo(0, y);
       ctx.lineTo(CANVAS_WIDTH, y);
       if (y % (GRID_SIZE_Y * 5) === 0) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.6)';
         ctx.font = '10px Inter';
         ctx.textAlign = 'right';
         ctx.fillText(y.toString(), 15, y + 3);
@@ -251,7 +268,7 @@ const PPGSignalMeter = memo(({
     ctx.stroke();
     
     ctx.beginPath();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.strokeStyle = 'rgba(40, 40, 40, 0.4)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([5, 3]);
     ctx.moveTo(0, CANVAS_HEIGHT / 2 - 50);
@@ -274,7 +291,6 @@ const PPGSignalMeter = memo(({
         ctx.textAlign = 'left';
         ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
         setShowArrhythmiaAlert(true);
-        showArrhythmiaAlertRef.current = true;
       } else if (status.includes("ARRITMIA") && Number(count) > 1) {
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 250, 40);
@@ -291,15 +307,12 @@ const PPGSignalMeter = memo(({
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);
 
-  // Función para dibujar zonas de arritmia, sin simulación
   const drawArrhythmiaZones = useCallback((ctx: CanvasRenderingContext2D, now: number) => {
-    const currentWindows = arrhythmiaWindows || []; 
-    
-    if (!currentWindows || currentWindows.length === 0) {
+    if (!arrhythmiaWindows || arrhythmiaWindows.length === 0) {
       return;
     }
     
-    currentWindows.forEach(window => {
+    arrhythmiaWindows.forEach((window, index) => {
       const windowStartTime = window.start;
       const windowEndTime = window.end;
       
@@ -313,13 +326,13 @@ const PPGSignalMeter = memo(({
         const adjustedStartX = Math.max(0, startX);
         const adjustedWidth = Math.min(width, ctx.canvas.width - adjustedStartX);
         
-        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.20)';
         ctx.fillRect(adjustedStartX, 0, adjustedWidth, ctx.canvas.height);
         
         ctx.beginPath();
-        ctx.strokeStyle = 'rgba(220, 38, 38, 0.4)';
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = 'rgba(220, 38, 38, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 4]);
         
         if (adjustedStartX >= 0 && adjustedStartX <= ctx.canvas.width) {
           ctx.moveTo(adjustedStartX, 0);
@@ -333,80 +346,117 @@ const PPGSignalMeter = memo(({
         
         ctx.stroke();
         ctx.setLineDash([]);
+        
+        if (adjustedWidth > 50) {
+          const textX = adjustedStartX + adjustedWidth/2;
+          
+          ctx.fillStyle = '#DC2626';
+          ctx.font = 'bold 24px Inter';
+          ctx.textAlign = 'center';
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+          ctx.shadowBlur = 4;
+          ctx.fillText('ARRITMIA', textX, 40);
+          ctx.shadowBlur = 0;
+          
+          ctx.beginPath();
+          ctx.fillStyle = 'rgba(220, 38, 38, 0.8)';
+          const symbolSize = 22;
+          const symbolX = textX;
+          const symbolY = 70;
+          ctx.moveTo(symbolX, symbolY - symbolSize);
+          ctx.lineTo(symbolX + symbolSize, symbolY + symbolSize);
+          ctx.lineTo(symbolX - symbolSize, symbolY + symbolSize);
+          ctx.closePath();
+          ctx.fill();
+          
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = 'bold 20px Inter';
+          ctx.textAlign = 'center';
+          ctx.fillText('!', symbolX, symbolY + symbolSize - 2);
+        }
+        
+        if (Math.abs(now - windowStartTime) < 500 || Math.abs(now - windowEndTime) < 500) {
+          playBeep(0.8, true);
+        }
+        
+        if (Math.abs(now - windowStartTime) < 300) {
+          currentArrhythmiaSegmentRef.current = window;
+        }
       }
     });
-  }, [WINDOW_WIDTH_MS, arrhythmiaWindows]);
+  }, [WINDOW_WIDTH_MS, arrhythmiaWindows, playBeep]);
 
-  // Función para detectar picos en tiempo real sin simulación
-  const detectRealTimePeaks = useCallback((points: PPGDataPointExtended[], now: number): {x: number, y: number, time: number, value: number, isArrhythmia: boolean}[] => {
-    if (!points || points.length < 3) return [];
+  const detectPeaks = useCallback((points: PPGDataPointExtended[], now: number) => {
+    if (points.length < PEAK_DETECTION_WINDOW) return;
     
-    const result: {x: number, y: number, time: number, value: number, isArrhythmia: boolean}[] = [];
-    const middleY = CANVAS_HEIGHT / 2 - 50;
+    const potentialPeaks: {index: number, value: number, time: number, isArrhythmia: boolean}[] = [];
     
-    // Analizar puntos para detectar máximos locales (picos reales)
-    for (let i = 2; i < points.length - 2; i++) {
-      const p1 = points[i-2];
-      const p2 = points[i-1];
-      const current = points[i];
-      const n1 = points[i+1];
-      const n2 = points[i+2];
+    for (let i = PEAK_DETECTION_WINDOW; i < points.length - PEAK_DETECTION_WINDOW; i++) {
+      const currentPoint = points[i];
       
-      // Un punto es un pico si es mayor que sus vecinos en una ventana de 5 puntos
-      if (current.value > p1.value && 
-          current.value > p2.value && 
-          current.value > n1.value && 
-          current.value > n2.value) {
-            
-        // Calcular la amplitud del pico para filtrar ruido
-        const prevTrough = Math.min(p1.value, p2.value);
-        const nextTrough = Math.min(n1.value, n2.value);
-        const amplitude = current.value - Math.min(prevTrough, nextTrough);
-        
-        if (amplitude > MIN_PEAK_AMPLITUDE) {
-          // Verificar si este pico está demasiado cerca de otro ya detectado
-          let isTooClose = false;
-          
-          for (const existingPeak of result) {
-            if (Math.abs(current.time - existingPeak.time) < MIN_PEAK_DISTANCE) {
-              // Si ya hay un pico cercano, quedarse con el de mayor amplitud
-              if (current.value > existingPeak.value) {
-                // Reemplazar el pico existente con este
-                const idx = result.indexOf(existingPeak);
-                if (idx !== -1) result.splice(idx, 1);
-              } else {
-                isTooClose = true;
-              }
-              break;
-            }
-          }
-          
-          if (!isTooClose) {
-            // Calcular posición real en canvas
-            const x = CANVAS_WIDTH - ((now - current.time) * CANVAS_WIDTH / WINDOW_WIDTH_MS);
-            const y = middleY - current.value;
-            
-            // Solo incluir picos visibles en el área de visualización
-            if (x >= PEAK_VISIBLE_MARGIN && 
-                x <= CANVAS_WIDTH - PEAK_VISIBLE_MARGIN && 
-                y >= PEAK_VISIBLE_MARGIN && 
-                y <= CANVAS_HEIGHT - PEAK_VISIBLE_MARGIN) {
-              
-              result.push({
-                x, 
-                y,
-                time: current.time, 
-                value: current.value / VERTICAL_SCALE, // Valor real normalizado
-                isArrhythmia: current.isArrhythmia || false
-              });
-            }
+      const recentlyProcessed = peaksRef.current.some(
+        peak => Math.abs(peak.time - currentPoint.time) < MIN_PEAK_DISTANCE_MS
+      );
+      
+      if (recentlyProcessed) continue;
+      
+      let isPeak = true;
+      
+      for (let j = i - PEAK_DETECTION_WINDOW; j < i; j++) {
+        if (points[j].value >= currentPoint.value) {
+          isPeak = false;
+          break;
+        }
+      }
+      
+      if (isPeak) {
+        for (let j = i + 1; j <= i + PEAK_DETECTION_WINDOW; j++) {
+          if (j < points.length && points[j].value > currentPoint.value) {
+            isPeak = false;
+            break;
           }
         }
       }
+      
+      if (isPeak && Math.abs(currentPoint.value) > PEAK_THRESHOLD) {
+        const isInArrhythmiaWindow = arrhythmiaWindows.some(
+          window => currentPoint.time >= window.start && currentPoint.time <= window.end
+        );
+        
+        const isPointArrhythmia = currentPoint.isArrhythmia || false;
+        
+        const finalIsArrhythmia = isInArrhythmiaWindow || isPointArrhythmia || isArrhythmia;
+        
+        potentialPeaks.push({
+          index: i,
+          value: currentPoint.value,
+          time: currentPoint.time,
+          isArrhythmia: finalIsArrhythmia
+        });
+      }
     }
     
-    return result;
-  }, [CANVAS_HEIGHT, CANVAS_WIDTH, WINDOW_WIDTH_MS, PEAK_VISIBLE_MARGIN, VERTICAL_SCALE]);
+    for (const peak of potentialPeaks) {
+      const tooClose = peaksRef.current.some(
+        existingPeak => Math.abs(existingPeak.time - peak.time) < MIN_PEAK_DISTANCE_MS
+      );
+      
+      if (!tooClose) {
+        peaksRef.current.push({
+          time: peak.time,
+          value: peak.value,
+          isArrhythmia: peak.isArrhythmia,
+          beepPlayed: false
+        });
+      }
+    }
+    
+    peaksRef.current.sort((a, b) => a.time - b.time);
+    
+    peaksRef.current = peaksRef.current
+      .filter(peak => now - peak.time < WINDOW_WIDTH_MS)
+      .slice(-MAX_PEAKS_TO_DISPLAY);
+  }, [MIN_PEAK_DISTANCE_MS, PEAK_DETECTION_WINDOW, PEAK_THRESHOLD, WINDOW_WIDTH_MS, MAX_PEAKS_TO_DISPLAY, arrhythmiaWindows, isArrhythmia]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -417,7 +467,7 @@ const PPGSignalMeter = memo(({
     const currentTime = performance.now();
     const timeSinceLastRender = currentTime - lastRenderTimeRef.current;
     
-    if (timeSinceLastRender < FRAME_TIME) {
+    if (!IMMEDIATE_RENDERING && timeSinceLastRender < FRAME_TIME) {
       animationFrameRef.current = requestAnimationFrame(renderSignal);
       return;
     }
@@ -455,7 +505,6 @@ const PPGSignalMeter = memo(({
       return;
     }
     
-    // Actualizar línea base con medición real sin simulación
     if (baselineRef.current === null) {
       baselineRef.current = value;
     } else {
@@ -466,28 +515,39 @@ const PPGSignalMeter = memo(({
     lastValueRef.current = smoothedValue;
     
     const normalizedValue = smoothedValue - (baselineRef.current || 0);
-    const scaledValue = normalizedValue * VERTICAL_SCALE;
+    const scaledValue = normalizedValue * verticalScale;
     
-    if (isFingerDetected && consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
-      // Solo procesar la señal cuando realmente hay un dedo detectado
-      HeartRateService.processSignal(value);
+    let currentIsArrhythmia = false;
+    
+    const isInArrhythmiaWindow = arrhythmiaWindows.some(
+      window => now >= window.start && now <= window.end
+    );
+    
+    if (rawArrhythmiaData && 
+        arrhythmiaStatus?.includes("ARRHYTHMIA DETECTED") && 
+        now - rawArrhythmiaData.timestamp < 500) {
+      currentIsArrhythmia = true;
+      lastArrhythmiaTime.current = now;
+    }
+    else if (isArrhythmia || isInArrhythmiaWindow) {
+      currentIsArrhythmia = true;
+      lastArrhythmiaTime.current = now;
     }
     
     const dataPoint: PPGDataPointExtended = {
       time: now,
       value: scaledValue,
-      isArrhythmia: isArrhythmia || false
+      isArrhythmia: currentIsArrhythmia
     };
     
     dataBufferRef.current.push(dataPoint);
     
     const points = dataBufferRef.current.getPoints();
+    detectPeaks(points, now);
+    
+    let shouldBeep = false;
     
     if (points.length > 1) {
-      // Detectar picos en tiempo real de la señal actual
-      const realTimePeaks = detectRealTimePeaks(points, now);
-      
-      // Dibujar líneas de la forma de onda PPG
       for (let i = 1; i < points.length; i++) {
         const prevPoint = points[i - 1];
         const currentPoint = points[i];
@@ -508,99 +568,57 @@ const PPGSignalMeter = memo(({
         
         renderCtx.beginPath();
         renderCtx.strokeStyle = isInArrhythmiaZone ? '#DC2626' : '#0EA5E9';
-        renderCtx.lineWidth = isInArrhythmiaZone ? 2 : 1.5;
+        renderCtx.lineWidth = isInArrhythmiaZone ? 3 : 2;
         renderCtx.moveTo(x1, y1);
         renderCtx.lineTo(x2, y2);
         renderCtx.stroke();
       }
       
-      // Dibujar picos detectados en tiempo real directamente sobre los puntos altos de las ondas
-      realTimePeaks.forEach(peak => {
-        if (peak.x >= PEAK_VISIBLE_MARGIN && 
-            peak.x <= canvas.width - PEAK_VISIBLE_MARGIN && 
-            peak.y >= PEAK_VISIBLE_MARGIN && 
-            peak.y <= canvas.height - PEAK_VISIBLE_MARGIN) {
-          
-          // Unificar color de círculos para los picos detectados en tiempo real - ahora todos azul
-          renderCtx.beginPath();
-          renderCtx.arc(peak.x, peak.y, PEAK_DISPLAY_RADIUS - 1, 0, Math.PI * 2);
-          renderCtx.fillStyle = '#0EA5E9'; // Todos los picos detectados en tiempo real serán azules
-          renderCtx.fill();
-          renderCtx.strokeStyle = '#FFFFFF';
-          renderCtx.lineWidth = 1.5;
-          renderCtx.stroke();
-          
-          // Fondo claro para el valor numérico
-          const valueText = Math.abs(peak.value).toFixed(2);
-          renderCtx.font = PEAK_VALUE_FONT;
-          const textWidth = renderCtx.measureText(valueText).width;
-          
-          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-          renderCtx.fillRect(peak.x - textWidth/2 - 3, peak.y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
-          
-          // Mostrar valor del pico
-          renderCtx.fillStyle = '#000000'; // Texto negro para mayor contraste
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText(valueText, peak.x, peak.y - PEAK_TEXT_OFFSET);
-        }
-      });
-      
-      // Dibujar los picos recibidos del servicio (picos confirmados)
       peaksRef.current.forEach(peak => {
-        // Calcular posición exacta del pico en el canvas
         const x = canvas.width - ((now - peak.time) * canvas.width / WINDOW_WIDTH_MS);
-        const centerY = canvas.height / 2 - 50;
-        const y = centerY - peak.value; // Posición vertical exacta en la onda
+        const y = canvas.height / 2 - 50 - peak.value;
         
-        // Solo dibujar los picos que están dentro del área visible
-        if (x >= PEAK_VISIBLE_MARGIN && 
-            x <= canvas.width - PEAK_VISIBLE_MARGIN && 
-            y >= PEAK_VISIBLE_MARGIN && 
-            y <= canvas.height - PEAK_VISIBLE_MARGIN) {
-          
+        if (x >= 0 && x <= canvas.width) {
           const isInArrhythmiaZone = arrhythmiaWindows.some(window => 
             peak.time >= window.start && peak.time <= window.end
           );
           
           const isPeakArrhythmia = peak.isArrhythmia || isInArrhythmiaZone;
           
-          // Círculo del pico con contorno blanco para mejorar contraste
           renderCtx.beginPath();
-          renderCtx.arc(x, y, PEAK_DISPLAY_RADIUS, 0, Math.PI * 2);
-          renderCtx.fillStyle = isPeakArrhythmia ? '#F59E0B' : '#0EA5E9'; // Amarillo para arritmias, azul para normales
+          renderCtx.arc(x, y, isPeakArrhythmia ? 7 : 5, 0, Math.PI * 2);
+          renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#0EA5E9';
           renderCtx.fill();
-          renderCtx.strokeStyle = '#FFFFFF';
-          renderCtx.lineWidth = 1.5;
-          renderCtx.stroke();
           
-          // Texto con fondo semitransparente para legibilidad
-          const valueText = Math.abs(peak.value / VERTICAL_SCALE).toFixed(2);
-          renderCtx.font = PEAK_VALUE_FONT;
-          const textWidth = renderCtx.measureText(valueText).width;
-          
-          // Fondo para el texto
-          renderCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-          renderCtx.fillRect(x - textWidth/2 - 3, y - PEAK_TEXT_OFFSET - 12, textWidth + 6, 16);
-          
-          // Valor del pico
-          renderCtx.fillStyle = isPeakArrhythmia ? '#DC2626' : '#000000';
-          renderCtx.textAlign = 'center';
-          renderCtx.fillText(valueText, x, y - PEAK_TEXT_OFFSET);
-          
-          // Indicador de arritmia si corresponde
           if (isPeakArrhythmia) {
-            renderCtx.font = 'bold 12px Inter';
-            const arrhythmiaText = 'ARRITMIA';
-            const arrhythmiaWidth = renderCtx.measureText(arrhythmiaText).width;
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 12, 0, Math.PI * 2);
+            renderCtx.strokeStyle = '#FEF7CD';
+            renderCtx.lineWidth = 3;
+            renderCtx.stroke();
             
-            // Rectángulo para texto de arritmia
-            renderCtx.fillStyle = 'rgba(255, 220, 220, 0.85)';
-            renderCtx.fillRect(x - arrhythmiaWidth/2 - 3, y - PEAK_TEXT_OFFSET - 28, arrhythmiaWidth + 6, 16);
-            
-            // Texto de arritmia
-            renderCtx.fillStyle = '#DC2626';
+            renderCtx.font = 'bold 18px Inter';
+            renderCtx.fillStyle = '#F97316';
             renderCtx.textAlign = 'center';
-            renderCtx.fillText(arrhythmiaText, x, y - PEAK_TEXT_OFFSET - 16);
+            renderCtx.fillText('ARRITMIA', x, y - 25);
+            
+            renderCtx.beginPath();
+            renderCtx.arc(x, y, 20, 0, Math.PI * 2);
+            const gradient = renderCtx.createRadialGradient(x, y, 5, x, y, 20);
+            gradient.addColorStop(0, 'rgba(220, 38, 38, 0.8)');
+            gradient.addColorStop(1, 'rgba(220, 38, 38, 0)');
+            renderCtx.fillStyle = gradient;
+            renderCtx.fill();
+          }
+          
+          renderCtx.font = 'bold 16px Inter';
+          renderCtx.fillStyle = '#000000';
+          renderCtx.textAlign = 'center';
+          renderCtx.fillText(Math.abs(peak.value / verticalScale).toFixed(2), x, y - 15);
+          
+          if (!peak.beepPlayed) {
+            shouldBeep = true;
+            peak.beepPlayed = true;
           }
         }
       });
@@ -613,29 +631,49 @@ const PPGSignalMeter = memo(({
       }
     }
     
+    if (shouldBeep && isFingerDetected && 
+        consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
+      const latestPeak = peaksRef.current.length > 0 ? peaksRef.current[peaksRef.current.length - 1] : null;
+      const isPeakArrhythmia = latestPeak ? latestPeak.isArrhythmia : false;
+      
+      const isInArrhythmiaZone = latestPeak ? arrhythmiaWindows.some(window => 
+        latestPeak.time >= window.start && latestPeak.time <= window.end
+      ) : false;
+      
+      const finalIsArrhythmia = isPeakArrhythmia || isInArrhythmiaZone || isArrhythmia;
+      
+      console.log("PPGSignalMeter: Circle drawn, playing beep", {
+        isPeakArrhythmia,
+        isArrhythmia,
+        isInArrhythmiaZone,
+        finalIsArrhythmia,
+        arrhythmiaStatus: arrhythmiaStatus || "N/A"
+      });
+      
+      playBeep(1.0, finalIsArrhythmia);
+    }
+    
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
-    smoothValue, preserveResults, isArrhythmia, drawArrhythmiaZones, arrhythmiaWindows,
-    VERTICAL_SCALE, WINDOW_WIDTH_MS, FRAME_TIME, USE_OFFSCREEN_CANVAS, REQUIRED_FINGER_FRAMES,
-    PEAK_DISPLAY_RADIUS, PEAK_TEXT_OFFSET, PEAK_VALUE_FONT, PEAK_VISIBLE_MARGIN,
-    detectRealTimePeaks
+    detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, IMMEDIATE_RENDERING, 
+    FRAME_TIME, USE_OFFSCREEN_CANVAS, WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES,
+    drawArrhythmiaZones, arrhythmiaWindows
   ]);
 
   useEffect(() => {
     renderSignal();
     
     return () => {
-      cancelAnimationFrame(animationFrameRef.current!);
+      cancelAnimationFrame(animationFrameRef.current);
     };
   }, [renderSignal]);
 
   const handleReset = useCallback(() => {
     setShowArrhythmiaAlert(false);
-    showArrhythmiaAlertRef.current = false;
     peaksRef.current = [];
-    HeartRateService.reset();
+    pendingBeepPeakIdRef.current = null;
     onReset();
   }, [onReset]);
 
@@ -659,7 +697,7 @@ const PPGSignalMeter = memo(({
 
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
-          <span className="text-lg font-bold text-white/80">PPG</span>
+          <span className="text-lg font-bold text-black/80">PPG</span>
           <div className="w-[180px]">
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
@@ -667,7 +705,7 @@ const PPGSignalMeter = memo(({
                 style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
               />
             </div>
-            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block text-white/80" 
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
                   style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
               {getQualityText(quality)}
             </span>
@@ -684,7 +722,7 @@ const PPGSignalMeter = memo(({
             }`}
             strokeWidth={1.5}
           />
-          <span className="text-[8px] text-center font-medium text-white/80">
+          <span className="text-[8px] text-center font-medium text-black/80">
             {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
           </span>
         </div>
@@ -693,13 +731,13 @@ const PPGSignalMeter = memo(({
       <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
         <button 
           onClick={onStartMeasurement}
-          className="bg-transparent text-white/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           INICIAR
         </button>
         <button 
           onClick={handleReset}
-          className="bg-transparent text-white/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
         >
           RESET
         </button>

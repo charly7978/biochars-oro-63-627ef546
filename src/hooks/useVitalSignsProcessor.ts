@@ -11,8 +11,6 @@ import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
 import { FeedbackService } from '../services/FeedbackService';
-import ArrhythmiaDetectionService from '@/services/arrhythmia'; 
-import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -23,20 +21,15 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const [lastValidResults, setLastValidResults] = useState<VitalSignsResult | null>(null);
   
   // Session tracking
-  const sessionId = useRef<string>(`session_${Date.now()}`);
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   // Signal quality tracking
   const weakSignalsCountRef = useRef<number>(0);
-  const LOW_SIGNAL_THRESHOLD = 0.02;
+  const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
   
   // Centralized arrhythmia tracking
   const { 
-    arrhythmiaState, 
-    getArrhythmiaInfo, 
-    resetArrhythmiaState, 
-    arrhythmiaWindowData,
-    // Add these correctly mapped properties
     arrhythmiaWindows, 
     addArrhythmiaWindow, 
     clearArrhythmiaWindows,
@@ -51,8 +44,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     fullReset: fullResetProcessor,
     getArrhythmiaCounter,
     getDebugInfo,
-    processedSignals,
-    getLastValidResults
+    processedSignals
   } = useSignalProcessing();
   
   const { 
@@ -85,12 +77,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
    * No simulation or reference values
    */
   const processSignal = (value: number, rrData?: { intervals: number[], lastPeakTime: number | null }): VitalSignsResult => {
-    console.log("useVitalSignsProcessor: Processing signal with value", { 
-      value, 
-      hasRRData: !!rrData,
-      rrIntervals: rrData?.intervals?.length || 0
-    });
-    
     // Check for weak signal to detect finger removal using centralized function
     const { isWeakSignal, updatedWeakSignalsCount } = checkSignalQuality(
       value,
@@ -103,14 +89,8 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     
     weakSignalsCountRef.current = updatedWeakSignalsCount;
     
-    // If we have RR data, update the arrhythmia service
-    if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-      ArrhythmiaDetectionService.updateRRIntervals(rrData.intervals);
-    }
-    
     // Process signal directly - no simulation
     try {
-      // We process the signal even if weak to get more results
       let result = processVitalSignal(value, rrData, isWeakSignal);
       
       // Process and handle arrhythmia events with our centralized system
@@ -131,102 +111,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Log detailed debugging info at intervals
-      if (processedSignals.current % 20 === 0) {
-        console.log("useVitalSignsProcessor: Evaluating results", {
-          sessionId: sessionId.current,
-          processCount: processedSignals.current,
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          hydration: result.hydration,
-          lipids: result.lipids,
-          hemoglobin: result.hemoglobin
-        });
-      }
-      
-      // Guardar resultados - MEJORA: verificación individual más clara
-      if (result) {
-        let hasValidData = false;
-        let logDetails = {
-          hasHeartRate: false,
-          hasSpo2: false,
-          hasPressure: false,
-          hasGlucose: false,
-          hasLipids: false,
-          hasHemoglobin: false,
-          hasHydration: false,
-          result: {} as any
-        };
-        
-        // Verificar cada signo vital individualmente
-        if (result.heartRate > 0) {
-          hasValidData = true;
-          logDetails.hasHeartRate = true;
-        }
-        
-        if (result.spo2 > 0) {
-          hasValidData = true;
-          logDetails.hasSpo2 = true;
-        }
-        
-        if (result.pressure && result.pressure !== "--/--") {
-          hasValidData = true;
-          logDetails.hasPressure = true;
-        }
-        
-        if (result.glucose > 0) {
-          hasValidData = true;
-          logDetails.hasGlucose = true;
-        }
-        
-        if ((result.lipids && result.lipids.totalCholesterol > 0) || 
-            (result.lipids && result.lipids.triglycerides > 0)) {
-          hasValidData = true;
-          logDetails.hasLipids = true;
-        }
-        
-        if (result.hemoglobin > 0) {
-          hasValidData = true;
-          logDetails.hasHemoglobin = true;
-        }
-        
-        if (result.hydration > 0) {
-          hasValidData = true;
-          logDetails.hasHydration = true;
-        }
-        
-        logDetails.result = {
-          heartRate: result.heartRate,
-          spo2: result.spo2,
-          pressure: result.pressure,
-          glucose: result.glucose,
-          hydration: result.hydration,
-          lipids: result.lipids,
-          hemoglobin: result.hemoglobin
-        };
-        
-        // MODIFICADO: Solo logeamos cuando realmente hay un cambio para evitar spam
-        if (processedSignals.current % 20 === 0) {
-          console.log("useVitalSignsProcessor: Validating results", logDetails);
-        }
-        
-        // MODIFICADO: Más permisivo con guardar resultados
-        // Siempre guardamos el resultado si hay al menos un dato válido
-        if (hasValidData) {
-          console.log("useVitalSignsProcessor: Guardando resultado válido", result);
-          setLastValidResults(result);
-        } else if (processedSignals.current % 20 === 0) {
-          console.log("useVitalSignsProcessor: No hay datos válidos para guardar");
-          
-          // MODIFICADO: Intento recuperar el último resultado válido del procesador
-          const lastValidFromProcessor = getLastValidResults();
-          if (lastValidFromProcessor) {
-            console.log("useVitalSignsProcessor: Recuperado último resultado válido del procesador", lastValidFromProcessor);
-            setLastValidResults(lastValidFromProcessor);
-          }
-        }
+      // Save valid results
+      if (result && result.heartRate > 0) {
+        setLastValidResults(result);
       }
       
       // Return processed result
@@ -234,7 +121,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error
+      // Return safe fallback values on error that include heartRate
       return {
         spo2: 0,
         heartRate: 0,
@@ -249,24 +136,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         hydration: 0
       };
     }
-  };
-  
-  /**
-   * Process frame - implementación requerida para compatibilidad con la interfaz
-   * Redirige al procesamiento de señal existente
-   */
-  const processFrame = (frame: ImageData): VitalSignsResult => {
-    console.log("useVitalSignsProcessor: Processing frame (redirecting to signal processing)");
-    // Extraer valor real de la señal PPG usando el canal rojo (más representativo para PPG)
-    let redSum = 0;
-    let count = 0;
-    for (let i = 0; i < frame.data.length; i += 4) {
-      redSum += frame.data[i]; // Canal rojo
-      count++;
-    }
-    const avgRedValue = redSum / count;
-    // Procesar el valor real sin normalización artificial
-    return processSignal(avgRedValue);
   };
 
   /**
@@ -296,12 +165,11 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
 
   return {
     processSignal,
-    processFrame,
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults, // Return last valid results
-    arrhythmiaWindows: arrhythmiaWindows as ArrhythmiaWindow[], // Type assertion to match expected type
+    lastValidResults: lastValidResults, // Return last valid results
+    arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
 };

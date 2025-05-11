@@ -69,13 +69,11 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection with all required parameters
+      // Handle peak detection - fixed argument count
       handlePeakDetection(
         result, 
-        lastPeakTimeRef,
-        requestImmediateBeep,
-        isMonitoringRef,
-        value
+        lastPeakTimeRef, 
+        isMonitoringRef
       );
       
       // Update last valid BPM if it's reasonable
@@ -83,7 +81,7 @@ export function useSignalProcessor() {
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result
+      // Process result - fixed argument count
       return processLowConfidenceResult(
         result, 
         currentBPM

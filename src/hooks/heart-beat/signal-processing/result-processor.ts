@@ -13,10 +13,10 @@ export function processLowConfidenceResult(
   arrhythmiaCounter: number = 0
 ): any {
   // If confidence is very low, don't update values
-  if (!result || result.confidence < 0.25) {
+  if (result.confidence < 0.25) {
     return {
       bpm: currentBPM,
-      confidence: result ? result.confidence : 0,
+      confidence: result.confidence,
       isPeak: false,
       arrhythmiaCount: arrhythmiaCounter || 0,
       rrData: {
@@ -33,7 +33,7 @@ export function processLowConfidenceResult(
  * Updates the reference to last valid BPM when condition is met
  */
 export function updateLastValidBpm(result: any, lastValidBpmRef: React.MutableRefObject<number>): void {
-  if (result && result.bpm >= 40 && result.bpm <= 200) {
+  if (result.bpm >= 40 && result.bpm <= 200) {
     lastValidBpmRef.current = result.bpm;
   }
 }
@@ -51,7 +51,7 @@ export function handlePeakDetection(
   const now = Date.now();
   
   // Only process peaks with minimum confidence
-  if (result && result.isPeak && result.confidence > 0.4) {
+  if (result.isPeak && result.confidence > 0.4) {
     lastPeakTimeRef.current = now;
     
     if (isMonitoringRef.current && result.confidence > 0.5) {

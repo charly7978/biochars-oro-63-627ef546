@@ -1,152 +1,80 @@
 
-import { useRef, useCallback } from 'react';
-import { HeartBeatResult } from './types';
-import { HeartBeatConfig } from '../../modules/heart-beat/config';
+/**
+ * Utility functions for heart beat signal processing
+ * Solo procesa datos reales
+ */
+import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
 
-// This file is now properly organized with correct imports and exports
-// Instead of self-importing, we should import directly from the relevant files
-import { 
-  checkWeakSignal, 
-  shouldProcessMeasurement, 
-  createWeakSignalResult,
-  resetSignalQualityState
-} from './signal-processing/signal-quality';
+interface SignalQualityConfig {
+  lowSignalThreshold: number;
+  maxWeakSignalCount: number;
+}
 
-import { 
-  handlePeakDetection 
-} from './signal-processing/peak-detection';
-
-import { 
-  updateLastValidBpm, 
-  processLowConfidenceResult 
-} from './signal-processing/result-processor';
-
-export function useSignalProcessor() {
-  const lastPeakTimeRef = useRef<number | null>(null);
-  const consistentBeatsCountRef = useRef<number>(0);
-  const lastValidBpmRef = useRef<number>(0);
-  const calibrationCounterRef = useRef<number>(0);
-  const lastSignalQualityRef = useRef<number>(0);
+/**
+ * Check if signal is too weak
+ * Solo datos reales
+ */
+export function checkWeakSignal(
+  value: number,
+  consecutiveWeakSignals: number,
+  config: SignalQualityConfig
+): { isWeakSignal: boolean, updatedWeakSignalsCount: number } {
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  // Simple reference counter for compatibility
-  const consecutiveWeakSignalsRef = useRef<number>(0);
-  const WEAK_SIGNAL_THRESHOLD = HeartBeatConfig.LOW_SIGNAL_THRESHOLD; 
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = HeartBeatConfig.LOW_SIGNAL_FRAMES;
+  // Verificar si la señal es débil basado en su amplitud
+  const isCurrentlyWeak = Math.abs(value) < lowSignalThreshold;
+  
+  // Actualizar contador de señales débiles consecutivas
+  let updatedWeakSignalsCount = isCurrentlyWeak
+    ? consecutiveWeakSignals + 1
+    : Math.max(0, consecutiveWeakSignals - 1);
+  
+  // Determinar si la señal debe considerarse como débil en general
+  const isWeakSignal = updatedWeakSignalsCount > maxWeakSignalCount;
+  
+  return { isWeakSignal, updatedWeakSignalsCount };
+}
 
-  const processSignal = useCallback((
-    value: number,
-    currentBPM: number,
-    confidence: number,
-    processor: any,
-    requestImmediateBeep: (value: number) => boolean,
-    isMonitoringRef: React.MutableRefObject<boolean>,
-    lastRRIntervalsRef: React.MutableRefObject<number[]>,
-    currentBeatIsArrhythmiaRef: React.MutableRefObject<boolean>
-  ): HeartBeatResult => {
-    if (!processor) {
-      return createWeakSignalResult();
-    }
+/**
+ * Update last valid BPM value
+ * Solo datos reales
+ */
+export function updateLastValidBpm(
+  result: any,
+  lastValidBpmRef: React.MutableRefObject<number>
+): void {
+  if (result && result.bpm > 40 && result.bpm < 200 && result.confidence > 0.5) {
+    lastValidBpmRef.current = result.bpm;
+  }
+}
 
-    try {
-      calibrationCounterRef.current++;
-      
-      // Check for weak signal - MEJORADO
-      const { isWeakSignal, updatedWeakSignalsCount } = checkWeakSignal(
-        value, 
-        consecutiveWeakSignalsRef.current, 
-        {
-          lowSignalThreshold: WEAK_SIGNAL_THRESHOLD,
-          maxWeakSignalCount: MAX_CONSECUTIVE_WEAK_SIGNALS
-        }
-      );
-      
-      consecutiveWeakSignalsRef.current = updatedWeakSignalsCount;
-      
-      // MODIFICADO: menos restrictivo con señales débiles para mejor experiencia
-      if (isWeakSignal && calibrationCounterRef.current > 30) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
-      }
-      
-      // MEJORADO: procesar todas las señales al inicio para calibración
-      if (!shouldProcessMeasurement(value) && calibrationCounterRef.current > 30) {
-        return createWeakSignalResult(processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0);
-      }
-      
-      // Process real signal with confidence boost during initial calibration
-      let confBoost = calibrationCounterRef.current < 30 ? 0.15 : 0;
-      const result = processor.processSignal(value);
-      
-      if (result) {
-        result.confidence += confBoost; // Boost confidence during calibration
-      }
-      
-      const rrData = processor.getRRIntervals ? processor.getRRIntervals() : null;
-      
-      if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-        lastRRIntervalsRef.current = [...rrData.intervals];
-      }
-      
-      // MEJORADO: detección de picos más sensible
-      handlePeakDetection(
-        result, 
-        lastPeakTimeRef,
-        requestImmediateBeep,
-        isMonitoringRef,
-        value
-      );
-      
-      // Update last valid BPM if it's reasonable
-      updateLastValidBpm(result, lastValidBpmRef);
-      
-      lastSignalQualityRef.current = result.confidence || 0;
-
-      // Process result with improvements
-      return processLowConfidenceResult(
-        result, 
-        currentBPM
-      );
-    } catch (error) {
-      console.error('useHeartBeatProcessor: Error processing signal', error);
-      return {
-        bpm: currentBPM > 0 ? currentBPM : 75, // Fallback to reasonable value
-        confidence: 0,
-        isPeak: false,
-        arrhythmiaCount: processor.getArrhythmiaCounter ? processor.getArrhythmiaCounter() : 0,
-        rrData: {
-          intervals: [],
-          lastPeakTime: null
-        }
-      };
-    }
-  }, []);
-
-  const reset = useCallback(() => {
-    lastPeakTimeRef.current = null;
-    consistentBeatsCountRef.current = 0;
-    lastValidBpmRef.current = 0;
-    calibrationCounterRef.current = 0;
-    lastSignalQualityRef.current = 0;
-    consecutiveWeakSignalsRef.current = 0;
-  }, []);
-
+/**
+ * Process result when confidence is low
+ * Solo datos reales
+ */
+export function processLowConfidenceResult(
+  result: any,
+  currentBPM: number
+): any {
+  // Si la confianza es baja, mantener el BPM anterior para estabilidad
+  if (result.confidence < 0.2 && currentBPM > 0) {
+    return {
+      ...result,
+      bpm: currentBPM,
+      arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
+    };
+  }
+  
+  // Añadir contador de arritmias para consistencia
   return {
-    processSignal,
-    reset,
-    lastPeakTimeRef,
-    lastValidBpmRef,
-    lastSignalQualityRef,
-    consecutiveWeakSignalsRef,
-    MAX_CONSECUTIVE_WEAK_SIGNALS
+    ...result,
+    arrhythmiaCount: ArrhythmiaDetectionService.getArrhythmiaCount()
   };
 }
 
-// Re-export all functions from the individual modules to maintain backward compatibility
-export {
-  checkWeakSignal,
-  shouldProcessMeasurement,
-  createWeakSignalResult,
-  resetSignalQualityState,
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
-};
+// Re-export functions from peak-detection para consistencia
+export { 
+  shouldProcessMeasurement, 
+  createWeakSignalResult, 
+  handlePeakDetection 
+} from './peak-detection';
