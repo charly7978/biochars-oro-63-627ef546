@@ -1,57 +1,40 @@
 
 /**
- * Signal quality detection utilities
- * Centralized functions for checking signal quality and finger detection
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-export interface SignalQualityOptions {
-  lowSignalThreshold?: number;
-  maxWeakSignalCount?: number;
-}
+import { useSignalQualityDetector } from '../../hooks/vital-signs/use-signal-quality-detector';
 
-export function checkSignalQuality(
-  value: number,
-  currentWeakSignalCount: number,
-  options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+/**
+ * Esta función es un puente para mantener compatibilidad con el código existente.
+ * Toda la lógica real está centralizada en useSignalQualityDetector.
+ */
+export function checkSignalQuality(value: number, weakSignalCount: number, options: any = {}): {
+  isWeak: boolean;
+  updatedWeakSignalCount: number;
+} {
+  // Crear una instancia temporal del detector para mantener compatibilidad hacia atrás
+  const { detectWeakSignal } = useSignalQualityDetector();
   
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  const isWeak = detectWeakSignal(value);
   
-  // Update consecutive weak signals counter
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? currentWeakSignalCount + 1 
-    : 0;
-  
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
-  
-  // Signal is considered weak if we have enough consecutive weak readings
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount };
-}
-
-export function shouldProcessMeasurement(
-  value: number,
-  weakSignalsCount: number,
-  options: SignalQualityOptions = {}
-): boolean {
-  const { isWeakSignal } = checkSignalQuality(value, weakSignalsCount, options);
-  return !isWeakSignal;
-}
-
-export function createWeakSignalResult(): { bpm: number; confidence: number; isPeak: boolean; arrhythmiaCount: number } {
   return {
-    bpm: 0,
-    confidence: 0,
-    isPeak: false,
-    arrhythmiaCount: 0
+    isWeak,
+    updatedWeakSignalCount: isWeak ? weakSignalCount + 1 : Math.max(0, weakSignalCount - 1)
   };
 }
 
-export function resetSignalQualityState(): number {
-  return 0; // Reset the weak signals counter
+/**
+ * Solo para compatibilidad con código existente
+ */
+export function isFingerDetectedByPattern(signals: any[]): boolean {
+  // Si no hay suficientes señales, no podemos detectar patrones
+  if (!signals || signals.length < 10) {
+    return false;
+  }
+  
+  // Crear una instancia temporal del detector
+  const { isFingerDetected } = useSignalQualityDetector();
+  
+  return isFingerDetected();
 }

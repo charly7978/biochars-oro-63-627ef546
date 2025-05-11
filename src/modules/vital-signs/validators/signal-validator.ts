@@ -1,37 +1,42 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
+
+import { useSignalQualityDetector } from '../../../hooks/vital-signs/use-signal-quality-detector';
 
 /**
  * Validates PPG signals to ensure they meet requirements
  * Works with real data only, no simulation
  * Enhanced with rhythmic pattern detection for finger detection
+ * Esta clase ahora utiliza useSignalQualityDetector para centralizar la lógica
  */
 export class SignalValidator {
   // Thresholds for physiological detection
   private readonly MIN_SIGNAL_AMPLITUDE: number;
   private readonly MIN_PPG_VALUES: number;
   
-  // Signal history for rhythmic pattern detection
-  private signalHistory: Array<{time: number, value: number}> = [];
-  private peakTimes: number[] = [];
-  private detectedPatternCount: number = 0;
-  
-  // Constants for pattern detection - made more strict
-  private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 5; // Increased from 4
-  private readonly REQUIRED_PATTERNS = 5; // Increased from 4
-  private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
+  // Handle para el detector centralizado
+  private detector: ReturnType<typeof useSignalQualityDetector>;
   
   /**
    * Create a new signal validator with custom thresholds
    */
   constructor(
-    minSignalAmplitude: number = 0.02, // Increased from 0.01
+    minSignalAmplitude: number = 0.02,
     minPpgValues: number = 15
   ) {
     this.MIN_SIGNAL_AMPLITUDE = minSignalAmplitude;
     this.MIN_PPG_VALUES = minPpgValues;
+    
+    // Inicializar detector central
+    this.detector = useSignalQualityDetector();
+    
+    // Configurar detector según los parámetros de esta clase
+    this.detector.updateConfig({
+      minSignalVariance: minSignalAmplitude / 2,
+      weakSignalThreshold: minSignalAmplitude
+    });
   }
   
   /**
@@ -60,128 +65,30 @@ export class SignalValidator {
    * Validate that the signal is strong enough
    */
   public isValidSignal(ppgValue: number): boolean {
-    return Math.abs(ppgValue) >= 0.02; // Increased from 0.005
+    return !this.detector.detectWeakSignal(ppgValue);
   }
   
   /**
    * Add value to signal history for pattern detection
    */
   public trackSignalForPatternDetection(value: number): void {
-    const now = Date.now();
-    this.signalHistory.push({ time: now, value });
-    
-    // Keep only recent signals
-    this.signalHistory = this.signalHistory.filter(
-      point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS * 2
-    );
-    
-    // Attempt to detect rhythmic patterns
-    this.detectRhythmicPatterns();
+    // Utilizar detector central para el tracking
+    this.detector.detectWeakSignal(value);
   }
   
   /**
    * Check if a finger is detected based on rhythmic patterns
    */
   public isFingerDetected(): boolean {
-    return this.detectedPatternCount >= this.REQUIRED_PATTERNS;
+    return this.detector.isFingerDetected();
   }
   
   /**
    * Reset finger detection state
    */
   public resetFingerDetection(): void {
-    this.signalHistory = [];
-    this.peakTimes = [];
-    this.detectedPatternCount = 0;
+    this.detector.reset();
     console.log("SignalValidator: Finger detection state reset.");
-  }
-  
-  /**
-   * Detect rhythmic patterns in the signal history
-   * Uses physiological heartbeat patterns to detect finger presence
-   */
-  private detectRhythmicPatterns(): void {
-    const now = Date.now();
-    const recentSignals = this.signalHistory.filter(
-      point => now - point.time < this.PATTERN_DETECTION_WINDOW_MS
-    );
-    
-    if (recentSignals.length < 15) return; // Need more data (increased from 10)
-    
-    // Check for minimum signal variance (reject near-constant signals)
-    const values = recentSignals.map(s => s.value);
-    const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-    const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-    
-    if (variance < this.MIN_SIGNAL_VARIANCE) {
-      // Signal variance too low - likely not a physiological signal
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-      return;
-    }
-    
-    // Look for peaks in the signal
-    const peaks: number[] = [];
-    const peakThreshold = 0.25; // Increased from 0.2
-    
-    for (let i = 2; i < recentSignals.length - 2; i++) {
-      const current = recentSignals[i];
-      const prev1 = recentSignals[i - 1];
-      const prev2 = recentSignals[i - 2];
-      const next1 = recentSignals[i + 1];
-      const next2 = recentSignals[i + 2];
-      
-      // Check if this point is a peak (higher than surrounding points)
-      // Also require the peak to be significantly higher (20% higher)
-      if (current.value > prev1.value * 1.2 && 
-          current.value > prev2.value * 1.2 &&
-          current.value > next1.value * 1.2 && 
-          current.value > next2.value * 1.2 &&
-          Math.abs(current.value) > peakThreshold) {
-        peaks.push(current.time);
-      }
-    }
-    
-    // Need enough peaks to establish a pattern
-    if (peaks.length >= this.MIN_PEAKS_FOR_PATTERN) {
-      // Calculate intervals between peaks
-      const intervals: number[] = [];
-      for (let i = 1; i < peaks.length; i++) {
-        intervals.push(peaks[i] - peaks[i - 1]);
-      }
-      
-      // Check for physiologically plausible heart rate (40-180 BPM)
-      const validIntervals = intervals.filter(interval => 
-        interval >= 333 && interval <= 1500 // 40-180 BPM
-      );
-      
-      if (validIntervals.length < Math.floor(intervals.length * 0.8)) { // Increased from 0.7 (70% to 80%)
-        // If less than 80% of intervals are physiologically plausible, reject the pattern
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-        return;
-      }
-      
-      // Check for consistency in intervals (rhythm)
-      let consistentIntervals = 0;
-      const maxDeviation = 120; // Reduced from 150ms - tighter consistency check
-      
-      for (let i = 1; i < validIntervals.length; i++) {
-        if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
-          consistentIntervals++;
-        }
-      }
-      
-      // If we have consistent intervals, increment pattern counter
-      if (consistentIntervals >= this.MIN_PEAKS_FOR_PATTERN - 1) {
-        this.peakTimes = peaks;
-        this.detectedPatternCount++;
-      } else {
-        // Reduce counter if pattern not consistent
-        this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-      }
-    } else {
-      // Decrement pattern count if we don't have enough peaks
-      this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
-    }
   }
   
   /**
@@ -201,5 +108,12 @@ export class SignalValidator {
         need: this.MIN_PPG_VALUES
       });
     }
+  }
+  
+  /**
+   * Get diagnostic information
+   */
+  public getDiagnostics(): any {
+    return this.detector.getDiagnostics();
   }
 }

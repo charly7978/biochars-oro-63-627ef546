@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -7,12 +8,14 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
+import { useSignalQualityDetector } from '../../hooks/vital-signs/use-signal-quality-detector';
 
 /**
  * Signal processor for real PPG signals
  * Implements filtering and analysis techniques on real data only
  * Enhanced with rhythmic pattern detection for finger presence
  * No simulation or reference values are used
+ * Ahora utiliza la implementación central de detección de dedos
  */
 export class SignalProcessor extends BaseProcessor {
   private filter: SignalFilter;
@@ -20,24 +23,32 @@ export class SignalProcessor extends BaseProcessor {
   private heartRateDetector: HeartRateDetector;
   private signalValidator: SignalValidator;
   
-  // Finger detection state
-  private rhythmBasedFingerDetection: boolean = false;
-  private fingerDetectionConfirmed: boolean = false;
-  private fingerDetectionStartTime: number | null = null;
+  // Detector centralizado
+  private fingerDetector: ReturnType<typeof useSignalQualityDetector>;
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 55; // Increased from 45
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Mantener por ahora
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.30; // Increased from 0.25
-  private consecutiveConfirmationFrames: number = 0; // Nuevo: contador de frames de confirmación
-  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 20; // Increased from 15
+  // Signal quality variables
+  private readonly MIN_QUALITY_FOR_FINGER = 55;
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.30;
+  private consecutiveConfirmationFrames: number = 0;
+  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 20;
   
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
+    this.signalValidator = new SignalValidator(0.02, 15);
+    
+    // Inicializar detector centralizado de dedos
+    this.fingerDetector = useSignalQualityDetector();
+    
+    // Configurar detector con los parámetros específicos para este procesador
+    this.fingerDetector.updateConfig({
+      weakSignalThreshold: 0.15,
+      minSignalVariance: 0.02,
+      requiredConsistentPatterns: 2
+    });
   }
   
   /**
@@ -63,26 +74,20 @@ export class SignalProcessor extends BaseProcessor {
   
   /**
    * Check if finger is detected based on rhythmic patterns
-   * Uses physiological characteristics (heartbeat rhythm)
+   * Ahora utiliza el detector centralizado
    */
   public isFingerDetected(): boolean {
-    // If already confirmed through consistent patterns, maintain detection
-    if (this.fingerDetectionConfirmed) {
-      return true;
-    }
-    
-    // Otherwise, use the validator's pattern detection
-    return this.signalValidator.isFingerDetected();
+    return this.fingerDetector.isFingerDetected();
   }
   
   /**
    * Apply combined filtering for real signal processing
    * No simulation is used
-   * Incorporates rhythmic pattern-based finger detection
+   * Incorporates rhythmic pattern-based finger detection from detector central
    */
   public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
     // Track the signal for pattern detection
-    this.signalValidator.trackSignalForPatternDetection(value);
+    const isWeak = this.fingerDetector.detectWeakSignal(value);
     
     // Step 1: Median filter to remove outliers
     const medianFiltered = this.applyMedianFilter(value);
@@ -105,73 +110,13 @@ export class SignalProcessor extends BaseProcessor {
       this.ppgValues.shift();
     }
     
-    // Check finger detection using pattern recognition from SignalValidator
-    const patternBasedFingerDetected = this.signalValidator.isFingerDetected();
-    
-    // Calculate signal amplitude from recent PPG values
-    let amplitude = 0;
-    if (this.ppgValues.length > 10) {
-      const recentValues = this.ppgValues.slice(-10);
-      amplitude = Math.max(...recentValues) - Math.min(...recentValues);
-    }
-
-    // Physiological and quality requirements for the signal
-    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
-    const hasValidQuality = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
-
-    // Logic for confirming finger detection
-    if (patternBasedFingerDetected && hasValidAmplitude && hasValidQuality) {
-      const now = Date.now();
-
-      if (!this.fingerDetectionStartTime) {
-        this.fingerDetectionStartTime = now;
-        this.consecutiveConfirmationFrames = 0; // Reset frames when a new potential sequence starts
-        console.log("Signal processor: Potential finger detection sequence INITIALIZED", {
-          time: new Date(now).toISOString(),
-          quality: qualityValue,
-          amplitude
-        });
-      }
-
-      this.consecutiveConfirmationFrames++; // Increment for each valid frame in the sequence
-
-      // Confirm detection if time and consecutive frames thresholds are met, and not already confirmed
-      if (this.fingerDetectionStartTime &&
-          (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME) &&
-          this.consecutiveConfirmationFrames >= this.REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES &&
-          !this.fingerDetectionConfirmed // Confirm only once per valid sequence
-      ) {
-        this.fingerDetectionConfirmed = true;
-        this.rhythmBasedFingerDetection = true; // Retain if used elsewhere
-        console.log("Signal processor: Finger detection CONFIRMED (Pattern, Amplitude, Quality, Stability Met)", {
-          time: new Date(now).toISOString(),
-          detectionDurationMs: now - this.fingerDetectionStartTime,
-          confirmedFrames: this.consecutiveConfirmationFrames,
-          quality: qualityValue,
-          amplitude
-        });
-      }
-    } else {
-      // If conditions are not met, reset confirmation state
-      if (this.fingerDetectionConfirmed) { // Log only if it was previously confirmed
-        console.log("Signal processor: Finger detection LOST (Pattern, Amplitude, or Quality not met)", {
-          patternDetected: patternBasedFingerDetected,
-          currentAmplitude: amplitude,
-          currentQuality: qualityValue,
-          consecutiveFramesAchieved: this.consecutiveConfirmationFrames,
-          wasConfirmed: this.fingerDetectionConfirmed
-        });
-      }
-      this.fingerDetectionConfirmed = false;
-      this.fingerDetectionStartTime = null;
-      this.rhythmBasedFingerDetection = false;
-      this.consecutiveConfirmationFrames = 0; // Reset frame counter
-    }
+    // Usar el detector centralizado
+    const fingerDetected = this.fingerDetector.isFingerDetected();
     
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: this.fingerDetectionConfirmed // Return the confirmed state
+      fingerDetected: fingerDetected
     };
   }
   
@@ -190,9 +135,9 @@ export class SignalProcessor extends BaseProcessor {
     super.reset();
     this.quality.reset();
     this.signalValidator.resetFingerDetection();
-    this.fingerDetectionConfirmed = false;
-    this.fingerDetectionStartTime = null;
-    this.rhythmBasedFingerDetection = false;
-    this.consecutiveConfirmationFrames = 0; // Ensure reset of the new counter
+    this.consecutiveConfirmationFrames = 0;
+    
+    // Restablecer detector centralizado
+    this.fingerDetector.reset();
   }
 }

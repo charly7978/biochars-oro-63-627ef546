@@ -1,4 +1,6 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useSignalQualityDetector } from '../hooks/vital-signs/use-signal-quality-detector';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
@@ -20,7 +22,13 @@ const CameraView = ({
   const [isAndroid, setIsAndroid] = useState(false);
   const [isWindows, setIsWindows] = useState(false);
   const retryAttemptsRef = useRef<number>(0);
-  const maxRetryAttempts = 3;
+  const maxRetryAttempts = 5; // Aumentado para más reintentos
+
+  // Utilizar nuestro detector centralizado para obtener diagnósticos
+  const fingerDetector = useSignalQualityDetector();
+
+  // Control de optimización de cámara basado en detección de dedos
+  const optimizeCameraRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -62,6 +70,12 @@ const CameraView = ({
       setStream(null);
       setTorchEnabled(false);
       retryAttemptsRef.current = 0;
+
+      // Limpiar optimizador de cámara
+      if (optimizeCameraRef.current) {
+        clearInterval(optimizeCameraRef.current);
+        optimizeCameraRef.current = null;
+      }
     }
   };
 
@@ -127,7 +141,7 @@ const CameraView = ({
           const capabilities = videoTrack.getCapabilities();
           console.log("Capacidades de la cámara:", capabilities);
           
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 300)); // Reducido para aplicar configuraciones más rápido
           
           const advancedConstraints: MediaTrackConstraintSet[] = [];
           
@@ -150,6 +164,7 @@ const CameraView = ({
               };
               
               if (capabilities.exposureCompensation?.max) {
+                // Aumentar brillo para mejorar detección
                 exposureConstraint.exposureCompensation = capabilities.exposureCompensation.max;
               }
               
@@ -166,12 +181,20 @@ const CameraView = ({
             
             if (capabilities.brightness && capabilities.brightness.max) {
               const maxBrightness = capabilities.brightness.max;
-              advancedConstraints.push({ brightness: maxBrightness * 0.2 });
+              // Aumentar brillo para mejor detección de señal
+              advancedConstraints.push({ brightness: maxBrightness * 0.3 }); // Aumentado de 0.2 a 0.3
             }
             
             if (capabilities.contrast && capabilities.contrast.max) {
               const maxContrast = capabilities.contrast.max;
-              advancedConstraints.push({ contrast: maxContrast * 0.6 });
+              // Aumentar contraste para mayor definición de cambios en la señal
+              advancedConstraints.push({ contrast: maxContrast * 0.7 }); // Aumentado de 0.6 a 0.7
+            }
+
+            if (capabilities.saturation && capabilities.saturation.max) {
+              const maxSaturation = capabilities.saturation.max;
+              // Reducir saturación para enfocarse en intensidad de luz
+              advancedConstraints.push({ saturation: maxSaturation * 0.4 });
             }
 
             if (advancedConstraints.length > 0) {
@@ -181,8 +204,9 @@ const CameraView = ({
               });
             }
 
+            // Intentar activar la linterna inmediatamente
             if (capabilities.torch) {
-              console.log("Activando linterna para mejorar la señal PPG");
+              console.log("Activando linterna inicial para mejorar la señal PPG");
               await videoTrack.applyConstraints({
                 advanced: [{ torch: true }]
               });
@@ -192,16 +216,23 @@ const CameraView = ({
             }
           }
           
+          // Optimización de renderizado para mejor rendimiento
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
             videoRef.current.style.backfaceVisibility = 'hidden';
           }
+          
+          // Configurar monitoreo periódico para optimizar configuración
+          optimizeCameraRef.current = setInterval(() => {
+            optimizeCameraSettings(videoTrack, capabilities, isFingerDetected);
+          }, 3000); // Verificar cada 3 segundos
           
         } catch (err) {
           console.log("No se pudieron aplicar algunas optimizaciones:", err);
         }
       }
 
+      // Optimizaciones para el elemento video
       if (videoRef.current) {
         videoRef.current.srcObject = newStream;
         
@@ -227,10 +258,72 @@ const CameraView = ({
       retryAttemptsRef.current++;
       if (retryAttemptsRef.current <= maxRetryAttempts) {
         console.log(`Reintentando iniciar cámara (intento ${retryAttemptsRef.current} de ${maxRetryAttempts})...`);
-        setTimeout(startCamera, 1000);
+        setTimeout(startCamera, 800); // Reducido para reintentar más rápido
       } else {
         console.error(`Se alcanzó el máximo de ${maxRetryAttempts} intentos sin éxito`);
       }
+    }
+  };
+
+  /**
+   * Optimiza la configuración de la cámara en tiempo real
+   * basado en la detección de dedos y calidad de señal
+   */
+  const optimizeCameraSettings = async (
+    videoTrack: MediaStreamTrack,
+    capabilities: MediaTrackCapabilities,
+    isFingerDetected: boolean
+  ) => {
+    if (!videoTrack || !capabilities) return;
+    
+    try {
+      // Obtener diagnóstico del detector de dedos
+      const diagnostics = fingerDetector.getDiagnostics();
+      
+      // Si no se detecta dedo y no hay indicación de patrones rítmicos, intensificar configuración
+      if (!isFingerDetected && diagnostics.patternCount < 1) {
+        // Intentar activar linterna si no está activa
+        if (capabilities.torch && !torchEnabled) {
+          console.log("Optimizador: Activando linterna para mejorar detección");
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          });
+          setTorchEnabled(true);
+        }
+        
+        // Ajustar brillo/contraste para mejorar detección
+        const adjustments: MediaTrackConstraintSet[] = [];
+        
+        if (capabilities.brightness && capabilities.brightness.max) {
+          adjustments.push({ 
+            brightness: capabilities.brightness.max * 0.35 // Mayor brillo para detectar
+          });
+        }
+        
+        if (capabilities.contrast && capabilities.contrast.max) {
+          adjustments.push({ 
+            contrast: capabilities.contrast.max * 0.75 // Mayor contraste para detectar cambios
+          });
+        }
+        
+        if (adjustments.length > 0) {
+          console.log("Optimizador: Ajustando parámetros para mejorar detección", adjustments);
+          await videoTrack.applyConstraints({ advanced: adjustments });
+        }
+      }
+      // Si se detecta dedo pero con baja calidad, ajustar para mantener
+      else if (isFingerDetected && diagnostics.signalQuality < 40) {
+        if (capabilities.torch && !torchEnabled) {
+          console.log("Optimizador: Activando linterna para mantener detección");
+          await videoTrack.applyConstraints({
+            advanced: [{ torch: true }]
+          });
+          setTorchEnabled(true);
+        }
+      }
+      
+    } catch (err) {
+      console.error("Error al optimizar configuración de cámara:", err);
     }
   };
 
@@ -293,8 +386,11 @@ const CameraView = ({
     }
   }, [stream, isFingerDetected, torchEnabled, refreshAutoFocus, isAndroid]);
 
-  const targetFrameInterval = isAndroid ? 1000/10 : 
-                             signalQuality > 70 ? 1000/30 : 1000/15;
+  // Ajustar frame rate según calidad de señal para balancear rendimiento/precisión
+  const targetFrameInterval = isAndroid ? 1000/15 : // Android: 15fps constantes 
+                             signalQuality > 70 ? 1000/30 : // Alta calidad: 30 fps
+                             signalQuality > 40 ? 1000/25 : // Media calidad: 25 fps
+                             1000/20; // Baja calidad: 20 fps
 
   return (
     <video
