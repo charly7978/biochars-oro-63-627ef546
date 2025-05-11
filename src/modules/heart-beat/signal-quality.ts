@@ -34,13 +34,9 @@ export function isFingerDetectedByPattern(signals: any[]): boolean {
 }
 
 /**
- * Restablece el estado de detección de señal
- * Esta función es necesaria para mantener compatibilidad con HeartBeatProcessor.js
+ * Restablece el estado de detección de señal (compatibilidad)
+ * Ahora es un stub, ya que la lógica es gestionada por cada instancia de SignalQualityDetector
  */
 export function resetSignalQualityState(): number {
-  // Crear una instancia temporal del detector y restablecerla
-  const { reset } = useSignalQualityDetector();
-  reset();
-  
-  return 0; // Reset the weak signals counter
+  return 0;
 }
