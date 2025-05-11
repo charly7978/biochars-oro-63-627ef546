@@ -75,6 +75,9 @@ interface FingerDetectionState {
   lastSignalAmplitude: number;
   lastSignalVariance: number;
   perfusionIndex: number;
+
+  // Control de montado para prevenir errores de React
+  isMounted: boolean;
   
   // Funciones para actualizar estado
   setFingerDetected: (detected: boolean) => void;
@@ -100,20 +103,23 @@ interface FingerDetectionState {
   
   // Método principal de procesamiento
   processSignal: (value: number, quality?: number) => boolean;
+  
+  // Método para indicar montado/desmontado
+  setMounted: (mounted: boolean) => void;
 }
 
 // Configuración óptima basada en investigación
 const DEFAULT_CONFIG: FingerDetectionConfig = {
-  weakSignalThreshold: 0.25,
-  maxConsecutiveWeakSignals: 5,
+  weakSignalThreshold: 0.20,           // Valor reducido para mayor sensibilidad
+  maxConsecutiveWeakSignals: 4,        // Valor reducido para mantener detección
   patternDetectionWindowMs: 3000,
-  minPeaksForRhythm: 4,
-  peakDetectionThreshold: 0.25,
+  minPeaksForRhythm: 3,                // Valor reducido para mayor sensibilidad
+  peakDetectionThreshold: 0.20,        // Valor reducido para mayor sensibilidad
   requiredConsistentPatterns: 4,
-  minSignalVariance: 0.04,
-  minSignalAmplitude: 0.2,
-  minQualityForFingerDetection: 45,
-  requiredConsecutiveFrames: 3
+  minSignalVariance: 0.03,             // Valor reducido para mayor sensibilidad
+  minSignalAmplitude: 0.15,            // Valor reducido para mayor sensibilidad
+  minQualityForFingerDetection: 35,    // Valor reducido para mayor sensibilidad
+  requiredConsecutiveFrames: 2         // Valor reducido para respuesta más rápida
 };
 
 /**
@@ -137,15 +143,37 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
   lastSignalAmplitude: 0,
   lastSignalVariance: 0,
   perfusionIndex: 0,
+  isMounted: true,
+  
+  // Control de montado para evitar actualizaciones de estado después de desmontado
+  setMounted: (mounted) => set({ isMounted: mounted }),
   
   // Funciones para manipulación de estado
-  setFingerDetected: (detected) => set({ isFingerDetected: detected }),
+  setFingerDetected: (detected) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ isFingerDetected: detected });
+    }
+  },
   
-  setFingerConfirmed: (confirmed) => set({ fingerConfirmed: confirmed }),
+  setFingerConfirmed: (confirmed) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ fingerConfirmed: confirmed });
+    }
+  },
   
-  setFingerDetectionStartTime: (time) => set({ fingerDetectionStartTime: time }),
+  setFingerDetectionStartTime: (time) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ fingerDetectionStartTime: time });
+    }
+  },
   
   addSignalPoint: (point) => {
+    const state = get();
+    if (!state.isMounted) return;
+    
     const now = Date.now();
     set(state => {
       // Mantener solo señales recientes dentro de la ventana
@@ -158,53 +186,100 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
     });
   },
   
-  setPeakTimes: (peaks) => set({ peakTimes: peaks }),
+  setPeakTimes: (peaks) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ peakTimes: peaks });
+    }
+  },
   
-  incrementDetectedPatterns: () => set(state => ({ 
-    detectedPatterns: state.detectedPatterns + 1 
-  })),
+  incrementDetectedPatterns: () => {
+    const state = get();
+    if (state.isMounted) {
+      set(state => ({ detectedPatterns: state.detectedPatterns + 1 }));
+    }
+  },
   
-  resetDetectedPatterns: () => set({ detectedPatterns: 0 }),
+  resetDetectedPatterns: () => {
+    const state = get();
+    if (state.isMounted) {
+      set({ detectedPatterns: 0 });
+    }
+  },
   
-  setConsecutiveWeakSignals: (count) => set({ consecutiveWeakSignals: count }),
+  setConsecutiveWeakSignals: (count) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ consecutiveWeakSignals: count });
+    }
+  },
   
-  incrementConsecutiveWeakSignals: () => set(state => ({ 
-    consecutiveWeakSignals: state.consecutiveWeakSignals + 1 
-  })),
+  incrementConsecutiveWeakSignals: () => {
+    const state = get();
+    if (state.isMounted) {
+      set(state => ({ consecutiveWeakSignals: state.consecutiveWeakSignals + 1 }));
+    }
+  },
   
-  decrementConsecutiveWeakSignals: () => set(state => ({ 
-    consecutiveWeakSignals: Math.max(0, state.consecutiveWeakSignals - 1) 
-  })),
+  decrementConsecutiveWeakSignals: () => {
+    const state = get();
+    if (state.isMounted) {
+      set(state => ({ consecutiveWeakSignals: Math.max(0, state.consecutiveWeakSignals - 1) }));
+    }
+  },
   
-  setSignalQuality: (quality) => set({ signalQuality: quality }),
+  setSignalQuality: (quality) => {
+    const state = get();
+    if (state.isMounted) {
+      set({ signalQuality: quality });
+    }
+  },
   
-  incrementConsecutiveGoodFrames: () => set(state => ({ 
-    consecutiveGoodFrames: state.consecutiveGoodFrames + 1 
-  })),
+  incrementConsecutiveGoodFrames: () => {
+    const state = get();
+    if (state.isMounted) {
+      set(state => ({ consecutiveGoodFrames: state.consecutiveGoodFrames + 1 }));
+    }
+  },
   
-  resetConsecutiveGoodFrames: () => set({ consecutiveGoodFrames: 0 }),
+  resetConsecutiveGoodFrames: () => {
+    const state = get();
+    if (state.isMounted) {
+      set({ consecutiveGoodFrames: 0 });
+    }
+  },
   
-  updateDetectionMetrics: (metrics) => set(state => ({
-    lastDetectionConfidence: metrics.confidence ?? state.lastDetectionConfidence,
-    lastSignalAmplitude: metrics.amplitude ?? state.lastSignalAmplitude,
-    lastSignalVariance: metrics.variance ?? state.lastSignalVariance,
-    perfusionIndex: metrics.perfusionIndex ?? state.perfusionIndex
-  })),
+  updateDetectionMetrics: (metrics) => {
+    const state = get();
+    if (state.isMounted) {
+      set(state => ({
+        lastDetectionConfidence: metrics.confidence ?? state.lastDetectionConfidence,
+        lastSignalAmplitude: metrics.amplitude ?? state.lastSignalAmplitude,
+        lastSignalVariance: metrics.variance ?? state.lastSignalVariance,
+        perfusionIndex: metrics.perfusionIndex ?? state.perfusionIndex
+      }));
+    }
+  },
   
-  resetDetection: () => set({
-    isFingerDetected: false,
-    fingerConfirmed: false,
-    fingerDetectionStartTime: null,
-    signalHistory: [],
-    peakTimes: [],
-    detectedPatterns: 0,
-    consecutiveWeakSignals: 0,
-    consecutiveGoodFrames: 0,
-    lastDetectionConfidence: 0,
-    lastSignalAmplitude: 0,
-    lastSignalVariance: 0,
-    perfusionIndex: 0
-  }),
+  resetDetection: () => {
+    const state = get();
+    if (state.isMounted) {
+      set({
+        isFingerDetected: false,
+        fingerConfirmed: false,
+        fingerDetectionStartTime: null,
+        signalHistory: [],
+        peakTimes: [],
+        detectedPatterns: 0,
+        consecutiveWeakSignals: 0,
+        consecutiveGoodFrames: 0,
+        lastDetectionConfidence: 0,
+        lastSignalAmplitude: 0,
+        lastSignalVariance: 0,
+        perfusionIndex: 0
+      });
+    }
+  },
   
   /**
    * Función principal para procesar la señal y detectar dedo
@@ -215,6 +290,10 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
    */
   processSignal: (value, quality) => {
     const state = get();
+    
+    // Si el componente está desmontado, no procesar
+    if (!state.isMounted) return false;
+    
     const now = Date.now();
     
     // Añadir punto de señal al historial
@@ -422,4 +501,3 @@ export function calculatePerfusionIndex(recentValues: number[]): number {
 }
 
 export default useFingerDetection;
-

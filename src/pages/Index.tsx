@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -35,6 +36,14 @@ const Index = () => {
   // Usar el detector de dedo centralizado
   const fingerDetection = useFingerDetection();
   
+  // Asegurarse que el servicio esté marcado como montado al iniciar el componente
+  useEffect(() => {
+    fingerDetection.setMounted(true);
+    return () => {
+      fingerDetection.setMounted(false);
+    };
+  }, [fingerDetection]);
+  
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
@@ -53,7 +62,13 @@ const Index = () => {
 
   const enterFullScreen = async () => {
     try {
-      await document.documentElement.requestFullscreen();
+      if (document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      } else if ((document.documentElement as any).webkitRequestFullscreen) {
+        await (document.documentElement as any).webkitRequestFullscreen();
+      } else if ((document.documentElement as any).mozRequestFullScreen) {
+        await (document.documentElement as any).mozRequestFullScreen();
+      }
     } catch (err) {
       console.log('Error al entrar en pantalla completa:', err);
     }
@@ -78,6 +93,9 @@ const Index = () => {
   }, [lastValidResults, isMonitoring]);
 
   useEffect(() => {
+    // Aseguramos que el detector de dedo esté marcado como montado
+    fingerDetection.setMounted(true);
+    
     if (lastSignal && isMonitoring) {
       // Procesar la señal con el detector de dedo centralizado
       const isFingerDetected = fingerDetection.processSignal(
@@ -85,12 +103,12 @@ const Index = () => {
         lastSignal.quality
       );
       
-      const minQualityThreshold = 40;
+      const minQualityThreshold = 35; // Umbral reducido para mayor sensibilidad
       
       if (isFingerDetected && lastSignal.quality >= minQualityThreshold) {
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult.confidence > 0.4) {
+        if (heartBeatResult.confidence > 0.3) { // Umbral reducido para mayor sensibilidad
           setHeartRate(heartBeatResult.bpm);
           
           try {
@@ -108,12 +126,18 @@ const Index = () => {
         setSignalQuality(lastSignal.quality);
         
         if (!isFingerDetected && heartRate > 0) {
-          setHeartRate(0);
+          // No resetear el ritmo cardíaco inmediatamente para mayor estabilidad
+          // Se puede considerar un enfoque gradual si lo prefieres
         }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
+    
+    // Componente se desmonta
+    return () => {
+      fingerDetection.setMounted(false);
+    };
   }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, fingerDetection]);
 
   const startMonitoring = () => {
@@ -125,6 +149,10 @@ const Index = () => {
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
+      
+      // Reiniciar el detector de dedo y marcar como montado
+      fingerDetection.resetDetection();
+      fingerDetection.setMounted(true);
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -208,8 +236,9 @@ const Index = () => {
     });
     setSignalQuality(0);
     
-    // Reset detector de dedo centralizado
+    // Reset detector de dedo centralizado y marcar como montado
     fingerDetection.resetDetection();
+    fingerDetection.setMounted(true);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
@@ -218,6 +247,7 @@ const Index = () => {
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
     
+    // Asegurar activación de linterna con máxima prioridad
     if (videoTrack.getCapabilities()?.torch) {
       console.log("Activando linterna para mejorar la señal PPG");
       videoTrack.applyConstraints({

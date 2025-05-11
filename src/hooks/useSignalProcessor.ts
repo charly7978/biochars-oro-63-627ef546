@@ -41,6 +41,9 @@ export const useSignalProcessor = () => {
 
   // Set up processor callbacks and cleanup
   useEffect(() => {
+    // Indicar que el componente está montado
+    fingerDetection.setMounted(true);
+    
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
       // Usar el detector centralizado para una detección más precisa
@@ -80,9 +83,9 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
+      // Marcar que el componente se desmontó para evitar actualizaciones de estado
+      fingerDetection.setMounted(false);
       processor.stop();
-      // Reset detector de dedo centralizado
-      fingerDetection.resetDetection();
     };
   }, [processor, fingerDetection]);
 
