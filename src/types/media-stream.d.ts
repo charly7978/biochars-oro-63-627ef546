@@ -19,6 +19,11 @@ interface MediaTrackCapabilities {
     min?: number;
     step?: number;
   };
+  saturation?: {
+    max?: number;
+    min?: number;
+    step?: number;
+  };
 }
 
 interface MediaTrackConstraintSet {
@@ -29,6 +34,7 @@ interface MediaTrackConstraintSet {
   exposureCompensation?: ConstrainDouble;
   brightness?: ConstrainDouble;
   contrast?: ConstrainDouble;
+  saturation?: ConstrainDouble;
 }
 
 declare class ImageCapture {
