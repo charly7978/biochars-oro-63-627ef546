@@ -1,33 +1,26 @@
 
 /**
- * Signal Processing module - exports core functionality
+ * Signal Processing Core Module
+ * Centralized signal processing system with specialized channels for vital signs
  */
-import { SignalCoreProcessor, VITAL_SIGN_CHANNELS, SignalProcessingConfig } from './SignalCoreProcessor';
-import { SignalChannel } from './SignalChannel';
 
-/**
- * Create signal processor with optimized architecture
- * Multiple exclusive channels with bidirectional feedback
- */
-export function createSignalProcessor(config: Partial<SignalProcessingConfig> = {}): SignalCoreProcessor {
-  const defaultConfig: SignalProcessingConfig = {
-    bufferSize: 300,
-    sampleRate: 30,
-    channels: Object.values(VITAL_SIGN_CHANNELS)
-  };
-  
-  const finalConfig: SignalProcessingConfig = {
+export * from './SignalCoreProcessor';
+export * from './SignalChannel';
+export * from './filters/SignalFilter';
+
+// Create a default instance for simpler usage
+import { SignalCoreProcessor, SignalProcessingConfig } from './SignalCoreProcessor';
+
+const defaultConfig: SignalProcessingConfig = {
+  bufferSize: 300,
+  sampleRate: 30,
+  channels: ['heartbeat', 'spo2', 'arrhythmia', 'bloodPressure']
+};
+
+// Export default processor instance
+export const createSignalProcessor = (config?: Partial<SignalProcessingConfig>) => {
+  return new SignalCoreProcessor({
     ...defaultConfig,
-    ...config,
-    channels: [
-      ...(defaultConfig.channels || []),
-      ...(config.channels || [])
-    ]
-  };
-  
-  return new SignalCoreProcessor(finalConfig);
-}
-
-// Export key classes and types
-export { SignalChannel, VITAL_SIGN_CHANNELS };
-export type { SignalProcessingConfig };
+    ...config
+  });
+};
