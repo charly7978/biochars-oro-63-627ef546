@@ -28,7 +28,19 @@ export class SignalProcessor extends BaseProcessor {
   // Signal quality variables (asegurar que estas propiedades existan)
   private readonly MIN_QUALITY_FOR_FINGER = 45; 
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.05; // Umbral para la amplitud de la señal AC
+  
+  private dcBaseline: number = 0;
+  private readonly DC_BASELINE_ALPHA = 0.01; // Adaptación lenta para la línea base DC
+  private rawSignalBuffer: number[] = []; // Para calcular la línea base DC de forma más robusta
+  private readonly RAW_BUFFER_SIZE = 50; // Usar 50 muestras para la línea base DC
+  
+  // Buffers para las etapas de filtrado de la señal AC
+  private acSignalRawBuffer: number[] = [];
+  private medianFilteredAcSignalBuffer: number[] = [];
+  private emaFilteredAcSignalBuffer: number[] = []; // EMA en SignalFilter usa el último valor del buffer pasado como EMA previo
+
+  private readonly FILTER_BUFFER_SIZE = 15; // Tamaño común para buffers de filtrado intermedio
   
   constructor() {
     super();
@@ -36,8 +48,33 @@ export class SignalProcessor extends BaseProcessor {
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15); // Valores por defecto, ajustar si es necesario
+    this.dcBaseline = 0; // Inicializar dcBaseline
   }
   
+  private updateDcBaseline(rawValue: number): void {
+    this.rawSignalBuffer.push(rawValue);
+    if (this.rawSignalBuffer.length > this.RAW_BUFFER_SIZE) {
+      this.rawSignalBuffer.shift();
+    }
+    if (this.rawSignalBuffer.length < this.RAW_BUFFER_SIZE / 2) { // Esperar a tener suficientes muestras
+        if (this.dcBaseline === 0) this.dcBaseline = rawValue; // Primera estimación
+        else this.dcBaseline = this.dcBaseline * (1 - 0.1) + rawValue * 0.1; // Adaptación más rápida al inicio
+        return;
+    }
+    // Usar promedio móvil para la línea base una vez que el buffer está lleno
+    this.dcBaseline = this.rawSignalBuffer.reduce((sum, val) => sum + val, 0) / this.rawSignalBuffer.length;
+    // O una EMA más lenta:
+    // if (this.dcBaseline === 0) this.dcBaseline = rawValue;
+    // else this.dcBaseline = this.dcBaseline * (1 - this.DC_BASELINE_ALPHA) + rawValue * this.DC_BASELINE_ALPHA;
+  }
+
+  private addToBuffer(buffer: number[], value: number, maxSize: number): void {
+    buffer.push(value);
+    if (buffer.length > maxSize) {
+      buffer.shift();
+    }
+  }
+
   /**
    * Apply Moving Average filter to real values
    */
@@ -82,30 +119,40 @@ export class SignalProcessor extends BaseProcessor {
    * No simulation is used
    * Incorporates rhythmic pattern-based finger detection
    */
-  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
+  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean, acSignalValue: number } {
     this.signalValidator.trackSignalForPatternDetection(value);
     
-    const medianFiltered = this.applyMedianFilter(value);
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
-    const smaFiltered = this.applySMAFilter(lowPassFiltered);
+    this.updateDcBaseline(value);    
+    const acSignal = value - this.dcBaseline;
+    this.addToBuffer(this.acSignalRawBuffer, acSignal, this.FILTER_BUFFER_SIZE);
+
+    const medianFiltered = this.filter.applyMedianFilter(acSignal, this.acSignalRawBuffer);
+    this.addToBuffer(this.medianFilteredAcSignalBuffer, medianFiltered, this.FILTER_BUFFER_SIZE);
     
-    this.quality.updateNoiseLevel(value, smaFiltered);
-    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
+    // EMAFilter usa el último valor del buffer que se le pasa como el EMA anterior.
+    // Así que pasamos medianFilteredAcSignalBuffer, que contendrá los EMA previos en futuras llamadas.
+    const emaFiltered = this.filter.applyEMAFilter(medianFiltered, this.medianFilteredAcSignalBuffer); 
+    this.addToBuffer(this.emaFilteredAcSignalBuffer, emaFiltered, this.FILTER_BUFFER_SIZE);
+        
+    const smaFiltered = this.filter.applySMAFilter(emaFiltered, this.emaFilteredAcSignalBuffer);
     
-    this.ppgValues.push(smaFiltered);
-    if (this.ppgValues.length > 100) { // Aumentar tamaño del buffer para sub-procesadores
+    this.ppgValues.push(smaFiltered); 
+    if (this.ppgValues.length > 100) { // Buffer principal para calidad y HR
       this.ppgValues.shift();
     }
-    
-    const patternFingerDetected = this.signalValidator.isFingerDetected();
+
+    this.quality.updateNoiseLevel(acSignal, smaFiltered);
+    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
+        
+    const patternFingerDetected = this.signalValidator.isFingerDetected(); 
     const fingerDetectedByQuality = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
 
-    let amplitude = 0;
-    if (this.ppgValues.length > 10) {
-      const recentValues = this.ppgValues.slice(-10);
-      amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+    let amplitudeAC = 0;
+    if (this.ppgValues.length > 10) { 
+      const recentAcValues = this.ppgValues.slice(-10);
+      amplitudeAC = Math.max(...recentAcValues) - Math.min(...recentAcValues);
     }
-    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    const hasValidAmplitude = amplitudeAC >= this.MIN_SIGNAL_AMPLITUDE;
 
     const finalFingerDetected = (patternFingerDetected && hasValidAmplitude && fingerDetectedByQuality) || this.fingerDetectionConfirmed;
 
@@ -114,18 +161,18 @@ export class SignalProcessor extends BaseProcessor {
       if (!this.fingerDetectionStartTime) {
         this.fingerDetectionStartTime = now;
         console.log("Signal processor: Potential finger detection started", {
-          time: new Date(now).toISOString(), quality: qualityValue, amplitude
+          time: new Date(now).toISOString(), quality: qualityValue, amplitude: amplitudeAC
         });
       }
       if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
         this.fingerDetectionConfirmed = true;
-        this.rhythmBasedFingerDetection = true; // Asumimos que la detección de patrón es rítmica
+        this.rhythmBasedFingerDetection = true; 
         console.log("Signal processor: Finger detection CONFIRMED!", {
-          time: new Date(now).toISOString(), detectionDuration: (now - this.fingerDetectionStartTime) / 1000, quality: qualityValue, amplitude
+          time: new Date(now).toISOString(), detectionDuration: (now - this.fingerDetectionStartTime) / 1000, quality: qualityValue, amplitude: amplitudeAC
         });
       }
     } else if (!finalFingerDetected && this.fingerDetectionConfirmed) {
-      console.log("Signal processor: Finger detection lost", { patternFingerDetected, hasValidAmplitude, quality: qualityValue });
+      console.log("Signal processor: Finger detection lost", { patternFingerDetected, hasValidAmplitude, quality: qualityValue, amplitude: amplitudeAC });
       this.fingerDetectionConfirmed = false;
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
@@ -133,14 +180,15 @@ export class SignalProcessor extends BaseProcessor {
 
     if (finalFingerDetected) {
       console.log("DETECCIÓN DE DEDO ACTIVA (SignalProcessor.applyFilters)", {
-        timestamp: new Date().toISOString(), patternFingerDetected, fingerDetectedByQuality, hasValidAmplitude, confirmed: this.fingerDetectionConfirmed
+        timestamp: new Date().toISOString(), patternFingerDetected, fingerDetectedByQuality, hasValidAmplitude, amplitudeAC, confirmed: this.fingerDetectionConfirmed
       });
     }
 
     return { 
-      filteredValue: smaFiltered,
+      filteredValue: smaFiltered, 
       quality: qualityValue,
-      fingerDetected: finalFingerDetected
+      fingerDetected: finalFingerDetected,
+      acSignalValue: acSignal 
     };
   }
   
@@ -205,7 +253,11 @@ export class SignalProcessor extends BaseProcessor {
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
-    // Clear any other relevant buffers or state here
+    this.dcBaseline = 0; // Resetear DC baseline
+    this.rawSignalBuffer = []; // Resetear buffer de señal raw
+    this.acSignalRawBuffer = [];
+    this.medianFilteredAcSignalBuffer = [];
+    this.emaFilteredAcSignalBuffer = [];
     console.log("SignalProcessor: Reset complete");
   }
 } 
