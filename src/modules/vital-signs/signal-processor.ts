@@ -105,75 +105,73 @@ export class SignalProcessor extends BaseProcessor {
       this.ppgValues.shift();
     }
     
-    // Check finger detection using pattern recognition with a higher quality threshold
+    // Check finger detection using pattern recognition from SignalValidator
     const patternBasedFingerDetected = this.signalValidator.isFingerDetected();
     
-    // Calculate signal amplitude
+    // Calculate signal amplitude from recent PPG values
     let amplitude = 0;
     if (this.ppgValues.length > 10) {
       const recentValues = this.ppgValues.slice(-10);
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
-    
-    // Require minimum amplitude for detection (physiological requirement)
+
+    // Physiological and quality requirements for the signal
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
     const hasValidQuality = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
-    
+
     // Logic for confirming finger detection
     if (patternBasedFingerDetected && hasValidAmplitude && hasValidQuality) {
       const now = Date.now();
-      
+
       if (!this.fingerDetectionStartTime) {
         this.fingerDetectionStartTime = now;
-        this.consecutiveConfirmationFrames = 0; // Resetear frames al iniciar nueva posible detección
-        console.log("Signal processor: Potential finger detection sequence started", {
+        this.consecutiveConfirmationFrames = 0; // Reset frames when a new potential sequence starts
+        console.log("Signal processor: Potential finger detection sequence INITIALIZED", {
           time: new Date(now).toISOString(),
           quality: qualityValue,
           amplitude
         });
       }
-      
-      this.consecutiveConfirmationFrames++;
-      
-      // Si la detección ha sido consistente por el tiempo Y número de frames requeridos, confirmarla
+
+      this.consecutiveConfirmationFrames++; // Increment for each valid frame in the sequence
+
+      // Confirm detection if time and consecutive frames thresholds are met, and not already confirmed
       if (this.fingerDetectionStartTime &&
           (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME) &&
           this.consecutiveConfirmationFrames >= this.REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES &&
-          !this.fingerDetectionConfirmed // Solo confirmar una vez
+          !this.fingerDetectionConfirmed // Confirm only once per valid sequence
       ) {
         this.fingerDetectionConfirmed = true;
-        this.rhythmBasedFingerDetection = true; // Mantener esto si es relevante para otras lógicas
-        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern and stability!", {
+        this.rhythmBasedFingerDetection = true; // Retain if used elsewhere
+        console.log("Signal processor: Finger detection CONFIRMED (Pattern, Amplitude, Quality, Stability Met)", {
           time: new Date(now).toISOString(),
-          detectionMethod: "Rhythmic pattern, amplitude, quality and stability",
-          detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
+          detectionDurationMs: now - this.fingerDetectionStartTime,
           confirmedFrames: this.consecutiveConfirmationFrames,
           quality: qualityValue,
           amplitude
         });
       }
     } else {
-      // Resetear si se pierde el patrón, la amplitud o la calidad
-      if (this.fingerDetectionConfirmed) { // Solo loguear si estaba confirmado
-        console.log("Signal processor: Finger detection lost or conditions not met", {
+      // If conditions are not met, reset confirmation state
+      if (this.fingerDetectionConfirmed) { // Log only if it was previously confirmed
+        console.log("Signal processor: Finger detection LOST (Pattern, Amplitude, or Quality not met)", {
           patternDetected: patternBasedFingerDetected,
-          hasValidAmplitude,
-          hasValidQuality,
           currentAmplitude: amplitude,
           currentQuality: qualityValue,
-          consecutiveFramesAchieved: this.consecutiveConfirmationFrames
+          consecutiveFramesAchieved: this.consecutiveConfirmationFrames,
+          wasConfirmed: this.fingerDetectionConfirmed
         });
       }
       this.fingerDetectionConfirmed = false;
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
-      this.consecutiveConfirmationFrames = 0; // Resetear frames
+      this.consecutiveConfirmationFrames = 0; // Reset frame counter
     }
     
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: this.fingerDetectionConfirmed // Devolver el estado confirmado
+      fingerDetected: this.fingerDetectionConfirmed // Return the confirmed state
     };
   }
   
@@ -195,6 +193,6 @@ export class SignalProcessor extends BaseProcessor {
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
-    this.consecutiveConfirmationFrames = 0; // Asegurar reseteo del nuevo contador
+    this.consecutiveConfirmationFrames = 0; // Ensure reset of the new counter
   }
 }
