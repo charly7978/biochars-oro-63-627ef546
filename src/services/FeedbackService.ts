@@ -89,7 +89,7 @@ export class FeedbackService {
       case 'success':
       case 'error':
       case 'notification':
-        this.audioService.playNotificationSound('success'); // Fixed: Using a valid value instead of the type directly
+        this.audioService.playNotificationSound(type);
         break;
       default:
         this.audioService.playNotificationSound();

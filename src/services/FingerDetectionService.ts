@@ -98,9 +98,6 @@ interface FingerDetectionState {
   }) => void;
   resetDetection: () => void;
   
-  // Method to decrease detected patterns (adding the missing method)
-  decrementDetectedPatterns: () => void;
-  
   // Método principal de procesamiento
   processSignal: (value: number, quality?: number) => boolean;
 }
@@ -165,11 +162,6 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
   
   incrementDetectedPatterns: () => set(state => ({ 
     detectedPatterns: state.detectedPatterns + 1 
-  })),
-  
-  // Adding the missing decrementDetectedPatterns method
-  decrementDetectedPatterns: () => set(state => ({
-    detectedPatterns: Math.max(0, state.detectedPatterns - 1)
   })),
   
   resetDetectedPatterns: () => set({ detectedPatterns: 0 }),
@@ -430,3 +422,4 @@ export function calculatePerfusionIndex(recentValues: number[]): number {
 }
 
 export default useFingerDetection;
+
