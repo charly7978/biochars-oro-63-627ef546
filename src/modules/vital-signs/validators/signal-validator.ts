@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -17,7 +16,6 @@ export class SignalValidator {
   private signalHistory: Array<{time: number, value: number}> = [];
   private peakTimes: number[] = [];
   private detectedPatternCount: number = 0;
-  private fingerDetectionConfirmed: boolean = false;
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
@@ -85,12 +83,6 @@ export class SignalValidator {
    * Check if a finger is detected based on rhythmic patterns
    */
   public isFingerDetected(): boolean {
-    // If already confirmed, maintain detection unless reset
-    if (this.fingerDetectionConfirmed) {
-      return true;
-    }
-    
-    // Otherwise, check if we've detected enough consistent patterns
     return this.detectedPatternCount >= this.REQUIRED_PATTERNS;
   }
   
@@ -101,8 +93,7 @@ export class SignalValidator {
     this.signalHistory = [];
     this.peakTimes = [];
     this.detectedPatternCount = 0;
-    this.fingerDetectionConfirmed = false;
-    console.log("Finger detection reset");
+    console.log("SignalValidator: Finger detection state reset.");
   }
   
   /**
@@ -183,20 +174,6 @@ export class SignalValidator {
       if (consistentIntervals >= this.MIN_PEAKS_FOR_PATTERN - 1) {
         this.peakTimes = peaks;
         this.detectedPatternCount++;
-        
-        // If enough consistent patterns, confirm finger detection
-        if (this.detectedPatternCount >= this.REQUIRED_PATTERNS && !this.fingerDetectionConfirmed) {
-          this.fingerDetectionConfirmed = true;
-          console.log("Finger detection confirmed by consistent heartbeat rhythm!", 
-                     {
-                       time: new Date(now).toISOString(), 
-                       patterns: this.detectedPatternCount,
-                       consistentIntervals,
-                       peakCount: peaks.length,
-                       meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
-                       variance
-                     });
-        }
       } else {
         // Reduce counter if pattern not consistent
         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
