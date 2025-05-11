@@ -6,12 +6,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import { useSignalQualityDetector } from './vital-signs/use-signal-quality-detector';
 
 /**
  * Hook para el procesamiento de señales PPG reales
  * No se permite ninguna simulación o datos sintéticos
- * Ahora usa el detector centralizado para mayor consistencia
  */
 export const useSignalProcessor = () => {
   // Create processor instance
@@ -24,9 +22,6 @@ export const useSignalProcessor = () => {
     return new PPGSignalProcessor();
   });
   
-  // Utilizar el detector centralizado de dedos
-  const fingerDetector = useSignalQualityDetector();
-  
   // Basic state
   const [isProcessing, setIsProcessing] = useState(false);
   const [lastSignal, setLastSignal] = useState<ProcessedSignal | null>(null);
@@ -36,27 +31,15 @@ export const useSignalProcessor = () => {
     minValue: Infinity,
     maxValue: -Infinity,
     avgValue: 0,
-    totalValues: 0,
-    fingerDetected: false,
-    signalQuality: 0
+    totalValues: 0
   });
 
   // Set up processor callbacks and cleanup
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Procesar señal con el detector centralizado de dedos
-      fingerDetector.detectWeakSignal(signal.filteredValue);
-      
-      // Añadir información de detección de dedos a la señal
-      const enhancedSignal = {
-        ...signal,
-        isFingerDetected: fingerDetector.isFingerDetected(),
-        signalQuality: fingerDetector.signalQuality
-      };
-      
       // Pass through without modifications - quality and detection handled by PPGSignalMeter
-      setLastSignal(enhancedSignal);
+      setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
@@ -66,9 +49,7 @@ export const useSignalProcessor = () => {
           minValue: Math.min(prev.minValue, signal.filteredValue),
           maxValue: Math.max(prev.maxValue, signal.filteredValue),
           avgValue: (prev.avgValue * prev.totalValues + signal.filteredValue) / (prev.totalValues + 1),
-          totalValues: prev.totalValues + 1,
-          fingerDetected: fingerDetector.isFingerDetected(),
-          signalQuality: fingerDetector.signalQuality
+          totalValues: prev.totalValues + 1
         };
       });
     };
@@ -87,9 +68,8 @@ export const useSignalProcessor = () => {
     // Cleanup
     return () => {
       processor.stop();
-      fingerDetector.reset();
     };
-  }, [processor, fingerDetector]);
+  }, [processor]);
 
   /**
    * Start processing signals
@@ -97,22 +77,17 @@ export const useSignalProcessor = () => {
   const startProcessing = useCallback(() => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
-    // Reiniciar detector de dedos
-    fingerDetector.reset();
-    
     setIsProcessing(true);
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
       maxValue: -Infinity,
       avgValue: 0,
-      totalValues: 0,
-      fingerDetected: false,
-      signalQuality: 0
+      totalValues: 0
     });
     
     processor.start();
-  }, [processor, fingerDetector]);
+  }, [processor]);
 
   /**
    * Stop processing signals
@@ -145,8 +120,6 @@ export const useSignalProcessor = () => {
     signalStats,
     startProcessing,
     stopProcessing,
-    processFrame,
-    isFingerDetected: fingerDetector.isFingerDetected(),
-    signalQuality: fingerDetector.signalQuality
+    processFrame
   };
 };

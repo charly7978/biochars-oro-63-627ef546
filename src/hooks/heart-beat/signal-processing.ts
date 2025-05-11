@@ -4,7 +4,6 @@
  * Solo procesa datos reales
  */
 import ArrhythmiaDetectionService from '@/services/ArrhythmiaDetectionService';
-import { useSignalQualityDetector } from '../../hooks/vital-signs/use-signal-quality-detector';
 
 interface SignalQualityConfig {
   lowSignalThreshold: number;
@@ -12,7 +11,7 @@ interface SignalQualityConfig {
 }
 
 /**
- * Check if signal is too weak using the centralized detector
+ * Check if signal is too weak
  * Solo datos reales
  */
 export function checkWeakSignal(
@@ -20,20 +19,18 @@ export function checkWeakSignal(
   consecutiveWeakSignals: number,
   config: SignalQualityConfig
 ): { isWeakSignal: boolean, updatedWeakSignalsCount: number } {
-  // Configuración manual para detector centralizado
-  const detector = useSignalQualityDetector();
-  detector.updateConfig({
-    weakSignalThreshold: config.lowSignalThreshold,
-    maxConsecutiveWeakSignals: config.maxWeakSignalCount
-  });
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  // Usar detector centralizado
-  const isWeakSignal = detector.detectWeakSignal(value);
+  // Verificar si la señal es débil basado en su amplitud
+  const isCurrentlyWeak = Math.abs(value) < lowSignalThreshold;
   
   // Actualizar contador de señales débiles consecutivas
-  let updatedWeakSignalsCount = isWeakSignal
+  let updatedWeakSignalsCount = isCurrentlyWeak
     ? consecutiveWeakSignals + 1
     : Math.max(0, consecutiveWeakSignals - 1);
+  
+  // Determinar si la señal debe considerarse como débil en general
+  const isWeakSignal = updatedWeakSignalsCount > maxWeakSignalCount;
   
   return { isWeakSignal, updatedWeakSignalsCount };
 }
