@@ -2,8 +2,6 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
-
 /**
  * Signal quality assessment - forwards to centralized implementation in PPGSignalMeter
  * All methods work with real data only, no simulation
@@ -52,9 +50,9 @@ export class SignalQuality {
     const amplitude = max - min;
     console.log("SignalQuality: Min:", min, "Max:", max, "Amplitude:", amplitude);
     
-    // Only consider valid signals with sufficient amplitude - INCREASED THRESHOLD
-    if (amplitude < 0.05) { // Increased from 0.02 to 0.05
-      console.log("SignalQuality: Amplitude < 0.05, resetting strong signals, returning 0 quality.");
+    // Only consider valid signals with sufficient amplitude
+    if (amplitude < 0.02) { // Reducido de 0.05 a 0.02 para mayor sensibilidad a la señal AC
+      console.log("SignalQuality: Amplitude < 0.02, resetting strong signals, returning 0 quality.");
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
@@ -122,7 +120,7 @@ export class SignalQuality {
     }
     
     // Calculate overall quality score with weighted components - real data only
-    const amplitudeScore = Math.min(1, amplitude / 0.5);  // Normalize amplitude
+    const amplitudeScore = Math.min(1, amplitude / 0.2);  // Normalizar amplitud por 0.2 (asumiendo que una buena AC es ~0.2)
     const stdDevScore = Math.min(1, Math.max(0, 1 - noiseToSignalRatio));  // Lower noise is better
     
     // Weight the factors to get overall quality

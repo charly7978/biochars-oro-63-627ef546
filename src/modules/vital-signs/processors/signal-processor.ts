@@ -28,7 +28,7 @@ export class SignalProcessor extends BaseProcessor {
   // Signal quality variables (asegurar que estas propiedades existan)
   private readonly MIN_QUALITY_FOR_FINGER = 45; 
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.05; // Umbral para la amplitud de la señal AC
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.02; // Reducido de 0.05 para coincidir con SignalQuality
   
   private dcBaseline: number = 0;
   private readonly DC_BASELINE_ALPHA_SLOW = 0.005; // Adaptación muy lenta para línea base estable
