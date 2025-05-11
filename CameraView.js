@@ -2,26 +2,17 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Fingerprint } from 'lucide-react';
 
-interface CameraViewProps {
-  onStreamReady: (stream: MediaStream) => void;
-  isMonitoring: boolean;
-  isFingerDetected?: boolean;
-  signalQuality?: number;
-  buttonPosition?: { x: number, y: number } | null;
-}
-
-const CameraView: React.FC<CameraViewProps> = ({ 
+const CameraView = ({ 
   onStreamReady, 
   isMonitoring, 
   isFingerDetected = false, 
   signalQuality = 0,
   buttonPosition 
 }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [brightnessSamples, setBrightnessSamples] = useState<number[]>([]);
+  const videoRef = useRef(null);
+  const [stream, setStream] = useState(null);
+  const [brightnessSamples, setBrightnessSamples] = useState([]);
   const [avgBrightness, setAvgBrightness] = useState(0);
-  const [torchOn, setTorchOn] = useState(false);
   const brightnessSampleLimit = 10;
 
   const stopCamera = async () => {
@@ -33,7 +24,6 @@ const CameraView: React.FC<CameraViewProps> = ({
         }
       });
       setStream(null);
-      setTorchOn(false);
     }
   };
 
@@ -53,7 +43,7 @@ const CameraView: React.FC<CameraViewProps> = ({
 
       if (isAndroid) {
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30 }, // Aumentado para mayor sensibilidad
+          frameRate: { ideal: 25 },
           resizeMode: 'crop-and-scale'
         });
       }
@@ -65,36 +55,17 @@ const CameraView: React.FC<CameraViewProps> = ({
       const newStream = await navigator.mediaDevices.getUserMedia(constraints);
       const videoTrack = newStream.getVideoTracks()[0];
 
-      if (videoTrack) {
-        console.log("CameraView: Camera capabilities", videoTrack.getCapabilities());
-        
+      if (videoTrack && isAndroid) {
         try {
           const capabilities = videoTrack.getCapabilities();
           const advancedConstraints = [];
           
-          // Intentar siempre activar la linterna
-          if (capabilities.torch) {
-            advancedConstraints.push({ torch: true });
-            setTorchOn(true);
-            console.log("CameraView: Torch enabled");
-          } else {
-            console.log("CameraView: Torch not available in capabilities");
-          }
-          
           if (capabilities.exposureMode) {
-            advancedConstraints.push({ exposureMode: 'manual' }); // Mejor manual para PPG
-            
-            if (capabilities.exposureCompensation) {
-              // Aumentar exposición para mejor detección
-              const maxExposure = capabilities.exposureCompensation.max || 2;
-              advancedConstraints.push({ exposureCompensation: maxExposure });
-            }
+            advancedConstraints.push({ exposureMode: 'continuous' });
           }
-          
           if (capabilities.focusMode) {
             advancedConstraints.push({ focusMode: 'continuous' });
           }
-          
           if (capabilities.whiteBalanceMode) {
             advancedConstraints.push({ whiteBalanceMode: 'continuous' });
           }
@@ -103,17 +74,7 @@ const CameraView: React.FC<CameraViewProps> = ({
             await videoTrack.applyConstraints({
               advanced: advancedConstraints
             });
-            
-            // También aplicar restricciones directamente
-            if (capabilities.torch) {
-              await videoTrack.applyConstraints({ torch: true });
-            }
           }
-          
-          // Verificar si la linterna se activó
-          const settings = videoTrack.getSettings();
-          console.log("CameraView: Applied camera settings", settings);
-          setTorchOn(!!settings.torch);
 
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';
@@ -121,15 +82,6 @@ const CameraView: React.FC<CameraViewProps> = ({
           }
         } catch (err) {
           console.log("No se pudieron aplicar algunas optimizaciones:", err);
-          
-          // Intento alternativo de activar la linterna
-          try {
-            await videoTrack.applyConstraints({ torch: true });
-            setTorchOn(true);
-            console.log("CameraView: Torch enabled via second attempt");
-          } catch (e) {
-            console.log("CameraView: Failed to enable torch in second attempt", e);
-          }
         }
       }
 
@@ -176,19 +128,15 @@ const CameraView: React.FC<CameraViewProps> = ({
         const data = imageData.data;
         
         let brightness = 0;
-        let redChannel = 0;
-        
         // Sample every 4th pixel to improve performance
         for (let i = 0; i < data.length; i += 16) {
           const r = data[i];
           const g = data[i + 1];
           const b = data[i + 2];
           brightness += (r + g + b) / 3;
-          redChannel += r;
         }
         
         brightness /= (data.length / 16);
-        redChannel /= (data.length / 16);
         
         setBrightnessSamples(prev => {
           const newSamples = [...prev, brightness];
@@ -203,12 +151,10 @@ const CameraView: React.FC<CameraViewProps> = ({
         setAvgBrightness(avgBrightness);
         
         console.log("CameraView: Brightness check", { 
-          currentBrightness: brightness.toFixed(1),
-          redChannel: redChannel.toFixed(1),
-          avgBrightness: avgBrightness.toFixed(1),
+          currentBrightness: brightness,
+          avgBrightness,
           fingerDetected: isFingerDetected,
-          signalQuality,
-          torchOn
+          signalQuality
         });
       } catch (err) {
         console.error("Error checking brightness:", err);
@@ -217,7 +163,7 @@ const CameraView: React.FC<CameraViewProps> = ({
 
     const interval = setInterval(checkBrightness, 500);
     return () => clearInterval(interval);
-  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples, torchOn]);
+  }, [stream, isMonitoring, isFingerDetected, signalQuality, brightnessSamples]);
 
   useEffect(() => {
     if (isMonitoring && !stream) {
@@ -233,18 +179,9 @@ const CameraView: React.FC<CameraViewProps> = ({
 
   // Determine actual finger status using both provided detection and brightness
   const actualFingerStatus = isFingerDetected && (
-    avgBrightness < 70 || // Dark means finger is likely present
-    signalQuality > 40    // Reduced threshold para mejor detección
+    avgBrightness < 60 || // Dark means finger is likely present
+    signalQuality > 50    // Good quality signal confirms finger
   );
-
-  // Loading indicator while camera is starting
-  if (isMonitoring && !stream) {
-    return (
-      <div className="absolute inset-0 flex items-center justify-center bg-black">
-        <div className="text-white">Iniciando cámara...</div>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -260,7 +197,7 @@ const CameraView: React.FC<CameraViewProps> = ({
           backfaceVisibility: 'hidden'
         }}
       />
-      {isMonitoring && (
+      {isMonitoring && buttonPosition && (
         <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 z-20 flex flex-col items-center">
           <Fingerprint
             size={48}
@@ -272,16 +209,10 @@ const CameraView: React.FC<CameraViewProps> = ({
             }`}
           />
           <span className={`text-xs mt-2 transition-colors duration-300 ${
-            actualFingerStatus ? 'text-green-500' : 'text-white'
+            actualFingerStatus ? 'text-green-500' : 'text-gray-400'
           }`}>
-            {actualFingerStatus ? "dedo detectado" : "ubique su dedo sobre la cámara y linterna"}
+            {actualFingerStatus ? "dedo detectado" : "ubique su dedo en el lente"}
           </span>
-          
-          {!torchOn && (
-            <span className="text-red-500 text-xs mt-1">
-              ¡Atención! Linterna no activada
-            </span>
-          )}
         </div>
       )}
     </>

@@ -4,7 +4,6 @@ import { SpO2NeuralModel } from './SpO2Model';
 import { BloodPressureNeuralModel } from './BloodPressureModel';
 import { ArrhythmiaNeuralModel } from './ArrhythmiaModel';
 import { GlucoseNeuralModel } from './GlucoseModel';
-import { TensorFlowService } from '../services/TensorFlowService';
 
 /**
  * Registro centralizado de modelos neuronales
@@ -14,22 +13,14 @@ export class ModelRegistry {
   private static instance: ModelRegistry;
   private models: Map<string, BaseNeuralModel> = new Map();
   private modelInitialized: Map<string, boolean> = new Map();
-  private isTensorFlowEnabled: boolean = true;
   
   private constructor() {
-    // Comprobar si TensorFlow está habilitado
-    this.updateTensorFlowStatus();
-    
-    // Registrar modelos disponibles solo si TensorFlow está habilitado
-    if (this.isTensorFlowEnabled) {
-      this.registerModel('heartRate', () => new HeartRateNeuralModel());
-      this.registerModel('spo2', () => new SpO2NeuralModel());
-      this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
-      this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
-      this.registerModel('glucose', () => new GlucoseNeuralModel());
-    } else {
-      console.log('ModelRegistry: TensorFlow deshabilitado, no se cargarán modelos neuronales');
-    }
+    // Registrar modelos disponibles
+    this.registerModel('heartRate', () => new HeartRateNeuralModel());
+    this.registerModel('spo2', () => new SpO2NeuralModel());
+    this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
+    this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
+    this.registerModel('glucose', () => new GlucoseNeuralModel());
   }
   
   /**
@@ -40,30 +31,6 @@ export class ModelRegistry {
       ModelRegistry.instance = new ModelRegistry();
     }
     return ModelRegistry.instance;
-  }
-  
-  /**
-   * Actualiza el estado de TensorFlow
-   */
-  public updateTensorFlowStatus(): void {
-    const tensorFlowService = TensorFlowService.getInstance();
-    const previousState = this.isTensorFlowEnabled;
-    this.isTensorFlowEnabled = tensorFlowService.isTensorFlowEnabled();
-    
-    // Si cambió el estado de habilitado a deshabilitado, limpiar modelos
-    if (previousState && !this.isTensorFlowEnabled) {
-      console.log('ModelRegistry: TensorFlow deshabilitado, liberando modelos');
-      this.dispose();
-    }
-    // Si cambió de deshabilitado a habilitado, registrar modelos
-    else if (!previousState && this.isTensorFlowEnabled) {
-      console.log('ModelRegistry: TensorFlow habilitado, registrando modelos');
-      this.registerModel('heartRate', () => new HeartRateNeuralModel());
-      this.registerModel('spo2', () => new SpO2NeuralModel());
-      this.registerModel('bloodPressure', () => new BloodPressureNeuralModel());
-      this.registerModel('arrhythmia', () => new ArrhythmiaNeuralModel());
-      this.registerModel('glucose', () => new GlucoseNeuralModel());
-    }
   }
   
   /**
@@ -78,14 +45,6 @@ export class ModelRegistry {
    * Obtiene un modelo por su ID, inicializándolo si es necesario
    */
   public getModel<T extends BaseNeuralModel>(id: string): T | null {
-    // Actualizar estado de TensorFlow
-    this.updateTensorFlowStatus();
-    
-    // Si TensorFlow está deshabilitado, devolver null para que se usen fallbacks
-    if (!this.isTensorFlowEnabled) {
-      return null;
-    }
-    
     const model = this.models.get(id) as T;
     if (!model) return null;
     
@@ -96,13 +55,6 @@ export class ModelRegistry {
     }
     
     return model;
-  }
-  
-  /**
-   * Comprueba si un modelo está disponible
-   */
-  public hasModel(id: string): boolean {
-    return this.isTensorFlowEnabled && this.models.has(id);
   }
   
   /**

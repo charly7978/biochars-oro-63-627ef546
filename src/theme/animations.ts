@@ -18,6 +18,5 @@ export const animations = {
   
   /* New animations for result numbers */
   "result-animate": "result-number-animation 1.2s cubic-bezier(0.2, 0, 0.4, 1) forwards",
-  "number-highlight": "number-highlight 2s ease-in-out 1",
-  "results-complete": "results-complete 0.8s cubic-bezier(0.2, 0, 0.2, 1) forwards"
+  "number-highlight": "number-highlight 2s ease-in-out 1"
 };
