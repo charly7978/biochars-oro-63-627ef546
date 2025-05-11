@@ -276,11 +276,16 @@ const CameraView = ({
     if (stream && isFingerDetected && !torchEnabled) {
       const videoTrack = stream.getVideoTracks()[0];
       if (videoTrack && videoTrack.getCapabilities()?.torch) {
-        console.log("Activando linterna después de detectar dedo");
+        console.log("Activando linterna después de detectar dedo", {
+          tiempo: new Date().toISOString(),
+          isFingerDetected
+        });
+        
         videoTrack.applyConstraints({
           advanced: [{ torch: true }]
         }).then(() => {
           setTorchEnabled(true);
+          console.log("Linterna activada con éxito");
         }).catch(err => {
           console.error("Error activando linterna:", err);
         });

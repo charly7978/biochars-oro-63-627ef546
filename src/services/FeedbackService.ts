@@ -4,15 +4,29 @@
  * Asegura que la vibración siempre funcione cuando se detecta un latido
  */
 class FeedbackService {
+  // Control para evitar vibraciones demasiado frecuentes
+  private static lastVibration: number = 0;
+  private static readonly MIN_VIBRATION_INTERVAL = 250; // ms
+  
   /**
-   * Activa la vibración del dispositivo
+   * Activa la vibración del dispositivo de forma optimizada
    * @param duration Duración de la vibración en ms
    */
   static vibrate(duration: number = 50): void {
     try {
+      const now = Date.now();
+      // Evitar vibraciones demasiado frecuentes
+      if (now - this.lastVibration < this.MIN_VIBRATION_INTERVAL) {
+        return;
+      }
+      
+      this.lastVibration = now;
+      
       if ('vibrate' in navigator) {
         navigator.vibrate(duration);
-        console.log(`FeedbackService: Vibración activada por ${duration}ms`);
+        console.log(`FeedbackService: Vibración activada por ${duration}ms`, {
+          tiempo: new Date().toISOString()
+        });
       } else {
         console.log("FeedbackService: Vibración no soportada en este dispositivo");
       }
@@ -53,6 +67,27 @@ class FeedbackService {
     } catch (error) {
       console.error("FeedbackService: Error reproduciendo sonido", error);
     }
+  }
+  
+  /**
+   * Proporciona retroalimentación completa de latido (vibración y sonido)
+   * @param audioContext Contexto de audio opcional
+   * @param type Tipo de latido
+   */
+  static triggerHeartbeat(audioContext: AudioContext | null = null, type: 'normal' | 'arrhythmia' = 'normal'): void {
+    // Siempre vibrar, independiente del tipo de latido
+    const duration = type === 'normal' ? 50 : 100;
+    this.vibrate(duration);
+    
+    // Reproducir sonido si hay un contexto de audio
+    if (audioContext) {
+      this.playHeartbeatSound(audioContext, type);
+    }
+    
+    console.log(`FeedbackService: Retroalimentación de latido ${type} activada`, {
+      tiempo: new Date().toISOString(),
+      conAudio: !!audioContext
+    });
   }
 }
 

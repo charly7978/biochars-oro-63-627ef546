@@ -16,6 +16,9 @@ export class SignalValidator {
   private fingerDetected: boolean = false;
   private lastPatternDetection: number = 0;
   private consecutiveGoodPatterns: number = 0;
+  private signalHistory: Array<{time: number, value: number}> = [];
+  private lastPeakTimes: number[] = [];
+  private detectedRhythmicPatterns: number = 0;
   
   constructor(minQuality: number = 0.02, minPatterns: number = 15) {
     this.minQuality = minQuality;
@@ -26,6 +29,17 @@ export class SignalValidator {
    * Añade un valor a la detección de patrones
    */
   public trackSignalForPatternDetection(value: number): void {
+    const now = Date.now();
+    
+    // Agregar punto a historial de señal para análisis de patrones rítmicos
+    this.signalHistory.push({ time: now, value });
+    
+    // Mantener solo señales recientes
+    const PATTERN_DETECTION_WINDOW_MS = 4000;
+    this.signalHistory = this.signalHistory.filter(
+      point => now - point.time < PATTERN_DETECTION_WINDOW_MS * 2
+    );
+    
     this.signalBuffer.push(value);
     
     // Mantener buffer de tamaño fijo
@@ -136,6 +150,9 @@ export class SignalValidator {
     this.fingerDetected = false;
     this.lastPatternDetection = 0;
     this.consecutiveGoodPatterns = 0;
+    this.signalHistory = [];
+    this.lastPeakTimes = [];
+    this.detectedRhythmicPatterns = 0;
   }
   
   /**
@@ -176,7 +193,7 @@ export class SignalValidator {
     const amplitude = max - min;
     
     // La amplitud debe ser mayor a un umbral para detectar señal válida
-    return amplitude >= 0.1;
+    return amplitude >= 0.02; // Mantener umbral original
   }
   
   /**

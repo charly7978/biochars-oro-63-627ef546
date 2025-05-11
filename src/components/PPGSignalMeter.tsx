@@ -3,6 +3,7 @@ import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
 import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
+import FeedbackService from '../services/FeedbackService';
 
 interface ArrhythmiaSegment {
   startTime: number;

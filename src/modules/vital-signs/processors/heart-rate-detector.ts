@@ -1,6 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
+
+import FeedbackService from '../../../services/FeedbackService';
 
 /**
  * Heart rate detection functions for real PPG signals
@@ -11,6 +14,8 @@ export class HeartRateDetector {
   // Store recent peaks for consistent timing analysis
   private peakTimes: number[] = [];
   private lastProcessTime: number = 0;
+  private lastBeepTime: number = 0;
+  private readonly MIN_BEEP_INTERVAL = 300; // ms
   
   /**
    * Calculate heart rate from real PPG values with enhanced peak detection
@@ -45,6 +50,27 @@ export class HeartRateDetector {
     // Convert peak indices to timestamps for natural timing
     const sampleDuration = timeDiff / recentData.length;
     const peakTimes = peaks.map(idx => now - (recentData.length - idx) * sampleDuration);
+    
+    // Activar vibración para cada nuevo pico detectado
+    if (peakTimes.length > 0) {
+      const latestPeakTime = Math.max(...peakTimes);
+      
+      // Verificar si este pico es nuevo y no ha sido procesado antes
+      const isNewPeak = !this.peakTimes.some(existingPeakTime => 
+        Math.abs(existingPeakTime - latestPeakTime) < 200
+      );
+      
+      // Si es un nuevo pico y ha pasado suficiente tiempo desde el último beep, activar retroalimentación
+      if (isNewPeak && (now - this.lastBeepTime > this.MIN_BEEP_INTERVAL)) {
+        this.lastBeepTime = now;
+        console.log("HeartRateDetector: Nuevo pico detectado, activando feedback", {
+          tiempo: new Date().toISOString()
+        });
+        
+        // Usar el servicio central de feedback
+        FeedbackService.triggerHeartbeat();
+      }
+    }
     
     // Update stored peak times
     this.peakTimes = [...this.peakTimes, ...peakTimes].slice(-15); // Aumentado para mejor análisis
@@ -169,6 +195,7 @@ export class HeartRateDetector {
   public reset(): void {
     this.peakTimes = [];
     this.lastProcessTime = 0;
+    this.lastBeepTime = 0;
   }
 
   /**
