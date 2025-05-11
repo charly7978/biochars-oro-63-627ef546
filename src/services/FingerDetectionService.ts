@@ -9,7 +9,7 @@ import { create } from 'zustand';
  * Interfaz para la configuración del detector de dedo
  */
 interface FingerDetectionConfig {
-  // Umbral para señal débil (reducido para mayor sensibilidad)
+  // Umbral para señal débil
   weakSignalThreshold: number;
   
   // Cantidad de señales débiles consecutivas para confirmar pérdida de dedo
@@ -33,7 +33,7 @@ interface FingerDetectionConfig {
   // Amplitud mínima de señal (min-max) para considerar válida
   minSignalAmplitude: number;
   
-  // Calidad mínima de señal para detección de dedo (reducida para mayor sensibilidad)
+  // Calidad mínima de señal para detección de dedo
   minQualityForFingerDetection: number;
   
   // Frames consecutivos necesarios para confirmar detección
@@ -83,7 +83,6 @@ interface FingerDetectionState {
   addSignalPoint: (point: SignalPoint) => void;
   setPeakTimes: (peaks: number[]) => void;
   incrementDetectedPatterns: () => void;
-  decrementDetectedPatterns: () => void;
   resetDetectedPatterns: () => void;
   setConsecutiveWeakSignals: (count: number) => void;
   incrementConsecutiveWeakSignals: () => void;
@@ -99,26 +98,26 @@ interface FingerDetectionState {
   }) => void;
   resetDetection: () => void;
   
+  // Method to decrease detected patterns (adding the missing method)
+  decrementDetectedPatterns: () => void;
+  
   // Método principal de procesamiento
   processSignal: (value: number, quality?: number) => boolean;
 }
 
-// Configuración optimizada para mejor detección (más sensible)
+// Configuración óptima basada en investigación
 const DEFAULT_CONFIG: FingerDetectionConfig = {
-  weakSignalThreshold: 0.15, // Reducido de 0.25 para mayor sensibilidad
-  maxConsecutiveWeakSignals: 8, // Aumentado para evitar pérdidas rápidas
+  weakSignalThreshold: 0.25,
+  maxConsecutiveWeakSignals: 5,
   patternDetectionWindowMs: 3000,
-  minPeaksForRhythm: 3,  // Reducido para facilitar detección
-  peakDetectionThreshold: 0.15, // Reducido para mayor sensibilidad
-  requiredConsistentPatterns: 2, // Reducido para detectar más rápido
-  minSignalVariance: 0.02, // Reducido para mayor sensibilidad
-  minSignalAmplitude: 0.1, // Reducido para mayor sensibilidad
-  minQualityForFingerDetection: 30, // Reducido para facilitar detección
-  requiredConsecutiveFrames: 2 // Reducido para confirmar más rápido
+  minPeaksForRhythm: 4,
+  peakDetectionThreshold: 0.25,
+  requiredConsistentPatterns: 4,
+  minSignalVariance: 0.04,
+  minSignalAmplitude: 0.2,
+  minQualityForFingerDetection: 45,
+  requiredConsecutiveFrames: 3
 };
-
-// Flag para evitar reinicios múltiples que causan ciclos infinitos
-let isResettingState = false;
 
 /**
  * Servicio centralizado para la detección de dedo usando Zustand
@@ -168,6 +167,7 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
     detectedPatterns: state.detectedPatterns + 1 
   })),
   
+  // Adding the missing decrementDetectedPatterns method
   decrementDetectedPatterns: () => set(state => ({
     detectedPatterns: Math.max(0, state.detectedPatterns - 1)
   })),
@@ -199,36 +199,20 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
     perfusionIndex: metrics.perfusionIndex ?? state.perfusionIndex
   })),
   
-  resetDetection: () => {
-    // Avoid potential infinite loops by checking if already resetting
-    if (isResettingState) return;
-    
-    try {
-      isResettingState = true;
-      
-      set({
-        isFingerDetected: false,
-        fingerConfirmed: false,
-        fingerDetectionStartTime: null,
-        signalHistory: [],
-        peakTimes: [],
-        detectedPatterns: 0,
-        consecutiveWeakSignals: 0,
-        consecutiveGoodFrames: 0,
-        lastDetectionConfidence: 0,
-        lastSignalAmplitude: 0,
-        lastSignalVariance: 0,
-        perfusionIndex: 0
-      });
-      
-      console.log("FingerDetectionService: Detection state reset");
-    } finally {
-      // Reset the flag after a short delay to ensure any pending state updates are processed
-      setTimeout(() => {
-        isResettingState = false;
-      }, 10);
-    }
-  },
+  resetDetection: () => set({
+    isFingerDetected: false,
+    fingerConfirmed: false,
+    fingerDetectionStartTime: null,
+    signalHistory: [],
+    peakTimes: [],
+    detectedPatterns: 0,
+    consecutiveWeakSignals: 0,
+    consecutiveGoodFrames: 0,
+    lastDetectionConfidence: 0,
+    lastSignalAmplitude: 0,
+    lastSignalVariance: 0,
+    perfusionIndex: 0
+  }),
   
   /**
    * Función principal para procesar la señal y detectar dedo
@@ -238,20 +222,8 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
    * @returns Estado de detección de dedo actualizado
    */
   processSignal: (value, quality) => {
-    // Avoid processing signals during reset operations
-    if (isResettingState) return false;
-    
     const state = get();
     const now = Date.now();
-    
-    // Debugging info
-    console.log("FingerDetectionService: Processing signal", {
-      value: value.toFixed(3),
-      quality: quality || 'N/A',
-      detectedPatterns: state.detectedPatterns,
-      currentState: state.isFingerDetected ? 'detected' : 'not detected',
-      confirmed: state.fingerConfirmed
-    });
     
     // Añadir punto de señal al historial
     state.addSignalPoint({ time: now, value });
@@ -310,27 +282,14 @@ export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
       confidence: patternDetected ? state.detectedPatterns / state.config.requiredConsistentPatterns : 0
     });
     
-    // Verificar condiciones combinadas para detección válida - más flexibles ahora
+    // Verificar condiciones combinadas para detección válida
     const hasValidAmplitude = amplitude >= state.config.minSignalAmplitude;
     const hasValidVariance = variance >= state.config.minSignalVariance;
     const hasValidQuality = quality === undefined || quality >= state.config.minQualityForFingerDetection;
     
-    // Always print diagnostics to help debug finger detection
-    console.log("FingerDetection diagnostics:", { 
-      patternDetected, 
-      amplitude, 
-      variance,
-      hasValidAmplitude,
-      hasValidVariance,
-      hasValidQuality,
-      consecutiveGoodFrames: state.consecutiveGoodFrames 
-    });
-    
     let fingerDetected = false;
     
-    // Modo más sensible: permitir detección incluso con menos condiciones
-    // O usar calidad directamente si está por encima de un umbral alto
-    if ((patternDetected && hasValidAmplitude) || (quality !== undefined && quality > 70)) {
+    if (patternDetected && hasValidAmplitude && hasValidVariance && hasValidQuality) {
       state.incrementConsecutiveGoodFrames();
       
       // Si hay suficientes frames consecutivos buenos, confirmar detección
@@ -386,7 +345,7 @@ function detectRhythmicPattern(state: FingerDetectionState): boolean {
     return false;
   }
   
-  // Buscar picos en la señal reciente - más sensible
+  // Buscar picos en la señal reciente
   const peaks: number[] = [];
   
   for (let i = 2; i < recentSignals.length - 2; i++) {
@@ -397,11 +356,11 @@ function detectRhythmicPattern(state: FingerDetectionState): boolean {
     const next2 = recentSignals[i + 2];
     
     // Un pico debe ser significativamente mayor que los puntos circundantes
-    // y superar un umbral absoluto - umbral reducido para mayor sensibilidad
-    if (current.value > prev1.value * 1.1 && // Reducido de 1.2
-        current.value > prev2.value * 1.1 && // Reducido de 1.2
-        current.value > next1.value * 1.1 && // Reducido de 1.2
-        current.value > next2.value * 1.1 && // Reducido de 1.2
+    // y superar un umbral absoluto
+    if (current.value > prev1.value * 1.2 && 
+        current.value > prev2.value * 1.2 &&
+        current.value > next1.value * 1.2 && 
+        current.value > next2.value * 1.2 &&
         Math.abs(current.value) > config.peakDetectionThreshold) {
       peaks.push(current.time);
     }
@@ -419,20 +378,20 @@ function detectRhythmicPattern(state: FingerDetectionState): boolean {
     intervals.push(peaks[i] - peaks[i - 1]);
   }
   
-  // Verificar que los intervalos correspondan a frecuencias cardíacas fisiológicas (30-200 BPM) - rango ampliado
+  // Verificar que los intervalos correspondan a frecuencias cardíacas fisiológicas (40-180 BPM)
   const validIntervals = intervals.filter(interval => 
-    interval >= 300 && interval <= 2000 // 30-200 BPM (rango ampliado)
+    interval >= 333 && interval <= 1500 // 40-180 BPM
   );
   
-  if (validIntervals.length < Math.floor(intervals.length * 0.6)) { // Reducido de 0.7
-    // Si menos del 60% de intervalos son fisiológicamente plausibles, rechazar el patrón
+  if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+    // Si menos del 70% de intervalos son fisiológicamente plausibles, rechazar el patrón
     state.decrementDetectedPatterns();
     return false;
   }
   
   // Verificar consistencia en los intervalos (ritmo)
   let consistentIntervals = 0;
-  const maxDeviation = 200; // ms (aumentado de 150)
+  const maxDeviation = 150; // ms
   
   for (let i = 1; i < validIntervals.length; i++) {
     if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
