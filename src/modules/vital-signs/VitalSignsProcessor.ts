@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,7 +9,6 @@ import { SignalProcessor } from './signal-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
-import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '../../core/analysis/HydrationEstimator';
@@ -31,7 +29,6 @@ export class VitalSignsProcessor {
   private hydrationEstimator: HydrationEstimator;
   
   // Validators and calculators
-  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   /**
@@ -51,7 +48,6 @@ export class VitalSignsProcessor {
     this.hydrationEstimator = new HydrationEstimator();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator(0.01, 15);
     this.confidenceCalculator = new ConfidenceCalculator(0.15);
   }
   
@@ -63,14 +59,21 @@ export class VitalSignsProcessor {
     ppgValue: number,
     rrData?: { intervals: number[]; lastPeakTime: number | null }
   ): VitalSignsResult {
-    // Check for near-zero signal
-    if (!this.signalValidator.isValidSignal(ppgValue)) {
-      console.log("VitalSignsProcessor: Signal too weak, returning zeros", { value: ppgValue });
+    // Apply filtering and get quality/finger detection status from SignalProcessor
+    const { filteredValue, quality: signalQuality, fingerDetected } = this.signalProcessor.applyFilters(ppgValue);
+
+    if (!fingerDetected) {
+      console.log("VitalSignsProcessor: Finger not detected by SignalProcessor, returning empty results.", { ppgValue, signalQuality });
+      // Reset specific sub-processors if finger is lost to ensure fresh start
+      this.spo2Processor.reset();
+      this.bpProcessor.reset();
+      this.glucoseProcessor.reset();
+      this.lipidProcessor.reset();
+      this.hydrationEstimator.reset();
+      // Consider if arrhythmiaProcessor needs a specific reset action upon finger loss,
+      // or if its existing reset (called by the main reset) is sufficient.
       return ResultFactory.createEmptyResults();
     }
-    
-    // Apply filtering to the real PPG signal
-    const filtered = this.signalProcessor.applySMAFilter(ppgValue);
     
     // Process arrhythmia data if available and valid
     const arrhythmiaResult = rrData && 
@@ -80,30 +83,25 @@ export class VitalSignsProcessor {
                            this.arrhythmiaProcessor.processRRData(rrData) :
                            { arrhythmiaStatus: "--", lastArrhythmiaData: null };
     
-    // Get PPG values for processing
+    // Get PPG values for processing (already updated by applyFilters in signalProcessor)
     const ppgValues = this.signalProcessor.getPPGValues();
-    ppgValues.push(filtered);
     
-    // Limit the real data buffer
-    if (ppgValues.length > 300) {
-      ppgValues.splice(0, ppgValues.length - 300);
-    }
-    
-    // Check if we have enough data points
-    if (!this.signalValidator.hasEnoughData(ppgValues)) {
+    // Check if we have enough data points (SignalProcessor's internal buffer is used by its sub-processors)
+    // This specific check might be redundant if sub-processors handle insufficient data.
+    // For now, keeping a general check based on the buffer length used by processors.
+    // A common buffer length for analysis is around 30-90 samples.
+    // The sub-processors (spo2, bp, glucose, lipids) slice ppgValues, e.g. ppgValues.slice(-45).
+    // So, ensure ppgValues has enough data for the longest slice.
+    const MIN_DATA_FOR_PROCESSING = 90; // Example, should match max slice needed by sub-processors
+    if (ppgValues.length < MIN_DATA_FOR_PROCESSING) {
+      console.log("VitalSignsProcessor: Insufficient data in buffer for full processing, returning empty.", { bufferLength: ppgValues.length });
       return ResultFactory.createEmptyResults();
     }
     
-    // Verify real signal amplitude is sufficient
-    const signalMin = Math.min(...ppgValues.slice(-15));
-    const signalMax = Math.max(...ppgValues.slice(-15));
-    const amplitude = signalMax - signalMin;
-    
-    if (!this.signalValidator.hasValidAmplitude(ppgValues)) {
-      this.signalValidator.logValidationResults(false, amplitude, ppgValues);
-      return ResultFactory.createEmptyResults();
-    }
-    
+    // The fingerDetected check at the beginning (using this.signalProcessor.applyFilters)
+    // already incorporates amplitude and other signal validity checks from SignalProcessor and SignalValidator.
+    // Thus, explicit amplitude checks here are likely redundant.
+
     // Calculate SpO2 using real data only
     const spo2 = Math.round(this.spo2Processor.calculateSpO2(ppgValues.slice(-45)));
     
@@ -148,7 +146,6 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       hydration,
-      signalAmplitude: amplitude,
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 

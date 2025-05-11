@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -24,8 +23,7 @@ export const useSignalProcessing = () => {
    */
   const processSignal = useCallback((
     value: number, 
-    rrData?: { intervals: number[], lastPeakTime: number | null },
-    isWeakSignal: boolean = false
+    rrData?: { intervals: number[], lastPeakTime: number | null }
   ): VitalSignsResult => {
     if (!processorRef.current) {
       console.log("useVitalSignsProcessor: Processor not initialized");
@@ -33,11 +31,6 @@ export const useSignalProcessing = () => {
     }
     
     processedSignals.current++;
-    
-    // If too many weak signals, return zeros
-    if (isWeakSignal) {
-      return ResultFactory.createEmptyResults();
-    }
     
     // Logging for diagnostics
     if (processedSignals.current % 45 === 0) {
