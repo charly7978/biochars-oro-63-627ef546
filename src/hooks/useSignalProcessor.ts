@@ -18,6 +18,7 @@ export const useSignalProcessor = () => {
   const fingerDetection = useFingerDetection();
   const cleanupCalledRef = useRef(false);
   const processingActiveRef = useRef(false);
+  const resetInProgressRef = useRef(false);
 
   // Create processor instance
   const [processor] = useState(() => {
@@ -100,12 +101,25 @@ export const useSignalProcessor = () => {
       
       processor.stop();
       
-      // Use setTimeout to prevent state update during unmount cleanup cycles
-      setTimeout(() => {
-        if (fingerDetection && fingerDetection.resetDetection) {
-          fingerDetection.resetDetection();
-        }
-      }, 20);
+      // Evitar llamadas a resetDetection durante el desmontaje
+      // Usar un estado local para controlar el reset
+      if (!resetInProgressRef.current) {
+        resetInProgressRef.current = true;
+        
+        // Use setTimeout with longer delay to prevent state update during unmount
+        setTimeout(() => {
+          try {
+            if (fingerDetection && fingerDetection.resetDetection) {
+              fingerDetection.resetDetection();
+              console.log("Finger detection reset");
+            }
+          } catch (err) {
+            console.error("Error resetting finger detection:", err);
+          } finally {
+            resetInProgressRef.current = false;
+          }
+        }, 100); // Mayor tiempo para evitar actualizaciones durante desmontaje
+      }
     };
   }, [processor, fingerDetection]);
 
@@ -126,10 +140,22 @@ export const useSignalProcessor = () => {
     });
     
     // Reset finger detection status before starting
-    if (fingerDetection && fingerDetection.resetDetection) {
-      fingerDetection.resetDetection();
+    // Control más seguro del reset
+    if (!resetInProgressRef.current) {
+      resetInProgressRef.current = true;
+      
+      // Usar setTimeout para evitar ciclos de actualización infinitos
+      setTimeout(() => {
+        try {
+          if (fingerDetection && fingerDetection.resetDetection) {
+            fingerDetection.resetDetection();
+          }
+        } finally {
+          resetInProgressRef.current = false;
+          cleanupCalledRef.current = false;
+        }
+      }, 50);
     }
-    cleanupCalledRef.current = false;
     
     processor.start();
   }, [processor, fingerDetection]);
@@ -144,12 +170,21 @@ export const useSignalProcessor = () => {
     processingActiveRef.current = false;
     processor.stop();
     
-    // Use setTimeout to prevent react update cycle issues
-    setTimeout(() => {
-      if (fingerDetection && fingerDetection.resetDetection) {
-        fingerDetection.resetDetection();
-      }
-    }, 20);
+    // Control más seguro del reset
+    if (!resetInProgressRef.current) {
+      resetInProgressRef.current = true;
+      
+      // Usar setTimeout para evitar ciclos de actualización
+      setTimeout(() => {
+        try {
+          if (fingerDetection && fingerDetection.resetDetection) {
+            fingerDetection.resetDetection();
+          }
+        } finally {
+          resetInProgressRef.current = false;
+        }
+      }, 50);
+    }
   }, [processor, fingerDetection]);
 
   /**

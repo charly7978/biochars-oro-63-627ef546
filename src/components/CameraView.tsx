@@ -47,13 +47,13 @@ const CameraView: React.FC<CameraViewProps> = ({
 
       const baseVideoConstraints = {
         facingMode: 'environment',
-        width: { ideal: 720 },
-        height: { ideal: 480 }
+        width: { ideal: 1280 },  // Mayor resolución 
+        height: { ideal: 720 }   // Mayor resolución
       };
 
       if (isAndroid) {
         Object.assign(baseVideoConstraints, {
-          frameRate: { ideal: 30 }, // Aumentado para mayor sensibilidad
+          frameRate: { ideal: 30, min: 20 }, // Aumentado para mayor sensibilidad
           resizeMode: 'crop-and-scale'
         });
       }
@@ -72,9 +72,10 @@ const CameraView: React.FC<CameraViewProps> = ({
           const capabilities = videoTrack.getCapabilities();
           const advancedConstraints = [];
           
-          // Intentar siempre activar la linterna
+          // Intentar siempre activar la linterna - prioridad MÁXIMA
           if (capabilities.torch) {
             advancedConstraints.push({ torch: true });
+            await videoTrack.applyConstraints({ torch: true });
             setTorchOn(true);
             console.log("CameraView: Torch enabled");
           } else {
@@ -110,11 +111,11 @@ const CameraView: React.FC<CameraViewProps> = ({
             }
           }
           
-          // Verificar si la linterna se activó - corregir error de TypeScript
+          // Verificar si la linterna se activó
           const settings = videoTrack.getSettings();
           console.log("CameraView: Applied camera settings", settings);
           
-          // Verificar linterna de manera segura usando capabilities en lugar de settings
+          // Verificar linterna de manera segura usando capabilities
           const torchEnabled = capabilities.torch ? true : false;
           setTorchOn(torchEnabled);
 
@@ -235,9 +236,9 @@ const CameraView: React.FC<CameraViewProps> = ({
   }, [isMonitoring]);
 
   // Determine actual finger status using both provided detection and brightness
-  const actualFingerStatus = isFingerDetected && (
-    avgBrightness < 70 || // Dark means finger is likely present
-    signalQuality > 40    // Reduced threshold para mejor detección
+  // Mucho más sensible - suficiente con cualquiera de las dos señales
+  const actualFingerStatus = isFingerDetected || (
+    avgBrightness < 100  // Aumentado el umbral para mayor sensibilidad
   );
 
   // Loading indicator while camera is starting
@@ -269,8 +270,8 @@ const CameraView: React.FC<CameraViewProps> = ({
             size={48}
             className={`transition-colors duration-300 ${
               !actualFingerStatus ? 'text-gray-400' :
-              signalQuality > 75 ? 'text-green-500' :
-              signalQuality > 50 ? 'text-yellow-500' :
+              signalQuality > 60 ? 'text-green-500' :
+              signalQuality > 30 ? 'text-yellow-500' :
               'text-red-500'
             }`}
           />
