@@ -1,4 +1,3 @@
-
 /**
  * Servicio para proporcionar retroalimentación al usuario
  * Incluye retroalimentación háptica, sonora y visual
@@ -25,33 +24,62 @@ const loadSound = (url: string): HTMLAudioElement => {
 };
 
 export const FeedbackService = {
+  // Estado interno para recordar si se solicitaron permisos
+  permissionRequested: false,
+
+  // Comprobar y solicitar permisos para vibración
+  checkVibrationPermission: () => {
+    if (!FeedbackService.permissionRequested && 'vibrate' in navigator) {
+      // En móviles, la primera vibración debe ocurrir en respuesta a un gesto del usuario
+      console.log("FeedbackService: Vibration permission requested");
+      FeedbackService.permissionRequested = true;
+      
+      // Intentar una vibración muy corta para establecer permisos
+      try {
+        navigator.vibrate(1);
+      } catch (err) {
+        console.log("Couldn't initialize vibration:", err);
+      }
+    }
+  },
+
   // Retroalimentación háptica
   vibrate: (pattern: number | number[] = 200) => {
+    FeedbackService.checkVibrationPermission();
+    
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
         console.log('Vibración activada:', pattern);
+        return true;
       } catch (error) {
         console.error('Error al activar vibración:', error);
+        return false;
       }
     } else {
       console.log('Vibración no soportada en este dispositivo');
+      return false;
     }
   },
 
   // Retroalimentación háptica específica para arritmias
   vibrateArrhythmia: () => {
+    FeedbackService.checkVibrationPermission();
+    
     if ('vibrate' in navigator) {
       try {
         // Patrón distintivo para arritmias (triple pulso con pausa)
         const pattern = [100, 50, 100, 50, 100, 300, 100];
         navigator.vibrate(pattern);
         console.log('Vibración de arritmia activada:', pattern);
+        return true;
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
+        return false;
       }
     } else {
       console.log('Vibración no soportada en este dispositivo');
+      return false;
     }
   },
 

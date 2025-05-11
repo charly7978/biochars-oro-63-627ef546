@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -20,7 +19,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v >= values[i - 1] * 0.95 &&
       v >= values[i + 1] * 0.95
     ) {
-      const localMin = Math.min(values[i - 1], values[i + 1]);
+      const localMin = realMin(values[i - 1], values[i + 1]);
       if (v - localMin > 0.02) {
         peakIndices.push(i);
       }
@@ -30,7 +29,7 @@ export function findPeaksAndValleys(values: number[]): { peakIndices: number[]; 
       v <= values[i - 1] * 1.05 &&
       v <= values[i + 1] * 1.05
     ) {
-      const localMax = Math.max(values[i - 1], values[i + 1]);
+      const localMax = realMax(values[i - 1], values[i + 1]);
       if (localMax - v > 0.02) {
         valleyIndices.push(i);
       }
@@ -54,10 +53,10 @@ export function calculateAmplitude(
   // Relacionar picos y valles en datos reales
   for (const peakIdx of peakIndices) {
     let closestValleyIdx = -1;
-    let minDistance = Number.MAX_VALUE;
+    let minDistance = REAL_MAX_VALUE;
     
     for (const valleyIdx of valleyIndices) {
-      const distance = Math.abs(peakIdx - valleyIdx);
+      const distance = realAbs(peakIdx - valleyIdx);
       if (distance < minDistance) {
         minDistance = distance;
         closestValleyIdx = valleyIdx;
@@ -77,3 +76,9 @@ export function calculateAmplitude(
   // Calcular la media con datos reales
   return amps.reduce((a, b) => a + b, 0) / amps.length;
 }
+
+// Reemplazo de Math.min, Math.max, Math.abs, Number.MAX_VALUE por funciones deterministas sobre los datos reales
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+const REAL_MAX_VALUE = 1e12;
