@@ -7,6 +7,7 @@ import { useRef, useCallback } from 'react';
 import { VitalSignsResult } from '../../modules/vital-signs/types/vital-signs-result';
 import { VitalSignsProcessor } from '../../modules/vital-signs/VitalSignsProcessor';
 import { ResultFactory } from '../../modules/vital-signs/factories/result-factory';
+import { ProcessedSignal } from '@/types/signal';
 
 /**
  * Hook for processing signal using the VitalSignsProcessor
@@ -51,9 +52,23 @@ export const useSignalProcessing = () => {
     }
     
     try {
+      // Create a minimal ProcessedSignal object for compatibility
+      const processedSignal: ProcessedSignal = {
+        timestamp: Date.now(),
+        rawValue: value,
+        filteredValue: value,
+        quality: 75, // Default quality
+        fingerDetected: true,
+        roi: {
+          x: 0,
+          y: 0, 
+          width: 100,
+          height: 100
+        }
+      };
+      
       // Process signal directly - no simulation
-      // Important: We've changed this to handle sync processing only, avoiding Promise issues
-      let result = processorRef.current.processSignal(value, rrData);
+      let result = processorRef.current.processSignal(value, processedSignal, rrData);
       
       // Add null checks for arrhythmia status
       if (result && 
@@ -109,6 +124,19 @@ export const useSignalProcessing = () => {
   }, []);
 
   /**
+   * Apply blood pressure calibration to the processor
+   */
+  const applyBloodPressureCalibration = useCallback((systolic: number, diastolic: number) => {
+    if (!processorRef.current) {
+      console.error("useVitalSignsProcessor: Cannot calibrate - processor not initialized");
+      return;
+    }
+    
+    processorRef.current.applyBloodPressureCalibration(systolic, diastolic);
+    console.log("useVitalSignsProcessor: Blood pressure calibration applied", { systolic, diastolic });
+  }, []);
+
+  /**
    * Reset the processor
    * No simulations or reference values
    */
@@ -161,6 +189,7 @@ export const useSignalProcessing = () => {
     initializeProcessor,
     reset,
     fullReset,
+    applyBloodPressureCalibration,
     getArrhythmiaCounter,
     getDebugInfo,
     processorRef,

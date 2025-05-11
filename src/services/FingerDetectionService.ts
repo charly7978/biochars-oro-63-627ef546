@@ -1,473 +1,476 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { create } from 'zustand';
+import cv from '@techstark/opencv-js';
+import { calculateSNR, evaluateSignalStability } from '@/hooks/heart-beat/signal-processing/signal-quality';
 
-/**
- * Interfaz para la configuración del detector de dedo
- */
+// Define a simple autocorrelation function since it's missing from the utilities
+function calculateAutocorrelation(signal: number[]): number {
+  if (signal.length < 10) return 0;
+
+  // Simple implementation of autocorrelation for periodicity detection
+  let sumCorr = 0;
+  let sumNorm = 0;
+  const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+  const normalizedSignal = signal.map(val => val - mean);
+  
+  // Calculate autocorrelation for half the signal length lags
+  for (let lag = 1; lag < Math.floor(signal.length / 2); lag++) {
+    let corr = 0;
+    for (let i = 0; i < signal.length - lag; i++) {
+      corr += normalizedSignal[i] * normalizedSignal[i + lag];
+    }
+    sumCorr += Math.abs(corr);
+    sumNorm += 1;
+  }
+  
+  // Normalize to get a value between 0-1
+  return sumNorm > 0 ? Math.min(1, Math.abs(sumCorr) / (signal.length * sumNorm)) : 0;
+}
+
 interface FingerDetectionConfig {
-  // Umbral para señal débil (reducido para mayor sensibilidad)
-  weakSignalThreshold: number;
+  // Umbrales de color para detección de piel en espacio HSV
+  skinLowerBound: [number, number, number];
+  skinUpperBound: [number, number, number];
   
-  // Cantidad de señales débiles consecutivas para confirmar pérdida de dedo
-  maxConsecutiveWeakSignals: number;
+  // Umbrales de parámetros para la detección confiable
+  minContourArea: number;
+  minQuality: number;
+  periodicityThreshold: number;
+  signalStabilityThreshold: number;
   
-  // Duración mínima para la detección de patrones (ms)
-  patternDetectionWindowMs: number;
+  // Histéresis para evitar detección intermitente
+  hysteresisBuffer: number;
+  confidenceThreshold: number;
   
-  // Picos mínimos para detectar un ritmo
-  minPeaksForRhythm: number;
-  
-  // Umbral para detección de picos
-  peakDetectionThreshold: number;
-  
-  // Patrones consistentes necesarios para confirmar presencia de dedo
-  requiredConsistentPatterns: number;
-  
-  // Varianza mínima de señal para evitar falsos positivos
-  minSignalVariance: number;
-  
-  // Amplitud mínima de señal (min-max) para considerar válida
-  minSignalAmplitude: number;
-  
-  // Calidad mínima de señal para detección de dedo (reducida para mayor sensibilidad)
-  minQualityForFingerDetection: number;
-  
-  // Frames consecutivos necesarios para confirmar detección
-  requiredConsecutiveFrames: number;
+  // Factores de ponderación para detección multifactorial
+  signalQualityWeight: number;
+  periodicityWeight: number;
+  skinDetectionWeight: number;
+  contourQualityWeight: number;
+  stabilityWeight: number;
 }
 
-/**
- * Datos de punto de señal para análisis de patrones
- */
-interface SignalPoint {
-  time: number;
-  value: number;
-}
-
-/**
- * Estado de detección del dedo
- */
-interface FingerDetectionState {
-  // Estado de detección
+export interface FingerDetectionResult {
   isFingerDetected: boolean;
-  fingerConfirmed: boolean;
-  fingerDetectionStartTime: number | null;
-  
-  // Historial de datos para análisis de patrones
-  signalHistory: SignalPoint[];
-  peakTimes: number[];
-  
-  // Contadores de calidad y patrones
-  detectedPatterns: number;
-  consecutiveWeakSignals: number;
-  signalQuality: number;
-  consecutiveGoodFrames: number;
-  
-  // Configuración avanzada
-  config: FingerDetectionConfig;
-  
-  // Métricas adicionales para análisis
-  lastDetectionConfidence: number;
-  lastSignalAmplitude: number;
-  lastSignalVariance: number;
-  perfusionIndex: number;
-  
-  // Funciones para actualizar estado
-  setFingerDetected: (detected: boolean) => void;
-  setFingerConfirmed: (confirmed: boolean) => void;
-  setFingerDetectionStartTime: (time: number | null) => void;
-  addSignalPoint: (point: SignalPoint) => void;
-  setPeakTimes: (peaks: number[]) => void;
-  incrementDetectedPatterns: () => void;
-  decrementDetectedPatterns: () => void;
-  resetDetectedPatterns: () => void;
-  setConsecutiveWeakSignals: (count: number) => void;
-  incrementConsecutiveWeakSignals: () => void;
-  decrementConsecutiveWeakSignals: () => void;
-  setSignalQuality: (quality: number) => void;
-  incrementConsecutiveGoodFrames: () => void;
-  resetConsecutiveGoodFrames: () => void;
-  updateDetectionMetrics: (metrics: {
-    confidence?: number;
-    amplitude?: number;
-    variance?: number;
-    perfusionIndex?: number;
-  }) => void;
-  resetDetection: () => void;
-  
-  // Método principal de procesamiento
-  processSignal: (value: number, quality?: number) => boolean;
+  quality: number;
+  confidence: number;
+  feedback: string;
+  roi?: { x: number, y: number, width: number, height: number };
+  signalValue?: number;
+  skinConfidence: number;
+  contourQuality: number;
+  periodicityScore?: number;
+  stabilityScore?: number;
 }
 
-// Configuración optimizada para mejor detección (más sensible)
-const DEFAULT_CONFIG: FingerDetectionConfig = {
-  weakSignalThreshold: 0.15, // Reducido de 0.25 para mayor sensibilidad
-  maxConsecutiveWeakSignals: 8, // Aumentado para evitar pérdidas rápidas
-  patternDetectionWindowMs: 3000,
-  minPeaksForRhythm: 3,  // Reducido para facilitar detección
-  peakDetectionThreshold: 0.15, // Reducido para mayor sensibilidad
-  requiredConsistentPatterns: 2, // Reducido para detectar más rápido
-  minSignalVariance: 0.02, // Reducido para mayor sensibilidad
-  minSignalAmplitude: 0.1, // Reducido para mayor sensibilidad
-  minQualityForFingerDetection: 30, // Reducido para facilitar detección
-  requiredConsecutiveFrames: 2 // Reducido para confirmar más rápido
-};
+class FingerDetectionService {
+  private config: FingerDetectionConfig = {
+    skinLowerBound: [0, 40, 60],     // Valores ajustados más estrictos
+    skinUpperBound: [25, 255, 255],  // Valores ajustados más estrictos
+    minContourArea: 5000,           // Área mínima más grande para evitar falsos positivos
+    minQuality: 40,
+    periodicityThreshold: 0.4,
+    signalStabilityThreshold: 0.5,
+    hysteresisBuffer: 5,
+    confidenceThreshold: 0.6,
+    signalQualityWeight: 0.3,
+    periodicityWeight: 0.3,
+    skinDetectionWeight: 0.2,
+    contourQualityWeight: 0.1,
+    stabilityWeight: 0.1
+  };
 
-// Flag para evitar reinicios múltiples que causan ciclos infinitos
-let isResettingState = false;
+  private recentDetectionStates: boolean[] = [];
+  private signalBuffer: number[] = [];
+  private lastDetectionResult: FingerDetectionResult | null = null;
+  private consecutiveStableFrames: number = 0;
+  private cvReady: boolean = false;
+  private recentValues: number[] = [];
+  private lastUpdateTime: number = 0;
+  private signalHistory: number[] = [];
+  
+  // Buffer para OpenCV ROI
+  private lastROIs: Array<{ x: number, y: number, width: number, height: number }> = [];
+  
+  // Variables para estadísticas de detección
+  private detectionStats = {
+    totalFrames: 0,
+    detectedFrames: 0,
+    averageQuality: 0,
+    lastResetTime: Date.now()
+  };
 
-/**
- * Servicio centralizado para la detección de dedo usando Zustand
- * Implementa algoritmos avanzados basados en patrones rítmicos fisiológicos
- * No utiliza simulaciones, solo análisis real de la señal PPG
- */
-export const useFingerDetection = create<FingerDetectionState>((set, get) => ({
-  // Estado inicial
-  isFingerDetected: false,
-  fingerConfirmed: false,
-  fingerDetectionStartTime: null,
-  signalHistory: [],
-  peakTimes: [],
-  detectedPatterns: 0,
-  consecutiveWeakSignals: 0,
-  signalQuality: 0,
-  consecutiveGoodFrames: 0,
-  config: DEFAULT_CONFIG,
-  lastDetectionConfidence: 0,
-  lastSignalAmplitude: 0,
-  lastSignalVariance: 0,
-  perfusionIndex: 0,
-  
-  // Funciones para manipulación de estado
-  setFingerDetected: (detected) => set({ isFingerDetected: detected }),
-  
-  setFingerConfirmed: (confirmed) => set({ fingerConfirmed: confirmed }),
-  
-  setFingerDetectionStartTime: (time) => set({ fingerDetectionStartTime: time }),
-  
-  addSignalPoint: (point) => {
+  constructor() {
+    console.log("FingerDetectionService: Inicializado con configuración óptima para detección real.");
+    
+    // Verificar si OpenCV está disponible
+    this.checkOpenCVAvailability();
+  }
+
+  /**
+   * Verifica si OpenCV está disponible y listo para usar
+   */
+  private checkOpenCVAvailability(): void {
+    if (typeof cv !== 'undefined' && cv.getBuildInformation) {
+      console.log("OpenCV está disponible");
+      this.cvReady = true;
+    } else {
+      console.log("OpenCV no está disponible todavía, verificando nuevamente...");
+      setTimeout(() => this.checkOpenCVAvailability(), 500);
+    }
+  }
+
+  /**
+   * Procesa un frame para detectar la presencia de un dedo
+   * @param imageData Datos de imagen del frame de video
+   * @param signalValue Valor opcional de señal PPG
+   * @param useOpenCV Indica si usar OpenCV para análisis avanzado
+   * @returns Resultado de la detección con datos de confianza
+   */
+  public processFrameAndSignal(
+    imageData?: ImageData,
+    signalValue?: number,
+    useOpenCV: boolean = true
+  ): FingerDetectionResult {
     const now = Date.now();
-    set(state => {
-      // Mantener solo señales recientes dentro de la ventana
-      const history = [
-        ...state.signalHistory,
-        point
-      ].filter(p => now - p.time < state.config.patternDetectionWindowMs * 2);
+    const timeSinceLastUpdate = now - this.lastUpdateTime;
+    this.lastUpdateTime = now;
+
+    // Actualizar estadísticas de detección
+    this.detectionStats.totalFrames++;
+    
+    // Sistema de detección multifactorial
+    let signalQualityScore = 0;
+    let periodicityScore = 0;
+    let stabilityScore = 0;
+    let skinConfidence = 0;
+    let contourQuality = 0;
+    let detectedROI: { x: number, y: number, width: number, height: number } | null = null;
+    
+    // 1. ANÁLISIS DE SEÑAL si hay valor de señal proporcionado
+    if (signalValue !== undefined) {
+      // Actualizar el buffer de señal
+      this.signalBuffer.push(signalValue);
+      if (this.signalBuffer.length > 150) {
+        this.signalBuffer.shift();
+      }
       
-      return { signalHistory: history };
-    });
-  },
-  
-  setPeakTimes: (peaks) => set({ peakTimes: peaks }),
-  
-  incrementDetectedPatterns: () => set(state => ({ 
-    detectedPatterns: state.detectedPatterns + 1 
-  })),
-  
-  decrementDetectedPatterns: () => set(state => ({
-    detectedPatterns: Math.max(0, state.detectedPatterns - 1)
-  })),
-  
-  resetDetectedPatterns: () => set({ detectedPatterns: 0 }),
-  
-  setConsecutiveWeakSignals: (count) => set({ consecutiveWeakSignals: count }),
-  
-  incrementConsecutiveWeakSignals: () => set(state => ({ 
-    consecutiveWeakSignals: state.consecutiveWeakSignals + 1 
-  })),
-  
-  decrementConsecutiveWeakSignals: () => set(state => ({ 
-    consecutiveWeakSignals: Math.max(0, state.consecutiveWeakSignals - 1) 
-  })),
-  
-  setSignalQuality: (quality) => set({ signalQuality: quality }),
-  
-  incrementConsecutiveGoodFrames: () => set(state => ({ 
-    consecutiveGoodFrames: state.consecutiveGoodFrames + 1 
-  })),
-  
-  resetConsecutiveGoodFrames: () => set({ consecutiveGoodFrames: 0 }),
-  
-  updateDetectionMetrics: (metrics) => set(state => ({
-    lastDetectionConfidence: metrics.confidence ?? state.lastDetectionConfidence,
-    lastSignalAmplitude: metrics.amplitude ?? state.lastSignalAmplitude,
-    lastSignalVariance: metrics.variance ?? state.lastSignalVariance,
-    perfusionIndex: metrics.perfusionIndex ?? state.perfusionIndex
-  })),
-  
-  resetDetection: () => {
-    // Avoid potential infinite loops by checking if already resetting
-    if (isResettingState) return;
+      // Calculo de calidad de señal basado en SNR
+      if (this.signalBuffer.length >= 30) {
+        signalQualityScore = Math.min(1, calculateSNR(this.signalBuffer.slice(-30)) / 20);
+      }
+      
+      // Análisis de periodicidad con autocorrelación
+      if (this.signalBuffer.length >= 100) {
+        periodicityScore = calculateAutocorrelation(this.signalBuffer.slice(-100));
+      }
+      
+      // Análisis de estabilidad temporal
+      if (this.signalBuffer.length >= 50) {
+        stabilityScore = evaluateSignalStability(this.signalBuffer.slice(-50));
+      }
+    }
+    
+    // 2. ANÁLISIS DE IMAGEN si hay imagen proporcionada y OpenCV está disponible
+    const openCVResult = imageData && useOpenCV && this.cvReady 
+      ? this.processImageWithOpenCV(imageData)
+      : { 
+          roiDetected: null as any,
+          skinConfidence: 0,
+          contourQuality: 0
+        };
+    
+    if (openCVResult && openCVResult.roiDetected) {
+      detectedROI = openCVResult.roiDetected;
+      skinConfidence = openCVResult.skinConfidence;
+      contourQuality = openCVResult.contourQuality;
+      
+      // Actualizar el buffer de ROIs para estabilidad
+      this.lastROIs.push(openCVResult.roiDetected);
+      if (this.lastROIs.length > 5) {
+        this.lastROIs.shift();
+      }
+    }
+    
+    // 3. CÁLCULO DE SCORE PONDERADO MULTIFACTORIAL
+    // Usar sistema de ponderación para combinar todos los factores
+    const scoreWeights = this.config;
+    
+    const weightedScore = 
+      (signalQualityScore * scoreWeights.signalQualityWeight) +
+      (periodicityScore * scoreWeights.periodicityWeight) +
+      (skinConfidence * scoreWeights.skinDetectionWeight) +
+      (contourQuality * scoreWeights.contourQualityWeight) +
+      (stabilityScore * scoreWeights.stabilityWeight);
+    
+    // Normalizar a escala 0-100
+    const quality = Math.round(weightedScore * 100);
+    
+    // 4. DETERMINAR DETECCIÓN CON SISTEMA DE HISTÉRESIS
+    // Sistema de histéresis para evitar detección intermitente
+    const confidenceScore = weightedScore;
+    const rawDetection = confidenceScore >= this.config.confidenceThreshold;
+    
+    // Aplicar histéresis
+    this.recentDetectionStates.push(rawDetection);
+    if (this.recentDetectionStates.length > this.config.hysteresisBuffer) {
+      this.recentDetectionStates.shift();
+    }
+    
+    // Calcular proporción de detecciones positivas en el buffer de histéresis
+    const positiveDetections = this.recentDetectionStates.filter(state => state).length;
+    const detectionRatio = positiveDetections / Math.max(1, this.recentDetectionStates.length);
+    
+    // Determinar detección final usando histéresis
+    let isFingerDetected = false;
+    
+    if (this.lastDetectionResult) {
+      // Si ya estaba detectando, mantener detección con un umbral más bajo
+      isFingerDetected = this.lastDetectionResult.isFingerDetected
+        ? detectionRatio >= 0.4  // Mantener detección con 40% positivas
+        : detectionRatio >= 0.7; // Iniciar detección con 70% positivas
+    } else {
+      isFingerDetected = detectionRatio >= 0.7;
+    }
+    
+    // Incrementar contador de frames estables
+    if (isFingerDetected) {
+      this.consecutiveStableFrames++;
+      this.detectionStats.detectedFrames++;
+    } else {
+      this.consecutiveStableFrames = 0;
+    }
+    
+    // Actualizar calidad promedio
+    this.detectionStats.averageQuality = 
+      (this.detectionStats.averageQuality * (this.detectionStats.totalFrames - 1) + quality) / 
+      this.detectionStats.totalFrames;
+    
+    // 5. PREPARAR RESULTADO FINAL
+    // Determinar ROI final - usar promedio de últimos ROIs para estabilidad
+    let finalROI = detectedROI;
+    if (!finalROI && this.lastROIs.length > 0) {
+      // Usar el último ROI detectado si no hay uno nuevo
+      finalROI = this.lastROIs[this.lastROIs.length - 1];
+    }
+    
+    // Generar feedback específico para el usuario
+    let feedback = "Buscando dedo...";
+    if (isFingerDetected) {
+      if (quality > 80) {
+        feedback = "Señal óptima";
+      } else if (quality > 60) {
+        feedback = "Buena señal";
+      } else if (quality > 40) {
+        feedback = "Señal adecuada";
+      } else {
+        feedback = "Señal débil, ajuste la posición";
+      }
+    } else if (signalQualityScore > 0.2) {
+      feedback = "Detectado movimiento, mantenga el dedo quieto";
+    } else if (skinConfidence > 0.3) {
+      feedback = "Dedo detectado pero con mala señal";
+    }
+    
+    // Preparar resultado final
+    const result: FingerDetectionResult = {
+      isFingerDetected,
+      quality,
+      confidence: confidenceScore,
+      feedback,
+      roi: finalROI,
+      signalValue,
+      skinConfidence,
+      contourQuality,
+      periodicityScore,
+      stabilityScore
+    };
+    
+    // Guardar para histéresis
+    this.lastDetectionResult = result;
+    
+    return result;
+  }
+
+  /**
+   * Procesa una imagen con OpenCV para detectar color de piel y contorno del dedo
+   * @param imageData Datos de la imagen a procesar
+   * @returns Resultado del análisis con OpenCV
+   */
+  private processImageWithOpenCV(imageData: ImageData): {
+    roiDetected: { x: number, y: number, width: number, height: number };
+    skinConfidence: number;
+    contourQuality: number;
+  } {
+    if (!this.cvReady) {
+      return {
+        roiDetected: { x: 0, y: 0, width: 0, height: 0 },
+        skinConfidence: 0,
+        contourQuality: 0
+      };
+    }
+    
+    let srcMat: any = null;
+    let rgbMat: any = null;
+    let hsvMat: any = null;
+    let skinMask: any = null;
+    let contours: any = null;
+    let hierarchy: any = null;
     
     try {
-      isResettingState = true;
+      // Convertir imagen a formato OpenCV
+      srcMat = cv.matFromImageData(imageData);
+      rgbMat = new cv.Mat();
+      cv.cvtColor(srcMat, rgbMat, cv.COLOR_RGBA2RGB);
       
-      set({
-        isFingerDetected: false,
-        fingerConfirmed: false,
-        fingerDetectionStartTime: null,
-        signalHistory: [],
-        peakTimes: [],
-        detectedPatterns: 0,
-        consecutiveWeakSignals: 0,
-        consecutiveGoodFrames: 0,
-        lastDetectionConfidence: 0,
-        lastSignalAmplitude: 0,
-        lastSignalVariance: 0,
-        perfusionIndex: 0
-      });
+      // Convertir a espacio de color HSV para mejor detección de piel
+      hsvMat = new cv.Mat();
+      cv.cvtColor(rgbMat, hsvMat, cv.COLOR_RGB2HSV);
       
-      console.log("FingerDetectionService: Detection state reset");
-    } finally {
-      // Reset the flag after a short delay to ensure any pending state updates are processed
-      setTimeout(() => {
-        isResettingState = false;
-      }, 10);
-    }
-  },
-  
-  /**
-   * Función principal para procesar la señal y detectar dedo
-   * Implementa algoritmos avanzados basados en patrones fisiológicos del PPG
-   * @param value Valor actual de la señal PPG filtrada
-   * @param quality Calidad opcional de la señal (0-100)
-   * @returns Estado de detección de dedo actualizado
-   */
-  processSignal: (value, quality) => {
-    // Avoid processing signals during reset operations
-    if (isResettingState) return false;
-    
-    const state = get();
-    const now = Date.now();
-    
-    // Debugging info
-    console.log("FingerDetectionService: Processing signal", {
-      value: value.toFixed(3),
-      quality: quality || 'N/A',
-      detectedPatterns: state.detectedPatterns,
-      currentState: state.isFingerDetected ? 'detected' : 'not detected',
-      confirmed: state.fingerConfirmed
-    });
-    
-    // Añadir punto de señal al historial
-    state.addSignalPoint({ time: now, value });
-    
-    // Si ya está confirmado, verificar pérdida de señal
-    if (state.fingerConfirmed) {
-      const isWeakSignal = Math.abs(value) < state.config.weakSignalThreshold;
+      // Crear máscara para detección de color de piel
+      skinMask = new cv.Mat();
+      const lowerSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), 
+                                  this.config.skinLowerBound);
+      const upperSkin = new cv.Mat(hsvMat.rows, hsvMat.cols, hsvMat.type(), 
+                                  this.config.skinUpperBound);
       
-      if (isWeakSignal) {
-        state.incrementConsecutiveWeakSignals();
-      } else {
-        state.decrementConsecutiveWeakSignals();
-      }
+      // Aplicar máscara de color
+      cv.inRange(hsvMat, lowerSkin, upperSkin, skinMask);
       
-      // Si hay demasiadas señales débiles consecutivas, perdimos el dedo
-      if (state.consecutiveWeakSignals > state.config.maxConsecutiveWeakSignals * 2) {
-        state.setFingerConfirmed(false);
-        state.resetDetectedPatterns();
-        state.resetConsecutiveGoodFrames();
-        state.setFingerDetected(false);
-        console.log("FingerDetectionService: Detección de dedo perdida por señal débil prolongada");
-        return false;
-      }
+      // Aplicar operaciones morfológicas para mejorar la detección
+      const kernel = cv.Mat.ones(5, 5, cv.CV_8U);
+      const morphDst = new cv.Mat();
+      cv.morphologyEx(skinMask, morphDst, cv.MORPH_OPEN, kernel, new cv.Point(-1, -1), 1);
+      cv.morphologyEx(morphDst, skinMask, cv.MORPH_CLOSE, kernel, new cv.Point(-1, -1), 1);
       
-      // Actualizar calidad si se proporciona
-      if (quality !== undefined) {
-        state.setSignalQuality(quality);
-      }
+      // Encontrar contornos
+      contours = new cv.MatVector();
+      hierarchy = new cv.Mat();
+      cv.findContours(skinMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
       
-      // La detección se mantiene confirmada
-      return true;
-    }
-    
-    // Si no está confirmado, intentar detectar patrones rítmicos
-    const patternDetected = detectRhythmicPattern(state);
-    
-    // Calcular amplitud de la señal reciente para validación
-    let amplitude = 0;
-    let variance = 0;
-    
-    if (state.signalHistory.length >= 10) {
-      const recentValues = state.signalHistory.slice(-10).map(p => p.value);
-      const min = Math.min(...recentValues);
-      const max = Math.max(...recentValues);
-      amplitude = max - min;
+      // Liberar matrices temporales
+      lowerSkin.delete();
+      upperSkin.delete();
+      morphDst.delete();
+      kernel.delete();
       
-      // Calcular varianza
-      const mean = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
-      variance = recentValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / recentValues.length;
-    }
-    
-    // Actualizar métricas
-    state.updateDetectionMetrics({ 
-      amplitude, 
-      variance,
-      confidence: patternDetected ? state.detectedPatterns / state.config.requiredConsistentPatterns : 0
-    });
-    
-    // Verificar condiciones combinadas para detección válida - más flexibles ahora
-    const hasValidAmplitude = amplitude >= state.config.minSignalAmplitude;
-    const hasValidVariance = variance >= state.config.minSignalVariance;
-    const hasValidQuality = quality === undefined || quality >= state.config.minQualityForFingerDetection;
-    
-    // Always print diagnostics to help debug finger detection
-    console.log("FingerDetection diagnostics:", { 
-      patternDetected, 
-      amplitude, 
-      variance,
-      hasValidAmplitude,
-      hasValidVariance,
-      hasValidQuality,
-      consecutiveGoodFrames: state.consecutiveGoodFrames 
-    });
-    
-    let fingerDetected = false;
-    
-    // Modo más sensible: permitir detección incluso con menos condiciones
-    // O usar calidad directamente si está por encima de un umbral alto
-    if ((patternDetected && hasValidAmplitude) || (quality !== undefined && quality > 70)) {
-      state.incrementConsecutiveGoodFrames();
+      // Buscar contorno más grande (probablemente el dedo)
+      let largestContourArea = 0;
+      let largestContourIndex = -1;
       
-      // Si hay suficientes frames consecutivos buenos, confirmar detección
-      if (state.consecutiveGoodFrames >= state.config.requiredConsecutiveFrames) {
-        // Si es la primera confirmación, registrar tiempo
-        if (!state.fingerConfirmed) {
-          state.setFingerConfirmed(true);
-          console.log("FingerDetectionService: Dedo detectado y confirmado", {
-            time: new Date(now).toISOString(),
-            patterns: state.detectedPatterns,
-            amplitude,
-            variance,
-            quality
-          });
+      for (let i = 0; i < contours.size(); i++) {
+        const contour = contours.get(i);
+        const area = cv.contourArea(contour);
+        
+        if (area > largestContourArea) {
+          largestContourArea = area;
+          largestContourIndex = i;
         }
-        fingerDetected = true;
       }
-    } else {
-      state.resetConsecutiveGoodFrames();
+      
+      // Verificar si encontramos un contorno adecuado
+      if (largestContourIndex === -1 || largestContourArea < this.config.minContourArea) {
+        throw new Error("No se detectó un contorno de dedo válido");
+      }
+      
+      // Calcular el rectángulo delimitador
+      const largestContour = contours.get(largestContourIndex);
+      const boundingRect = cv.boundingRect(largestContour);
+      
+      // Calcular métricas de calidad para el contorno
+      
+      // 1. Relación de aspecto (más cerca de 1.5-2.5 es mejor para un dedo)
+      const aspectRatio = boundingRect.width / boundingRect.height;
+      const aspectScore = 1 - Math.min(1, Math.abs(aspectRatio - 2.0) / 1.5);
+      
+      // 2. Porcentaje de pixeles de piel en el rectángulo
+      const roiMask = skinMask.roi(boundingRect);
+      const totalPixels = boundingRect.width * boundingRect.height;
+      const skinPixels = cv.countNonZero(roiMask);
+      const skinRatio = skinPixels / totalPixels;
+      
+      // 3. Convexidad del contorno (un dedo debería ser más convexo)
+      const hull = new cv.Mat();
+      cv.convexHull(largestContour, hull, false, true);
+      const hullArea = cv.contourArea(hull);
+      const convexityRatio = largestContourArea / Math.max(1, hullArea);
+      hull.delete();
+      
+      // Calcular métricas finales
+      const skinConfidence = Math.min(1, (skinRatio * 0.7) + (aspectScore * 0.3));
+      const contourQuality = Math.min(1, (convexityRatio * 0.5) + (aspectScore * 0.3) + 
+                                  (Math.min(1, largestContourArea / 20000) * 0.2));
+      
+      // Limpiar
+      roiMask.delete();
+      
+      // Devolver resultado
+      return {
+        roiDetected: {
+          x: boundingRect.x,
+          y: boundingRect.y,
+          width: boundingRect.width,
+          height: boundingRect.height
+        },
+        skinConfidence,
+        contourQuality
+      };
+      
+    } catch (error) {
+      console.warn("Error en el procesamiento de OpenCV:", error);
+      return {
+        roiDetected: { x: 0, y: 0, width: 0, height: 0 },
+        skinConfidence: 0,
+        contourQuality: 0
+      };
+    } finally {
+      // Limpiar recursos
+      if (srcMat) srcMat.delete();
+      if (rgbMat) rgbMat.delete();
+      if (hsvMat) hsvMat.delete();
+      if (skinMask) skinMask.delete();
+      if (contours) contours.delete();
+      if (hierarchy) hierarchy.delete();
     }
-    
-    state.setFingerDetected(fingerDetected);
-    return fingerDetected;
   }
-}));
 
-/**
- * Función auxiliar para detectar patrones rítmicos en la señal
- * Implementa análisis avanzado de patrones cardíacos
- */
-function detectRhythmicPattern(state: FingerDetectionState): boolean {
-  const { signalHistory, config } = state;
-  const now = Date.now();
-  
-  // Verificar si hay suficientes datos
-  if (signalHistory.length < 15) return false;
-  
-  // Filtrar señales recientes dentro de la ventana de detección
-  const recentSignals = signalHistory.filter(
-    point => now - point.time < config.patternDetectionWindowMs
-  );
-  
-  if (recentSignals.length < 15) return false;
-  
-  // Análisis de varianza para evitar falsos positivos con señales constantes
-  const values = recentSignals.map(s => s.value);
-  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
-  
-  if (variance < config.minSignalVariance) {
-    // Varianza muy baja - probablemente no es señal fisiológica
-    state.decrementDetectedPatterns();
-    return false;
-  }
-  
-  // Buscar picos en la señal reciente - más sensible
-  const peaks: number[] = [];
-  
-  for (let i = 2; i < recentSignals.length - 2; i++) {
-    const current = recentSignals[i];
-    const prev1 = recentSignals[i - 1];
-    const prev2 = recentSignals[i - 2];
-    const next1 = recentSignals[i + 1];
-    const next2 = recentSignals[i + 2];
+  /**
+   * Reinicia el estado del detector de dedos
+   */
+  public reset(): void {
+    this.recentDetectionStates = [];
+    this.signalBuffer = [];
+    this.lastDetectionResult = null;
+    this.consecutiveStableFrames = 0;
+    this.lastROIs = [];
     
-    // Un pico debe ser significativamente mayor que los puntos circundantes
-    // y superar un umbral absoluto - umbral reducido para mayor sensibilidad
-    if (current.value > prev1.value * 1.1 && // Reducido de 1.2
-        current.value > prev2.value * 1.1 && // Reducido de 1.2
-        current.value > next1.value * 1.1 && // Reducido de 1.2
-        current.value > next2.value * 1.1 && // Reducido de 1.2
-        Math.abs(current.value) > config.peakDetectionThreshold) {
-      peaks.push(current.time);
-    }
-  }
-  
-  // Necesitamos suficientes picos para establecer un patrón
-  if (peaks.length < config.minPeaksForRhythm) {
-    state.decrementDetectedPatterns();
-    return false;
-  }
-  
-  // Calcular intervalos entre picos
-  const intervals: number[] = [];
-  for (let i = 1; i < peaks.length; i++) {
-    intervals.push(peaks[i] - peaks[i - 1]);
-  }
-  
-  // Verificar que los intervalos correspondan a frecuencias cardíacas fisiológicas (30-200 BPM) - rango ampliado
-  const validIntervals = intervals.filter(interval => 
-    interval >= 300 && interval <= 2000 // 30-200 BPM (rango ampliado)
-  );
-  
-  if (validIntervals.length < Math.floor(intervals.length * 0.6)) { // Reducido de 0.7
-    // Si menos del 60% de intervalos son fisiológicamente plausibles, rechazar el patrón
-    state.decrementDetectedPatterns();
-    return false;
-  }
-  
-  // Verificar consistencia en los intervalos (ritmo)
-  let consistentIntervals = 0;
-  const maxDeviation = 200; // ms (aumentado de 150)
-  
-  for (let i = 1; i < validIntervals.length; i++) {
-    if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
-      consistentIntervals++;
-    }
-  }
-  
-  // Si tenemos intervalos consistentes, incrementar contador de patrones
-  if (consistentIntervals >= config.minPeaksForRhythm - 1) {
-    state.setPeakTimes(peaks);
-    state.incrementDetectedPatterns();
+    // Resetear estadísticas
+    this.detectionStats = {
+      totalFrames: 0,
+      detectedFrames: 0,
+      averageQuality: 0,
+      lastResetTime: Date.now()
+    };
     
-    return state.detectedPatterns >= config.requiredConsistentPatterns;
-  } else {
-    // Reducir contador si el patrón no es consistente
-    state.decrementDetectedPatterns();
-    return false;
+    console.log("FingerDetectionService: Estado reiniciado");
+  }
+
+  /**
+   * Obtiene estadísticas de la detección
+   */
+  public getStats(): any {
+    const runTime = (Date.now() - this.detectionStats.lastResetTime) / 1000;
+    return {
+      ...this.detectionStats,
+      runTimeSeconds: runTime,
+      detectionRate: this.detectionStats.totalFrames > 0 
+        ? (this.detectionStats.detectedFrames / this.detectionStats.totalFrames) * 100 
+        : 0
+    };
   }
 }
 
-/**
- * Función utilitaria para calcular el índice de perfusión
- * basado en valores PPG recientes
- */
-export function calculatePerfusionIndex(recentValues: number[]): number {
-  if (recentValues.length < 5) return 0;
-  
-  const min = Math.min(...recentValues);
-  const max = Math.max(...recentValues);
-  const dc = (min + max) / 2;
-  
-  if (dc === 0) return 0;
-  
-  const ac = max - min;
-  return (ac / Math.abs(dc)) * 100;
-}
-
-export default useFingerDetection;
+// Crear una instancia singleton
+export const fingerDetectionManager = new FingerDetectionService();

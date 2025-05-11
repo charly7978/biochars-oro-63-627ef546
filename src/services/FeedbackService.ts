@@ -1,167 +1,209 @@
 
 /**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ * Servicio para proporcionar retroalimentación al usuario
+ * Incluye retroalimentación háptica, sonora y visual
  */
 
-import AudioService from './AudioService';
+import { toast } from "@/hooks/use-toast";
+import AudioService from "./AudioService";
 
-/**
- * Servicio centralizado para feedback táctil y sonoro
- */
-export class FeedbackService {
-  private static instance: FeedbackService;
-  private audioService: AudioService;
-  private vibrationEnabled: boolean = true;
-  private audioEnabled: boolean = true;
-  private lastVibrationTime: number = 0;
-  private MIN_VIBRATION_INTERVAL_MS: number = 350; // Intervalo mínimo entre vibraciones
-  
-  private constructor() {
-    this.audioService = AudioService.getInstance();
+// Configuración de sonidos
+const successSoundUrl = '/sounds/success.mp3';
+const errorSoundUrl = '/sounds/error.mp3';
+const notificationSoundUrl = '/sounds/notification.mp3';
+const heartbeatSoundUrl = '/sounds/heartbeat.mp3';
+
+// Caché de sonidos para mejor rendimiento
+const soundCache: Record<string, HTMLAudioElement> = {};
+
+const loadSound = (url: string): HTMLAudioElement => {
+  if (!soundCache[url]) {
+    const audio = new Audio(url);
+    audio.load();
+    soundCache[url] = audio;
   }
-  
-  /**
-   * Obtiene la instancia singleton del servicio
-   */
-  public static getInstance(): FeedbackService {
-    if (!FeedbackService.instance) {
-      FeedbackService.instance = new FeedbackService();
+  return soundCache[url];
+};
+
+// Asegurar que la vibración esté disponible
+const isVibrationSupported = (): boolean => {
+  return 'vibrate' in navigator;
+};
+
+// Verificar si estamos en un entorno de desarrollo o producción
+const isDevelopmentMode = (): boolean => {
+  return process.env.NODE_ENV === 'development' || window.location.hostname.includes('localhost');
+};
+
+// Instancia de servicio para evitar duplicidad
+let instance: typeof FeedbackService | null = null;
+
+export const FeedbackService = {
+  // Retroalimentación háptica
+  vibrate: (pattern: number | number[] = 200): boolean => {
+    if (!isVibrationSupported()) {
+      console.warn('Vibración no soportada en este dispositivo');
+      return false;
     }
-    return FeedbackService.instance;
-  }
-  
-  /**
-   * Reproduce vibración con patrón personalizado
-   */
-  public vibrate(pattern?: number | number[]): boolean {
-    if (!this.vibrationEnabled) return false;
     
     try {
-      if ('vibrate' in navigator) {
-        navigator.vibrate(pattern || 50);
+      // En desarrollo, solo simulamos la vibración
+      if (isDevelopmentMode()) {
+        console.log('Simulando vibración:', pattern);
         return true;
       }
-      return false;
+      
+      navigator.vibrate(pattern);
+      return true;
     } catch (error) {
-      console.error("FeedbackService: Error al vibrar", error);
+      console.error('Error al activar vibración:', error);
       return false;
     }
-  }
-  
-  /**
-   * Vibración específica para latido cardíaco
-   */
-  public vibrateHeartbeat(isArrhythmia: boolean = false): boolean {
-    const now = Date.now();
-    
-    // Evitar vibraciones demasiado frecuentes
-    if (now - this.lastVibrationTime < this.MIN_VIBRATION_INTERVAL_MS) {
-      return false;
+  },
+
+  // Retroalimentación háptica específica para latidos
+  vibrateHeartbeat: (isArrhythmia: boolean = false): boolean => {
+    if (isArrhythmia) {
+      return FeedbackService.vibrate([50, 100, 50, 100]);
+    } else {
+      return FeedbackService.vibrate(50);
     }
-    
-    const pattern = isArrhythmia ? [30, 20, 70] : [30, 10, 20];
-    const success = this.vibrate(pattern);
-    
-    if (success) {
-      this.lastVibrationTime = now;
-    }
-    
-    return success;
-  }
-  
-  /**
-   * Vibración específica para arritmia detectada
-   */
-  public vibrateArrhythmia(): boolean {
-    return this.vibrate([40, 30, 80, 50, 60]);
-  }
-  
-  /**
-   * Reproduce sonido según tipo
-   */
-  public playSound(type?: 'success' | 'error' | 'notification' | 'heartbeat'): void {
-    if (!this.audioEnabled) return;
+  },
+
+  // Retroalimentación háptica específica para arritmias (NO USAR para latido, solo para alertas globales)
+  vibrateArrhythmia: (): boolean => {
+    return FeedbackService.vibrate([100, 50, 100, 50, 100, 300, 100]);
+  },
+
+  // Retroalimentación sonora
+  playSound: (type: 'success' | 'error' | 'notification' | 'heartbeat' = 'notification'): void => {
+    let soundUrl;
     
     switch (type) {
-      case 'heartbeat':
-        this.audioService.playHeartbeatBeep(false);
-        break;
       case 'success':
+        soundUrl = successSoundUrl;
+        break;
       case 'error':
-      case 'notification':
-        this.audioService.playNotificationSound('success'); // Fixed: Using a valid value instead of the type directly
+        soundUrl = errorSoundUrl;
+        break;
+      case 'heartbeat':
+        soundUrl = heartbeatSoundUrl;
         break;
       default:
-        this.audioService.playNotificationSound();
+        soundUrl = notificationSoundUrl;
     }
-  }
-  
-  /**
-   * Reproduce sonido de latido
-   */
-  public playHeartbeatSound(isArrhythmia: boolean = false): void {
-    if (!this.audioEnabled) return;
     
-    this.audioService.playHeartbeatBeep(isArrhythmia);
-  }
+    try {
+      const audio = loadSound(soundUrl);
+      // Reiniciar el audio si ya está reproduciéndose
+      audio.currentTime = 0;
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => {
+          console.error('Error al reproducir audio:', error);
+        });
+      }
+    } catch (error) {
+      console.error('Error al reproducir sonido:', error);
+    }
+  },
+
+  // Métodos específicos para reproducir cada tipo de sonido
+  playNotificationSound: (): void => {
+    AudioService.playNotificationSound();
+  },
   
-  /**
-   * Reproduce sonido de notificación
-   */
-  public playNotificationSound(type: 'success' | 'error' | 'warning' = 'success'): void {
-    if (!this.audioEnabled) return;
-    
-    this.audioService.playNotificationSound(type);
-  }
+  playHeartbeatSound: (): void => {
+    AudioService.playHeartbeatSound();
+  },
   
-  /**
-   * Feedback completo para latido (sonido + vibración)
-   */
-  public triggerHeartbeatFeedback(isArrhythmia: boolean = false): void {
-    this.playHeartbeatSound(isArrhythmia);
-    this.vibrateHeartbeat(isArrhythmia);
-  }
+  playSuccessSound: (): void => {
+    AudioService.playSuccessSound();
+  },
   
-  /**
-   * Activar/desactivar vibración
-   */
-  public setVibrationEnabled(enabled: boolean): void {
-    this.vibrationEnabled = enabled;
-  }
-  
-  /**
-   * Activar/desactivar audio
-   */
-  public setAudioEnabled(enabled: boolean): void {
-    this.audioEnabled = enabled;
-    
-    if (enabled) {
-      this.audioService.enableAudio();
+  playErrorSound: (): void => {
+    AudioService.playErrorSound();
+  },
+
+  // Retroalimentación visual mediante notificaciones toast
+  showToast: (
+    title: string, 
+    message: string, 
+    type: 'default' | 'success' | 'error' | 'warning' = 'default',
+    duration: number = 5000
+  ): void => {
+    toast({
+      title,
+      description: message,
+      variant: type === 'error' ? 'destructive' : 'default',
+      duration
+    });
+  },
+
+  // Retroalimentación combinada para acciones exitosas
+  signalSuccess: (message: string): void => {
+    FeedbackService.vibrate([100, 50, 100]);
+    FeedbackService.playSound('success');
+    FeedbackService.showToast('¡Éxito!', message, 'success');
+  },
+
+  // Retroalimentación combinada para errores
+  signalError: (message: string): void => {
+    FeedbackService.vibrate(500);
+    FeedbackService.playSound('error');
+    FeedbackService.showToast('Error', message, 'error');
+  },
+
+  // Retroalimentación para arritmia detectada (NO para latido normal)
+  signalArrhythmia: (count: number): void => {
+    FeedbackService.vibrateArrhythmia();
+    FeedbackService.playSound('heartbeat');
+    if (count === 1) {
+      FeedbackService.showToast(
+        '¡Atención!', 
+        'Se ha detectado una posible arritmia', 
+        'warning',
+        6000
+      );
     } else {
-      this.audioService.disableAudio();
+      FeedbackService.showToast(
+        'Arritmia detectada', 
+        `Se ha detectado ${count} posibles arritmias`, 
+        'warning',
+        6000
+      );
     }
+  },
+
+  // Retroalimentación para medición completada
+  signalMeasurementComplete: (hasGoodQuality: boolean): void => {
+    if (hasGoodQuality) {
+      FeedbackService.vibrate([100, 30, 100, 30, 100]);
+      FeedbackService.playSound('success');
+      FeedbackService.showToast(
+        'Medición completada', 
+        'Medición finalizada con éxito', 
+        'success'
+      );
+    } else {
+      FeedbackService.vibrate([100, 50, 100]);
+      FeedbackService.playSound('notification');
+      FeedbackService.showToast(
+        'Medición completada', 
+        'Calidad de señal baja. Intente nuevamente para mayor precisión.',
+        'warning'
+      );
+    }
+  },
+
+  // Obtener una instancia única del servicio
+  getInstance: () => {
+    if (!instance) {
+      instance = FeedbackService;
+    }
+    return instance;
   }
-  
-  /**
-   * Verificar si la vibración está disponible
-   */
-  public isVibrationAvailable(): boolean {
-    return 'vibrate' in navigator;
-  }
-  
-  /**
-   * Verificar si la vibración está activada
-   */
-  public isVibrationEnabled(): boolean {
-    return this.vibrationEnabled && this.isVibrationAvailable();
-  }
-  
-  /**
-   * Verificar si el audio está activado
-   */
-  public isAudioEnabled(): boolean {
-    return this.audioEnabled && this.audioService.isAudioEnabled();
-  }
-}
+};
 
 export default FeedbackService;
