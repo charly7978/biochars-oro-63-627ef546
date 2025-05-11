@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
@@ -26,19 +25,11 @@ const Index = () => {
     hemoglobin: 0,
     hydration: 0
   });
-  const [heartRate, setHeartRate] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
-  const { 
-    processSignal: processHeartBeat, 
-    isArrhythmia,
-    startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
-  } = useHeartBeatProcessor();
   
   const { 
     processSignal: processVitalSigns, 
@@ -78,33 +69,23 @@ const Index = () => {
       const minQualityThreshold = 40;
       
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
-        
-        if (heartBeatResult.confidence > 0.4) {
-          setHeartRate(heartBeatResult.bpm);
-          
-          try {
-            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
-            if (vitals) {
-              setVitalSigns(vitals);
-            }
-          } catch (error) {
-            console.error("Error processing vital signs:", error);
+        try {
+          const vitals = processVitalSigns(lastSignal.filteredValue);
+          if (vitals) {
+            setVitalSigns(vitals);
           }
+        } catch (error) {
+          console.error("Error processing vital signs:", error);
         }
         
         setSignalQuality(lastSignal.quality);
       } else {
         setSignalQuality(lastSignal.quality);
-        
-        if (!lastSignal.fingerDetected && heartRate > 0) {
-          setHeartRate(0);
-        }
       }
     } else if (!isMonitoring) {
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+  }, [lastSignal, isMonitoring, processVitalSigns]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
@@ -114,10 +95,9 @@ const Index = () => {
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
-      setHeartRate(0);
       
       startProcessing();
-      startHeartBeatMonitoring();
+      fullResetVitalSigns();
       
       setElapsedTime(0);
       
@@ -146,7 +126,6 @@ const Index = () => {
     setIsMonitoring(false);
     setIsCameraOn(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -161,7 +140,6 @@ const Index = () => {
     
     setElapsedTime(0);
     setSignalQuality(0);
-    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -170,8 +148,6 @@ const Index = () => {
     setIsCameraOn(false);
     setShowResults(false);
     stopProcessing();
-    stopHeartBeatMonitoring();
-    resetHeartBeatProcessor();
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -180,7 +156,6 @@ const Index = () => {
     
     fullResetVitalSigns();
     setElapsedTime(0);
-    setHeartRate(0);
     setVitalSigns({ 
       spo2: 0, 
       pressure: "--/--",
@@ -191,7 +166,8 @@ const Index = () => {
         triglycerides: 0
       },
       hemoglobin: 0,
-      hydration: 0
+      hydration: 0,
+      heartRate: 0
     });
     setSignalQuality(0);
   };
@@ -325,7 +301,6 @@ const Index = () => {
               onReset={handleReset}
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"}
               preserveResults={showResults}
-              isArrhythmia={isArrhythmia}
             />
           </div>
 
@@ -337,7 +312,7 @@ const Index = () => {
               <div className="col-span-2 grid grid-cols-2 gap-2 mb-2">
                 <VitalSign 
                   label="FRECUENCIA CARDÍACA"
-                  value={heartRate || "--"}
+                  value={vitalSigns.heartRate || "--"}
                   unit="BPM"
                   highlighted={showResults}
                   compact={false}

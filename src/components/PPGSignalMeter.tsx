@@ -23,7 +23,6 @@ interface PPGSignalMeterProps {
     rrVariation: number;
   } | null;
   preserveResults?: boolean;
-  isArrhythmia?: boolean;
 }
 
 interface PPGDataPointExtended extends PPGDataPoint {
@@ -38,8 +37,7 @@ const PPGSignalMeter = memo(({
   onReset,
   arrhythmiaStatus,
   rawArrhythmiaData,
-  preserveResults = false,
-  isArrhythmia = false
+  preserveResults = false
 }: PPGSignalMeterProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dataBufferRef = useRef<CircularBuffer<PPGDataPointExtended> | null>(null);
@@ -484,13 +482,17 @@ const PPGSignalMeter = memo(({
     const normalizedValue = smoothedValue - (baselineRef.current || 0);
     const scaledValue = normalizedValue * verticalScale;
     
+    const derivedIsArrhythmia = 
+      (arrhythmiaStatus?.includes("ARRITMIA") && rawArrhythmiaData && now - rawArrhythmiaData.timestamp < 1000) || 
+      (arrhythmiaStatus?.includes("ARRITMIA") && !rawArrhythmiaData);
+
     let currentIsArrhythmia = false;
     if (rawArrhythmiaData && 
         arrhythmiaStatus?.includes("ARRITMIA") && 
         now - rawArrhythmiaData.timestamp < 1000) {
       currentIsArrhythmia = true;
       lastArrhythmiaTime.current = now;
-    } else if (isArrhythmia) {
+    } else if (arrhythmiaStatus?.includes("ARRITMIA")) {
       currentIsArrhythmia = true;
       lastArrhythmiaTime.current = now;
     }
@@ -596,15 +598,14 @@ const PPGSignalMeter = memo(({
     if (shouldBeep && isFingerDetected && 
         consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) {
       console.log("PPGSignalMeter: Círculo dibujado, reproduciendo beep (un beep por latido)");
-      playBeep(1.0, isArrhythmia || 
-        (rawArrhythmiaData && arrhythmiaStatus?.includes("ARRITMIA") && now - rawArrhythmiaData.timestamp < 1000));
+      playBeep(1.0, derivedIsArrhythmia);
     }
     
     lastRenderTimeRef.current = currentTime;
     animationFrameRef.current = requestAnimationFrame(renderSignal);
   }, [
     value, quality, isFingerDetected, rawArrhythmiaData, arrhythmiaStatus, drawGrid, 
-    detectPeaks, smoothValue, preserveResults, isArrhythmia, playBeep, updateArrhythmiaSegments, 
+    detectPeaks, smoothValue, preserveResults, playBeep, updateArrhythmiaSegments, 
     isPointInArrhythmiaSegment, IMMEDIATE_RENDERING, FRAME_TIME, USE_OFFSCREEN_CANVAS, 
     WINDOW_WIDTH_MS, verticalScale, REQUIRED_FINGER_FRAMES
   ]);

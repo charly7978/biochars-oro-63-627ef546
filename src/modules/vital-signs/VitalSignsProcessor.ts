@@ -128,6 +128,9 @@ export class VitalSignsProcessor {
       lipidsConfidence
     );
 
+    // Calculate heart rate using the signal processor
+    const heartRate = Math.round(this.signalProcessor.calculateHeartRate());
+
     // Only show values if confidence exceeds threshold
     const finalGlucose = this.confidenceCalculator.meetsThreshold(glucoseConfidence) ? glucose : 0;
     const finalLipids = this.confidenceCalculator.meetsThreshold(lipidsConfidence) ? {
@@ -146,6 +149,7 @@ export class VitalSignsProcessor {
       glucoseConfidence,
       lipidsConfidence,
       hydration,
+      heartRate,
       confidenceThreshold: this.confidenceCalculator.getConfidenceThreshold()
     });
 
@@ -158,6 +162,7 @@ export class VitalSignsProcessor {
       finalLipids,
       Math.round(this.calculateDefaultHemoglobin(spo2)),
       hydration,
+      heartRate,
       glucoseConfidence,
       lipidsConfidence,
       overallConfidence,

@@ -1,4 +1,3 @@
-
 /**
  * Interface defining the structure of vital signs measurement results
  */
@@ -26,6 +25,9 @@ export interface VitalSignsResult {
   
   // Hydration level (percentage)
   hydration: number;
+  
+  // Heart rate in BPM
+  heartRate?: number;
   
   // Individual confidence values (as separate properties)
   glucoseConfidence?: number;
