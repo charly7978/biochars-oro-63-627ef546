@@ -450,7 +450,7 @@ const PPGSignalMeter = memo(({
         consecutive: isDetected ? fingerState.consecutive + 1 : 0
       });
     }
-  }, [value, quality, preserveResults, fingerDetection]);
+  }, [value, quality, preserveResults, fingerDetection.processSignal]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
