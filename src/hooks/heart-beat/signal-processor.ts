@@ -1,4 +1,3 @@
-
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
@@ -11,7 +10,7 @@ import {
   processLowConfidenceResult
 } from './signal-processing';
 
-export function useSignalProcessor() {
+export function useHeartRateAnalysis() {
   const lastPeakTimeRef = useRef<number | null>(null);
   const consistentBeatsCountRef = useRef<number>(0);
   const lastValidBpmRef = useRef<number>(0);

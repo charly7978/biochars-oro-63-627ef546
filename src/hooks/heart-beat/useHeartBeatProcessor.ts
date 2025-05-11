@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
 import { HeartBeatResult } from '@/core/types';
 import { AudioService } from '../../services/AudioService';
-import { useSignalProcessor } from './signal-processor';
+import { useHeartRateAnalysis } from './useHeartRateAnalysis';
 
 /**
  * Hook para el procesamiento de la frecuencia cardíaca a partir de señales PPG reales
@@ -32,7 +32,7 @@ export const useHeartBeatProcessor = () => {
     reset: resetProcessor,
     lastPeakTimeRef,
     lastValidBpmRef
-  } = useSignalProcessor();
+  } = useHeartRateAnalysis();
 
   // Inicializar el procesador una sola vez
   useEffect(() => {

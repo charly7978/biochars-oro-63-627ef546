@@ -7,6 +7,7 @@ import { KalmanFilter } from '../core/signal/filters/KalmanFilter';
 import { BandpassFilter } from '../core/signal/filters/BandpassFilter';
 import { toast } from 'sonner';
 // import type { Mat } from '@techstark/opencv-js'; // ELIMINADO OPENCV
+import { SignalProcessor as VitalSignsSignalProcessor } from '../modules/vital-signs/signal-processor';
 
 export interface FingerDetectionConfig {
   minSignalAmplitude: number; // Minimum amplitude of raw or filtered PPG signal to be considered
@@ -51,8 +52,7 @@ export interface FingerDetectionResult {
 class FingerDetectionManager {
   private static instance: FingerDetectionManager;
   // private validator: SignalValidator; // Eliminado
-  private kalmanFilter: KalmanFilter;
-  private bandpassFilter: BandpassFilter;
+  private vsSignalProcessor: VitalSignsSignalProcessor; // NUEVA INSTANCIA
   
   private signalHistory: Array<{ time: number, value: number }> = []; // Adaptado de useSignalQualityDetector
   private readonly PPG_HISTORY_SIZE_MS = 5000; // Mantener 5 segundos de historial PPG para análisis diversos
@@ -67,13 +67,13 @@ class FingerDetectionManager {
     minSignalAmplitude: 0.05,
     minQualityThreshold: 30,
     rhythmPatternWindowMs: 3000,
-    minPeaksForRhythm: 4,
+    minPeaksForRhythm: 5,
     peakDetectionThreshold: 0.3,
-    requiredConsistentPatterns: 2,
+    requiredConsistentPatterns: 3,
     minSignalVariance: 0.001,
     minPeakIntervalMs: 250, // Corresponde a 240 BPM max
     maxPeakIntervalMs: 1500, // Corresponde a 40 BPM min
-    maxIntervalDeviationMs: 150,
+    maxIntervalDeviationMs: 120,
     // openCvMinSkinConfidence: 0.4, // ELIMINADO OPENCV
     // openCvMinContourArea: 500, // ELIMINADO OPENCV
     // openCvSkinLowerHsv: [0, 40, 30], // ELIMINADO OPENCV
@@ -87,10 +87,8 @@ class FingerDetectionManager {
 
   private constructor() {
     // this.validator = new SignalValidator(); // Eliminado
-    this.kalmanFilter = new KalmanFilter(); // Constructor sin argumentos
-    this.kalmanFilter.setParameters(0.1, 0.01); // Q (processNoise), R (measurementNoise) - valores invertidos respecto al intento anterior y ajustados
-    this.bandpassFilter = new BandpassFilter(0.5, 4, 30); // Asumiendo SAMPLING_RATE ~30Hz
-    console.log("FingerDetectionManager: Initialized");
+    this.vsSignalProcessor = new VitalSignsSignalProcessor(); // NUEVA INICIALIZACIÓN
+    console.log("FingerDetectionManager: Initialized with VitalSignsSignalProcessor");
   }
 
   public static getInstance(): FingerDetectionManager {
@@ -109,32 +107,45 @@ class FingerDetectionManager {
   public processFrameAndSignal(
     imageData?: ImageData, // Se mantiene por si se usa para algo más, pero no para OpenCV
     ppgValue?: number,
-    cvReady?: boolean // Se mantiene por si se usa para algo más, pero no para OpenCV
+    // cvReady?: boolean // ELIMINADO OPENCV Y SU FLAG
   ): FingerDetectionResult {
     const currentTime = Date.now();
     let ppgFilteredValue = this.lastProcessedPpgValue; // Valor por defecto
     let ppgAmplitude = 0;
-    // let roiDetected: FingerDetectionResult['roi'] | undefined = undefined; // ELIMINADO OPENCV
-    // let skinConfidence: number | undefined = undefined; // ELIMINADO OPENCV
+    let ppgQualityFromVSProcessor = 0; // NUEVO: para guardar calidad del VS processor
     let rhythmResult = { isPatternConsistent: false, confidence: 0, peaksFound: [] };
     let finalRhythmConfirmed = false;
     let effectivePpgValue = ppgValue; // Valor PPG que se usará para análisis de señal
 
-    // const DEBUG_OPENCV_OUTPUT = false; // ELIMINADO OPENCV ya que no se usa
-
-    // --- Lógica de OpenCV --- 
-    // let cvAnalysisResults: { roi?: FingerDetectionResult['roi'], skinConfidence?: number, extractedPpgValue?: number} = {}; // ELIMINADO OPENCV
-    // if (imageData && cvReady && (cv as any).Mat) { // ELIMINADO OPENCV
-      // cvAnalysisResults = this.analyzeImageWithOpenCVInternal(imageData); // ELIMINADO OPENCV
-      // roiDetected = cvAnalysisResults.roi; // ELIMINADO OPENCV
-      // skinConfidence = cvAnalysisResults.skinConfidence; // ELIMINADO OPENCV
-      // effectivePpgValue = cvAnalysisResults.extractedPpgValue ?? ppgValue; // ELIMINADO OPENCV
-    // } else { // ELIMINADO OPENCV
-      effectivePpgValue = ppgValue; // Si no hay OpenCV, el valor efectivo es el de entrada
-    // } // ELIMINADO OPENCV
+    // --- Extracción de PPG (si imageData está presente) ---
+    if (imageData && typeof effectivePpgValue === 'undefined') {
+        // Lógica simple para extraer PPG de imageData si no se provee ppgValue directamente
+        // Esto es un fallback y podría necesitar ser más robusto o configurable
+        const data = imageData.data;
+        let sum = 0;
+        const centerX = Math.floor(imageData.width / 2);
+        const centerY = Math.floor(imageData.height / 2);
+        const R = Math.min(centerX, centerY, 10); // Radio pequeño alrededor del centro
+        let count = 0;
+        for (let y = centerY - R; y < centerY + R; y++) {
+          for (let x = centerX - R; x < centerX + R; x++) {
+            if (x >= 0 && x < imageData.width && y >= 0 && y < imageData.height) {
+              const i = (y * imageData.width + x) * 4;
+              sum += data[i]; // Canal Rojo
+              count++;
+            }
+          }
+        }
+        if (count > 0) effectivePpgValue = sum / count;
+        else effectivePpgValue = 0;
+    }
 
     if (typeof effectivePpgValue === 'number') {
-      ppgFilteredValue = this.bandpassFilter.filter(this.kalmanFilter.filter(effectivePpgValue));
+      // Usar VitalSignsSignalProcessor para obtener valor filtrado y calidad base
+      const processingResult = this.vsSignalProcessor.applyFilters(effectivePpgValue);
+      ppgFilteredValue = processingResult.filteredValue;
+      ppgQualityFromVSProcessor = processingResult.quality; // Calidad calculada por VitalSignsSignalProcessor
+
       this.signalHistory.push({ time: currentTime, value: ppgFilteredValue });
       while (this.signalHistory.length > 0 && currentTime - this.signalHistory[0].time > this.PPG_HISTORY_SIZE_MS) {
         this.signalHistory.shift();
@@ -145,47 +156,40 @@ class FingerDetectionManager {
         ppgAmplitude = Math.max(...signalWindow) - Math.min(...signalWindow);
       }
     } else {
-      // Si effectivePpgValue no es un número, no podemos procesar la señal PPG
-      // Usar el último valor conocido para ppgFilteredValue y ppgAmplitude o valores por defecto
-      ppgAmplitude = 0; // o alguna lógica para decaimiento
+      ppgAmplitude = 0;
+      ppgQualityFromVSProcessor = 0;
     }
 
-    // --- Análisis de Señal PPG (Ritmo y Calidad) ---
-    // Solo realizar si tenemos un valor PPG efectivo
-    if (typeof effectivePpgValue === 'number') {
-        rhythmResult = this.detectRhythmicPatternInternal(); // Usa this.signalHistory
+    // --- Análisis de Señal PPG (Ritmo) ---
+    if (typeof effectivePpgValue === 'number') { // Solo si hay valor PPG
+        rhythmResult = this.detectRhythmicPatternInternal(); 
         finalRhythmConfirmed = rhythmResult.isPatternConsistent && rhythmResult.confidence > 0.5;
     }
-    const ppgQuality = this.calculatePpgSignalQuality(ppgFilteredValue, ppgAmplitude); // Usa el valor filtrado
+    // La calidad de la señal PPG ahora puede combinar la de vsSignalProcessor y la propia
+    const combinedPpgQuality = this.calculateCombinedPpgSignalQuality(ppgQualityFromVSProcessor, ppgFilteredValue, ppgAmplitude);
 
     // --- Sistema de Confianza Graduada y Detección Final ---
     let overallConfidence = 0;
     let isFingerActuallyDetected = false;
 
-    // SIN OPENCV, LA DETECCIÓN SE BASA COMPLETAMENTE EN SEÑAL PPG Y RITMO
     overallConfidence = this.calculateOverallConfidence(
       finalRhythmConfirmed,
       rhythmResult.confidence,
-      ppgQuality,
-      // false, // ELIMINADO OPENCV - cvRoiWasActuallyDetected
-      // undefined // ELIMINADO OPENCV - skinConfidence
+      combinedPpgQuality, // Usar calidad combinada
     );
-    isFingerActuallyDetected = overallConfidence >= 0.55; // Umbral ajustado sin CV, ligeramente más estricto
+    isFingerActuallyDetected = overallConfidence >= 0.60; 
 
     // --- Generar Feedback ---
     const feedback = this.generateUserFeedback(
         isFingerActuallyDetected, 
-        ppgQuality, 
+        combinedPpgQuality, // Usar calidad combinada
         finalRhythmConfirmed,
-        // undefined, // ELIMINADO OPENCV - roiDetected
-        // undefined, // ELIMINADO OPENCV - skinConfidence
-        // false // ELIMINADO OPENCV - cvUsed
     );
 
     // 5. Generar Resultado
     const result: FingerDetectionResult = {
       isFingerDetected: isFingerActuallyDetected,
-      quality: ppgQuality,
+      quality: combinedPpgQuality, // Usar calidad combinada
       confidence: overallConfidence,
       rhythmDetected: finalRhythmConfirmed,
       rhythmConfidence: rhythmResult.confidence,
@@ -198,7 +202,7 @@ class FingerDetectionManager {
     };
 
     if (this.config.showToastFeedback) {
-      this.handleUserFeedback(isFingerActuallyDetected, ppgQuality, finalRhythmConfirmed);
+      this.handleUserFeedback(isFingerActuallyDetected, combinedPpgQuality, finalRhythmConfirmed);
     }
 
     return result;
@@ -282,39 +286,48 @@ class FingerDetectionManager {
     return { isPatternConsistent: false, confidence: rhythmConfidence, peaksFound: this.lastPeakTimes };
   }
 
-  // Placeholder para la lógica de calidad de señal PPG
-  private calculatePpgSignalQuality(currentFilteredValue: number, ppgAmplitude: number): number {
-    const history = this.signalHistory.map(p => p.value); // Usar el historial de señales filtradas
-    if (history.length < 30) return 0; // Necesita suficientes datos
+  // Renombrar y ajustar para que reciba la calidad del VitalSignsSignalProcessor
+  private calculateCombinedPpgSignalQuality(qualityFromVSProcessor: number, currentFilteredValue: number, ppgAmplitude: number): number {
+    const history = this.signalHistory.map(p => p.value); 
+    if (history.length < 30) return Math.min(15, qualityFromVSProcessor / 4); // Si no hay historial, devolver algo basado en VSProcessor pero bajo
 
-    // --- Sub-métricas de calidad (cada una podría devolver 0-1) ---
-
-    // 1. Amplitud suficiente (basado en config.minSignalAmplitude)
     const range = Math.max(...history) - Math.min(...history);
-    const amplitudeScore = Math.min(1, range / (this.config.minSignalAmplitude * 2.5)); // Normalizado
+    const amplitudeScore = Math.min(1, range / (this.config.minSignalAmplitude * 2.5)); 
 
-    if (amplitudeScore < 0.2 && range < this.config.minSignalAmplitude * 0.8) return 0; // Si la amplitud es demasiado baja, calidad cero directamente
+    if (amplitudeScore < 0.2 && range < this.config.minSignalAmplitude * 0.8) {
+        return Math.min(10, qualityFromVSProcessor / 5); // Muy baja si amplitud es muy pequeña
+    }
 
-    // 2. Estabilidad/SNR (combinando varianza y quizás ruido de alta frecuencia)
     const mean = history.reduce((sum, val) => sum + val, 0) / history.length;
     const variance = history.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / history.length;
     
     let stabilityScore = 0;
-    if (variance < this.config.minSignalVariance * 0.3) stabilityScore = 0.1; // Muy plana
-    else if (variance < this.config.minSignalVariance * 0.7) stabilityScore = 0.4; // Algo plana
-    else if (variance > this.config.minSignalVariance * 15) stabilityScore = 0.2; // Muy ruidosa
-    else stabilityScore = Math.min(1, (this.config.minSignalVariance * 5) / (variance + this.config.minSignalVariance * 2)); // Penaliza varianza alta, recompensa "normal"
+    if (variance < this.config.minSignalVariance * 0.3) stabilityScore = 0.1; 
+    else if (variance < this.config.minSignalVariance * 0.7) stabilityScore = 0.4; 
+    else if (variance > this.config.minSignalVariance * 15) stabilityScore = 0.2; 
+    else stabilityScore = Math.min(1, (this.config.minSignalVariance * 5) / (variance + this.config.minSignalVariance * 2)); 
     
-    // 3. Periodicidad (adaptado de SignalAmplifier - autocorrelación)
     const periodicityScore = this.calculatePpgPeriodicityScore(history);
 
-    // --- Ponderación ---
-    let weightedQuality =
-        amplitudeScore * 0.45 +
+    // Ponderar la calidad propia de FingerDetectionManager con la que viene de VitalSignsSignalProcessor
+    let selfCalculatedQualityNormalized = 
+        (amplitudeScore * 0.45 +
         stabilityScore * 0.25 +
-        periodicityScore * 0.3;
+        periodicityScore * 0.3);
+    selfCalculatedQualityNormalized = Math.min(1, Math.max(0, selfCalculatedQualityNormalized));
 
-    let finalQuality = Math.round(Math.min(1, Math.max(0, weightedQuality)) * 100);
+    // Combinar: Por ejemplo, 60% de la calidad de VSProcessor y 40% de la calculada aquí
+    // O si VSProcessor da muy baja calidad, que pese más.
+    let combinedWeightedQuality: number;
+    if (qualityFromVSProcessor < 20) {
+        combinedWeightedQuality = (qualityFromVSProcessor / 100) * 0.7 + selfCalculatedQualityNormalized * 0.3;
+    } else if (qualityFromVSProcessor < 40) {
+        combinedWeightedQuality = (qualityFromVSProcessor / 100) * 0.6 + selfCalculatedQualityNormalized * 0.4;
+    } else {
+        combinedWeightedQuality = (qualityFromVSProcessor / 100) * 0.5 + selfCalculatedQualityNormalized * 0.5; 
+    }
+
+    let finalQuality = Math.round(Math.min(1, Math.max(0, combinedWeightedQuality)) * 100);
 
     if (this.fingerConfirmedByRhythm) {
         finalQuality = Math.max(finalQuality, 50);
@@ -322,10 +335,10 @@ class FingerDetectionManager {
     }
     
     if (range < this.config.minSignalAmplitude * 0.5) {
-        finalQuality = Math.min(finalQuality, Math.max(0, finalQuality - 25)); // Reducir pero no anular si otros factores son buenos
+        finalQuality = Math.min(finalQuality, Math.max(0, finalQuality - 25)); 
     }
     if (range < this.config.minSignalAmplitude * 0.25) {
-        finalQuality = Math.min(finalQuality, 15); // Calidad muy baja si casi no hay señal
+        finalQuality = Math.min(finalQuality, 15); 
     }
 
     return finalQuality;
@@ -366,8 +379,6 @@ class FingerDetectionManager {
     rhythmConfirmed: boolean,
     rhythmConfidenceValue: number, // Confianza del detector de ritmo (0-1)
     ppgQualityValue: number, // Calidad PPG (0-100)
-    // cvRoiWasActuallyDetected: boolean, // ELIMINADO OPENCV
-    // cvCalculatedSkinConfidence?: number // ELIMINADO OPENCV
   ): number {
     let totalWeightedScore = 0;
     let totalWeights = 0;
@@ -389,20 +400,6 @@ class FingerDetectionManager {
     totalWeightedScore += (ppgQualityValue / 100) * ppgQualityWeight;
     totalWeights += ppgQualityWeight;
 
-    // 3. Confianza de OpenCV (ELIMINADO)
-    // const opencvWeight = 0.20;
-    // if (cvRoiWasActuallyDetected && cvCalculatedSkinConfidence !== undefined) {
-    //   let skinScore = cvCalculatedSkinConfidence;
-    //   if (skinScore < this.config.openCvMinSkinConfidence) {
-    //     skinScore *= 0.5; 
-    //   }
-    //   totalWeightedScore += skinScore * opencvWeight;
-    //   totalWeights += opencvWeight;
-    // } else if (cvRoiWasActuallyDetected) {
-    //   totalWeightedScore += 0.25 * opencvWeight; 
-    //   totalWeights += opencvWeight;
-    // }
-
     // Ajuste final: si la calidad PPG es muy baja, o el ritmo tiene confianza muy baja,
     // limitar la confianza general para evitar falsos positivos.
     if (ppgQualityValue < 25 && rhythmConfidenceValue < 0.35) {
@@ -423,19 +420,8 @@ class FingerDetectionManager {
     isDetected: boolean, 
     ppgQuality: number, 
     rhythmConfirmed: boolean,
-    // roiFromCv?: FingerDetectionResult['roi'], // ELIMINADO OPENCV
-    // skinConfFromCv?: number, // ELIMINADO OPENCV
-    // cvUsed?: boolean // ELIMINADO OPENCV
   ): string {
     if (isDetected) return "Dedo detectado";
-
-    // SIN OPENCV, el feedback de CV se elimina
-    // if (cvUsed) { 
-    //   if (roiFromCv === undefined) return "No se pudo localizar el dedo en la imagen (CV).";
-    //   if (skinConfFromCv !== undefined && skinConfFromCv < this.config.openCvMinSkinConfidence) {
-    //     return "Color de piel no coincide (CV). Asegure buena iluminación.";
-    //   }
-    // }
 
     if (ppgQuality < this.config.minQualityThreshold && ppgQuality > 0) {
         return "Calidad de señal baja. Ajuste el dedo.";
@@ -461,9 +447,9 @@ class FingerDetectionManager {
 
   public reset(): void {
     this.signalHistory = [];
-    this.kalmanFilter.reset();
-    this.bandpassFilter.reset();
-    // this.validator.resetFingerDetection(); // Eliminado
+    if (this.vsSignalProcessor) { // Asegurarse que está instanciado
+        this.vsSignalProcessor.reset();
+    }
     this.detectedRhythmicPatternsCount = 0;
     this.fingerConfirmedByRhythm = false;
     this.lastPeakTimes = [];

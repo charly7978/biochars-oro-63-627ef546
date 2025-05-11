@@ -1,11 +1,10 @@
-
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
 import { RRAnalysisResult } from './arrhythmia/types';
 import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
-import { useSignalProcessor } from './heart-beat/signal-processor';
+import { useHeartRateAnalysis } from './heart-beat/useHeartRateAnalysis';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
@@ -47,7 +46,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
     MAX_CONSECUTIVE_WEAK_SIGNALS
-  } = useSignalProcessor();
+  } = useHeartRateAnalysis();
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
