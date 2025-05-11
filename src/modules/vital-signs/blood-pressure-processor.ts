@@ -1,252 +1,58 @@
-/**
- * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
- */
-
-import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
-import { calculateAmplitude, findPeaksAndValleys, calculateAC, calculateDC } from './shared-signal-utils';
-
-// Registrar el archivo y la tarea única globalmente (fuera de la clase)
-antiRedundancyGuard.registerFile('src/modules/vital-signs/blood-pressure-processor.ts');
-antiRedundancyGuard.registerTask('BloodPressureProcessorSingleton');
+import { calculateAmplitude, findPeaksAndValleys } from './utils';
+import { BloodPressureNeuralModel } from '../../core/neural/BloodPressureModel';
 
 /**
- * Procesador para estimación de presión arterial a partir de señales PPG
- * Utiliza exclusivamente datos reales capturados, sin simulación
+ * Procesador de presión arterial que usa modelo neuronal para análisis directo
  */
 export class BloodPressureProcessor {
-  private readonly BUFFER_SIZE = 300;
-  private readonly MIN_VALID_DATA_POINTS = 150;
-  private readonly BP_UPDATE_INTERVAL = 2000; // ms
-  
-  private ppgBuffer: number[] = [];
-  private lastSystolic: number = 0;
-  private lastDiastolic: number = 0;
-  private userCalibration: { systolic: number, diastolic: number } | null = null;
-  private lastCalculationTime: number = 0;
-  
-  /**
-   * Calibra el modelo de presión arterial con valores de referencia
-   * Requisito para generar estimaciones personalizadas precisas
-   */
-  public updateCalibration(systolic: number, diastolic: number): void {
-    if (systolic < 70 || systolic > 200 || diastolic < 40 || diastolic > 120 || systolic <= diastolic) {
-      console.error("BloodPressureProcessor: Valores de calibración inválidos");
-      return;
-    }
-    
-    this.userCalibration = {
-      systolic,
-      diastolic
-    };
-    
-    console.log(`BloodPressureProcessor: Calibración aplicada - ${systolic}/${diastolic} mmHg`);
+  private lastValidPeakValue: number = 0;
+  private lastValidValleyValue: number = 0;
+  private neuralModel: BloodPressureNeuralModel;
+
+  constructor() {
+    this.neuralModel = new BloodPressureNeuralModel();
   }
-  
+
   /**
-   * Estima la presión arterial a partir de señales PPG reales
-   * No utiliza simulación ni valores de referencia sintéticos
+   * Calcula la presión arterial usando el modelo neuronal y valores PPG reales
    */
-  public calculateBloodPressure(ppgValues: number[]): { systolic: number, diastolic: number } {
-    // Actualizar el buffer con nuevos valores
-    this.ppgBuffer = [...ppgValues];
-    if (this.ppgBuffer.length > this.BUFFER_SIZE) {
-      this.ppgBuffer = this.ppgBuffer.slice(-this.BUFFER_SIZE);
-    }
-    
-    // Verificar si hay suficientes datos para estimar
-    if (this.ppgBuffer.length < this.MIN_VALID_DATA_POINTS) {
-      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
-    }
-    
-    // Controlar frecuencia de cálculo para evitar sobrecarga
-    const now = Date.now();
-    if (now - this.lastCalculationTime < this.BP_UPDATE_INTERVAL) {
-      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
-    }
-    this.lastCalculationTime = now;
-    
-    // Verificar si tenemos calibración del usuario
-    if (!this.userCalibration) {
-      console.log("BloodPressureProcessor: Sin calibración de usuario, usando modelo general");
-      // Sin calibración, podemos usar un modelo general menos preciso
-      return this.estimateWithGeneralModel() || { systolic: 120, diastolic: 80 };
-    }
-    
-    try {
-      // Análisis de señal real
-      const { peakIndices, valleyIndices } = findPeaksAndValleys(this.ppgBuffer);
-      
-      if (peakIndices.length < 3 || valleyIndices.length < 3) {
-        console.log("BloodPressureProcessor: Detección insuficiente de picos/valles");
-        return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
-      }
-      
-      // Extracción de características de la señal PPG real
-      const amplitude = calculateAmplitude(this.ppgBuffer, peakIndices, valleyIndices);
-      const ac = calculateAC(this.ppgBuffer);
-      const dc = calculateDC(this.ppgBuffer);
-      
-      // Características temporales
-      const peakToPeakIntervals: number[] = [];
-      for (let i = 1; i < peakIndices.length; i++) {
-        peakToPeakIntervals.push(peakIndices[i] - peakIndices[i - 1]);
-      }
-      
-      const avgPeakToPeakInterval = peakToPeakIntervals.reduce((sum, val) => sum + val, 0) / peakToPeakIntervals.length;
-      
-      // Índice de rigidez (estimado a partir de características de la forma de onda)
-      const stiffnessIndex = (ac / dc) * Math.sqrt(avgPeakToPeakInterval);
-      
-      // Usar calibración para personalizar predicción - modelo basado en características reales
-      const systolic = this.calculateSystolic(amplitude, stiffnessIndex);
-      const diastolic = this.calculateDiastolic(amplitude, stiffnessIndex);
-      
-      // Validación fisiológica - desconfiar de cambios bruscos o valores fuera de rango normal
-      if (this.lastSystolic > 0 && Math.abs(systolic - this.lastSystolic) > 25) {
-        // Cambio demasiado brusco, promediar con último válido
-        const smoothedSystolic = (systolic + this.lastSystolic) / 2;
-        const smoothedDiastolic = (diastolic + this.lastDiastolic) / 2;
-        
-        this.lastSystolic = smoothedSystolic;
-        this.lastDiastolic = smoothedDiastolic;
-        
-        return { systolic: Math.round(smoothedSystolic), diastolic: Math.round(smoothedDiastolic) };
-      }
-      
-      // Actualizar últimos valores válidos
-      this.lastSystolic = systolic;
-      this.lastDiastolic = diastolic;
-      
+  public calculateBloodPressure(ppgSignal: number[]): { systolic: number; diastolic: number } {
+    if (!ppgSignal || ppgSignal.length < 2) {
       return { 
-        systolic: Math.round(systolic), 
-        diastolic: Math.round(diastolic) 
+        systolic: this.lastValidPeakValue, 
+        diastolic: this.lastValidValleyValue 
       };
-    } catch (error) {
-      console.error("BloodPressureProcessor: Error estimando presión arterial:", error);
-      return this.getLastValidBP() || { systolic: 0, diastolic: 0 };
     }
-  }
-  
-  /**
-   * Calcula presión sistólica basada en características de la señal real
-   * Utiliza calibración del usuario para personalizar el modelo
-   */
-  private calculateSystolic(amplitude: number, stiffnessIndex: number): number | null {
-    if (!this.userCalibration) return null; // No hay calibración, no se puede calcular
+
+    // Obtener picos y valles reales de la señal PPG sin manipulación
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(ppgSignal);
     
-    // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.2;
-    const stiffnessNormalizer = 0.15;
-    
-    // Modelo basado en características, personalizado con calibración
-    let systolic = this.userCalibration.systolic;
-    
-    // Ajustar según características de la onda ppg
-    systolic += (amplitude - 0.5) * (amplitudeNormalizer * systolic);
-    systolic += (stiffnessIndex - 1.0) * (stiffnessNormalizer * systolic);
-    
-    // Limitar a rangos fisiológicos
-    return Math.max(90, Math.min(200, systolic));
-  }
-  
-  /**
-   * Calcula presión diastólica basada en características de la señal real
-   * Utiliza calibración del usuario para personalizar el modelo
-   */
-  private calculateDiastolic(amplitude: number, stiffnessIndex: number): number {
-    if (!this.userCalibration) return 80; // Valor por defecto solo si no hay calibración
-    
-    // Normalizadores para evitar efectos de escala
-    const amplitudeNormalizer = 0.15;
-    const stiffnessNormalizer = 0.2;
-    
-    // Modelo basado en características, personalizado con calibración
-    let diastolic = this.userCalibration.diastolic;
-    
-    // Ajustar según características de la onda ppg
-    diastolic += (amplitude - 0.5) * (amplitudeNormalizer * diastolic);
-    diastolic += (stiffnessIndex - 1.0) * (stiffnessNormalizer * diastolic);
-    
-    // Limitar a rangos fisiológicos
-    return Math.max(40, Math.min(120, diastolic));
-  }
-  
-  /**
-   * Estima presión arterial con modelo general (menos preciso)
-   * Solo usar cuando no hay calibración de usuario
-   */
-  private estimateWithGeneralModel(): { systolic: number, diastolic: number } | null {
-    // Si no hay datos suficientes, no estimar
-    if (this.ppgBuffer.length < this.MIN_VALID_DATA_POINTS) {
-      return null;
+    if (peakIndices.length === 0 || valleyIndices.length === 0) {
+      return { 
+        systolic: this.lastValidPeakValue, 
+        diastolic: this.lastValidValleyValue 
+      };
     }
+
+    // Usar el modelo neuronal para procesar la señal PPG
+    const prediction = this.neuralModel.predict(ppgSignal);
     
-    // Análisis de la señal real
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(this.ppgBuffer);
-    
-    if (peakIndices.length < 3 || valleyIndices.length < 3) {
-      return null;
-    }
-    
-    // Características básicas
-    const amplitude = calculateAmplitude(this.ppgBuffer, peakIndices, valleyIndices);
-    
-    // Modelo general basado en amplitud de la señal real
-    // Este modelo es menos preciso que uno calibrado
-    const baselineSystolic = 120;
-    const baselineDiastolic = 80;
-    
-    // Ajuste basado en amplitud
-    let systolic = baselineSystolic + (amplitude - 0.5) * 40;
-    let diastolic = baselineDiastolic + (amplitude - 0.5) * 20;
-    
-    // Ajustar proporción sistólica/diastólica
-    if (diastolic > systolic * 0.8) {
-      diastolic = systolic * 0.8;
-    }
-    
-    systolic = Math.max(90, Math.min(180, systolic));
-    diastolic = Math.max(60, Math.min(110, diastolic));
-    
-    this.lastSystolic = systolic;
-    this.lastDiastolic = diastolic;
-    
-    return { 
-      systolic: Math.round(systolic), 
-      diastolic: Math.round(diastolic) 
-    };
-  }
-  
-  /**
-   * Devuelve la última estimación válida
-   */
-  private getLastValidBP(): { systolic: number, diastolic: number } | null {
-    if (this.lastSystolic === 0 || this.lastDiastolic === 0) {
-      return null;
-    }
-    
+    // Extraer valores de presión del resultado del modelo
+    this.lastValidPeakValue = prediction[0];  // Sistólica
+    this.lastValidValleyValue = prediction[1]; // Diastólica
+
+    // Retornar valores reales sin ningún tipo de ajuste o normalización
     return {
-      systolic: Math.round(this.lastSystolic),
-      diastolic: Math.round(this.lastDiastolic)
+      systolic: this.lastValidPeakValue,
+      diastolic: this.lastValidValleyValue
     };
   }
-  
+
   /**
-   * Reiniciar el procesador
+   * Reinicia el procesador a su estado inicial
    */
   public reset(): void {
-    this.ppgBuffer = [];
-    // Mantener calibración del usuario
-  }
-  
-  /**
-   * Reinicio completo incluyendo calibración
-   */
-  public fullReset(): void {
-    this.ppgBuffer = [];
-    this.lastSystolic = 0;
-    this.lastDiastolic = 0;
-    this.userCalibration = null;
-    this.lastCalculationTime = 0;
+    this.lastValidPeakValue = 0;
+    this.lastValidValleyValue = 0;
   }
 }

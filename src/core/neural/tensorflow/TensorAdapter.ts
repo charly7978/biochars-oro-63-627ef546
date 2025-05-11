@@ -93,9 +93,8 @@ export class TensorUtils {
   /**
    * Aplica aumento de datos para mejorar la robustez del modelo
    */
-  static augmentData(input: number[], realNoise?: number[]): number[] {
-    if (!realNoise) return input;
-    return input.map((x, i) => x + (realNoise[i] || 0));
+  static augmentData(input: number[], noiseLevel: number = 0.01): number[] {
+    return input.map(x => x + (Math.random() * 2 - 1) * noiseLevel * x);
   }
   
   /**

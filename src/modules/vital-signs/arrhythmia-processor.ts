@@ -13,11 +13,11 @@ import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
  */
 export class ArrhythmiaProcessor {
   // Conservative thresholds for direct measurement
-  private readonly MIN_RR_INTERVALS = 15; // Reducido para detectar antes
-  private readonly MIN_INTERVAL_MS = 500; // Reducido para detectar FC más altas
-  private readonly MAX_INTERVAL_MS = 1500;
-  private readonly MIN_VARIATION_PERCENT = 60; // Reducido para mayor sensibilidad
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 15000; // Reducido para detectar más arritmias
+  private readonly MIN_RR_INTERVALS = 20;
+  private readonly MIN_INTERVAL_MS = 600;
+  private readonly MAX_INTERVAL_MS = 1200;
+  private readonly MIN_VARIATION_PERCENT = 70;
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000;
   
   // State
   private rrIntervals: number[] = [];
@@ -29,7 +29,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 10; // Reducido para detectar antes
+  private readonly CONSECUTIVE_THRESHOLD = 15;
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
@@ -89,7 +89,7 @@ export class ArrhythmiaProcessor {
     );
     
     // Require sufficient valid intervals
-    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.7) { // Reducido para mayor sensibilidad
+    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.8) {
       this.consecutiveAbnormalBeats = 0;
       return;
     }
@@ -114,17 +114,16 @@ export class ArrhythmiaProcessor {
       this.consecutiveAbnormalBeats++;
       
       // Log detection
-      console.log("ArrhythmiaProcessor: Posible latido prematuro detectado en datos reales", {
-        porcentajeVariacion: variation,
-        umbral: this.MIN_VARIATION_PERCENT,
-        consecutivos: this.consecutiveAbnormalBeats,
+      console.log("ArrhythmiaProcessor: Possible premature beat in real data", {
+        percentageVariation: variation,
+        threshold: this.MIN_VARIATION_PERCENT,
+        consecutive: this.consecutiveAbnormalBeats,
         avgRR,
         lastRR,
         timestamp: currentTime
       });
     } else {
-      // Reducir el contador gradualmente para mantener la detección
-      this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 0.5);
+      this.consecutiveAbnormalBeats = 0;
     }
     
     // Check if arrhythmia is confirmed with real data
@@ -132,16 +131,16 @@ export class ArrhythmiaProcessor {
     const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
     const patternDetected = this.patternDetector.detectArrhythmiaPattern();
     
-    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia) {
+    if (this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD && canDetectNewArrhythmia && patternDetected) {
       this.arrhythmiaCount++;
       this.arrhythmiaDetected = true;
       this.lastArrhythmiaTime = currentTime;
       this.consecutiveAbnormalBeats = 0;
       this.patternDetector.resetPatternBuffer();
       
-      console.log("ArrhythmiaProcessor: ARRITMIA CONFIRMADA en datos reales", {
-        contadorArritmias: this.arrhythmiaCount,
-        tiempoDesdeUltima: timeSinceLastArrhythmia,
+      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED in real data", {
+        arrhythmiaCount: this.arrhythmiaCount,
+        timeSinceLast: timeSinceLastArrhythmia,
         timestamp: currentTime
       });
     }

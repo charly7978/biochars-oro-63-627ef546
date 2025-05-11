@@ -3,15 +3,13 @@ import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
 import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
 import { Droplet } from "lucide-react";
-import FeedbackService from "@/services/FeedbackService";
-import { ProcessedSignal } from "@/types/signal";
 
 const Index = () => {
   const [isMonitoring, setIsMonitoring] = useState(false);
@@ -33,16 +31,13 @@ const Index = () => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const measurementTimerRef = useRef<number | null>(null);
-  const minimumMeasurementTime = 10; // Segundos mínimos antes de mostrar resultados
-  const optimalMeasurementTime = 30; // Tiempo óptimo para resultados más precisos
   
   const { startProcessing, stopProcessing, lastSignal, processFrame } = useSignalProcessor();
   const { 
     processSignal: processHeartBeat, 
-    heartBeatResult,
     isArrhythmia,
-    startProcessing: startHeartBeatMonitoring,
-    stopProcessing: stopHeartBeatMonitoring,
+    startMonitoring: startHeartBeatMonitoring,
+    stopMonitoring: stopHeartBeatMonitoring,
     reset: resetHeartBeatProcessor
   } = useHeartBeatProcessor();
   
@@ -50,16 +45,8 @@ const Index = () => {
     processSignal: processVitalSigns, 
     reset: resetVitalSigns,
     fullReset: fullResetVitalSigns,
-    lastValidResults,
-    isTensorFlowReady
+    lastValidResults
   } = useVitalSignsProcessor();
-
-  // Si tensorflow está listo, mostrar mensaje
-  useEffect(() => {
-    if (isTensorFlowReady) {
-      console.log("✅ TensorFlow inicializado correctamente para procesamiento PPG");
-    }
-  }, [isTensorFlowReady]);
 
   const enterFullScreen = async () => {
     try {
@@ -80,83 +67,55 @@ const Index = () => {
     };
   }, []);
 
-  // Importante: Monitorear resultados válidos
   useEffect(() => {
-    // Si hay resultados válidos y no estamos monitoreando, actualizar UI
     if (lastValidResults && !isMonitoring) {
-      console.log("Resultados válidos disponibles:", lastValidResults);
-      // Solo actualizar si son diferentes a los actuales
-      if (JSON.stringify(lastValidResults) !== JSON.stringify(vitalSigns)) {
-        setVitalSigns(lastValidResults);
-        setShowResults(true);
-      }
+      setVitalSigns(lastValidResults);
+      setShowResults(true);
     }
-  }, [lastValidResults, isMonitoring, vitalSigns]);
+  }, [lastValidResults, isMonitoring]);
 
-  // Monitor de señal PPG y procesamiento
   useEffect(() => {
     if (lastSignal && isMonitoring) {
       const minQualityThreshold = 40;
       
-      // Actualizar calidad de señal siempre
-      setSignalQuality(lastSignal.quality);
-      
-      // Solo procesar si la señal tiene calidad aceptable y hay dedo detectado
       if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        // Procesar para ritmo cardíaco
         const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
         
-        if (heartBeatResult && heartBeatResult.confidence > 0.4) {
-          // Actualizar UI con ritmo cardíaco
-          if (heartBeatResult.bpm > 0) {
-            console.log(`HR: ${heartBeatResult.bpm} BPM (confianza: ${heartBeatResult.confidence.toFixed(2)})`);
-            setHeartRate(heartBeatResult.bpm);
-          }
+        if (heartBeatResult.confidence > 0.4) {
+          setHeartRate(heartBeatResult.bpm);
           
-          // Enviar datos a procesador de signos vitales solo si la calidad es buena
           try {
-            // Utilizar el procesamiento asíncrono
-            processVitalSigns(lastSignal, heartBeatResult.rrData)
-              .then(vitals => {
-                // Solo actualizar si hay tiempo suficiente de medición para evitar valores iniciales inestables
-                if (elapsedTime >= minimumMeasurementTime) {
-                  console.log("Actualizando signos vitales:", vitals);
-                  setVitalSigns(vitals);
-                }
-              })
-              .catch(error => {
-                console.error("Error procesando signos vitales:", error);
-              });
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
+            if (vitals) {
+              setVitalSigns(vitals);
+            }
           } catch (error) {
-            console.error("Error procesando signos vitales:", error);
+            console.error("Error processing vital signs:", error);
           }
         }
+        
+        setSignalQuality(lastSignal.quality);
       } else {
-        // Si no hay dedo detectado o la calidad es mala, resetear la frecuencia cardíaca
+        setSignalQuality(lastSignal.quality);
+        
         if (!lastSignal.fingerDetected && heartRate > 0) {
-          console.log("Dedo no detectado, reseteando frecuencia cardíaca");
           setHeartRate(0);
         }
       }
     } else if (!isMonitoring) {
-      // Cuando no se está monitoreando, señal debe ser 0
       setSignalQuality(0);
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, elapsedTime]);
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
 
   const startMonitoring = () => {
     if (isMonitoring) {
       finalizeMeasurement();
     } else {
-      console.log("Iniciando monitoreo de signos vitales...");
       enterFullScreen();
       setIsMonitoring(true);
       setIsCameraOn(true);
       setShowResults(false);
       setHeartRate(0);
-      
-      FeedbackService.vibrate(100);
-      FeedbackService.playSound('notification');
       
       startProcessing();
       startHeartBeatMonitoring();
@@ -172,10 +131,9 @@ const Index = () => {
           const newTime = prev + 1;
           console.log(`Tiempo transcurrido: ${newTime}s`);
           
-          if (newTime >= optimalMeasurementTime) {
-            console.log("Tiempo óptimo de medición alcanzado.");
+          if (newTime >= 30) {
             finalizeMeasurement();
-            return optimalMeasurementTime;
+            return 30;
           }
           return newTime;
         });
@@ -191,23 +149,20 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     
-    FeedbackService.signalMeasurementComplete(signalQuality >= 70);
-    
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
       measurementTimerRef.current = null;
     }
     
-    // Importante: guardar los resultados antes de resetear
     const savedResults = resetVitalSigns();
     if (savedResults) {
-      console.log("Guardando resultados finales:", savedResults);
       setVitalSigns(savedResults);
       setShowResults(true);
     }
     
     setElapsedTime(0);
     setSignalQuality(0);
+    setHeartRate(0);
   };
 
   const handleReset = () => {
@@ -218,8 +173,6 @@ const Index = () => {
     stopProcessing();
     stopHeartBeatMonitoring();
     resetHeartBeatProcessor();
-    
-    FeedbackService.vibrate([50, 30, 50]);
     
     if (measurementTimerRef.current) {
       clearInterval(measurementTimerRef.current);
@@ -362,9 +315,6 @@ const Index = () => {
             </div>
             <div className="text-white text-sm">
               {lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}
-            </div>
-            <div className="text-white text-sm">
-              {isTensorFlowReady ? "TF ✓" : "TF ✗"}
             </div>
           </div>
 

@@ -24,9 +24,6 @@ export interface ProcessedSignal {
   };
   value?: number;           // Compatibilidad con código existente
   hydrationIndex?: number;  // Índice de hidratación
-  windowValues?: number[];  // Ventana de valores para análisis
-  minValue?: number;        // Valor mínimo de la señal
-  maxValue?: number;        // Valor máximo de la señal
 }
 
 /**

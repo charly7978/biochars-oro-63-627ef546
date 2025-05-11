@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { HeartBeatProcessor } from '../modules/HeartBeatProcessor';
 import { toast } from 'sonner';
@@ -6,25 +7,12 @@ import { useBeepProcessor } from './heart-beat/beep-processor';
 import { useArrhythmiaDetector } from './heart-beat/arrhythmia-detector';
 import { useSignalProcessor } from './heart-beat/signal-processor';
 import { HeartBeatResult, UseHeartBeatReturn } from './heart-beat/types';
-import { AudioService } from '../services/AudioService';
 
 export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const processorRef = useRef<HeartBeatProcessor | null>(null);
   const [currentBPM, setCurrentBPM] = useState<number>(0);
   const [confidence, setConfidence] = useState<number>(0);
-  const [heartBeatResult, setHeartBeatResult] = useState<HeartBeatResult>({
-    bpm: 0,
-    confidence: 0,
-    isPeak: false,
-    arrhythmiaCount: 0,
-    rrData: {
-      intervals: [],
-      lastPeakTime: null
-    }
-  });
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isArrhythmia, setIsArrhythmia] = useState<boolean>(false);
-  const lastPeakTimeRef = useRef<number | null>(null);
+  const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
   const missedBeepsCounter = useRef<number>(0);
   const isMonitoringRef = useRef<boolean>(false);
@@ -54,7 +42,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   const {
     processSignal: processSignalInternal,
     reset: resetSignalProcessor,
-    lastPeakTimeRef: signalProcessorLastPeakTimeRef,
+    lastPeakTimeRef,
     lastValidBpmRef,
     lastSignalQualityRef,
     consecutiveWeakSignalsRef,
@@ -63,6 +51,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
 
   useEffect(() => {
     console.log('useHeartBeatProcessor: Initializing new processor', {
+      sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     
@@ -89,6 +78,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
 
     return () => {
       console.log('useHeartBeatProcessor: Cleaning up processor', {
+        sessionId: sessionId.current,
         timestamp: new Date().toISOString()
       });
       
@@ -163,6 +153,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
 
   const reset = useCallback(() => {
     console.log('useHeartBeatProcessor: Resetting processor', {
+      sessionId: sessionId.current,
       timestamp: new Date().toISOString()
     });
     

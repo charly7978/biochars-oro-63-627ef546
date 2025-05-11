@@ -1,5 +1,5 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-import { SignalOptimizerManager } from './signal-optimizer/SignalOptimizerManager';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -28,13 +28,6 @@ class KalmanFilter {
     this.P = 1;
   }
 }
-
-// Instancia global o de clase del optimizador para todos los canales relevantes
-const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
-});
 
 /**
  * Procesador de señales PPG (Fotopletismografía)
@@ -175,9 +168,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Procesa un frame para extraer información PPG de TODOS los canales
-   * Cada canal pasa primero por el optimizador de señal
-   * El feedback de calidad/confianza se enviará a cada canal tras el cálculo de métricas
+   * Procesa un frame para extraer información PPG
    */
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
@@ -192,39 +183,32 @@ export class PPGSignalProcessor implements SignalProcessor {
       }
       this.lastProcessedTime = now;
       
-      // 1. Extraer valores crudos de todos los canales disponibles
+      // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
-      const irValue = this.extractIRChannel(imageData);
-      const greenValue = this.extractGreenChannel(imageData);
-
-      // 2. Optimización: procesar cada valor crudo con el manager
-      const redOptimized = optimizerManager.process('red', redValue);
-      const irOptimized = optimizerManager.process('ir', irValue);
-      const greenOptimized = optimizerManager.process('green', greenValue);
-
-      // 3. Usar los valores optimizados en los algoritmos de cálculo
-      // Ejemplo: para HR, SpO2, presión, etc. (esto se hará en los procesadores de métricas)
-      // Aquí solo se almacena el valor principal (puedes almacenar todos si lo deseas)
-      this.lastValues.push(redOptimized);
+      
+      // Aplicar filtrado inicial para reducir ruido
+      const filtered = this.kalmanFilter.filter(redValue);
+      
+      // Almacenar para análisis
+      this.lastValues.push(filtered);
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
-      // Puedes almacenar buffers separados para cada canal si lo necesitas
-
+      
       // Análisis de periodicidad
-      this.periodicityBuffer.push(redOptimized);
+      this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
       }
       
       // Calcular consistencia en el tiempo
-      this.updateConsistencyMetrics(redOptimized);
+      this.updateConsistencyMetrics(filtered);
       
       // Calcular puntuación de movimiento (inestabilidad)
       const movementScore = this.calculateMovementScore();
       
-      // Analizar la señal para determinar calidad y presencia del dedo (puedes hacerlo por canal)
-      const { isFingerDetected, quality } = this.analyzeSignal(redOptimized, redValue, movementScore);
+      // Analizar la señal para determinar calidad y presencia del dedo
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
       
       // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
@@ -237,11 +221,11 @@ export class PPGSignalProcessor implements SignalProcessor {
       // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
-      // Crear señal procesada (puedes incluir los valores de todos los canales si lo deseas)
+      // Crear señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: now,
         rawValue: redValue,
-        filteredValue: redOptimized,
+        filteredValue: filtered,
         quality: quality,
         fingerDetected: isFingerDetected,
         roi: this.detectROI(redValue),
@@ -249,14 +233,8 @@ export class PPGSignalProcessor implements SignalProcessor {
         spectrumData
       };
 
+      // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
-
-      // DOCUMENTACIÓN DEL CICLO DE FEEDBACK:
-      // 1. Cada valor crudo de canal se optimiza con el manager.
-      // 2. Los valores optimizados se usan en los algoritmos de cálculo.
-      // 3. El feedback de calidad/confianza se enviará a cada canal tras cada métrica (en los procesadores de métricas).
-      // 4. El manager ajusta sus parámetros automáticamente o por intervención manual.
-      // 5. El ciclo se repite para la siguiente muestra.
 
     } catch (error) {
       console.error("PPGSignalProcessor: Error procesando frame", error);
@@ -384,24 +362,6 @@ export class PPGSignalProcessor implements SignalProcessor {
     
     const avgRed = redSum / count;
     return avgRed;
-  }
-
-  /**
-   * Extrae el canal infrarrojo (IR) de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractIRChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal IR si el hardware lo soporta
-    return 0;
-  }
-
-  /**
-   * Extrae el canal verde de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractGreenChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal verde si el hardware lo soporta
-    return 0;
   }
 
   /**
