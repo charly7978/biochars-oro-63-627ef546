@@ -3,8 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Remove or comment out the problematic import
-// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
+// Import compatible functions from central module
+import { checkSignalQuality as coreCheckSignalQuality } from '../../../modules/heart-beat/signal-quality';
 
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
@@ -14,30 +14,19 @@ interface SignalQualityOptions {
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
  * Solo procesamiento directo, sin simulaciones
+ * IMPROVED: More strict thresholds to reduce false positives
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
-  
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
-  
-  // Update consecutive weak signals counter
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? currentWeakSignalCount + 1 
-    : 0;
-  
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
-  
-  // Signal is considered weak if we have enough consecutive weak readings
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount };
+  // Use centralized implementation with increased thresholds
+  return coreCheckSignalQuality(value, currentWeakSignalCount, {
+    lowSignalThreshold: options.lowSignalThreshold || 0.45, // Increased from 0.05 to 0.45
+    maxWeakSignalCount: options.maxWeakSignalCount || 6, // Increased from 10 to 6
+    strictMode: true
+  });
 }
 
 /**
