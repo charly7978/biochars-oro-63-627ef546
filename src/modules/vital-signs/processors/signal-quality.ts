@@ -13,7 +13,7 @@ import { checkSignalQuality } from '../../../modules/heart-beat/signal-quality';
 export class SignalQuality {
   private noiseLevel: number = 0;
   private consecutiveStrongSignals: number = 0;
-  private readonly MIN_STRONG_SIGNALS_REQUIRED = 3;
+  private readonly MIN_STRONG_SIGNALS_REQUIRED = 5; // Increased from 3 to 5
   
   /**
    * Simple noise level update - minimal implementation with improved filtering
@@ -46,8 +46,8 @@ export class SignalQuality {
     const max = Math.max(...ppgValues.slice(-10));
     const amplitude = max - min;
     
-    // Only consider valid signals with sufficient amplitude
-    if (amplitude < 0.02) {
+    // Only consider valid signals with sufficient amplitude - INCREASED THRESHOLD
+    if (amplitude < 0.05) { // Increased from 0.02 to 0.05
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
@@ -122,7 +122,7 @@ export class SignalQuality {
       peakConsistency * 0.2           // 20% peak consistency
     );
     
-    // Normalize to 0-1 range
+    // Normalize to 0-1 range and multiply by 100 for percentage
     return Math.max(0, Math.min(1, weightedScore));
   }
   

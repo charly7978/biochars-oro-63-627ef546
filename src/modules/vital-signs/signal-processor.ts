@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -25,17 +26,17 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionConfirmed: boolean = false;
   private fingerDetectionStartTime: number | null = null;
   
-  // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
+  // Signal quality variables - ULTRA strict thresholds
+  private readonly MIN_QUALITY_FOR_FINGER = 55; // Increased from 45 to 55
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 4000; // Increased from 3500 to 4000
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.35; // Increased from 0.25 to 0.35
   
   constructor() {
     super();
     this.filter = new SignalFilter();
     this.quality = new SignalQuality();
     this.heartRateDetector = new HeartRateDetector();
-    this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
+    this.signalValidator = new SignalValidator(0.03, 18); // Increased thresholds from 0.02 and 15
   }
   
   /**
@@ -114,7 +115,7 @@ export class SignalProcessor extends BaseProcessor {
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
     
-    // Require minimum amplitude for detection (physiological requirement)
+    // Require minimum amplitude for detection (physiological requirement) - HIGHER THRESHOLD
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
     
     // If finger is detected by pattern and has valid amplitude, confirm it

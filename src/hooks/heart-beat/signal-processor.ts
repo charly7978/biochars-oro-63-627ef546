@@ -5,12 +5,76 @@ import { HeartBeatConfig } from '../../modules/heart-beat/config';
 import { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
-  createWeakSignalResult, 
-  handlePeakDetection,
-  updateLastValidBpm,
-  processLowConfidenceResult
+  createWeakSignalResult
 } from './signal-processing';
 import FeedbackService from '../../services/FeedbackService';
+
+/**
+ * Helper function for handling peak detection with feedback
+ * Use a dedicated function to separate concerns
+ */
+export function handlePeakDetection(
+  result: any,
+  lastPeakTimeRef: React.MutableRefObject<number | null>,
+  isMonitoringRef: React.MutableRefObject<boolean>
+) {
+  // Check for peaks to provide real-time feedback
+  if (result.isPeak && isMonitoringRef.current) {
+    const now = Date.now();
+    
+    // Only provide feedback if sufficient time has passed since last peak
+    if (lastPeakTimeRef.current === null || 
+        (now - lastPeakTimeRef.current) > 350) {  // 350ms min entre latidos
+      
+      lastPeakTimeRef.current = now;
+      
+      // CORREGIDO: Siempre activar vibración para cada pico detectado
+      FeedbackService.vibrate(50);
+      
+      console.log("signal-processor: Peak detected, activating haptic feedback", {
+        time: new Date().toISOString(),
+        peakValue: result.peakValue || 'unknown'
+      });
+    }
+  }
+}
+
+/**
+ * Process a low confidence result with arrhythmia count
+ */
+export function processLowConfidenceResult(
+  result: any,
+  currentBPM: number,
+  arrhythmiaCount: number
+): HeartBeatResult {
+  // If confidence is too low, use previous BPM
+  if (result.confidence < 0.35 && currentBPM > 0) {
+    return {
+      ...result,
+      bpm: currentBPM,
+      arrhythmiaCount
+    };
+  }
+  
+  // Add arrhythmia count to result
+  return {
+    ...result,
+    arrhythmiaCount
+  };
+}
+
+/**
+ * Update the last valid BPM
+ */
+export function updateLastValidBpm(
+  result: any,
+  lastValidBpmRef: React.MutableRefObject<number>
+) {
+  // Store valid BPM values
+  if (result.bpm >= 40 && result.bpm <= 220 && result.confidence > 0.65) {
+    lastValidBpmRef.current = result.bpm;
+  }
+}
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -70,14 +134,14 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection
+      // Handle peak detection with vibration
       if (result.isPeak && isMonitoringRef.current) {
         // Si detectamos un pico y estamos en modo monitoreo, activar vibración
         if (lastPeakTimeRef.current === null || 
             (Date.now() - lastPeakTimeRef.current) > 350) {  // 350ms min entre latidos
           lastPeakTimeRef.current = Date.now();
           
-          // Usar el servicio de feedback para vibración por latido
+          // CORREGIDO: Siempre usar el servicio de feedback para vibración por latido
           FeedbackService.vibrate(50);
           
           // También intentamos el beep si está disponible

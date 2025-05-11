@@ -40,7 +40,7 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Handle peak detection with improved natural synchronization
- * Esta función se ha modificado para NO activar el beep - centralizado en PPGSignalMeter
+ * CORREGIDO: Activar vibración para cada latido detectado
  * No simulation is used - direct measurement only
  */
 export function handlePeakDetection(
@@ -52,23 +52,33 @@ export function handlePeakDetection(
 ): void {
   const now = Date.now();
   
-  // Solo actualizar tiempo del pico para cálculos de tiempo
+  // Solo actualizar tiempo del pico si es un pico real con confianza suficiente
   if (result.isPeak && result.confidence > 0.05) {
-    // Actualizar tiempo del pico para cálculos de tempo solamente
+    // Actualizar tiempo del pico para cálculos de tempo
     lastPeakTimeRef.current = now;
     
-    // EL BEEP SOLO SE MANEJA EN PPGSignalMeter CUANDO SE DIBUJA UN CÍRCULO
-    console.log("Peak-detection: Pico detectado SIN solicitar beep - control exclusivo por PPGSignalMeter", {
-      confianza: result.confidence,
-      valor: value,
-      tiempo: new Date(now).toISOString(),
-      // Log transition state if present
-      transicion: result.transition ? {
-        activa: result.transition.active,
-        progreso: result.transition.progress,
-        direccion: result.transition.direction
-      } : 'no hay transición',
-      isArrhythmia: result.isArrhythmia || false
-    });
+    // CORREGIDO: Activar vibración si estamos monitoreando
+    // y ha pasado suficiente tiempo desde el último pico
+    if (isMonitoringRef.current && 
+        (lastPeakTimeRef.current === null || 
+         (now - lastPeakTimeRef.current) > 350)) {
+      
+      // Solicitar beep para este latido - asegurando que se active
+      const beepRequested = requestBeepCallback(value);
+      
+      console.log("Peak-detection: Pico detectado con solicitud de beep", {
+        confianza: result.confidence,
+        valor: value,
+        tiempo: new Date(now).toISOString(),
+        beepSolicitado: beepRequested,
+        // Log transition state if present
+        transicion: result.transition ? {
+          activa: result.transition.active,
+          progreso: result.transition.progress,
+          direccion: result.transition.direction
+        } : 'no hay transición',
+        isArrhythmia: result.isArrhythmia || false
+      });
+    }
   }
 }
