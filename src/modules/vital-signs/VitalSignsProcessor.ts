@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -9,7 +8,6 @@ import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { GlucoseProcessor } from './glucose-processor';
 import { LipidProcessor } from './lipid-processor';
 import { ResultFactory } from './factories/result-factory';
-import { SignalValidator } from './validators/signal-validator';
 import { ConfidenceCalculator } from './calculators/confidence-calculator';
 import { VitalSignsResult } from './types/vital-signs-result';
 import { HydrationEstimator } from '@/core/analysis/HydrationEstimator';
@@ -46,7 +44,6 @@ export class VitalSignsProcessor {
   private hemoglobinEstimator: HemoglobinEstimator;
   
   // Validators and calculators
-  private signalValidator: SignalValidator;
   private confidenceCalculator: ConfidenceCalculator;
 
   // Estado interno
@@ -72,7 +69,6 @@ export class VitalSignsProcessor {
     this.hemoglobinEstimator = new HemoglobinEstimator();
     
     // Initialize validators and calculators
-    this.signalValidator = new SignalValidator();
     this.confidenceCalculator = new ConfidenceCalculator();
   }
   
@@ -139,8 +135,13 @@ export class VitalSignsProcessor {
       pressure = this.bpProcessor.calculateBloodPressure(this.ppgBuffer);
       
       // Arritmias - basado en intervalos RR - REGISTRO ADICIONAL
+      if (rrData && rrData.intervals && rrData.intervals.length > 0) { // LOG VSP.1
+        console.log(`VitalSignsProcessor: Passing ${rrData.intervals.length} rrIntervals to ArrhythmiaProcessor. Sample: ${JSON.stringify(rrData.intervals.slice(0,5))}`);
+      } else {
+        console.log("VitalSignsProcessor: No rrData or no intervals to pass to ArrhythmiaProcessor."); // LOG VSP.2
+      }
       arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-      console.log("Resultado de procesamiento de arritmias:", arrhythmiaResult);
+      console.log("VitalSignsProcessor: Result from ArrhythmiaProcessor:", JSON.stringify(arrhythmiaResult)); // LOG VSP.3
       
       // Glucosa - análisis espectral
       glucose = this.glucoseProcessor.calculateGlucose(this.ppgBuffer);
@@ -198,6 +199,7 @@ export class VitalSignsProcessor {
       arrhythmiaResult.lastArrhythmiaData
     );
 
+    console.log("VitalSignsProcessor: Final result object being returned:", JSON.stringify(finalResult)); // LOG VSP.4
     this.lastValidResult = finalResult;
     return finalResult;
   }
@@ -243,14 +245,13 @@ export class VitalSignsProcessor {
     this.arrhythmiaProcessor.reset();
     this.glucoseProcessor.reset();
     this.lipidProcessor.reset();
-    this.hemoglobinEstimator.reset();
     this.hydrationEstimator.reset();
-    this.signalValidator.resetFingerDetection();
+    this.hemoglobinEstimator.reset();
+    this.ppgBuffer = [];
+    this.processingCount = 0;
     
     const result = this.lastValidResult;
-    this.ppgBuffer = []; // Limpiar buffer principal
     this.lastValidResult = null;
-    this.processingCount = 0;
     
     return result; // Devolver último resultado válido antes del reset
   }
