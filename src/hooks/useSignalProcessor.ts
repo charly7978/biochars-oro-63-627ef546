@@ -6,17 +6,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import useFingerDetection from '../services/FingerDetectionService';
 
 /**
  * Hook para el procesamiento de señales PPG reales
  * No se permite ninguna simulación o datos sintéticos
- * Ahora utiliza el servicio centralizado de detección de dedo
  */
 export const useSignalProcessor = () => {
-  // Acceso al servicio centralizado de detección de dedo
-  const fingerDetection = useFingerDetection();
-
   // Create processor instance
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
@@ -41,21 +36,10 @@ export const useSignalProcessor = () => {
 
   // Set up processor callbacks and cleanup
   useEffect(() => {
-    // Indicar que el componente está montado
-    fingerDetection.setMounted(true);
-    
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Usar el detector centralizado para una detección más precisa
-      const fingerStatus = fingerDetection.processSignal(signal.filteredValue, signal.quality);
-      
-      // Actualizar la señal con el estado de detección centralizado
-      const enhancedSignal = {
-        ...signal,
-        fingerDetected: fingerStatus
-      };
-      
-      setLastSignal(enhancedSignal);
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
@@ -83,11 +67,9 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
-      // Marcar que el componente se desmontó para evitar actualizaciones de estado
-      fingerDetection.setMounted(false);
       processor.stop();
     };
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Start processing signals
@@ -104,11 +86,8 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset detector de dedo centralizado
-    fingerDetection.resetDetection();
-    
     processor.start();
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Stop processing signals
@@ -118,10 +97,7 @@ export const useSignalProcessor = () => {
     
     setIsProcessing(false);
     processor.stop();
-    
-    // Reset detector de dedo centralizado
-    fingerDetection.resetDetection();
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Process a frame from camera
@@ -147,5 +123,3 @@ export const useSignalProcessor = () => {
     processFrame
   };
 };
-
-export default useSignalProcessor;
