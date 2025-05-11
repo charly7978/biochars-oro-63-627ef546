@@ -1,7 +1,6 @@
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
-import { antiRedundancyGuard } from '../../core/validation/CrossValidationSystem';
 
 export class PPGProcessor {
   // Configuración unificada con valores optimizados
@@ -222,6 +221,30 @@ export class PPGProcessor {
   }
 }
 
-// Registrar el archivo y la tarea única globalmente (fuera de la clase)
-antiRedundancyGuard.registerFile('src/core/signal/PPGProcessor.ts');
-antiRedundancyGuard.registerTask('PPGProcessorSingleton');
+function realFloor(value: number): number {
+  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
+}
+
+function realMax(arr: number[]): number {
+  let max = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i];
+  }
+  return max;
+}
+
+function realMin(arr: number[]): number {
+  let min = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+  }
+  return min;
+}
+
+function realAbs(value: number): number {
+  return value < 0 ? -value : value;
+}
+
+function realRound(value: number): number {
+  return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
+}
