@@ -6,19 +6,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
-import useFingerDetection from '../services/FingerDetectionService';
 
 /**
  * Hook para el procesamiento de señales PPG reales
  * No se permite ninguna simulación o datos sintéticos
- * Ahora utiliza el servicio centralizado de detección de dedo
  */
 export const useSignalProcessor = () => {
-  // Acceso al servicio centralizado de detección de dedo
-  const fingerDetection = useFingerDetection();
-  const cleanupCalledRef = useRef(false);
-  const processingActiveRef = useRef(false);
-
   // Create processor instance
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
@@ -45,27 +38,8 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Debug signal quality and processing
-      console.log("Signal processed:", { 
-        filteredValue: signal.filteredValue.toFixed(3),
-        rawValue: signal.rawValue.toFixed(2),
-        quality: signal.quality,
-        processingActive: processingActiveRef.current
-      });
-      
-      // Solo procesar si estamos activos
-      if (!processingActiveRef.current) return;
-      
-      // Usar el detector centralizado para una detección más precisa
-      const fingerStatus = fingerDetection.processSignal(signal.filteredValue, signal.quality);
-      
-      // Actualizar la señal con el estado de detección centralizado
-      const enhancedSignal = {
-        ...signal,
-        fingerDetected: fingerStatus
-      };
-      
-      setLastSignal(enhancedSignal);
+      // Pass through without modifications - quality and detection handled by PPGSignalMeter
+      setLastSignal(signal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
@@ -93,21 +67,9 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
-      // Avoid multiple calls to cleanup functions that cause infinite loops
-      if (cleanupCalledRef.current) return;
-      cleanupCalledRef.current = true;
-      processingActiveRef.current = false;
-      
       processor.stop();
-      
-      // Use setTimeout to prevent state update during unmount cleanup cycles
-      setTimeout(() => {
-        if (fingerDetection && fingerDetection.resetDetection) {
-          fingerDetection.resetDetection();
-        }
-      }, 20);
     };
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Start processing signals
@@ -116,7 +78,6 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
     setIsProcessing(true);
-    processingActiveRef.current = true;
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
@@ -125,14 +86,8 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset finger detection status before starting
-    if (fingerDetection && fingerDetection.resetDetection) {
-      fingerDetection.resetDetection();
-    }
-    cleanupCalledRef.current = false;
-    
     processor.start();
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Stop processing signals
@@ -141,22 +96,14 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
-    processingActiveRef.current = false;
     processor.stop();
-    
-    // Use setTimeout to prevent react update cycle issues
-    setTimeout(() => {
-      if (fingerDetection && fingerDetection.resetDetection) {
-        fingerDetection.resetDetection();
-      }
-    }, 20);
-  }, [processor, fingerDetection]);
+  }, [processor]);
 
   /**
    * Process a frame from camera
    */
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing && processingActiveRef.current) {
+    if (isProcessing) {
       try {
         processor.processFrame(imageData);
       } catch (err) {
@@ -176,5 +123,3 @@ export const useSignalProcessor = () => {
     processFrame
   };
 };
-
-export default useSignalProcessor;

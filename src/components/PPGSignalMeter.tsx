@@ -2,9 +2,7 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
-import useFingerDetection from '../services/FingerDetectionService';
-import { FeedbackService } from '../services/FeedbackService';
+import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -91,15 +89,6 @@ const PPGSignalMeter = memo(({
   const BEEP_VOLUME = 0.9;
   const MIN_BEEP_INTERVAL_MS = 350;
 
-  const feedbackService = useRef<FeedbackService>(FeedbackService.getInstance());
-  
-  const fingerDetection = useFingerDetection();
-  const [fingerState, setFingerState] = useState({
-    isDetected: false,
-    quality: 0,
-    consecutive: 0
-  });
-
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
   const isPointInArrhythmiaSegment = useCallback((pointTime: number) => {
@@ -150,7 +139,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
-      feedbackService.current.triggerHeartbeatFeedback(isArrhythmia);
+      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
@@ -160,7 +149,7 @@ const PPGSignalMeter = memo(({
       console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
     }
-  }, []);
+  }, [triggerHeartbeatFeedback]);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -231,23 +220,21 @@ const PPGSignalMeter = memo(({
 
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = fingerState.isDetected;
     
-    if (!isFingerDetected && !preserveResults) return 'from-gray-400 to-gray-500';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'from-gray-400 to-gray-500';
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, preserveResults, fingerState.isDetected]);
+  }, [getAverageQuality, preserveResults]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
-    const isFingerDetected = fingerState.isDetected;
     
-    if (!isFingerDetected && !preserveResults) return 'Sin detección';
+    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, preserveResults, fingerState.isDetected]);
+  }, [getAverageQuality, preserveResults]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -438,19 +425,6 @@ const PPGSignalMeter = memo(({
       segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
     );
   }, [WINDOW_WIDTH_MS]);
-
-  useEffect(() => {
-    // Procesar la señal con nuestro detector centralizado
-    if (value !== 0) {
-      const isDetected = fingerDetection.processSignal(value, quality);
-      
-      setFingerState({
-        isDetected: isDetected || (preserveResults && fingerState.isDetected),
-        quality: quality,
-        consecutive: isDetected ? fingerState.consecutive + 1 : 0
-      });
-    }
-  }, [value, quality, preserveResults, fingerDetection]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -651,14 +625,11 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
-    
-    fingerDetection.resetDetection();
-    
     onReset();
-  }, [onReset, fingerDetection]);
+  }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = fingerState.isDetected || preserveResults;
+  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
