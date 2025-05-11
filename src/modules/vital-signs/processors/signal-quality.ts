@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -39,15 +38,23 @@ export class SignalQuality {
    * Adds validation to reduce false positives
    */
   public calculateSignalQuality(ppgValues: number[]): number {
-    if (ppgValues.length < 5) return 0;
+    console.log("SignalQuality: calculateSignalQuality called. ppgValues length:", ppgValues.length);
+    if (ppgValues.length < 5) {
+      console.log("SignalQuality: Not enough values for quality calc, returning 0.");
+      return 0;
+    }
     
-    // Calculate amplitude and standard deviation
-    const min = Math.min(...ppgValues.slice(-10));
-    const max = Math.max(...ppgValues.slice(-10));
+    const recentPpgValues = ppgValues.slice(-10);
+    console.log("SignalQuality: Recent PPG values for quality:", JSON.stringify(recentPpgValues));
+
+    const min = Math.min(...recentPpgValues);
+    const max = Math.max(...recentPpgValues);
     const amplitude = max - min;
+    console.log("SignalQuality: Min:", min, "Max:", max, "Amplitude:", amplitude);
     
     // Only consider valid signals with sufficient amplitude - INCREASED THRESHOLD
     if (amplitude < 0.05) { // Increased from 0.02 to 0.05
+      console.log("SignalQuality: Amplitude < 0.05, resetting strong signals, returning 0 quality.");
       this.consecutiveStrongSignals = 0;
       return 0;
     } else {
@@ -55,15 +62,18 @@ export class SignalQuality {
         this.MIN_STRONG_SIGNALS_REQUIRED + 2, 
         this.consecutiveStrongSignals + 1
       );
+      console.log("SignalQuality: Amplitude OK. Consecutive strong signals:", this.consecutiveStrongSignals);
     }
     
     // Only return positive quality after we've seen enough strong signals
     if (this.consecutiveStrongSignals < this.MIN_STRONG_SIGNALS_REQUIRED) {
+      console.log("SignalQuality: Not enough consecutive strong signals, returning 0 quality. Required:", this.MIN_STRONG_SIGNALS_REQUIRED);
       return 0;
     }
     
-    // Calculate quality based on real signal properties
-    return this.calculateWeightedQuality(ppgValues);
+    const weightedQuality = this.calculateWeightedQuality(ppgValues);
+    console.log("SignalQuality: Calculated weighted quality:", weightedQuality);
+    return weightedQuality;
   }
   
   /**
