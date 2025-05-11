@@ -1,3 +1,4 @@
+
 import { useCallback, useRef } from 'react';
 import { HeartBeatResult } from './types';
 import { HeartBeatConfig } from '../../modules/heart-beat/config';
@@ -68,11 +69,11 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection with all required parameters
+      // Handle peak detection
       handlePeakDetection(
         result, 
-        lastPeakTimeRef,
-        requestImmediateBeep,
+        lastPeakTimeRef, 
+        requestImmediateBeep, 
         isMonitoringRef,
         value
       );
@@ -85,7 +86,8 @@ export function useSignalProcessor() {
       // Process result
       return processLowConfidenceResult(
         result, 
-        currentBPM
+        currentBPM, 
+        processor.getArrhythmiaCounter()
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);

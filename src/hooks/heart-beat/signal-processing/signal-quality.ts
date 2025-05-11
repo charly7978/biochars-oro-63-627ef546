@@ -3,7 +3,8 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { absoluteValue } from '../../../utils/non-math-utils';
+// Remove or comment out the problematic import
+// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
 
 interface SignalQualityOptions {
   lowSignalThreshold?: number;
@@ -12,7 +13,7 @@ interface SignalQualityOptions {
 
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
- * Solo procesamiento directo, sin simulaciones ni funciones Math
+ * Solo procesamiento directo, sin simulaciones
  */
 export function checkWeakSignal(
   value: number,
@@ -23,16 +24,15 @@ export function checkWeakSignal(
   const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
   const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
   
-  const isCurrentValueWeak = absoluteValue(value) < LOW_SIGNAL_THRESHOLD;
+  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
   
-  // Update consecutive weak signals counter without using Math functions
+  // Update consecutive weak signals counter
   let updatedWeakSignalsCount = isCurrentValueWeak 
     ? currentWeakSignalCount + 1 
     : 0;
   
-  // Limit to max without Math.min
-  updatedWeakSignalsCount = updatedWeakSignalsCount > MAX_WEAK_SIGNALS ? 
-    MAX_WEAK_SIGNALS : updatedWeakSignalsCount;
+  // Limit to max
+  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
   
   // Signal is considered weak if we have enough consecutive weak readings
   const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
@@ -42,7 +42,6 @@ export function checkWeakSignal(
 
 /**
  * Verifica si se debe procesar una medición según la intensidad de la señal
- * Sin usar funciones Math
  */
 export function shouldProcessMeasurement(
   value: number,
@@ -55,7 +54,6 @@ export function shouldProcessMeasurement(
 
 /**
  * Crea un resultado vacío para señales débiles
- * Sin usar funciones Math
  */
 export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
   return {
@@ -72,7 +70,6 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 
 /**
  * Restablece el estado de detección de señal
- * Sin usar funciones Math
  */
 export function resetSignalQualityState(): number {
   return 0; // Reset the weak signals counter

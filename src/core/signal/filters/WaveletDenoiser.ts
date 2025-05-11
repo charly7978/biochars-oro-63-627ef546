@@ -1,80 +1,76 @@
 
 /**
- * Implementación seria de denoise wavelet para señales PPG reales
- * Fase 4: Implementación robusta y seria
+ * Implementación simplificada de filtro basado en wavelets para denoising de señales PPG
  */
 export class WaveletDenoiser {
-  private readonly levels = 3;
-  private threshold = 0.1; // Removed readonly modifier
-  private lastValues: number[] = [];
-  private readonly MAX_BUFFER = 8;
-  
+  private THRESHOLD: number = 0.025;
+  private buffer: number[] = [];
+  private readonly BUFFER_SIZE: number = 16; // Potencia de 2 para transformadas
+
   /**
-   * Aplica denoise wavelet simple pero efectivo para extracción real de señal PPG
-   * No utiliza simulación - solo procesamiento directo
+   * Aplica denoising wavelet a un valor de señal
+   * @param value Valor filtrado por Kalman
+   * @returns Valor con ruido reducido
    */
   public denoise(value: number): number {
-    // Añadir al buffer
-    this.lastValues.push(value);
-    if (this.lastValues.length > this.MAX_BUFFER) {
-      this.lastValues.shift();
+    // Actualizar buffer
+    this.buffer.push(value);
+    if (this.buffer.length > this.BUFFER_SIZE) {
+      this.buffer.shift();
     }
     
-    // Si no tenemos suficientes valores, devolver directo
-    if (this.lastValues.length < this.MAX_BUFFER) {
+    // Si no tenemos suficientes muestras, devolver el valor original
+    if (this.buffer.length < this.BUFFER_SIZE) {
       return value;
     }
     
-    // Implementación simple de denoising sin simulación:
-    // 1. Remover componentes alta frecuencia (ruido)
-    // 2. Preservar componentes de baja frecuencia (señal PPG)
-    
-    // Calcular media móvil para eliminar ruido de alta frecuencia
-    let sum = 0;
-    for (let i = 0; i < this.lastValues.length; i++) {
-      sum += this.lastValues[i];
-    }
-    const mean = sum / this.lastValues.length;
-    
-    // Calcular diferencia con la media para identificar componentes de señal
-    const differences = this.lastValues.map(v => v - mean);
-    
-    // Aplicar soft thresholding para preservar componentes significativos
-    // de la señal real sin manipulación
-    const thresholdedDiffs = differences.map(d => {
-      const absDiff = d >= 0 ? d : -d; // Valor absoluto sin Math.abs
-      
-      // Aplicar threshold
-      if (absDiff <= this.threshold) {
-        return 0; // Eliminar ruido pequeño
-      } else {
-        // Preservar señal real con reducción de ruido
-        return d >= 0 ? 
-          (absDiff - this.threshold) : 
-          -(absDiff - this.threshold);
-      }
-    });
-    
-    // Reconstruir la señal como suma de componentes significativos y media
-    const denoised = mean + thresholdedDiffs[thresholdedDiffs.length - 1];
-    
-    return denoised;
+    // Implementación simplificada de denoising
+    // En una implementación real, se aplicaría DWT completa
+    return this.applySimplifiedDenoising(value);
   }
   
   /**
-   * Resetea el estado del filtro
+   * Método simplificado que emula el comportamiento de un denoiser wavelet
+   * aplicando un filtro adaptativo basado en los últimos valores
+   */
+  private applySimplifiedDenoising(currentValue: number): number {
+    // Calcular estadísticas locales
+    const sum = this.buffer.reduce((acc, val) => acc + val, 0);
+    const mean = sum / this.buffer.length;
+    
+    const variance = this.buffer.reduce((acc, val) => 
+      acc + Math.pow(val - mean, 2), 0) / this.buffer.length;
+    
+    const stdDev = Math.sqrt(variance);
+    
+    // Aplicar threshold suave para reducción de ruido
+    const diff = currentValue - mean;
+    const absValue = Math.abs(diff);
+    
+    if (absValue < this.THRESHOLD * stdDev) {
+      // Eliminar pequeñas variaciones (ruido)
+      return mean;
+    } else {
+      // Conservar la señal pero con reducción de ruido
+      const sign = diff >= 0 ? 1 : -1;
+      return mean + sign * (absValue - this.THRESHOLD * stdDev);
+    }
+  }
+  
+  /**
+   * Reinicia el buffer del filtro
    */
   public reset(): void {
-    this.lastValues = [];
+    this.buffer = [];
   }
   
   /**
-   * Configura el umbral de filtrado
+   * Ajusta el umbral de filtrado
+   * @param threshold Nuevo valor de umbral
    */
   public setThreshold(threshold: number): void {
     if (threshold > 0 && threshold < 1) {
-      // Solo aceptar valores razonables
-      this.threshold = threshold;
+      this.THRESHOLD = threshold;
     }
   }
 }

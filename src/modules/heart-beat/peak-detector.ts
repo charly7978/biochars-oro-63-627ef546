@@ -1,3 +1,4 @@
+
 /**
  * Functions for detecting peaks in PPG signals
  */
@@ -82,24 +83,11 @@ export function confirmPeak(
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirmar pico si los valores posteriores descienden significativamente
-      const peakValue = updatedBuffer[len - 3]; // Asumiendo que el pico es el 3er último valor del buffer
-      const valueAfter1 = updatedBuffer[len - 2];
-      const valueAfter2 = updatedBuffer[len - 1];
-      
-      const drop1 = peakValue - valueAfter1;
-      const drop2 = valueAfter1 - valueAfter2;
+      // Confirm peak if followed by decreasing values
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
 
-      // Requerir una bajada clara y consistente
-      const MIN_DROP_RATIO = 0.15; // Exigir que la bajada sea al menos 15% del valor del pico normalizado
-      const isSignificantDrop = 
-        drop1 > peakValue * MIN_DROP_RATIO || 
-        drop2 > peakValue * MIN_DROP_RATIO;
-        
-      // Mantener la lógica anterior como respaldo si la señal es más ruidosa
-      const goingDownSimple = valueAfter2 < valueAfter1 || valueAfter1 < peakValue;
-
-      if (isSignificantDrop || goingDownSimple) { // Priorizar bajada significativa
+      if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;
         updatedLastConfirmedPeak = true;
       }

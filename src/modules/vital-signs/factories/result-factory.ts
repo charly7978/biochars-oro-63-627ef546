@@ -2,12 +2,14 @@
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
- * Factory for creating standardized vital signs results without using Math functions
+ * Factory for creating standardized vital signs results
  */
 export class ResultFactory {
+  /**
+   * Creates a complete result with all vital signs
+   */
   public static createResult(
     spo2: number,
-    heartRate: number,
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
@@ -21,7 +23,6 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
-      heartRate,
       pressure,
       arrhythmiaStatus,
       glucose,
@@ -35,11 +36,12 @@ export class ResultFactory {
     };
   }
 
+  /**
+   * Creates an empty result with default values
+   */
   public static createEmptyResults(): VitalSignsResult {
-    // Valores vacíos para representar ausencia de medición
     return {
       spo2: 0,
-      heartRate: 0,
       pressure: "--/--",
       arrhythmiaStatus: "--",
       glucose: 0,

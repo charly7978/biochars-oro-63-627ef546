@@ -1,106 +1,187 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { SignalFilter } from '../../core/signal-processing/filters/SignalFilter';
-import { WaveletDenoiser } from '../../core/signal/filters/WaveletDenoiser';
+import { BaseProcessor } from './processors/base-processor';
+import { SignalFilter } from './processors/signal-filter';
+import { SignalQuality } from './processors/signal-quality';
+import { HeartRateDetector } from './processors/heart-rate-detector';
+import { SignalValidator } from './validators/signal-validator';
 
 /**
- * Procesador de señales PPG real sin simulaciones
- * Este procesador SOLO utiliza datos reales de cámara,
- * sin ningún tipo de generación sintética o simulación.
+ * Signal processor for real PPG signals
+ * Implements filtering and analysis techniques on real data only
+ * Enhanced with rhythmic pattern detection for finger presence
+ * No simulation or reference values are used
  */
-export class SignalProcessor {
-  private readonly ppgValues: number[] = [];
-  private readonly signalFilter: SignalFilter;
-  private readonly waveletDenoiser: WaveletDenoiser;
+export class SignalProcessor extends BaseProcessor {
+  private filter: SignalFilter;
+  private quality: SignalQuality;
+  private heartRateDetector: HeartRateDetector;
+  private signalValidator: SignalValidator;
   
-  // Buffers para filtrado adaptativo
-  private readonly bufferSize = 200;
-  private readonly smaBuffer: number[] = [];
-  private readonly emaBuffer: number[] = [];
+  // Finger detection state
+  private rhythmBasedFingerDetection: boolean = false;
+  private fingerDetectionConfirmed: boolean = false;
+  private fingerDetectionStartTime: number | null = null;
+  
+  // Signal quality variables - more strict thresholds
+  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
   
   constructor() {
-    this.signalFilter = new SignalFilter();
-    this.waveletDenoiser = new WaveletDenoiser();
+    super();
+    this.filter = new SignalFilter();
+    this.quality = new SignalQuality();
+    this.heartRateDetector = new HeartRateDetector();
+    this.signalValidator = new SignalValidator(0.02, 15); // Increased thresholds
   }
   
   /**
-   * Procesa el valor PPG con filtros adaptativos
-   * Solo utiliza datos reales sin simulación
+   * Apply Moving Average filter to real values
    */
-  public processPPG(value: number): number {
-    // 1. Aplicar denoising wavelet para preservar componentes importantes
-    const denoisedValue = this.waveletDenoiser.denoise(value);
-    
-    // 2. Aplicar filtro SMA para estabilizar señal real
-    this.smaBuffer.push(denoisedValue);
-    if (this.smaBuffer.length > 10) {
-      this.smaBuffer.shift();
+  public applySMAFilter(value: number): number {
+    return this.filter.applySMAFilter(value, this.ppgValues);
+  }
+  
+  /**
+   * Apply Exponential Moving Average filter to real data
+   */
+  public applyEMAFilter(value: number, alpha?: number): number {
+    return this.filter.applyEMAFilter(value, this.ppgValues, alpha);
+  }
+  
+  /**
+   * Apply median filter to real data
+   */
+  public applyMedianFilter(value: number): number {
+    return this.filter.applyMedianFilter(value, this.ppgValues);
+  }
+  
+  /**
+   * Check if finger is detected based on rhythmic patterns
+   * Uses physiological characteristics (heartbeat rhythm)
+   */
+  public isFingerDetected(): boolean {
+    // If already confirmed through consistent patterns, maintain detection
+    if (this.fingerDetectionConfirmed) {
+      return true;
     }
     
-    const smaFiltered = this.signalFilter.applySMAFilter(denoisedValue, this.smaBuffer);
+    // Otherwise, use the validator's pattern detection
+    return this.signalValidator.isFingerDetected();
+  }
+  
+  /**
+   * Apply combined filtering for real signal processing
+   * No simulation is used
+   * Incorporates rhythmic pattern-based finger detection
+   */
+  public applyFilters(value: number): { filteredValue: number, quality: number, fingerDetected: boolean } {
+    // Track the signal for pattern detection
+    this.signalValidator.trackSignalForPatternDetection(value);
     
-    // 3. Aplicar filtro EMA para suavizado final preservando la forma de onda real
-    this.emaBuffer.push(smaFiltered);
-    if (this.emaBuffer.length > 10) {
-      this.emaBuffer.shift();
-    }
+    // Step 1: Median filter to remove outliers
+    const medianFiltered = this.applyMedianFilter(value);
     
-    // Determinar alpha basado en la calidad de señal real
-    let alpha = 0.3;
+    // Step 2: Low pass filter to smooth the signal
+    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
     
-    // Si hay datos suficientes, calcular varianza para adaptar alpha
-    if (this.emaBuffer.length > 5) {
-      const mean = this.emaBuffer.reduce((sum, val) => sum + val, 0) / this.emaBuffer.length;
-      let variance = 0;
-      for (let i = 0; i < this.emaBuffer.length; i++) {
-        const diff = this.emaBuffer[i] - mean;
-        variance += diff * diff;
-      }
-      variance /= this.emaBuffer.length;
-      
-      // Adaptar alpha basado en varianza real de la señal
-      if (variance < 0.0001) alpha = 0.15;       // Señal muy estable
-      else if (variance < 0.001) alpha = 0.2;    // Señal estable
-      else if (variance < 0.01) alpha = 0.3;     // Señal normal
-      else alpha = 0.5;                          // Señal con cambios rápidos
-    }
+    // Step 3: Moving average for final smoothing
+    const smaFiltered = this.applySMAFilter(lowPassFiltered);
     
-    const emaFiltered = this.signalFilter.applyEMAFilter(smaFiltered, alpha);
+    // Calculate noise level of real signal
+    this.quality.updateNoiseLevel(value, smaFiltered);
     
-    // Actualizar buffer principal de valores PPG
-    this.ppgValues.push(emaFiltered);
-    if (this.ppgValues.length > this.bufferSize) {
+    // Calculate signal quality (0-100)
+    const qualityValue = this.quality.calculateSignalQuality(this.ppgValues);
+    
+    // Store the filtered value in the buffer
+    this.ppgValues.push(smaFiltered);
+    if (this.ppgValues.length > 30) {
       this.ppgValues.shift();
     }
     
-    return emaFiltered;
+    // Check finger detection using pattern recognition with a higher quality threshold
+    const fingerDetected = this.signalValidator.isFingerDetected() && 
+                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    
+    // Calculate signal amplitude
+    let amplitude = 0;
+    if (this.ppgValues.length > 10) {
+      const recentValues = this.ppgValues.slice(-10);
+      amplitude = Math.max(...recentValues) - Math.min(...recentValues);
+    }
+    
+    // Require minimum amplitude for detection (physiological requirement)
+    const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    
+    // If finger is detected by pattern and has valid amplitude, confirm it
+    if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
+      const now = Date.now();
+      
+      if (!this.fingerDetectionStartTime) {
+        this.fingerDetectionStartTime = now;
+        console.log("Signal processor: Potential finger detection started", {
+          time: new Date(now).toISOString(),
+          quality: qualityValue,
+          amplitude
+        });
+      }
+      
+      // If finger detection has been consistent for required time period, confirm it
+      if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
+        this.fingerDetectionConfirmed = true;
+        this.rhythmBasedFingerDetection = true;
+        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
+          time: new Date(now).toISOString(),
+          detectionMethod: "Rhythmic pattern detection",
+          detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
+          quality: qualityValue,
+          amplitude
+        });
+      }
+    } else if (!fingerDetected || !hasValidAmplitude) {
+      // Reset finger detection if lost or amplitude too low
+      if (this.fingerDetectionConfirmed) {
+        console.log("Signal processor: Finger detection lost", {
+          hasValidPattern: fingerDetected,
+          hasValidAmplitude,
+          amplitude,
+          quality: qualityValue
+        });
+      }
+      
+      this.fingerDetectionConfirmed = false;
+      this.fingerDetectionStartTime = null;
+      this.rhythmBasedFingerDetection = false;
+    }
+    
+    return { 
+      filteredValue: smaFiltered,
+      quality: qualityValue,
+      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
+    };
   }
   
   /**
-   * Aplica filtro SMA directamente a un valor
+   * Calculate heart rate from real PPG values
    */
-  public applySMAFilter(value: number): number {
-    return this.signalFilter.applySMAFilter(value, this.smaBuffer);
+  public calculateHeartRate(sampleRate: number = 30): number {
+    return this.heartRateDetector.calculateHeartRate(this.ppgValues, sampleRate);
   }
   
   /**
-   * Obtiene todos los valores PPG procesados
-   */
-  public getPPGValues(): number[] {
-    return [...this.ppgValues];
-  }
-  
-  /**
-   * Resetea todos los buffers y estados
+   * Reset the signal processor
+   * Ensures all measurements start from zero
    */
   public reset(): void {
-    this.ppgValues.length = 0;
-    this.smaBuffer.length = 0;
-    this.emaBuffer.length = 0;
-    this.signalFilter.reset();
-    this.waveletDenoiser.reset();
+    super.reset();
+    this.quality.reset();
+    this.signalValidator.resetFingerDetection();
+    this.fingerDetectionConfirmed = false;
+    this.fingerDetectionStartTime = null;
+    this.rhythmBasedFingerDetection = false;
   }
 }

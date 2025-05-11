@@ -1,8 +1,9 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-import { calculateAC, calculateDC } from './shared-signal-utils';
+import { calculateAC, calculateDC } from './utils';
 
 export class SpO2Processor {
   private readonly SPO2_BUFFER_SIZE = 10;
@@ -33,19 +34,16 @@ export class SpO2Processor {
     // Direct calculation from real signal characteristics
     const R = (ac / dc);
     
-    // Calculate SpO2 without Math.round
-    let spO2 = 98 - (15 * R);
-    // Integer conversion without Math.round
-    spO2 = spO2 >= 0 ? ~~(spO2 + 0.5) : ~~(spO2 - 0.5);
+    let spO2 = Math.round(98 - (15 * R));
     
-    // Adjust based on real perfusion quality without using Math.min/Math.max
+    // Adjust based on real perfusion quality
     if (perfusionIndex > 0.15) {
-      spO2 = spO2 >= 98 ? 98 : spO2 + 1;
+      spO2 = Math.min(98, spO2 + 1);
     } else if (perfusionIndex < 0.08) {
-      spO2 = spO2 <= 0 ? 0 : spO2 - 1;
+      spO2 = Math.max(0, spO2 - 1);
     }
 
-    spO2 = spO2 >= 98 ? 98 : spO2;
+    spO2 = Math.min(98, spO2);
 
     // Update buffer with real measurement
     this.spo2Buffer.push(spO2);
@@ -55,15 +53,8 @@ export class SpO2Processor {
 
     // Calculate average for stability from real measurements
     if (this.spo2Buffer.length > 0) {
-      // Sum without reduce
-      let sum = 0;
-      for (let i = 0; i < this.spo2Buffer.length; i++) {
-        sum += this.spo2Buffer[i];
-      }
-      
-      // Integer conversion without Math.round
-      const avg = sum / this.spo2Buffer.length;
-      spO2 = avg >= 0 ? ~~(avg + 0.5) : ~~(avg - 0.5);
+      const sum = this.spo2Buffer.reduce((a, b) => a + b, 0);
+      spO2 = Math.round(sum / this.spo2Buffer.length);
     }
 
     return spO2;
@@ -76,8 +67,7 @@ export class SpO2Processor {
   private getLastValidSpo2(decayAmount: number): number {
     if (this.spo2Buffer.length > 0) {
       const lastValid = this.spo2Buffer[this.spo2Buffer.length - 1];
-      // No Math.max needed - simple comparison
-      return lastValid > decayAmount ? lastValid - decayAmount : 0;
+      return Math.max(0, lastValid - decayAmount);
     }
     return 0;
   }
