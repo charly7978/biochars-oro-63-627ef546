@@ -16,9 +16,6 @@ import useFingerDetection from '../services/FingerDetectionService';
 export const useSignalProcessor = () => {
   // Acceso al servicio centralizado de detección de dedo
   const fingerDetection = useFingerDetection();
-  const cleanupCalledRef = useRef(false);
-  const processingActiveRef = useRef(false);
-  const resetInProgressRef = useRef(false);
 
   // Create processor instance
   const [processor] = useState(() => {
@@ -46,17 +43,6 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Debug signal quality and processing
-      console.log("Signal processed:", { 
-        filteredValue: signal.filteredValue.toFixed(3),
-        rawValue: signal.rawValue.toFixed(2),
-        quality: signal.quality,
-        processingActive: processingActiveRef.current
-      });
-      
-      // Solo procesar si estamos activos
-      if (!processingActiveRef.current) return;
-      
       // Usar el detector centralizado para una detección más precisa
       const fingerStatus = fingerDetection.processSignal(signal.filteredValue, signal.quality);
       
@@ -94,32 +80,9 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
-      // Avoid multiple calls to cleanup functions that cause infinite loops
-      if (cleanupCalledRef.current) return;
-      cleanupCalledRef.current = true;
-      processingActiveRef.current = false;
-      
       processor.stop();
-      
-      // Evitar llamadas a resetDetection durante el desmontaje
-      // Usar un estado local para controlar el reset
-      if (!resetInProgressRef.current) {
-        resetInProgressRef.current = true;
-        
-        // Use setTimeout with longer delay to prevent state update during unmount
-        setTimeout(() => {
-          try {
-            if (fingerDetection && fingerDetection.resetDetection) {
-              fingerDetection.resetDetection();
-              console.log("Finger detection reset");
-            }
-          } catch (err) {
-            console.error("Error resetting finger detection:", err);
-          } finally {
-            resetInProgressRef.current = false;
-          }
-        }, 100); // Mayor tiempo para evitar actualizaciones durante desmontaje
-      }
+      // Reset detector de dedo centralizado
+      fingerDetection.resetDetection();
     };
   }, [processor, fingerDetection]);
 
@@ -130,7 +93,6 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
     setIsProcessing(true);
-    processingActiveRef.current = true;
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
@@ -139,23 +101,8 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset finger detection status before starting
-    // Control más seguro del reset
-    if (!resetInProgressRef.current) {
-      resetInProgressRef.current = true;
-      
-      // Usar setTimeout para evitar ciclos de actualización infinitos
-      setTimeout(() => {
-        try {
-          if (fingerDetection && fingerDetection.resetDetection) {
-            fingerDetection.resetDetection();
-          }
-        } finally {
-          resetInProgressRef.current = false;
-          cleanupCalledRef.current = false;
-        }
-      }, 50);
-    }
+    // Reset detector de dedo centralizado
+    fingerDetection.resetDetection();
     
     processor.start();
   }, [processor, fingerDetection]);
@@ -167,31 +114,17 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
-    processingActiveRef.current = false;
     processor.stop();
     
-    // Control más seguro del reset
-    if (!resetInProgressRef.current) {
-      resetInProgressRef.current = true;
-      
-      // Usar setTimeout para evitar ciclos de actualización
-      setTimeout(() => {
-        try {
-          if (fingerDetection && fingerDetection.resetDetection) {
-            fingerDetection.resetDetection();
-          }
-        } finally {
-          resetInProgressRef.current = false;
-        }
-      }, 50);
-    }
+    // Reset detector de dedo centralizado
+    fingerDetection.resetDetection();
   }, [processor, fingerDetection]);
 
   /**
    * Process a frame from camera
    */
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing && processingActiveRef.current) {
+    if (isProcessing) {
       try {
         processor.processFrame(imageData);
       } catch (err) {
