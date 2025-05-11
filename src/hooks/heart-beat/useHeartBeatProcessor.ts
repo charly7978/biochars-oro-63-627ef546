@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { HeartBeatProcessor } from '../../modules/HeartBeatProcessor';
-import { HeartBeatResult } from '@/core/types';
+import { HeartBeatResult } from './types';
 import { AudioService } from '../../services/AudioService';
 import { useSignalProcessor } from './signal-processor';
 
@@ -30,7 +30,7 @@ export const useHeartBeatProcessor = () => {
   
   const { 
     processSignal: processorFunc, 
-    reset: resetProcessor,
+    resetProcessor,
     lastPeakTimeRef,
     lastValidBpmRef
   } = useSignalProcessor();
@@ -75,16 +75,7 @@ export const useHeartBeatProcessor = () => {
     
     try {
       // Procesamiento real de la señal PPG (sin simulaciones)
-      const result = processorFunc(
-        value,
-        lastBpmRef.current,
-        heartBeatResult.confidence,
-        processorRef.current,
-        requestImmediateBeep,
-        isMonitoringRef,
-        lastRRIntervalsRef,
-        currentBeatIsArrhythmiaRef
-      );
+      const result = processorFunc(value);
       
       // Actualizar resultado y referencias
       lastBpmRef.current = result.bpm || lastBpmRef.current;
@@ -92,8 +83,8 @@ export const useHeartBeatProcessor = () => {
         ...prevResult,
         ...result,
         rrData: {
-          intervals: lastRRIntervalsRef.current,
-          lastPeakTime: lastPeakTimeRef.current
+          intervals: result.rrData.intervals,
+          lastPeakTime: result.rrData.lastPeakTime
         }
       }));
       
@@ -106,8 +97,8 @@ export const useHeartBeatProcessor = () => {
         ...result,
         filteredValue: value,
         rrData: {
-          intervals: lastRRIntervalsRef.current,
-          lastPeakTime: lastPeakTimeRef.current
+          intervals: result.rrData.intervals,
+          lastPeakTime: result.rrData.lastPeakTime
         }
       };
     } catch (e) {
@@ -121,7 +112,7 @@ export const useHeartBeatProcessor = () => {
         rrData: { intervals: [], lastPeakTime: null }
       };
     }
-  }, [processorFunc, lastPeakTimeRef, heartBeatResult.confidence]);
+  }, [processorFunc]);
 
   /**
    * Inicia el monitoreo de frecuencia cardíaca

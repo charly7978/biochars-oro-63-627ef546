@@ -1,9 +1,34 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import cv from '@techstark/opencv-js';
-import { calculateSNR, calculateAutocorrelation, evaluateSignalStability } from '@/modules/vital-signs/utils/signal-analysis-utils';
+import { calculateSNR, evaluateSignalStability } from '@/modules/vital-signs/utils/signal-analysis-utils';
+
+// Define a simple autocorrelation function since it's missing from the utilities
+function calculateAutocorrelation(signal: number[]): number {
+  if (signal.length < 10) return 0;
+
+  // Simple implementation of autocorrelation for periodicity detection
+  let sumCorr = 0;
+  let sumNorm = 0;
+  const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
+  const normalizedSignal = signal.map(val => val - mean);
+  
+  // Calculate autocorrelation for half the signal length lags
+  for (let lag = 1; lag < Math.floor(signal.length / 2); lag++) {
+    let corr = 0;
+    for (let i = 0; i < signal.length - lag; i++) {
+      corr += normalizedSignal[i] * normalizedSignal[i + lag];
+    }
+    sumCorr += Math.abs(corr);
+    sumNorm += 1;
+  }
+  
+  // Normalize to get a value between 0-1
+  return sumNorm > 0 ? Math.min(1, Math.abs(sumCorr) / (signal.length * sumNorm)) : 0;
+}
 
 interface FingerDetectionConfig {
   // Umbrales de color para detección de piel en espacio HSV

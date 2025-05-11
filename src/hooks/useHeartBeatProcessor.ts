@@ -41,7 +41,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
   
   const {
     processSignal: processSignalInternal,
-    reset: resetSignalProcessor,
+    resetProcessor: resetSignalProcessor,
     lastPeakTimeRef,
     lastValidBpmRef,
     lastSignalQualityRef,
@@ -119,16 +119,7 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
       };
     }
 
-    const result = processSignalInternal(
-      value, 
-      currentBPM, 
-      confidence, 
-      processorRef.current, 
-      requestBeep, 
-      isMonitoringRef, 
-      lastRRIntervalsRef, 
-      currentBeatIsArrhythmiaRef
-    );
+    const result = processSignalInternal(value);
 
     if (result.bpm > 0 && result.confidence > 0.4) {
       setCurrentBPM(result.bpm);
@@ -147,7 +138,6 @@ export const useHeartBeatProcessor = (): UseHeartBeatReturn => {
     currentBPM, 
     confidence, 
     processSignalInternal, 
-    requestBeep, 
     detectArrhythmia
   ]);
 

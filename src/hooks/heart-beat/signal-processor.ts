@@ -14,6 +14,10 @@ export function useSignalProcessor() {
   const arrhythmiaCountRef = useRef<number>(0);
   const confidenceRef = useRef<number>(0);
   const rrIntervalsRef = useRef<number[]>([]);
+  const lastValidBpmRef = useRef<number>(0);
+  const lastSignalQualityRef = useRef<number>(0);
+  const consecutiveWeakSignalsRef = useRef<number>(0);
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5;
   
   // Obtener lógica de detección de arritmias
   const { detectArrhythmia, reset: resetArrhythmiaDetector } = useArrhythmiaDetector();
@@ -28,6 +32,9 @@ export function useSignalProcessor() {
     arrhythmiaCountRef.current = 0;
     confidenceRef.current = 0;
     rrIntervalsRef.current = [];
+    lastValidBpmRef.current = 0;
+    lastSignalQualityRef.current = 0;
+    consecutiveWeakSignalsRef.current = 0;
     resetArrhythmiaDetector();
   }, [resetArrhythmiaDetector]);
 
@@ -130,6 +137,11 @@ export function useSignalProcessor() {
       isArrhythmia = rrAnalysis.isArrhythmia;
     }
 
+    // Update lastValidBpm if we have a reasonable heart rate
+    if (averageBpm >= 40 && averageBpm <= 200 && confidence > 0.4) {
+      lastValidBpmRef.current = Math.round(averageBpm);
+    }
+
     return {
       bpm: Math.round(averageBpm),
       confidence: confidence,
@@ -145,6 +157,11 @@ export function useSignalProcessor() {
 
   return {
     processSignal,
-    resetProcessor
+    resetProcessor,
+    lastPeakTimeRef,
+    lastValidBpmRef,
+    lastSignalQualityRef,
+    consecutiveWeakSignalsRef,
+    MAX_CONSECUTIVE_WEAK_SIGNALS
   };
 }
