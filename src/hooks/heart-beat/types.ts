@@ -1,5 +1,5 @@
 
-import { RRAnalysisResult } from '../../modules/vital-signs/arrhythmia/types';
+import { RRAnalysisResult } from '../arrhythmia/types';
 
 export interface RRIntervalData {
   intervals: number[];
@@ -13,8 +13,7 @@ export interface HeartBeatResult {
   filteredValue?: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  rrData?: RRIntervalData;
-  timestamp?: number;
+  rrData: RRIntervalData;
 }
 
 export interface UseHeartBeatReturn {
@@ -27,5 +26,4 @@ export interface UseHeartBeatReturn {
   startMonitoring: () => void;
   stopMonitoring: () => void;
   arrhythmiaCount?: number;
-  lastPeakTime?: number | null;
 }

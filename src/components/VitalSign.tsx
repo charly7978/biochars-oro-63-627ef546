@@ -1,6 +1,7 @@
 
 import React, { ReactNode } from 'react';
 import { cn } from "@/lib/utils";
+import { animations } from '@/theme/animations';
 
 interface VitalSignProps {
   label: string;
@@ -29,37 +30,6 @@ const VitalSign: React.FC<VitalSignProps> = ({
     return "text-2xl sm:text-3xl";
   };
 
-  // MODIFICADO: Mejorada la detección de valores para mostrar
-  // Consideramos valores reales > 0 o cadenas que no son indicadores de falta de datos
-  const hasValue = value !== undefined && value !== null && 
-                  (typeof value === 'number' ? value > 0 : 
-                   (value !== '--' && value !== '--/--' && value !== ''));
-  
-  // Format function to handle all types of values properly
-  const formattedValue = () => {
-    // Handle numeric values
-    if (typeof value === 'number') {
-      if (value <= 0) return "--"; // Valor no medido o inválido
-      
-      if (label === "HIDRATACIÓN" || label === "SPO2") {
-        // These are percentages, show as integers
-        return Math.round(value);
-      } else if (label === "HEMOGLOBINA") {
-        // For hemoglobin, show one decimal place
-        return value.toFixed(1);
-      }
-      return Math.round(value);
-    }
-    
-    // Handle string values
-    if (typeof value === 'string' && value !== undefined) {
-      return value;
-    }
-    
-    // Default placeholder
-    return "--";
-  };
-
   return (
     <div 
       className={cn(
@@ -83,19 +53,26 @@ const VitalSign: React.FC<VitalSignProps> = ({
         className={cn(
           getValueTextSize(),
           "font-bold transition-colors duration-300",
-          highlighted && hasValue
+          highlighted 
             ? "text-white" 
             : "text-gray-300"
         )}
         style={{ 
-          textShadow: highlighted && hasValue ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
+          animation: highlighted ? animations["result-animate"] : "none",
+          textShadow: highlighted ? "0 0 8px rgba(255, 255, 255, 0.4)" : "none"
         }}
       >
-        <span className="inline-flex items-center">
-          {formattedValue()}
+        <span 
+          className="inline-flex items-center"
+          style={{ 
+            animation: highlighted ? animations["number-highlight"] : "none",
+            transition: "all 0.6s ease-out"
+          }}
+        >
+          {value}
           {icon && <span className="ml-1">{icon}</span>}
         </span>
-        {unit && hasValue && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
+        {unit && <span className="text-sm font-medium ml-1 text-gray-400">{unit}</span>}
       </div>
     </div>
   );

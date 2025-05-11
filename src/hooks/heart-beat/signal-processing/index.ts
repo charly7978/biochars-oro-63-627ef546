@@ -4,8 +4,11 @@
  * 
  * Index file for signal processing utilities
  */
+export * from './signal-quality';
+export * from './peak-detection';
+export * from './result-processor';
 
-// Export functions from signal-quality.ts
+// Export specific functions for direct use
 export { 
   checkWeakSignal, 
   shouldProcessMeasurement, 
@@ -13,12 +16,10 @@ export {
   resetSignalQualityState
 } from './signal-quality';
 
-// Export functions from peak-detection.ts
 export { 
   handlePeakDetection 
 } from './peak-detection';
 
-// Export functions from result-processor.ts
 export { 
   updateLastValidBpm, 
   processLowConfidenceResult 

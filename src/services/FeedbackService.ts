@@ -24,62 +24,26 @@ const loadSound = (url: string): HTMLAudioElement => {
 };
 
 export const FeedbackService = {
-  // Estado interno para recordar si se solicitaron permisos
-  permissionRequested: false,
-
-  // Comprobar y solicitar permisos para vibración
-  checkVibrationPermission: () => {
-    if (!FeedbackService.permissionRequested && 'vibrate' in navigator) {
-      // En móviles, la primera vibración debe ocurrir en respuesta a un gesto del usuario
-      console.log("FeedbackService: Vibration permission requested");
-      FeedbackService.permissionRequested = true;
-      
-      // Intentar una vibración muy corta para establecer permisos
-      try {
-        navigator.vibrate(1);
-      } catch (err) {
-        console.log("Couldn't initialize vibration:", err);
-      }
-    }
-  },
-
   // Retroalimentación háptica
   vibrate: (pattern: number | number[] = 200) => {
-    FeedbackService.checkVibrationPermission();
-    
     if ('vibrate' in navigator) {
       try {
         navigator.vibrate(pattern);
-        console.log('Vibración activada:', pattern);
-        return true;
       } catch (error) {
         console.error('Error al activar vibración:', error);
-        return false;
       }
-    } else {
-      console.log('Vibración no soportada en este dispositivo');
-      return false;
     }
   },
 
   // Retroalimentación háptica específica para arritmias
   vibrateArrhythmia: () => {
-    FeedbackService.checkVibrationPermission();
-    
     if ('vibrate' in navigator) {
       try {
-        // Patrón distintivo para arritmias (triple pulso con pausa)
-        const pattern = [100, 50, 100, 50, 100, 300, 100];
-        navigator.vibrate(pattern);
-        console.log('Vibración de arritmia activada:', pattern);
-        return true;
+        // Patrón más distintivo para arritmias (triple pulso con pausa)
+        navigator.vibrate([100, 50, 100, 50, 100, 300, 100]);
       } catch (error) {
         console.error('Error al activar vibración de arritmia:', error);
-        return false;
       }
-    } else {
-      console.log('Vibración no soportada en este dispositivo');
-      return false;
     }
   },
 
@@ -105,9 +69,6 @@ export const FeedbackService = {
       const audio = loadSound(soundUrl);
       // Reiniciar el audio si ya está reproduciéndose
       audio.currentTime = 0;
-      
-      // Volumen completo para garantizar que se escuche
-      audio.volume = 1.0;
       
       const playPromise = audio.play();
       if (playPromise !== undefined) {
@@ -163,7 +124,7 @@ export const FeedbackService = {
     } else {
       FeedbackService.showToast(
         'Arritmia detectada', 
-        `Se han detectado ${count} posibles arritmias`, 
+        `Se ha detectado ${count} posibles arritmias`, 
         'warning',
         6000
       );

@@ -1,21 +1,19 @@
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import VitalSign from "@/components/VitalSign";
-import CameraView from "@/components/camera/CameraView";
+import CameraView from "@/components/CameraView";
 import { useSignalProcessor } from "@/hooks/useSignalProcessor";
-import { useHeartBeatProcessor } from "@/hooks/useHeartBeatProcessor";
+import { useHeartBeatProcessor } from "@/hooks/heart-beat/useHeartBeatProcessor";
 import { useVitalSignsProcessor } from "@/hooks/useVitalSignsProcessor";
 import PPGSignalMeter from "@/components/PPGSignalMeter";
+import MonitorButton from "@/components/MonitorButton";
 import AppTitle from "@/components/AppTitle";
 import { VitalSignsResult } from "@/modules/vital-signs/types/vital-signs-result";
-import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
-import { registerGlobalCleanup } from '@/utils/cleanup-utils';
-import ArrhythmiaDetectionService from '@/services/arrhythmia';
-import { formatArrhythmiaWindowsForDisplay } from '@/services/arrhythmia/utils';
-import MonitorButton from "@/components/MonitorButton";
 import { Droplet } from "lucide-react";
+import { ResultFactory } from '@/modules/vital-signs/factories/result-factory';
 
 const Index = () => {
+  // Estado principal
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -24,25 +22,34 @@ const Index = () => {
   const [signalQuality, setSignalQuality] = useState(0);
   const [isArrhythmia, setIsArrhythmia] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  
+  // Referencias para mejorar rendimiento
   const measurementTimer = useRef<NodeJS.Timeout | null>(null);
+  const arrhythmiaTimer = useRef<NodeJS.Timeout | null>(null);
   const bpmCache = useRef<number[]>([]);
   const lastSignalRef = useRef<any>(null);
-  const debugFrameCountRef = useRef(0);
-  const processedFrameCountRef = useRef(0);
+  const lastProcessTime = useRef<number>(0);
+  const frameSkipCount = useRef<number>(0);
+  const processorActive = useRef<boolean>(false);
 
   const {
     startProcessing: startSignalProcessing,
     stopProcessing: stopSignalProcessing,
     processFrame,
     lastSignal,
-    error: processingError
+    error: processingError,
+    optimizationLevel
   } = useSignalProcessor();
 
   const { 
-    processSignal: processHeartBeat, 
+    processSignal: processHeartBeat,
+    reset: resetHeartBeatProcessor,
+    currentBPM,
+    confidence,
+    isArrhythmia: heartBeatIsArrhythmia,
+    requestBeep,
     startMonitoring: startHeartBeatMonitoring,
-    stopMonitoring: stopHeartBeatMonitoring,
-    reset: resetHeartBeatProcessor
+    stopMonitoring: stopHeartBeatMonitoring
   } = useHeartBeatProcessor();
   
   const { 
@@ -52,9 +59,24 @@ const Index = () => {
     lastValidResults
   } = useVitalSignsProcessor();
 
+  // Memorizar funciones costosas para evitar recálculos
+  const getHydrationColor = useMemo(() => (hydration: number) => {
+    if (hydration >= 80) return 'text-blue-500';
+    if (hydration >= 65) return 'text-green-500';
+    if (hydration >= 50) return 'text-yellow-500';
+    return 'text-red-500';
+  }, []);
+
+  const enterFullScreen = async () => {
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch (err) {
+      console.log('Error al entrar en pantalla completa:', err);
+    }
+  };
+
+  // Prevenir scroll para mejor rendimiento
   useEffect(() => {
-    registerGlobalCleanup();
-    
     const preventScroll = (e: Event) => e.preventDefault();
     document.body.addEventListener('touchmove', preventScroll, { passive: false });
     document.body.addEventListener('scroll', preventScroll, { passive: false });
@@ -65,89 +87,73 @@ const Index = () => {
     };
   }, []);
 
+  // Actualizar resultados cuando estén disponibles
   useEffect(() => {
     if (lastValidResults && !isMonitoring) {
-      console.log("Index: Setting vital signs from lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
   }, [lastValidResults, isMonitoring]);
 
+  // Procesar señal con optimización
   useEffect(() => {
-    if (lastSignal && isMonitoring) {
-      debugFrameCountRef.current++;
-      processedFrameCountRef.current++;
-      const minQualityThreshold = 30;
+    if (!lastSignal || !isMonitoring) {
+      if (!isMonitoring) {
+        setSignalQuality(0);
+      }
+      return;
+    }
+    
+    // Controlar frecuencia de procesamiento basado en tiempo
+    const now = Date.now();
+    const timeSinceLastProcess = now - lastProcessTime.current;
+    const processingInterval = optimizationLevel === 'high' ? 100 : 
+                               optimizationLevel === 'medium' ? 50 : 30;
+    
+    // Omitir algunos cuadros para mejorar rendimiento
+    if (timeSinceLastProcess < processingInterval) {
+      frameSkipCount.current++;
+      return;
+    }
+    
+    // Procesar señal con umbral de calidad
+    const minQualityThreshold = 40;
+    
+    if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
-        const heartBeatResult = processHeartBeat(lastSignal.filteredValue);
+      if (heartBeatResult && heartBeatResult.confidence > 0.4) {
+        setHeartRate(heartBeatResult.bpm);
         
-        if (heartBeatResult.confidence > 0.3) {
-          setHeartRate(heartBeatResult.bpm);
-          
-          try {
-            if (debugFrameCountRef.current % 30 === 0) {
-              console.log("Index: Processing vital signs", {
-                filteredValue: lastSignal.filteredValue,
-                hasRRData: !!heartBeatResult.rrData,
-                rrIntervals: heartBeatResult.rrData?.intervals?.length || 0,
-                frameCount: debugFrameCountRef.current,
-                signalQuality: lastSignal.quality
-              });
-            }
-            
-            // Adapt the RR data format to match what processVitalSigns expects
-            const adaptedRRData = heartBeatResult.rrData ? {
-              intervals: heartBeatResult.rrData.intervals,
-              lastPeakTime: heartBeatResult.rrData.timestamps.length > 0 ? 
-                heartBeatResult.rrData.timestamps[heartBeatResult.rrData.timestamps.length - 1] : null
-            } : undefined;
-            
-            const vitals = processVitalSigns(lastSignal.filteredValue, adaptedRRData);
-            
+        try {
+          // Solo procesar signos vitales cuando la confianza es alta
+          if (heartBeatResult.confidence > 0.6) {
+            const vitals = processVitalSigns(lastSignal.filteredValue, heartBeatResult.rrData);
             if (vitals) {
-              if (processedFrameCountRef.current % 30 === 0) {
-                console.log("Index: Received vitals update", {
-                  heartRate: vitals.heartRate,
-                  spo2: vitals.spo2, 
-                  pressure: vitals.pressure,
-                  glucose: vitals.glucose,
-                  frameCount: processedFrameCountRef.current
-                });
-              }
-              
-              setVitalSigns(vitals);
-              
-              // Get arrhythmia state directly from the centralized service
-              setIsArrhythmia(ArrhythmiaDetectionService.isArrhythmia());
-              
-              if (processedFrameCountRef.current % 60 === 0) {
-                console.log("Current values on screen:", {
-                  heartRate: typeof heartRate === 'number' ? heartRate : 'Not numeric',
-                  spo2: vitals.spo2,
-                  pressure: vitals.pressure,
-                  glucose: vitals.glucose,
-                });
-              }
+              setVitalSigns(prev => ({...prev, ...vitals}));
             }
-          } catch (error) {
-            console.error("Error processing vital signs:", error);
           }
-        }
-        
-        setSignalQuality(lastSignal.quality);
-      } else {
-        setSignalQuality(lastSignal.quality);
-        
-        if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
-          setHeartRate(0);
+        } catch (error) {
+          console.error("Error processing vital signs:", error);
         }
       }
-    } else if (!isMonitoring) {
-      setSignalQuality(0);
+      
+      setSignalQuality(lastSignal.quality);
+    } else {
+      setSignalQuality(lastSignal.quality);
+      
+      // Convertir heartRate a número para comparación
+      if (!lastSignal.fingerDetected && typeof heartRate === 'number' && heartRate > 0) {
+        setHeartRate(0);
+      }
     }
-  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate]);
+    
+    // Actualizar tiempo de último procesamiento
+    lastProcessTime.current = now;
+    
+  }, [lastSignal, isMonitoring, processHeartBeat, processVitalSigns, heartRate, optimizationLevel]);
 
+  // Actualizar frecuencia cardíaca
   useEffect(() => {
     if (vitalSigns.heartRate && vitalSigns.heartRate > 0) {
       setHeartRate(vitalSigns.heartRate);
@@ -166,11 +172,14 @@ const Index = () => {
     setShowResults(false);
     setIsArrhythmia(false);
     bpmCache.current = [];
+    lastProcessTime.current = Date.now();
+    frameSkipCount.current = 0;
+    processorActive.current = true;
     setIsCameraOn(true);
     setIsMonitoring(true);
-    processedFrameCountRef.current = 0;
     startSignalProcessing();
     startHeartBeatMonitoring();
+    
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
     measurementTimer.current = setTimeout(() => {
       console.log("30 second measurement timer elapsed.");
@@ -190,13 +199,21 @@ const Index = () => {
     setIsCameraOn(false);
     stopSignalProcessing();
     stopHeartBeatMonitoring();
+    processorActive.current = false;
+    
     if (stream) {
       stream.getTracks().forEach(track => track.stop());
       setStream(null);
     }
+    
     if (measurementTimer.current) {
       clearTimeout(measurementTimer.current);
       measurementTimer.current = null;
+    }
+    
+    if (arrhythmiaTimer.current) {
+      clearTimeout(arrhythmiaTimer.current);
+      arrhythmiaTimer.current = null;
     }
   };
 
@@ -204,18 +221,21 @@ const Index = () => {
     console.log("Resetting application state...");
     stopMonitoring();
     fullResetVitalSigns();
+    resetHeartBeatProcessor();
     setVitalSigns(ResultFactory.createEmptyResults());
     setHeartRate("--");
     setSignalQuality(0);
     setIsArrhythmia(false);
     setShowResults(false);
-    processedFrameCountRef.current = 0;
+    frameSkipCount.current = 0;
+    lastProcessTime.current = 0;
+    
     if (measurementTimer.current) clearTimeout(measurementTimer.current);
+    if (arrhythmiaTimer.current) clearTimeout(arrhythmiaTimer.current);
   };
 
   const handleStreamReady = (stream: MediaStream) => {
     if (!isMonitoring) return;
-    setStream(stream);
     
     const videoTrack = stream.getVideoTracks()[0];
     const imageCapture = new ImageCapture(videoTrack);
@@ -237,9 +257,10 @@ const Index = () => {
     }
     
     let lastProcessTime = 0;
-    const targetFrameInterval = 1000/30;
+    const targetFrameInterval = 1000/20; // Reducido de 30fps a 20fps para mejor rendimiento
     let frameCount = 0;
     let lastFpsUpdateTime = Date.now();
+    let processingFps = 0;
     
     const processImage = async () => {
       if (!isMonitoring || !stream || !videoTrack || videoTrack.readyState !== 'live') {
@@ -253,14 +274,16 @@ const Index = () => {
       const now = Date.now();
       const timeSinceLastProcess = now - lastProcessTime;
       
+      // Controlar la frecuencia de muestreo para mejorar rendimiento
       if (timeSinceLastProcess >= targetFrameInterval) {
         try {
           if (videoTrack.readyState !== 'live') throw new DOMException('Track ended before grabFrame', 'InvalidStateError');
           
           const frame = await imageCapture.grabFrame();
           
-          const targetWidth = frame.width < 320 ? frame.width : 320;
-          const targetHeight = frame.height < 240 ? frame.height : 240;
+          // Reducir resolución para mejor rendimiento
+          const targetWidth = Math.min(256, frame.width);
+          const targetHeight = Math.min(192, frame.height);
           
           tempCanvas.width = targetWidth;
           tempCanvas.height = targetHeight;
@@ -274,14 +297,24 @@ const Index = () => {
           );
           
           const imageData = tempCtx.getImageData(0, 0, targetWidth, targetHeight);
-          processFrame(imageData);
+          
+          // Procesar frame con optimización
+          if (processorActive.current) {
+            processFrame(imageData);
+          }
           
           frameCount++;
           lastProcessTime = now;
           
           if (now - lastFpsUpdateTime > 1000) {
+            processingFps = frameCount;
             frameCount = 0;
             lastFpsUpdateTime = now;
+            
+            // Log de rendimiento en intervalos
+            if (processingFps < 15) {
+              console.log(`Rendimiento bajo: ${processingFps} FPS - Nivel optimización: ${optimizationLevel}`);
+            }
           }
         } catch (error) {
           if (error instanceof DOMException && error.name === 'InvalidStateError') {
@@ -297,6 +330,7 @@ const Index = () => {
       }
       
       if (isMonitoring) {
+        // Usar requestAnimationFrame para sincronizar con el refresco de pantalla
         requestAnimationFrame(processImage);
       }
     };
@@ -315,13 +349,6 @@ const Index = () => {
     } else {
       startMonitoring();
     }
-  };
-
-  const getHydrationColor = (hydration: number): string => {
-    if (hydration >= 80) return 'text-blue-500';
-    if (hydration >= 65) return 'text-green-500';
-    if (hydration >= 50) return 'text-yellow-500';
-    return 'text-red-500';
   };
 
   return (
@@ -348,6 +375,9 @@ const Index = () => {
           <div className="px-4 py-2 flex justify-around items-center bg-black/20">
             <div className="text-white text-sm">Calidad: {signalQuality}</div>
             <div className="text-white text-sm">{lastSignal?.fingerDetected ? "Huella Detectada" : "Huella No Detectada"}</div>
+            {optimizationLevel !== 'low' && (
+              <div className="text-white text-xs">Optimización: {optimizationLevel}</div>
+            )}
           </div>
           <div className="flex-1">
             <PPGSignalMeter 
@@ -357,10 +387,8 @@ const Index = () => {
               onStartMeasurement={startMonitoring} 
               onReset={handleReset} 
               arrhythmiaStatus={vitalSigns.arrhythmiaStatus || "--"} 
-              rawArrhythmiaData={vitalSigns.lastArrhythmiaData}
               preserveResults={showResults} 
               isArrhythmia={isArrhythmia}
-              arrhythmiaWindows={formatArrhythmiaWindowsForDisplay(ArrhythmiaDetectionService.getArrhythmiaWindows())}
             />
           </div>
           <AppTitle />
@@ -372,8 +400,12 @@ const Index = () => {
               </div>
               <div className="col-span-2 grid grid-cols-2 gap-2">
                 <VitalSign label="PRESIÓN" value={vitalSigns.pressure || "--/--"} unit="mmHg" highlighted={showResults} compact={false} />
-                <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+                <VitalSign label="HIDRATACIÓN" value={vitalSigns.hydration || "--"} unit="%" highlighted={showResults} icon={<Droplet className={`h-4 w-4 ${getHydrationColor(vitalSigns.hydration)}`} />} compact={false} />
               </div>
+              <VitalSign label="GLUCOSA" value={vitalSigns.glucose || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="COLESTEROL" value={vitalSigns.lipids?.totalCholesterol || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="TRIGLICÉRIDOS" value={vitalSigns.lipids?.triglycerides || "--"} unit="mg/dL" highlighted={showResults} compact={false} />
+              <VitalSign label="HEMOGLOBINA" value={Math.round(vitalSigns.hemoglobin) || "--"} unit="g/dL" highlighted={showResults} compact={false} />
             </div>
           </div>
           <div className="absolute inset-x-0 bottom-1 flex gap-1 px-1">

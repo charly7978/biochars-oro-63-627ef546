@@ -1,3 +1,4 @@
+
 import { KalmanFilter } from './filters/KalmanFilter';
 import { WaveletDenoiser } from './filters/WaveletDenoiser';
 import type { ProcessedSignal, ProcessingError } from '../../types/signal';
@@ -219,32 +220,4 @@ export class PPGProcessor {
     
     this.onError?.(error);
   }
-}
-
-function realFloor(value: number): number {
-  return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
-}
-
-function realMax(arr: number[]): number {
-  let max = arr[0];
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] > max) max = arr[i];
-  }
-  return max;
-}
-
-function realMin(arr: number[]): number {
-  let min = arr[0];
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] < min) min = arr[i];
-  }
-  return min;
-}
-
-function realAbs(value: number): number {
-  return value < 0 ? -value : value;
-}
-
-function realRound(value: number): number {
-  return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
 }
