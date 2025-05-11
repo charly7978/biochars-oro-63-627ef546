@@ -1,4 +1,3 @@
-
 import { BaseNeuralModel } from './NeuralNetworkBase';
 import { HeartRateNeuralModel } from './HeartRateModel';
 import { SpO2NeuralModel } from './SpO2Model';
@@ -13,6 +12,7 @@ import { GlucoseNeuralModel } from './GlucoseModel';
 export class ModelRegistry {
   private static instance: ModelRegistry;
   private models: Map<string, BaseNeuralModel> = new Map();
+  private modelInitialized: Map<string, boolean> = new Map();
   
   private constructor() {
     // Registrar modelos disponibles
@@ -38,23 +38,20 @@ export class ModelRegistry {
    */
   private registerModel(id: string, factory: () => BaseNeuralModel): void {
     this.models.set(id, factory());
+    this.modelInitialized.set(id, false);
   }
   
   /**
-   * Obtiene un modelo por su ID, inicializándolo (cargándolo) si es necesario
-   * Modificado para retornar el modelo directamente, no una promesa
+   * Obtiene un modelo por su ID, inicializándolo si es necesario
    */
   public getModel<T extends BaseNeuralModel>(id: string): T | null {
     const model = this.models.get(id) as T;
     if (!model) return null;
     
-    // Iniciar carga en background si no está cargado
-    if (!model.getModelInfo().isLoaded) {
-      console.log(`Iniciando carga de modelo en background: ${id}`);
-      // Iniciar carga pero no esperar resultado
-      model.loadModel().catch(err => {
-        console.error(`Error al cargar modelo ${id}:`, err);
-      });
+    // Inicializar modelo si es la primera vez que se usa
+    if (!this.modelInitialized.get(id)) {
+      console.log(`Inicializando modelo: ${id}`);
+      this.modelInitialized.set(id, true);
     }
     
     return model;
@@ -69,6 +66,7 @@ export class ModelRegistry {
       if (model) {
         console.log(`Reiniciando modelo específico: ${specificId}`);
         this.models.set(specificId, new (Object.getPrototypeOf(model).constructor)());
+        this.modelInitialized.set(specificId, false);
       }
     } else {
       // Reiniciar todos los modelos
@@ -78,6 +76,7 @@ export class ModelRegistry {
         const model = this.models.get(id);
         if (model) {
           this.models.set(id, new (Object.getPrototypeOf(model).constructor)());
+          this.modelInitialized.set(id, false);
         }
       }
     }
@@ -97,7 +96,7 @@ export class ModelRegistry {
       id,
       name: model.getModelInfo().name,
       version: model.getModelInfo().version,
-      initialized: model.getModelInfo().isLoaded,
+      initialized: this.modelInitialized.get(id) || false,
       architecture: model.architecture
     }));
   }
@@ -108,11 +107,12 @@ export class ModelRegistry {
   public dispose(): void {
     // Limpiar modelos
     this.models.clear();
+    this.modelInitialized.clear();
   }
 }
 
 /**
- * Función de utilidad para acceso rápido a modelos (ahora sincrónica)
+ * Función de utilidad para acceso rápido a modelos
  */
 export function getModel<T extends BaseNeuralModel>(id: string): T | null {
   return ModelRegistry.getInstance().getModel<T>(id);

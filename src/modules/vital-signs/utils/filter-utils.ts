@@ -5,7 +5,6 @@
 
 /**
  * Aplica un filtro de Media Móvil Simple (SMA) a datos reales
- * Sin uso de funciones Math
  */
 export function applySMAFilter(value: number, buffer: number[], windowSize: number): {
   filteredValue: number;
@@ -15,67 +14,34 @@ export function applySMAFilter(value: number, buffer: number[], windowSize: numb
   if (updatedBuffer.length > windowSize) {
     updatedBuffer.shift();
   }
-  
-  // Calculate sum without reduce
-  let sum = 0;
-  for (let i = 0; i < updatedBuffer.length; i++) {
-    sum += updatedBuffer[i];
-  }
-  
-  const filteredValue = sum / updatedBuffer.length;
+  const filteredValue = updatedBuffer.reduce((a, b) => a + b, 0) / updatedBuffer.length;
   return { filteredValue, updatedBuffer };
 }
 
 /**
- * Devuelve el valor máximo sin usar Math.max
- */
-function getMaxValue(values: number[]): number {
-  if (!values.length) return 0;
-  let max = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] > max) max = values[i];
-  }
-  return max;
-}
-
-/**
- * Devuelve el valor mínimo sin usar Math.min
- */
-function getMinValue(values: number[]): number {
-  if (!values.length) return 0;
-  let min = values[0];
-  for (let i = 1; i < values.length; i++) {
-    if (values[i] < min) min = values[i];
-  }
-  return min;
-}
-
-/**
- * Amplifica la señal real de forma adaptativa
- * Sin uso de funciones Math
+ * Amplifica la señal real de forma adaptativa basada en su amplitud
+ * Sin uso de datos simulados
  */
 export function amplifySignal(value: number, recentValues: number[]): number {
   if (recentValues.length === 0) return value;
   
-  // Calcular la amplitud reciente sin Math
-  const recentMin = getMinValue(recentValues);
-  const recentMax = getMaxValue(recentValues);
+  // Calcular la amplitud reciente de datos reales
+  const recentMin = Math.min(...recentValues);
+  const recentMax = Math.max(...recentValues);
   const recentRange = recentMax - recentMin;
   
-  // Factor de amplificación sin condicionales
+  // Factor de amplificación para señales reales
   let amplificationFactor = 1.0;
-  amplificationFactor += recentRange < 0.1 ? 1.5 : 0;
-  amplificationFactor += recentRange >= 0.1 && recentRange < 0.3 ? 0.8 : 0;
-  amplificationFactor += recentRange >= 0.3 && recentRange < 0.5 ? 0.4 : 0;
-  
-  // Calcular media sin reduce
-  let sum = 0;
-  for (let i = 0; i < recentValues.length; i++) {
-    sum += recentValues[i];
+  if (recentRange < 0.1) {
+    amplificationFactor = 2.5;
+  } else if (recentRange < 0.3) {
+    amplificationFactor = 1.8;
+  } else if (recentRange < 0.5) {
+    amplificationFactor = 1.4;
   }
-  const mean = sum / recentValues.length;
   
   // Amplificar usando solo datos reales
+  const mean = recentValues.reduce((a, b) => a + b, 0) / recentValues.length;
   const centeredValue = value - mean;
   const amplifiedValue = (centeredValue * amplificationFactor) + mean;
   

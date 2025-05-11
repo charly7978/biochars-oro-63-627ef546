@@ -2,7 +2,6 @@
 /**
  * Functions for peak detection logic, working with real data only
  */
-import React from 'react';
 
 /**
  * Determines if a measurement should be processed based on signal strength

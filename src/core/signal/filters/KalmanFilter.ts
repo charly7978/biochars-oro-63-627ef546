@@ -1,61 +1,51 @@
 
 /**
- * Implementación del filtro de Kalman para señales PPG
+ * Implementación del filtro de Kalman para reducción de ruido en señales PPG
  */
 export class KalmanFilter {
-  // Estados del filtro
-  private x: number = 0; // Estimación del estado
-  private p: number = 1; // Incertidumbre de la estimación
-  private q: number = 0.01; // Ruido del proceso
-  private r: number = 0.1; // Ruido de la medición
-  private k: number = 0; // Ganancia de Kalman
-  private firstMeasure: boolean = true;
-  
-  constructor() {}
-  
+  private R: number = 0.008; // Factor de reducción de ruido
+  private Q: number = 0.12;  // Ruido del proceso
+  private P: number = 1;     // Covarianza inicial
+  private X: number = 0;     // Estado inicial
+  private K: number = 0;     // Ganancia de Kalman
+
   /**
-   * Reiniciar el filtro
-   */
-  public reset(): void {
-    this.x = 0;
-    this.p = 1;
-    this.k = 0;
-    this.firstMeasure = true;
-  }
-  
-  /**
-   * Aplicar filtro a un nuevo valor
+   * Aplica el filtro de Kalman a un valor de medición
+   * @param measurement Valor crudo de la medición
+   * @returns Valor filtrado
    */
   public filter(measurement: number): number {
-    // Para la primera medición, inicializar estado
-    if (this.firstMeasure) {
-      this.x = measurement;
-      this.firstMeasure = false;
-      return measurement;
-    }
+    // Actualizar covarianza de predicción
+    this.P = this.P + this.Q;
     
-    // Predicción
-    const p_pred = this.p + this.q;
+    // Calcular ganancia de Kalman
+    this.K = this.P / (this.P + this.R);
     
-    // Actualización
-    this.k = p_pred / (p_pred + this.r);
-    this.x = this.x + this.k * (measurement - this.x);
-    this.p = (1 - this.k) * p_pred;
+    // Actualizar estimación con medición ponderada
+    this.X = this.X + this.K * (measurement - this.X);
     
-    return this.x;
+    // Actualizar covarianza de estimación
+    this.P = (1 - this.K) * this.P;
+    
+    return this.X;
+  }
+
+  /**
+   * Reinicia el filtro a los valores iniciales
+   */
+  public reset(): void {
+    this.X = 0;
+    this.P = 1;
+    this.K = 0;
   }
   
   /**
-   * Configurar ruido de proceso
+   * Ajusta los parámetros del filtro
+   * @param processNoise Factor Q (ruido del proceso)
+   * @param measurementNoise Factor R (ruido de medición)
    */
-  public setProcessNoise(q: number): void {
-    if (q > 0) this.q = q;
-  }
-  
-  /**
-   * Configurar ruido de medición
-   */
-  public setMeasurementNoise(r: number): void {
-    if (r > 0) this.r = r;
+  public setParameters(processNoise: number, measurementNoise: number): void {
+    this.Q = processNoise;
+    this.R = measurementNoise;
   }
 }

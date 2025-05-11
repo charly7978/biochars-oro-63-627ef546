@@ -1,3 +1,4 @@
+
 export interface RRData {
   intervals: number[];
   lastPeakTime: number | null;
@@ -127,8 +128,8 @@ export class PeakDetector {
     
     // Calcular percentiles para filtrar valores atípicos
     const sortedIntervals = [...this.rrIntervals].sort((a, b) => a - b);
-    const lowerIdx = this.realFloor(sortedIntervals.length * 0.25);
-    const upperIdx = this.realFloor(sortedIntervals.length * 0.75);
+    const lowerIdx = Math.floor(sortedIntervals.length * 0.25);
+    const upperIdx = Math.floor(sortedIntervals.length * 0.75);
     const lowerBound = sortedIntervals[lowerIdx] * 0.7;
     const upperBound = sortedIntervals[upperIdx] * 1.3;
     
@@ -204,7 +205,7 @@ export class PeakDetector {
     if (slopeSum.length === 0) return;
     
     // Calcular valores estadísticos
-    const max = this.realMax(slopeSum);
+    const max = Math.max(...slopeSum);
     const mean = slopeSum.reduce((sum, val) => sum + val, 0) / slopeSum.length;
     
     // Actualizar umbral adaptativo
@@ -222,33 +223,5 @@ export class PeakDetector {
     this.adaptiveThreshold = 0.35;
     this.rrIntervals = [];
     this.consecutiveGoodIntervals = 0;
-  }
-
-  private realFloor(value: number): number {
-    return value >= 0 ? value - (value % 1) : value - (value % 1) - 1;
-  }
-
-  private realMax(arr: number[]): number {
-    let max = arr[0];
-    for (let i = 1; i < arr.length; i++) {
-      if (arr[i] > max) max = arr[i];
-    }
-    return max;
-  }
-
-  private realMin(arr: number[]): number {
-    let min = arr[0];
-    for (let i = 1; i < arr.length; i++) {
-      if (arr[i] < min) min = arr[i];
-    }
-    return min;
-  }
-
-  private realAbs(value: number): number {
-    return value < 0 ? -value : value;
-  }
-
-  private realRound(value: number): number {
-    return (value % 1) >= 0.5 ? (value - (value % 1) + 1) : (value - (value % 1));
   }
 }

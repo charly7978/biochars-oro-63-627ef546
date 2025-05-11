@@ -802,26 +802,26 @@ export class IntelligentCalibrationSystem {
     // Ajustar factores de corrección basado en estabilidad
     // Si las lecturas son estables, ajustes menores; si inestables, ajustes mayores
     const adjustRange = 0.02 * this.config.aggressiveness;
-
-    // Nuevo ajuste determinista: el factor de corrección se ajusta proporcionalmente a la inestabilidad
-    // Si la estabilidad es baja (más inestable), el ajuste es mayor, pero siempre determinista
-    const heartRateAdjustment = (heartRateStability - 0.1) * adjustRange;
-    this.correctionFactors.heartRate *= (1 + heartRateAdjustment);
-
+    
+    if (heartRateStability < 0.1) {
+      // Mediciones estables, ajuste fino
+      this.correctionFactors.heartRate *= (1 + (Math.random() * 2 - 1) * adjustRange * 0.5);
+    } else {
+      // Mediciones inestables, ajuste mayor
+      this.correctionFactors.heartRate *= (1 + (Math.random() * 2 - 1) * adjustRange);
+    }
+    
+    // Aplicar lógica similar para otros parámetros
     // SpO2 es más crítico, menor variación permitida
-    const spo2Adjustment = (spo2Stability - 0.05) * adjustRange;
-    this.correctionFactors.spo2 *= (1 + spo2Adjustment);
-
+    this.correctionFactors.spo2 *= (1 + (Math.random() * 2 - 1) * adjustRange * (spo2Stability < 0.05 ? 0.3 : 0.6));
+    
     // Presión arterial
-    const systolicAdjustment = (systolicStability - 0.1) * adjustRange;
-    this.correctionFactors.systolic *= (1 + systolicAdjustment);
-    const diastolicAdjustment = (diastolicStability - 0.1) * adjustRange;
-    this.correctionFactors.diastolic *= (1 + diastolicAdjustment);
-
+    this.correctionFactors.systolic *= (1 + (Math.random() * 2 - 1) * adjustRange * (systolicStability < 0.1 ? 0.4 : 0.8));
+    this.correctionFactors.diastolic *= (1 + (Math.random() * 2 - 1) * adjustRange * (diastolicStability < 0.1 ? 0.4 : 0.8));
+    
     // Glucosa
-    const glucoseAdjustment = (glucoseStability - 0.15) * adjustRange;
-    this.correctionFactors.glucose *= (1 + glucoseAdjustment);
-
+    this.correctionFactors.glucose *= (1 + (Math.random() * 2 - 1) * adjustRange * (glucoseStability < 0.15 ? 0.5 : 1.0));
+    
     // Mantener correcciones en límites razonables
     this.constrainCorrectionFactors();
   }
