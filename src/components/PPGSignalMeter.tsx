@@ -678,7 +678,7 @@ const PPGSignalMeter = memo(({
   }, [onReset]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
+  const displayFingerDetected = isFingerDetected;
 
   return (
     <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
