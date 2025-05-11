@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useSignalQualityDetector } from '../hooks/vital-signs/use-signal-quality-detector';
 
@@ -190,7 +191,6 @@ const CameraView = ({
               advancedConstraints.push({ contrast: maxContrast * 0.7 }); // Aumentado de 0.6 a 0.7
             }
 
-            // Check if saturation is available before attempting to use it
             if (capabilities.saturation && capabilities.saturation.max) {
               const maxSaturation = capabilities.saturation.max;
               // Reducir saturación para enfocarse en intensidad de luz

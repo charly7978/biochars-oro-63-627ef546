@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -7,7 +8,7 @@ import { SignalFilter } from './processors/signal-filter';
 import { SignalQuality } from './processors/signal-quality';
 import { HeartRateDetector } from './processors/heart-rate-detector';
 import { SignalValidator } from './validators/signal-validator';
-import { SignalQualityDetector } from './quality/SignalQualityDetector';
+import { useSignalQualityDetector } from '../../hooks/vital-signs/use-signal-quality-detector';
 
 /**
  * Signal processor for real PPG signals
@@ -23,7 +24,7 @@ export class SignalProcessor extends BaseProcessor {
   private signalValidator: SignalValidator;
   
   // Detector centralizado
-  private fingerDetector: SignalQualityDetector;
+  private fingerDetector: ReturnType<typeof useSignalQualityDetector>;
   
   // Signal quality variables
   private readonly MIN_QUALITY_FOR_FINGER = 55;
@@ -39,8 +40,11 @@ export class SignalProcessor extends BaseProcessor {
     this.heartRateDetector = new HeartRateDetector();
     this.signalValidator = new SignalValidator(0.02, 15);
     
-    // Inicializar detector centralizado de dedos como clase
-    this.fingerDetector = new SignalQualityDetector({
+    // Inicializar detector centralizado de dedos
+    this.fingerDetector = useSignalQualityDetector();
+    
+    // Configurar detector con los parámetros específicos para este procesador
+    this.fingerDetector.updateConfig({
       weakSignalThreshold: 0.15,
       minSignalVariance: 0.02,
       requiredConsistentPatterns: 2
