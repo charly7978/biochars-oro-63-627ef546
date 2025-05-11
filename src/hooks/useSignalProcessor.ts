@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -83,7 +84,7 @@ export const useSignalProcessor = () => {
       // Reset detector de dedo centralizado
       fingerDetection.resetDetection();
     };
-  }, [processor, fingerDetection.processSignal, fingerDetection.resetDetection]);
+  }, [processor, fingerDetection]);
 
   /**
    * Start processing signals
@@ -104,7 +105,7 @@ export const useSignalProcessor = () => {
     fingerDetection.resetDetection();
     
     processor.start();
-  }, [processor, fingerDetection.processSignal, fingerDetection.resetDetection]);
+  }, [processor, fingerDetection]);
 
   /**
    * Stop processing signals
@@ -117,7 +118,7 @@ export const useSignalProcessor = () => {
     
     // Reset detector de dedo centralizado
     fingerDetection.resetDetection();
-  }, [processor, fingerDetection.processSignal, fingerDetection.resetDetection]);
+  }, [processor, fingerDetection]);
 
   /**
    * Process a frame from camera
