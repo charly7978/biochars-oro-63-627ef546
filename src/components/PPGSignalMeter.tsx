@@ -139,6 +139,7 @@ const PPGSignalMeter = memo(({
         return false;
       }
       
+      // Activar retroalimentación táctil y auditiva
       triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
       
       lastBeepTimeRef.current = now;

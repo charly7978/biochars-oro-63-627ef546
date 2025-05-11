@@ -2,7 +2,7 @@
 /**
  * Signal quality detection utilities
  * Centralized functions for checking signal quality and finger detection
- * IMPROVED: More strict thresholds to reduce false positives
+ * IMPROVED: Ultra strict thresholds to eliminate false positives
  */
 
 export interface SignalQualityOptions {
@@ -16,9 +16,9 @@ export function checkSignalQuality(
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds - INCREASED to reduce false positives
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.45; // Increased from 0.05 to 0.45
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 6; // Increased from 10 to 6
+  // Default thresholds - ULTRA-STRICT to eliminate false positives
+  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.65; // Increased from 0.45 to 0.65
+  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 5; // Decreased to 5 for faster response
   const STRICT_MODE = options.strictMode !== undefined ? options.strictMode : true;
   
   const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
@@ -33,7 +33,7 @@ export function checkSignalQuality(
     // Only reset counter fully if we have significant signal
     updatedWeakSignalsCount = isCurrentValueWeak 
       ? currentWeakSignalCount + 1 
-      : Math.max(0, currentWeakSignalCount - 2); // Faster decay
+      : Math.max(0, currentWeakSignalCount - 3); // Even faster decay
   }
   
   // Limit to max

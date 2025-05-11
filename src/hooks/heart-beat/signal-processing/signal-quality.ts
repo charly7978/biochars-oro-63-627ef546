@@ -14,17 +14,17 @@ interface SignalQualityOptions {
 /**
  * Verifica si una señal es débil basándose en umbrales configurables
  * Solo procesamiento directo, sin simulaciones
- * IMPROVED: More strict thresholds to reduce false positives
+ * IMPROVED: Ultra strict thresholds to eliminate false positives
  */
 export function checkWeakSignal(
   value: number,
   currentWeakSignalCount: number,
   options: SignalQualityOptions = {}
 ): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Use centralized implementation with increased thresholds
+  // Use centralized implementation with ultra-strict thresholds
   return coreCheckSignalQuality(value, currentWeakSignalCount, {
-    lowSignalThreshold: options.lowSignalThreshold || 0.45, // Increased from 0.05 to 0.45
-    maxWeakSignalCount: options.maxWeakSignalCount || 6, // Increased from 10 to 6
+    lowSignalThreshold: options.lowSignalThreshold || 0.65, // Increased from 0.45 to 0.65
+    maxWeakSignalCount: options.maxWeakSignalCount || 5, // Decreased from 6 to 5
     strictMode: true
   });
 }

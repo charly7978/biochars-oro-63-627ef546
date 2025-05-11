@@ -10,6 +10,7 @@ import {
   updateLastValidBpm,
   processLowConfidenceResult
 } from './signal-processing';
+import FeedbackService from '../../services/FeedbackService';
 
 export function useSignalProcessor() {
   const lastPeakTimeRef = useRef<number | null>(null);
@@ -70,13 +71,19 @@ export function useSignalProcessor() {
       }
       
       // Handle peak detection
-      handlePeakDetection(
-        result, 
-        lastPeakTimeRef, 
-        requestImmediateBeep, 
-        isMonitoringRef,
-        value
-      );
+      if (result.isPeak && isMonitoringRef.current) {
+        // Si detectamos un pico y estamos en modo monitoreo, activar vibración
+        if (lastPeakTimeRef.current === null || 
+            (Date.now() - lastPeakTimeRef.current) > 350) {  // 350ms min entre latidos
+          lastPeakTimeRef.current = Date.now();
+          
+          // Usar el servicio de feedback para vibración por latido
+          FeedbackService.vibrate(50);
+          
+          // También intentamos el beep si está disponible
+          requestImmediateBeep(value);
+        }
+      }
       
       // Update last valid BPM if it's reasonable
       updateLastValidBpm(result, lastValidBpmRef);

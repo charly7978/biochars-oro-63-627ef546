@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -8,15 +9,15 @@ import { checkSignalQuality } from '../../modules/heart-beat/signal-quality';
 /**
  * Enhanced hook that detects finger presence based on consistent rhythmic patterns
  * Uses physiological characteristics of human finger (heartbeat patterns)
- * IMPROVED: Much stricter thresholds to prevent false positives
+ * SUPER STRICT: Umbral extremadamente alto para prevenir falsos positivos
  */
 export const useSignalQualityDetector = () => {
   // Reference counter for compatibility
   const consecutiveWeakSignalsRef = useRef<number>(0);
   
-  // INCREASED thresholds to reduce false positives significantly
-  const WEAK_SIGNAL_THRESHOLD = 0.45; // Increased from 0.25 to 0.45
-  const MAX_CONSECUTIVE_WEAK_SIGNALS = 6; // Increased from 5 to 6
+  // ULTRA-STRICT thresholds to eliminate false positives
+  const WEAK_SIGNAL_THRESHOLD = 0.65; // Increased from 0.45 to 0.65
+  const MAX_CONSECUTIVE_WEAK_SIGNALS = 5; // Decreased to 5 for faster response
   
   // Signal pattern detection for finger presence
   const signalHistoryRef = useRef<Array<{time: number, value: number}>>([]);
@@ -24,29 +25,29 @@ export const useSignalQualityDetector = () => {
   const detectedRhythmicPatternsRef = useRef<number>(0);
   const fingerDetectionConfirmedRef = useRef<boolean>(false);
   
-  // Constants for pattern detection - made MUCH more strict
-  const PATTERN_DETECTION_WINDOW_MS = 3500; // Increased from 3000 to 3500
-  const MIN_PEAKS_FOR_RHYTHM = 5; // Increased from 4 to 5
-  const PEAK_DETECTION_THRESHOLD = 0.35; // Increased from 0.25 to 0.35
-  const REQUIRED_CONSISTENT_PATTERNS = 6; // Increased from 4 to 6
-  const MIN_SIGNAL_VARIANCE = 0.06; // Increased from 0.04 to 0.06
+  // Constants for pattern detection - ULTRA STRICT
+  const PATTERN_DETECTION_WINDOW_MS = 4000; // Increased from 3500 to 4000
+  const MIN_PEAKS_FOR_RHYTHM = 6; // Increased from 5 to 6
+  const PEAK_DETECTION_THRESHOLD = 0.45; // Increased from 0.35 to 0.45
+  const REQUIRED_CONSISTENT_PATTERNS = 8; // Increased from 6 to 8
+  const MIN_SIGNAL_VARIANCE = 0.08; // Increased from 0.06 to 0.08
   
   // New parameters for more robust detection
-  const CORRELATION_THRESHOLD = 0.35; // Min correlation between consecutive signals
-  const WARMUP_PERIOD_MS = 1500; // Require 1.5s of consistent signal before confirming
-  const FAST_DECAY_FACTOR = 3;  // Faster decay for lost detection
-  const TEMPORAL_CONSISTENCY_RATIO = 0.7; // Require 70% of intervals to be consistent
-  const MAX_ALLOWABLE_RR_VARIANCE = 0.3; // Max allowable variance in RR intervals (30%)
+  const CORRELATION_THRESHOLD = 0.45; // Increased from 0.35 to 0.45
+  const WARMUP_PERIOD_MS = 2000; // Increased from 1500 to 2000
+  const FAST_DECAY_FACTOR = 4;  // Increased from 3 to 4
+  const TEMPORAL_CONSISTENCY_RATIO = 0.8; // Increased from 0.7 to 0.8
+  const MAX_ALLOWABLE_RR_VARIANCE = 0.25; // Decreased from 0.3 to 0.25
   
   /**
-   * Detect peaks in the signal history with stricter physiological validation
+   * Detect peaks in the signal history with ultra-strict physiological validation
    */
   const detectPeaks = useCallback(() => {
     const now = Date.now();
     const recentSignals = signalHistoryRef.current
       .filter(point => now - point.time < PATTERN_DETECTION_WINDOW_MS);
     
-    if (recentSignals.length < 20) return false; // Increased minimum data points (15 to 20)
+    if (recentSignals.length < 25) return false; // Increased minimum data points (20 to 25)
     
     // Check for minimum signal variance (reject near-constant signals)
     const values = recentSignals.map(s => s.value);
@@ -55,12 +56,12 @@ export const useSignalQualityDetector = () => {
     
     if (variance < MIN_SIGNAL_VARIANCE) {
       // Signal variance too low - likely not a physiological signal
-      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 1);
+      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 2);
       console.log("Signal variance too low - rejecting pattern", { variance, threshold: MIN_SIGNAL_VARIANCE });
       return false;
     }
 
-    // NEW: Check temporal correlation to detect random patterns
+    // Check temporal correlation to detect random patterns
     let correlationSum = 0;
     for (let i = 1; i < values.length; i++) {
       const diff = Math.abs(values[i] - values[i-1]);
@@ -73,7 +74,7 @@ export const useSignalQualityDetector = () => {
     
     // If signal changes too rapidly or randomly, reject it
     if (avgCorrelation > (1 - CORRELATION_THRESHOLD)) {
-      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 1);
+      detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - 2);
       console.log("Signal correlation too low - rejecting pattern", { correlation: 1 - avgCorrelation, threshold: CORRELATION_THRESHOLD });
       return false;
     }
@@ -89,11 +90,11 @@ export const useSignalQualityDetector = () => {
       const next2 = recentSignals[i + 2];
       
       // Check if this point is a peak (higher than surrounding points)
-      // Also require the peak to be significantly higher (25% higher, up from 20%)
-      if (current.value > prev1.value * 1.25 && 
-          current.value > prev2.value * 1.25 &&
-          current.value > next1.value * 1.25 && 
-          current.value > next2.value * 1.25 &&
+      // Also require the peak to be significantly higher (30% higher, up from 25%)
+      if (current.value > prev1.value * 1.3 && 
+          current.value > prev2.value * 1.3 &&
+          current.value > next1.value * 1.3 && 
+          current.value > next2.value * 1.3 &&
           Math.abs(current.value) > PEAK_DETECTION_THRESHOLD) {
         peaks.push(current.time);
       }
@@ -112,9 +113,9 @@ export const useSignalQualityDetector = () => {
         interval >= 333 && interval <= 1500 // 40-180 BPM
       );
       
-      // NEW: More strict validation - require 70% of intervals to be physiologically valid
+      // More strict validation - require 80% of intervals to be physiologically valid
       if (validIntervals.length < Math.floor(intervals.length * TEMPORAL_CONSISTENCY_RATIO)) {
-        // If less than 70% of intervals are physiologically plausible, reject the pattern
+        // If less than 80% of intervals are physiologically plausible, reject the pattern
         detectedRhythmicPatternsRef.current = Math.max(0, detectedRhythmicPatternsRef.current - FAST_DECAY_FACTOR);
         console.log("Intervals not physiologically plausible - rejecting pattern", { 
           validCount: validIntervals.length, 
@@ -123,7 +124,7 @@ export const useSignalQualityDetector = () => {
         return false;
       }
       
-      // NEW: Check for variance in RR intervals - real heartbeats have limited variance
+      // Check for variance in RR intervals - real heartbeats have limited variance
       if (validIntervals.length > 2) {
         const avgInterval = validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length;
         const intervalVariance = validIntervals.reduce((sum, val) => 
@@ -142,7 +143,7 @@ export const useSignalQualityDetector = () => {
       
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 130; // Reduced from 150ms - tighter consistency check
+      const maxDeviation = 120; // Reduced from 130ms - tighter consistency check
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
@@ -164,7 +165,7 @@ export const useSignalQualityDetector = () => {
         });
         
         // If we've detected enough consistent patterns, confirm finger detection
-        // NEW: Also verify minimum warmup period has elapsed
+        // Also verify minimum warmup period has elapsed
         const firstPeakTime = peaks[0];
         const lastPeakTime = peaks[peaks.length - 1];
         const signalDuration = lastPeakTime - firstPeakTime;

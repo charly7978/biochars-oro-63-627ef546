@@ -21,6 +21,21 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
     
+    // Asegurar que el contexto esté siempre ejecutándose
+    const ensureContextRunning = async () => {
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'running') {
+        console.log("useHeartbeatFeedback: Reanudando contexto de audio");
+        try {
+          await audioCtxRef.current.resume();
+        } catch (err) {
+          console.error("Error reanudando contexto de audio:", err);
+        }
+      }
+    };
+    
+    // Intentar iniciar el contexto
+    ensureContextRunning();
+    
     // Cleanup al desmontar
     return () => {
       if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
@@ -36,7 +51,7 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
    * @param type Tipo de retroalimentación: normal o arritmia
    */
   const trigger = (type: HeartbeatFeedbackType = 'normal') => {
-    if (!enabled || !audioCtxRef.current) return;
+    if (!enabled) return;
 
     // Patrones de vibración
     if ('vibrate' in navigator) {
@@ -50,28 +65,47 @@ export function useHeartbeatFeedback(enabled: boolean = true) {
     }
 
     // Generar un bip con características según el tipo
-    const ctx = audioCtxRef.current;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    try {
+      if (audioCtxRef.current) {
+        const ctx = audioCtxRef.current;
+        
+        // Asegurarnos que el contexto esté activo
+        if (ctx.state !== 'running') {
+          ctx.resume().catch(err => {
+            console.error("Error reanudando contexto de audio:", err);
+          });
+        }
+        
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
 
-    if (type === 'normal') {
-      // Tono normal para latido regular
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-    } else if (type === 'arrhythmia') {
-      // Tono más grave y duradero para arritmia
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        if (type === 'normal') {
+          // Tono normal para latido regular
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(880, ctx.currentTime);
+          gain.gain.setValueAtTime(0.05, ctx.currentTime);
+        } else if (type === 'arrhythmia') {
+          // Tono más grave y duradero para arritmia
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, ctx.currentTime);
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        }
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        // Iniciar y detener con programación precisa
+        osc.start(ctx.currentTime);
+        // Mayor duración para arritmias
+        osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
+        
+        console.log(`Retroalimentación de latido activada: ${type}`);
+      } else {
+        console.warn("Contexto de audio no disponible para retroalimentación");
+      }
+    } catch (err) {
+      console.error("Error generando retroalimentación de audio:", err);
     }
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    // Mayor duración para arritmias
-    osc.stop(ctx.currentTime + (type === 'arrhythmia' ? 0.2 : 0.1));
   };
 
   return trigger;
