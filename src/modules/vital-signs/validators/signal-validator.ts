@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -16,11 +17,12 @@ export class SignalValidator {
   private signalHistory: Array<{time: number, value: number}> = [];
   private peakTimes: number[] = [];
   private detectedPatternCount: number = 0;
+  private fingerDetectionConfirmed: boolean = false;
   
   // Constants for pattern detection - made more strict
   private readonly PATTERN_DETECTION_WINDOW_MS = 3000; // 3 seconds
-  private readonly MIN_PEAKS_FOR_PATTERN = 5; // Increased from 4
-  private readonly REQUIRED_PATTERNS = 5; // Increased from 4
+  private readonly MIN_PEAKS_FOR_PATTERN = 4; // Increased from 3 - need more peaks
+  private readonly REQUIRED_PATTERNS = 4; // Increased from 3 - need more consistent patterns
   private readonly MIN_SIGNAL_VARIANCE = 0.04; // New threshold for minimum signal variance
   
   /**
@@ -83,6 +85,12 @@ export class SignalValidator {
    * Check if a finger is detected based on rhythmic patterns
    */
   public isFingerDetected(): boolean {
+    // If already confirmed, maintain detection unless reset
+    if (this.fingerDetectionConfirmed) {
+      return true;
+    }
+    
+    // Otherwise, check if we've detected enough consistent patterns
     return this.detectedPatternCount >= this.REQUIRED_PATTERNS;
   }
   
@@ -93,7 +101,8 @@ export class SignalValidator {
     this.signalHistory = [];
     this.peakTimes = [];
     this.detectedPatternCount = 0;
-    console.log("SignalValidator: Finger detection state reset.");
+    this.fingerDetectionConfirmed = false;
+    console.log("Finger detection reset");
   }
   
   /**
@@ -154,15 +163,15 @@ export class SignalValidator {
         interval >= 333 && interval <= 1500 // 40-180 BPM
       );
       
-      if (validIntervals.length < Math.floor(intervals.length * 0.8)) { // Increased from 0.7 (70% to 80%)
-        // If less than 80% of intervals are physiologically plausible, reject the pattern
+      if (validIntervals.length < Math.floor(intervals.length * 0.7)) {
+        // If less than 70% of intervals are physiologically plausible, reject the pattern
         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);
         return;
       }
       
       // Check for consistency in intervals (rhythm)
       let consistentIntervals = 0;
-      const maxDeviation = 120; // Reduced from 150ms - tighter consistency check
+      const maxDeviation = 150; // Reduced from 200ms - tighter consistency check
       
       for (let i = 1; i < validIntervals.length; i++) {
         if (Math.abs(validIntervals[i] - validIntervals[i - 1]) < maxDeviation) {
@@ -174,6 +183,20 @@ export class SignalValidator {
       if (consistentIntervals >= this.MIN_PEAKS_FOR_PATTERN - 1) {
         this.peakTimes = peaks;
         this.detectedPatternCount++;
+        
+        // If enough consistent patterns, confirm finger detection
+        if (this.detectedPatternCount >= this.REQUIRED_PATTERNS && !this.fingerDetectionConfirmed) {
+          this.fingerDetectionConfirmed = true;
+          console.log("Finger detection confirmed by consistent heartbeat rhythm!", 
+                     {
+                       time: new Date(now).toISOString(), 
+                       patterns: this.detectedPatternCount,
+                       consistentIntervals,
+                       peakCount: peaks.length,
+                       meanInterval: validIntervals.reduce((a, b) => a + b, 0) / validIntervals.length,
+                       variance
+                     });
+        }
       } else {
         // Reduce counter if pattern not consistent
         this.detectedPatternCount = Math.max(0, this.detectedPatternCount - 1);

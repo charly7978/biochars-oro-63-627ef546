@@ -26,11 +26,9 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionStartTime: number | null = null;
   
   // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 55; // Increased from 45
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Mantener por ahora
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.30; // Increased from 0.25
-  private consecutiveConfirmationFrames: number = 0; // Nuevo: contador de frames de confirmación
-  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 20; // Increased from 15
+  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
   
   constructor() {
     super();
@@ -105,73 +103,65 @@ export class SignalProcessor extends BaseProcessor {
       this.ppgValues.shift();
     }
     
-    // Check finger detection using pattern recognition from SignalValidator
-    const patternBasedFingerDetected = this.signalValidator.isFingerDetected();
+    // Check finger detection using pattern recognition with a higher quality threshold
+    const fingerDetected = this.signalValidator.isFingerDetected() && 
+                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
     
-    // Calculate signal amplitude from recent PPG values
+    // Calculate signal amplitude
     let amplitude = 0;
     if (this.ppgValues.length > 10) {
       const recentValues = this.ppgValues.slice(-10);
       amplitude = Math.max(...recentValues) - Math.min(...recentValues);
     }
-
-    // Physiological and quality requirements for the signal
+    
+    // Require minimum amplitude for detection (physiological requirement)
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
-    const hasValidQuality = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
-
-    // Logic for confirming finger detection
-    if (patternBasedFingerDetected && hasValidAmplitude && hasValidQuality) {
+    
+    // If finger is detected by pattern and has valid amplitude, confirm it
+    if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
       const now = Date.now();
-
+      
       if (!this.fingerDetectionStartTime) {
         this.fingerDetectionStartTime = now;
-        this.consecutiveConfirmationFrames = 0; // Reset frames when a new potential sequence starts
-        console.log("Signal processor: Potential finger detection sequence INITIALIZED", {
+        console.log("Signal processor: Potential finger detection started", {
           time: new Date(now).toISOString(),
           quality: qualityValue,
           amplitude
         });
       }
-
-      this.consecutiveConfirmationFrames++; // Increment for each valid frame in the sequence
-
-      // Confirm detection if time and consecutive frames thresholds are met, and not already confirmed
-      if (this.fingerDetectionStartTime &&
-          (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME) &&
-          this.consecutiveConfirmationFrames >= this.REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES &&
-          !this.fingerDetectionConfirmed // Confirm only once per valid sequence
-      ) {
+      
+      // If finger detection has been consistent for required time period, confirm it
+      if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
         this.fingerDetectionConfirmed = true;
-        this.rhythmBasedFingerDetection = true; // Retain if used elsewhere
-        console.log("Signal processor: Finger detection CONFIRMED (Pattern, Amplitude, Quality, Stability Met)", {
+        this.rhythmBasedFingerDetection = true;
+        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
           time: new Date(now).toISOString(),
-          detectionDurationMs: now - this.fingerDetectionStartTime,
-          confirmedFrames: this.consecutiveConfirmationFrames,
+          detectionMethod: "Rhythmic pattern detection",
+          detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
           quality: qualityValue,
           amplitude
         });
       }
-    } else {
-      // If conditions are not met, reset confirmation state
-      if (this.fingerDetectionConfirmed) { // Log only if it was previously confirmed
-        console.log("Signal processor: Finger detection LOST (Pattern, Amplitude, or Quality not met)", {
-          patternDetected: patternBasedFingerDetected,
-          currentAmplitude: amplitude,
-          currentQuality: qualityValue,
-          consecutiveFramesAchieved: this.consecutiveConfirmationFrames,
-          wasConfirmed: this.fingerDetectionConfirmed
+    } else if (!fingerDetected || !hasValidAmplitude) {
+      // Reset finger detection if lost or amplitude too low
+      if (this.fingerDetectionConfirmed) {
+        console.log("Signal processor: Finger detection lost", {
+          hasValidPattern: fingerDetected,
+          hasValidAmplitude,
+          amplitude,
+          quality: qualityValue
         });
       }
+      
       this.fingerDetectionConfirmed = false;
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
-      this.consecutiveConfirmationFrames = 0; // Reset frame counter
     }
     
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: this.fingerDetectionConfirmed // Return the confirmed state
+      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
     };
   }
   
@@ -193,6 +183,5 @@ export class SignalProcessor extends BaseProcessor {
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
-    this.consecutiveConfirmationFrames = 0; // Ensure reset of the new counter
   }
 }
