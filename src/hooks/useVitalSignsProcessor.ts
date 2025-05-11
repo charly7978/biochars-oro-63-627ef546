@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -10,7 +9,6 @@ import { useSignalProcessing } from './vital-signs/use-signal-processing';
 import { useVitalSignsLogging } from './vital-signs/use-vital-signs-logging';
 import { UseVitalSignsProcessorReturn } from './vital-signs/types';
 import { checkSignalQuality } from '../modules/heart-beat/signal-quality';
-import { FeedbackService } from '../services/FeedbackService';
 
 /**
  * Hook for processing vital signs with direct algorithms only
@@ -28,13 +26,10 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const LOW_SIGNAL_THRESHOLD = 0.05;
   const MAX_WEAK_SIGNALS = 10;
   
-  // Centralized arrhythmia tracking
   const { 
     arrhythmiaWindows, 
     addArrhythmiaWindow, 
-    clearArrhythmiaWindows,
-    processArrhythmiaStatus,
-    registerArrhythmiaNotification
+    clearArrhythmiaWindows 
   } = useArrhythmiaVisualization();
   
   const { 
@@ -92,39 +87,40 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     // Process signal directly - no simulation
     try {
       let result = processVitalSignal(value, rrData, isWeakSignal);
+      const currentTime = Date.now();
       
-      // Process and handle arrhythmia events with our centralized system
-      if (result && result.arrhythmiaStatus && result.lastArrhythmiaData) {
-        const shouldNotify = processArrhythmiaStatus(
-          result.arrhythmiaStatus, 
-          result.lastArrhythmiaData
-        );
+      // Add safe null check for arrhythmiaStatus
+      if (result && 
+          result.arrhythmiaStatus && 
+          typeof result.arrhythmiaStatus === 'string' && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
+          result.lastArrhythmiaData) {
+        const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Trigger feedback for arrhythmia if needed
-        if (shouldNotify) {
-          registerArrhythmiaNotification();
-          const count = parseInt(result.arrhythmiaStatus.split('|')[1] || '0');
-          FeedbackService.signalArrhythmia(count);
+        // Window based on real heart rate
+        let windowWidth = 400;
+        
+        // Adjust based on real RR intervals
+        if (rrData && rrData.intervals && rrData.intervals.length > 0) {
+          const lastIntervals = rrData.intervals.slice(-4);
+          const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
+          windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
         }
+        
+        addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Save valid results
-      if (result && result.heartRate > 0) {
-        setLastValidResults(result);
-      }
-      
-      // Return processed result
+      // Always return real result
       return result;
     } catch (error) {
       console.error("Error processing vital signs:", error);
       
-      // Return safe fallback values on error that include heartRate
+      // Return safe fallback values on error that include hydration
       return {
         spo2: 0,
-        heartRate: 0,
         pressure: "--/--",
         arrhythmiaStatus: "--",
         glucose: 0,
@@ -168,7 +164,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults: lastValidResults, // Return last valid results
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
