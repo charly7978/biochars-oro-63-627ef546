@@ -1,36 +1,28 @@
 
-/**
- * Tipos para el servicio de detección de arritmias
- */
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
 
-export type ArrhythmiaStatus = 
-  'normal' | 
-  'possible-arrhythmia' | 
-  'arrhythmia' | 
-  'bigeminy' | 
-  'trigeminy' | 
-  'tachycardia' | 
-  'bradycardia' | 
-  'possible-afib' |
-  'unknown';
+export type ArrhythmiaListener = (window: ArrhythmiaWindow) => void;
 
 export interface ArrhythmiaDetectionResult {
+  isArrhythmia: boolean;
+  rmssd: number;
+  rrVariation: number;
   timestamp: number;
-  status: ArrhythmiaStatus;
-  probability: number; // 0-1
-  signalQuality: number; // 0-100
-  details: Record<string, any>; // Detalles adicionales
-  latestIntervals: number[]; // Últimos intervalos RR en ms
-  isArrhythmia?: boolean; // Propiedad opcional para compatibilidad
-  category?: string; // Nueva propiedad para categorización general
+  category?: 'normal' | 'possible-arrhythmia' | 'bigeminy' | 'tachycardia' | 'bradycardia';
 }
 
-export type ArrhythmiaListener = (result: ArrhythmiaDetectionResult) => void;
+export interface ArrhythmiaStatus {
+  arrhythmiaCount: number;
+  statusMessage: string;
+  lastArrhythmiaData: {
+    timestamp: number;
+    rmssd: number;
+    rrVariation: number;
+    category?: string;
+  } | null;
+}
 
 export interface UserProfile {
-  age: number;
-  gender: 'male' | 'female' | 'other';
-  restingHeartRate: number;
-  knownConditions: string[];
-  medications: string[];
+  age?: number;
+  condition?: 'athlete' | 'hypertension' | 'diabetes';
 }

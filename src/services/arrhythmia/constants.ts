@@ -1,18 +1,23 @@
 
 /**
- * Constantes para la detección de arritmias
+ * Constants for arrhythmia detection
  */
 
-export const ARRHYTHMIA_CONFIG = {
-  windowSize: 30, // Tamaño de ventana de análisis (intervalos RR)
-  minIntervalsForAnalysis: 5, // Mínimo de intervalos necesarios para análisis básico
-  minIntervalsForAdvancedAnalysis: 10, // Mínimo de intervalos necesarios para análisis avanzado
-  minSegmentLength: 200, // Longitud mínima de segmento PPG para análisis morfológico
-  minQualityThreshold: 65, // Umbral mínimo de calidad para análisis (0-100)
-  lowIrregularityThreshold: 0.2, // Umbral bajo para considerar irregularidad
-  highIrregularityThreshold: 0.4, // Umbral alto para considerar irregularidad
-  irregularityThreshold: 0.15, // Umbral para considerar un intervalo como irregular
-  lowProbabilityThreshold: 0.4, // Umbral bajo para probabilidad de arritmia
-  highProbabilityThreshold: 0.7, // Umbral alto para probabilidad de arritmia
-  advancedAnalysisFrequency: 10 // Frecuencia de análisis avanzado (cada N ciclos)
+// Default threshold values
+export const DEFAULT_THRESHOLDS = {
+  RMSSD_THRESHOLD: 85, // Base threshold for RMSSD
+  MIN_INTERVAL: 300, // Minimum physiologically valid RR interval in ms
+  MAX_INTERVAL: 2000, // Maximum physiologically valid RR interval in ms
+  MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: 12000, // Minimum time between notifications
+  RR_VARIATION_THRESHOLD: 0.20, // Threshold for RR variation ratio
+  REQUIRED_CONFIRMATIONS: 4, // Required consecutive detections before confirming
+  CONFIRMATION_WINDOW_MS: 14000, // Time window for confirmation
+};
+
+// Adjustment factors for different profiles
+export const PROFILE_ADJUSTMENTS = {
+  AGE_THRESHOLD: 60, // Age above which to apply special adjustments
+  AGE_FACTOR: 0.82, // Adjustment factor for elderly
+  ATHLETE_FACTOR: 1.3, // Notification interval factor for athletes
+  MEDICAL_CONDITION_FACTOR: 0.85, // Threshold factor for medical conditions
 };

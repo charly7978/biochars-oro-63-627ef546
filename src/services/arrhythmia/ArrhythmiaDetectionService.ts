@@ -1,349 +1,394 @@
-import { ArrhythmiaStatus, ArrhythmiaDetectionResult, ArrhythmiaListener, UserProfile } from './types';
+/**
+ * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
+ */
+
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { calculateRMSSD, calculateRRVariation, calculateSDNN } from '@/modules/vital-signs/arrhythmia/calculations';
+import { toast } from "@/hooks/use-toast";
+import AudioFeedbackService from '../AudioFeedbackService';
 import { ArrhythmiaWindowManager } from './ArrhythmiaWindowManager';
+import { 
+  ArrhythmiaDetectionResult, 
+  ArrhythmiaStatus, 
+  UserProfile,
+  ArrhythmiaListener
+} from './types';
+import { 
+  DEFAULT_THRESHOLDS, 
+  PROFILE_ADJUSTMENTS 
+} from './constants';
 import { categorizeArrhythmia } from './utils';
+import { HeartBeatConfig } from '@/modules/heart-beat/config';
 
 /**
- * Service for detecting and managing arrhythmias
+ * Service for detecting arrhythmias from heart rate data
  */
 class ArrhythmiaDetectionService {
   private static instance: ArrhythmiaDetectionService;
-  private windowManager: ArrhythmiaWindowManager;
-  private currentStatus: ArrhythmiaStatus = 'normal';
-  private arrhythmiaListeners: Array<(status: ArrhythmiaStatus) => void> = [];
-  private detectionListeners: Array<ArrhythmiaListener> = [];
-  private arrhythmiaCount: number = 0;
-  private userProfile: UserProfile | null = null;
+  private userProfile: UserProfile = {};
+  
+  // Window manager - exportado como público para unificar la visualización
+  public windowManager = new ArrhythmiaWindowManager();
+  
+  // Detection state
   private lastRRIntervals: number[] = [];
-  private lastArrhythmiaData: Record<string, any> | null = null;
+  private lastIsArrhythmia: boolean = false;
+  private currentBeatIsArrhythmia: boolean = false;
+  private arrhythmiaCount: number = 0;
+  private lastArrhythmiaTriggeredTime: number = 0;
+  private lastArrhythmiaData: ArrhythmiaStatus['lastArrhythmiaData'] = null;
   
+  // Arrhythmia detection thresholds - adjusted to reduce false positives
+  private RMSSD_THRESHOLD: number = DEFAULT_THRESHOLDS.RMSSD_THRESHOLD;
+  private MIN_INTERVAL: number = DEFAULT_THRESHOLDS.MIN_INTERVAL;
+  private MAX_INTERVAL: number = DEFAULT_THRESHOLDS.MAX_INTERVAL;
+  private MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL: number = DEFAULT_THRESHOLDS.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL;
+  private RR_VARIATION_THRESHOLD: number = DEFAULT_THRESHOLDS.RR_VARIATION_THRESHOLD;
+  
+  // False positive prevention - adjusted to require more evidence
+  private lastDetectionTime: number = 0;
+  private arrhythmiaConfirmationCounter: number = 0;
+  private REQUIRED_CONFIRMATIONS: number = 1;
+  private CONFIRMATION_WINDOW_MS: number = 10000;
+  
+  // Cleanup interval
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  // Añadir constantes para reglas de fallback
+  private readonly RULE_RMSSD_HIGH = 100;
+  private readonly RULE_RMSSD_LOW = 15;
+  private readonly RULE_CV_HIGH = 0.20;
+
   private constructor() {
-    this.windowManager = new ArrhythmiaWindowManager();
+    this.setupAutomaticCleanup();
+    this.adjustThresholdsForProfile();
   }
-  
-  /**
-   * Get the singleton instance
-   */
+
+  private setupAutomaticCleanup(): void {
+    // Clean up old arrhythmia windows every 3 seconds
+    this.cleanupInterval = setInterval(() => {
+      this.windowManager.cleanupOldWindows();
+      
+      // Also reset the arrhythmia state if it has been a while since the last trigger
+      if (this.currentBeatIsArrhythmia && 
+          Date.now() - this.lastArrhythmiaTriggeredTime > 25000) {
+        console.log("Auto-resetting arrhythmia state due to timeout");
+        this.currentBeatIsArrhythmia = false;
+      }
+    }, 3000);
+  }
+
   public static getInstance(): ArrhythmiaDetectionService {
     if (!ArrhythmiaDetectionService.instance) {
       ArrhythmiaDetectionService.instance = new ArrhythmiaDetectionService();
     }
     return ArrhythmiaDetectionService.instance;
   }
-  
+
   /**
-   * Check if an arrhythmia is currently detected
+   * Register for arrhythmia window notifications
    */
-  public isArrhythmia(): boolean {
-    return this.currentStatus !== 'normal';
+  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.windowManager.addArrhythmiaListener(listener);
   }
-  
+
   /**
-   * Get the current arrhythmia status
+   * Remove arrhythmia listener
    */
-  public getArrhythmiaStatus(): {
-    status: ArrhythmiaStatus; 
-    statusMessage: string; 
-    lastArrhythmiaData: Record<string, any> | null
-  } {
-    // Create a descriptive status message based on the current status
-    let statusMessage = this.currentStatus;
-    if (this.arrhythmiaCount > 0) {
-      statusMessage = `${this.currentStatus}|${this.arrhythmiaCount}`;
+  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.windowManager.removeArrhythmiaListener(listener);
+  }
+
+  /**
+   * Update user profile and adjust thresholds accordingly
+   */
+  public updateUserProfile(profile: UserProfile): void {
+    this.userProfile = profile;
+    this.adjustThresholdsForProfile();
+  }
+
+  private adjustThresholdsForProfile(): void {
+    const { age, condition } = this.userProfile;
+
+    // Reset to defaults first
+    this.RMSSD_THRESHOLD = DEFAULT_THRESHOLDS.RMSSD_THRESHOLD;
+    this.RR_VARIATION_THRESHOLD = DEFAULT_THRESHOLDS.RR_VARIATION_THRESHOLD;
+    this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL = DEFAULT_THRESHOLDS.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL;
+
+    // Adjust RR variation threshold based on age
+    if (age && age > PROFILE_ADJUSTMENTS.AGE_THRESHOLD) {
+      this.RR_VARIATION_THRESHOLD *= PROFILE_ADJUSTMENTS.AGE_FACTOR;
     }
 
-    return {
-      status: this.currentStatus,
-      statusMessage,
-      lastArrhythmiaData: this.lastArrhythmiaData
-    };
-  }
-  
-  /**
-   * Update the arrhythmia status
-   */
-  public updateStatus(status: ArrhythmiaStatus, probability: number = 0, details: Record<string, any> = {}): void {
-    // Don't update if the status is the same, except for 'unknown' which can always be updated
-    if (this.currentStatus === status && status !== 'unknown') {
-      return;
+    // Adjust for athletic or medical conditions
+    if (condition === 'athlete') {
+      this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL *= PROFILE_ADJUSTMENTS.ATHLETE_FACTOR;
+    } else if (condition === 'hypertension' || condition === 'diabetes') {
+      this.RR_VARIATION_THRESHOLD *= PROFILE_ADJUSTMENTS.MEDICAL_CONDITION_FACTOR;
     }
+  }
+
+  /**
+   * Detect arrhythmia based on RR interval variations (simplified using RMSSD)
+   * Only uses real data - no simulation
+   */
+  public detectArrhythmia(rrIntervals: number[]): ArrhythmiaDetectionResult {
+    const currentTime = Date.now();
     
-    // Set the new status
-    this.currentStatus = status;
-    
-    // Increment arrhythmia count if status is abnormal
-    if (status !== 'normal' && status !== 'unknown') {
-      this.arrhythmiaCount++;
-      this.lastArrhythmiaData = {
-        timestamp: Date.now(),
-        ...details
+    // Protection against frequent calls - prevents false detections from noise
+    if (currentTime - this.lastDetectionTime < 350) {
+      return {
+        isArrhythmia: this.currentBeatIsArrhythmia,
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: currentTime,
+        category: 'normal'
       };
     }
     
-    // Log the status change
-    console.log(`ArrhythmiaDetectionService: Status updated to ${status} (probability: ${probability})`);
+    this.lastDetectionTime = currentTime;
     
-    // Record this in the window manager if it's an actual arrhythmia
-    if (status !== 'normal') {
-      this.windowManager.addArrhythmiaWindow(
-        Date.now(),
-        details.duration || 5000, // Default duration of 5 seconds
-        status,
-        details.intervals || [],
-        probability,
-        details
-      );
+    // Requires at least 6 intervals for reliable analysis
+    if (rrIntervals.length < 6) {
+      return {
+        isArrhythmia: false,
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: currentTime,
+        category: 'normal'
+      };
     }
     
-    // Notify all listeners
-    this.notifyListeners();
-
-    // Notify detection listeners with more detailed information
-    this.notifyDetectionListeners({
-      timestamp: Date.now(),
-      status,
-      probability,
-      signalQuality: details.signalQuality || 100,
-      details,
-      latestIntervals: details.intervals || this.lastRRIntervals,
-      isArrhythmia: status !== 'normal'
-    });
-  }
-
-  /**
-   * Update RR intervals for analysis
-   */
-  public updateRRIntervals(intervals: number[]): void {
-    if (!intervals || intervals.length === 0) return;
+    // Get the intervals for analysis
+    const intervalsForAnalysis = rrIntervals.slice(-15);
     
-    // Store the intervals
-    this.lastRRIntervals = [...intervals];
+    // Verify that intervals are physiologically valid
+    const validIntervals = intervalsForAnalysis.filter(
+      interval => interval >= this.MIN_INTERVAL && interval <= this.MAX_INTERVAL
+    );
     
-    // Analyze for arrhythmia if enough intervals
-    if (intervals.length >= 3) {
-      this.analyzeRRIntervals(intervals);
-    }
-  }
-  
-  /**
-   * Analyze RR intervals for arrhythmia detection
-   */
-  private analyzeRRIntervals(intervals: number[]): void {
-    if (intervals.length < 3) return;
-
-    // Calculate average and variation
-    let sum = 0;
-    for (let i = 0; i < intervals.length; i++) {
-      sum += intervals[i];
-    }
-    const avg = sum / intervals.length;
-    
-    // Look for significant variations
-    const variations = intervals.map(rr => {
-      const diff = rr - avg;
-      return diff >= 0 ? diff / avg : -diff / avg;
-    });
-    
-    const maxVariation = Math.max(...variations);
-    
-    // Detect arrhythmia based on variation
-    if (maxVariation > 0.2) {
-      // High variation could indicate arrhythmia
-      const status: ArrhythmiaStatus = maxVariation > 0.4 ? 'possible-afib' : 'possible-arrhythmia';
-      
-      this.updateStatus(status, maxVariation, { 
-        intervals, 
-        variation: maxVariation,
-        avgRR: avg
-      });
-    } else if (avg < 600) {
-      // Tachycardia
-      this.updateStatus('tachycardia', 0.8, { intervals, avgRR: avg });
-    } else if (avg > 1000) {
-      // Bradycardia
-      this.updateStatus('bradycardia', 0.7, { intervals, avgRR: avg });
-    } else {
-      // Normal rhythm
-      this.updateStatus('normal', 0, { intervals });
-    }
-  }
-  
-  /**
-   * Process a single RR interval
-   */
-  public processRRInterval(rrInterval: number, signalQuality: number = 100): ArrhythmiaDetectionResult {
-    // Add to the buffer
-    if (rrInterval > 300 && rrInterval < 2000) {
-      this.lastRRIntervals.push(rrInterval);
-      
-      // Keep buffer size reasonable
-      if (this.lastRRIntervals.length > 10) {
-        this.lastRRIntervals = this.lastRRIntervals.slice(-10);
-      }
+    // If less than 85% of recent intervals are valid, it's not reliable
+    if (validIntervals.length < intervalsForAnalysis.length * 0.85 || validIntervals.length < 5) {
+      // Reset confirmation counter if signal isn't reliable
+      this.arrhythmiaConfirmationCounter = 0;
+      this.currentBeatIsArrhythmia = false;
+      return {
+        isArrhythmia: false,
+        rmssd: 0,
+        rrVariation: 0,
+        timestamp: currentTime,
+        category: 'normal'
+      };
     }
     
-    // Process if we have enough intervals
-    if (this.lastRRIntervals.length >= 3) {
-      this.analyzeRRIntervals(this.lastRRIntervals);
-    }
+    this.lastRRIntervals = validIntervals;
     
-    // Return current status
-    const { status, statusMessage, lastArrhythmiaData } = this.getArrhythmiaStatus();
+    // --- Usar SIEMPRE el Fallback basado en Reglas --- 
+    const [potential, confidence, category] = this.detectArrhythmiaRuleBased(validIntervals);
+    this.handleDetectionResult(potential, confidence, category, validIntervals);
+    const { rmssd, rrVariation } = this.calculateBaseMetrics(validIntervals);
     
-    return {
-      timestamp: Date.now(),
-      status,
-      probability: this.isArrhythmia() ? 0.7 : 0,
-      signalQuality,
-      details: lastArrhythmiaData || {},
-      latestIntervals: [...this.lastRRIntervals],
-      category: this.isArrhythmia() ? 'abnormal' : 'normal'
+    return { 
+      isArrhythmia: this.currentBeatIsArrhythmia, 
+      rmssd, 
+      rrVariation, 
+      timestamp: currentTime, 
+      category: this.lastArrhythmiaData?.category || 'normal' 
     };
   }
   
   /**
-   * Process PPG segment for arrhythmia detection 
+   * Handle arrhythmia detection and create visualization window
    */
-  public async processPPGSegment(
-    ppgSegment: number[], 
-    signalQuality: number = 100
-  ): Promise<ArrhythmiaDetectionResult> {
-    // For now, this is a placeholder for a more advanced analysis
-    // In the future, we could implement a more sophisticated algorithm or neural network
+  private handleArrhythmiaDetection(
+    intervals: number[], 
+    rmssd: number, 
+    variationRatio: number, 
+    threshold: number,
+    category: ArrhythmiaDetectionResult['category']
+  ): void {
+    const currentTime = Date.now();
     
-    // Return current status (use some data from RR intervals if available)
-    return this.processRRInterval(
-      this.lastRRIntervals.length > 0 ? this.lastRRIntervals[this.lastRRIntervals.length - 1] : 800,
-      signalQuality
-    );
+    // Check time since last arrhythmia to avoid multiple alerts
+    const timeSinceLastTriggered = currentTime - this.lastArrhythmiaTriggeredTime;
+    if (timeSinceLastTriggered <= this.MIN_ARRHYTHMIA_NOTIFICATION_INTERVAL) {
+      console.log("Confirmed arrhythmia event ignored, too soon after last trigger.");
+      return; // Too soon, ignore
+    }
+    
+    // Log detection for debugging
+    console.log(`CONFIRMED Non-Tachycardia Arrhythmia (${category}):`, {
+      rmssd,
+      variationRatio,
+      threshold,
+      timestamp: new Date(currentTime).toISOString()
+    });
+    
+    this.lastArrhythmiaData = {
+      timestamp: currentTime,
+      rmssd,
+      rrVariation: variationRatio,
+      category
+    };
+
+    // Create an arrhythmia window
+    const avgInterval = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
+    
+    // Larger window to ensure visualization
+    const windowWidth = Math.max(1000, Math.min(1800, avgInterval * 2.5));
+    
+    const arrhythmiaWindow = {
+      start: currentTime - windowWidth/2,
+      end: currentTime + windowWidth/2
+    };
+    
+    // Add window to collection and broadcast to listeners
+    this.windowManager.addArrhythmiaWindow(arrhythmiaWindow);
+    
+    // Update counters
+    this.arrhythmiaCount++;
+    this.lastArrhythmiaTriggeredTime = currentTime;
+    
+    // Trigger special feedback for arrhythmia
+    AudioFeedbackService.triggerHeartbeatFeedback('arrhythmia');
+    
+    // Limit number of notifications
+    const shouldShowToast = this.arrhythmiaCount <= 3 || this.arrhythmiaCount % 3 === 0;
+    
+    // Show more detailed toast based on category
+    if (shouldShowToast) {
+      const message = category === 'bradycardia' ? 'Ritmo cardíaco bajo detectado' :
+                     category === 'bigeminy' ? 'Patrón de arritmia bigeminal detectado' :
+                     'Posible arritmia detectada'; // Generic message for 'possible-arrhythmia'
+                     
+      toast({
+        title: '¡Atención!',
+        description: message,
+        variant: 'destructive',
+        duration: 6000
+      });
+    }
   }
   
   /**
-   * Detect arrhythmia from RR intervals
+   * Get current arrhythmia status and data
    */
-  public detectArrhythmia(rrIntervals: number[]): {
-    isArrhythmia: boolean;
-    category: string;
-  } {
-    if (!rrIntervals || rrIntervals.length < 3) {
-      return { isArrhythmia: false, category: 'normal' };
-    }
-
-    // Calculate variation
-    let sum = 0;
-    for (let i = 0; i < rrIntervals.length; i++) {
-      sum += rrIntervals[i];
-    }
-    const avg = sum / rrIntervals.length;
+  public getArrhythmiaStatus(): ArrhythmiaStatus {
+    const statusMessage = this.arrhythmiaCount > 0 
+      ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
+      : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
     
-    // Calculate variance
-    let variance = 0;
-    for (let i = 0; i < rrIntervals.length; i++) {
-      const diff = rrIntervals[i] - avg;
-      variance += diff * diff;
-    }
-    variance /= rrIntervals.length;
+    const lastArrhythmiaData = this.currentBeatIsArrhythmia ? {
+      timestamp: Date.now(),
+      rmssd: calculateRMSSD(this.lastRRIntervals.slice(-5)),
+      rrVariation: calculateRRVariation(this.lastRRIntervals.slice(-5)),
+      category: categorizeArrhythmia(this.lastRRIntervals.slice(-5))
+    } : null;
     
-    // Detect arrhythmia based on variance
-    const isArrhythmia = variance > 10000; // Threshold for arrhythmia
-    const category = categorizeArrhythmia(rrIntervals);
-
-    return { isArrhythmia, category };
+    return {
+      arrhythmiaCount: this.arrhythmiaCount,
+      statusMessage,
+      lastArrhythmiaData
+    };
   }
   
   /**
-   * Get all arrhythmia windows
+   * Get all current arrhythmia windows
    */
-  public getArrhythmiaWindows() {
+  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
     return this.windowManager.getArrhythmiaWindows();
   }
   
   /**
-   * Add an arrhythmia listener
+   * Update RR intervals for detection
    */
-  public addArrhythmiaListener(listener: (status: ArrhythmiaStatus) => void): void {
-    this.arrhythmiaListeners.push(listener);
+  public updateRRIntervals(intervals: number[]): void {
+    this.lastRRIntervals = intervals;
   }
   
   /**
-   * Remove an arrhythmia listener
+   * Reset all detection state
    */
-  public removeArrhythmiaListener(listener: (status: ArrhythmiaStatus) => void): void {
-    this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
+  public reset(): void {
+    this.lastRRIntervals = [];
+    this.lastIsArrhythmia = false;
+    this.currentBeatIsArrhythmia = false;
+    this.arrhythmiaCount = 0;
+    this.lastArrhythmiaTriggeredTime = 0;
+    this.arrhythmiaConfirmationCounter = 0;
+    this.lastArrhythmiaData = null;
+    this.windowManager.reset();
+    
+    console.log("ArrhythmiaDetectionService: All detection data reset");
   }
   
   /**
-   * Add a detailed detection listener
+   * Get current arrhythmia state
    */
-  public addListener(listener: ArrhythmiaListener): void {
-    this.detectionListeners.push(listener);
+  public isArrhythmia(): boolean {
+    return this.currentBeatIsArrhythmia;
   }
   
   /**
-   * Remove a detailed detection listener
-   */
-  public removeListener(listener: ArrhythmiaListener): void {
-    this.detectionListeners = this.detectionListeners.filter(l => l !== listener);
-  }
-  
-  /**
-   * Set user profile for personalized analysis
-   */
-  public setUserProfile(profile: UserProfile): void {
-    this.userProfile = profile;
-    console.log('ArrhythmiaDetectionService: User profile updated', profile);
-  }
-  
-  /**
-   * Get the arrhythmia count
+   * Get arrhythmia count
    */
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
   }
-  
-  /**
-   * Clear all arrhythmia data
-   */
-  public clear(): void {
-    this.currentStatus = 'normal';
-    this.windowManager.clear();
-  }
 
-  /**
-   * Reset the service to initial state
-   */
-  public reset(): void {
-    this.currentStatus = 'normal';
-    this.arrhythmiaCount = 0;
-    this.lastRRIntervals = [];
-    this.lastArrhythmiaData = null;
-    this.windowManager.clear();
-    console.log('ArrhythmiaDetectionService: Reset complete');
+  private calculateBaseMetrics(intervals: number[]): { rmssd: number, rrVariation: number, sdnn: number, meanRR: number } {
+    const rmssd = calculateRMSSD(intervals);
+    const rrVariation = calculateRRVariation(intervals);
+    const sdnn = calculateSDNN(intervals);
+    const meanRR = intervals.length > 0 ? intervals.reduce((a, b) => a + b, 0) / intervals.length : 0;
+    return { rmssd, rrVariation, sdnn, meanRR };
   }
   
-  /**
-   * Notify all status listeners
-   */
-  private notifyListeners(): void {
-    this.arrhythmiaListeners.forEach(listener => {
-      try {
-        listener(this.currentStatus);
-      } catch (error) {
-        console.error('Error in arrhythmia listener', error);
+  private detectArrhythmiaRuleBased(validIntervals: number[]): [boolean, number, ArrhythmiaDetectionResult['category']] { 
+      const { rmssd, sdnn, meanRR } = this.calculateBaseMetrics(validIntervals);
+      const cv = meanRR > 0 ? sdnn / meanRR : 0;
+      
+      // Llamar a categorizeArrhythmia con solo los intervalos
+      let category: ArrhythmiaDetectionResult['category'] = categorizeArrhythmia(validIntervals); 
+      let potentialArrhythmia = category !== 'normal';
+      let confidence = 0.3; // Default confidence for rule-based
+
+      // Ajustar confianza basado en categoría y métricas HRV
+      if (potentialArrhythmia) {
+        switch(category) {
+            case 'bradycardia':
+            case 'tachycardia':
+                confidence = Math.max(confidence, 0.35); break;
+            case 'bigeminy': // Si categorizeArrhythmia lo soporta
+                 confidence = Math.max(confidence, 0.5); break;
+            case 'possible-arrhythmia': // Podría ser alta variabilidad
+                 confidence = Math.max(confidence, 0.45); break;
+        }
       }
-    });
+      // Sobreescribir categoría y ajustar confianza si las reglas HRV lo indican
+      if (rmssd > this.RULE_RMSSD_HIGH || rmssd < this.RULE_RMSSD_LOW || cv > this.RULE_CV_HIGH) {
+          potentialArrhythmia = true;
+          if (category === 'normal') { // Solo cambiar si no es Brady/Tachy
+              category = 'possible-arrhythmia';
+          }
+          confidence = Math.max(confidence, 0.4); 
+      }
+      
+      return [potentialArrhythmia, confidence, category];
   }
 
-  /**
-   * Notify all detection listeners
-   */
-  private notifyDetectionListeners(result: ArrhythmiaDetectionResult): void {
-    this.detectionListeners.forEach(listener => {
-      try {
-        listener(result);
-      } catch (error) {
-        console.error('Error in arrhythmia detection listener', error);
-      }
-    });
+  private handleDetectionResult(
+    potential: boolean,
+    confidence: number,
+    category: ArrhythmiaDetectionResult['category'],
+    intervals: number[]
+  ): void {
+    if (potential) {
+      this.currentBeatIsArrhythmia = true;
+      this.handleArrhythmiaDetection(intervals, calculateRMSSD(intervals), calculateRRVariation(intervals), this.RMSSD_THRESHOLD, category);
+    } else {
+      this.currentBeatIsArrhythmia = false;
+    }
   }
 }
 

@@ -1,151 +1,166 @@
-import { calculateAmplitude, findPeaksAndValleys, calculateAC } from './shared-signal-utils';
-import { calculateDC } from './utils/signal-processing-utils';
+
+import { 
+  calculateStandardDeviation, 
+  normalizeValues, 
+  findPeaksAndValleys,
+  estimateSignalQuality
+} from './shared-signal-utils';
+
+// Constantes fisiológicas
+const MIN_SYSTOLIC = 80;
+const MAX_SYSTOLIC = 200;
+const MIN_DIASTOLIC = 50;
+const MAX_DIASTOLIC = 120;
+const DEFAULT_SYSTOLIC = NaN; // Default to NaN
+const DEFAULT_DIASTOLIC = NaN;
 
 export class BloodPressureProcessor {
-  // Buffers para almacenar datos históricos reales
   private systolicBuffer: number[] = [];
   private diastolicBuffer: number[] = [];
-  
-  // Seguimiento de medición
-  private lastCalculationTime: number = 0;
-  
-  // Últimos valores calculados para suavizado
-  private lastSystolic: number = 0;
-  private lastDiastolic: number = 0;
-  
-  // Umbral de amplitud mínima para confiar en la medición
-  private readonly MIN_AMPLITUDE_THRESHOLD = 0.08; // Ajustado para robustez
-  
+  private readonly BUFFER_SIZE = 10;
+  private lastSystolic: number = NaN;
+  private lastDiastolic: number = NaN;
+  private confidence: number = 0;
+  // No bpModel property needed anymore
+
+  constructor() {
+    this.reset(); // Initialize state
+  }
+
   /**
-   * Calcula la presión arterial utilizando ÚNICAMENTE características de señal PPG directas
-   * SIN simulación ni valores de referencia - solo medición directa
+   * Estima la presión arterial usando características de la onda PPG.
+   * ADVERTENCIA: Este método es una GRAN SIMPLIFICACIÓN y NO es clínicamente preciso
+   * sin calibración extensa y/o sensores adicionales (como ECG para PTT).
+   * Los resultados son experimentales y NO deben usarse para fines médicos.
+   * @param ppgValues Array de valores de señal PPG (filtrada).
+   * @returns Objeto con { systolic: number | NaN, diastolic: number | NaN }.
    */
-  public calculateBloodPressure(values: number[]): {
-    systolic: number;
-    diastolic: number;
-  } {
-    const now = Date.now();
-    // Evitar cálculo demasiado frecuente
-    if (now - this.lastCalculationTime < 500 && this.lastSystolic > 0) { 
-      return { systolic: this.lastSystolic, diastolic: this.lastDiastolic };
+  public calculateBloodPressure(ppgValues: number[]): { systolic: number | typeof NaN; diastolic: number | typeof NaN } {
+    // Necesita suficientes datos de buena calidad
+    const signalQuality = estimateSignalQuality(ppgValues); // Changed from evaluateSignalQuality to estimateSignalQuality
+    if (!ppgValues || ppgValues.length < 50 || signalQuality < 40) { // Requerir calidad mínima
+      this.confidence = 0;
+      return { systolic: NaN, diastolic: NaN };
+    }
+
+    // --- Lógica basada en características PPG (Placeholder / Experimental) --- 
+    // Normalizar señal para análisis de forma de onda
+    const normalized = normalizeValues(ppgValues); 
+    if (normalized.every(v => v === 0)) return { systolic: NaN, diastolic: NaN }; // Normalization failed
+
+    const { peakIndices, valleyIndices } = findPeaksAndValleys(normalized);
+
+    if (peakIndices.length < 3 || valleyIndices.length < 3) { // Need enough features
+      this.confidence = 0.1;
+      return { systolic: NaN, diastolic: NaN };
+    }
+
+    // Calcular tiempo de subida promedio (Pulse Wave Velocity proxy - muy simplificado)
+    const riseTimes: number[] = [];
+    let lastValleyIdx = -1;
+    for (const peakIdx of peakIndices) {
+        // Find the valley immediately preceding this peak
+        let precedingValleyIdx = -1;
+        for(let j = valleyIndices.length - 1; j >= 0; j--) {
+            if (valleyIndices[j] < peakIdx && valleyIndices[j] > lastValleyIdx) {
+                precedingValleyIdx = valleyIndices[j];
+                break;
+            }
+        }
+        if (precedingValleyIdx !== -1) {
+            const riseTime = peakIdx - precedingValleyIdx; // In samples
+            // Basic plausibility check for rise time (e.g., 5 to 50 samples @30fps)
+            if (riseTime > 1 && riseTime < 50) { 
+                riseTimes.push(riseTime);
+            }
+            lastValleyIdx = precedingValleyIdx; // Ensure we don't reuse valleys
+        }
+    }
+
+    if (riseTimes.length < 2) { // Need at least a few valid rise times
+        this.confidence = 0.15;
+        return { systolic: NaN, diastolic: NaN };
+    }
+
+    // Usar mediana del tiempo de subida para robustez
+    const sortedRiseTimes = [...riseTimes].sort((a,b) => a - b);
+    const medianRiseTime = sortedRiseTimes[Math.floor(sortedRiseTimes.length / 2)];
+    
+    // Fórmulas inversas (Placeholder - REQUIERE CALIBRACIÓN REAL)
+    // Idea: Tiempo de subida más corto ~ mayor rigidez arterial ~ mayor PA
+    // Estos factores (160, 2, 100, 1) son arbitrarios y necesitan calibración.
+    const estimatedSystolic = 160 - medianRiseTime * 1.8; 
+    const estimatedDiastolic = 100 - medianRiseTime * 0.9; 
+
+    // Validar y limitar resultados
+    const systolic = Math.max(MIN_SYSTOLIC, Math.min(MAX_SYSTOLIC, estimatedSystolic));
+    const diastolic = Math.max(MIN_DIASTOLIC, Math.min(MAX_DIASTOLIC, estimatedDiastolic));
+
+    if (systolic <= diastolic || isNaN(systolic) || isNaN(diastolic)) { 
+        this.confidence = 0.1;
+        return { systolic: NaN, diastolic: NaN }; // Resultado fisiológicamente inválido
     }
     
-    // Necesita suficientes datos
-    if (!values || values.length < 50) {
-      return { systolic: 0, diastolic: 0 };
+    // Calcular confianza basada en calidad de señal y estabilidad de riseTime
+    const riseTimeStdDev = calculateStandardDeviation(riseTimes);
+    const riseTimeCV = medianRiseTime > 0 ? riseTimeStdDev / medianRiseTime : 1;
+    const stabilityScore = Math.max(0, 1 - riseTimeCV * 3); // Penalizar alta variabilidad
+    this.confidence = Math.max(0.1, Math.min(0.6, (signalQuality / 100) * 0.5 + stabilityScore * 0.5)); // Confianza baja/moderada
+
+    this.updateBuffers(systolic, diastolic);
+    const smoothed = this.getSmoothedPressure();
+    
+    // Devolver NaN si el resultado suavizado es inválido
+    if (isNaN(smoothed.systolic) || isNaN(smoothed.diastolic)) {
+        return { systolic: NaN, diastolic: NaN };
     }
-    
-    // --- Lógica simplificada basada en amplitud (NO VALIDADA CLÍNICAMENTE) ---
-    // Esta lógica se comenta y se reemplaza por retorno de 0/0 para indicar
-    // que no se puede calcular BP de forma fiable con este método.
-    /*
-    const recentValues = values.slice(-50); // Usar ventana más grande
-    
-    // Calcular componentes AC y DC
-    const ac = calculateAC(recentValues);
-    const dc = calculateDC(recentValues);
-    
-    if (dc === 0 || ac < this.MIN_AMPLITUDE_THRESHOLD) {
-      return { systolic: 0, diastolic: 0 }; // Señal insuficiente
-    }
-    
-    // Calcular índice de perfusión
-    const perfusionIndex = ac / dc;
-    
-    // Encontrar picos y valles para análisis morfológico
-    const { peakIndices, valleyIndices } = findPeaksAndValleys(recentValues);
-    
-    if (peakIndices.length < 3 || valleyIndices.length < 3) {
-      return { systolic: 0, diastolic: 0 }; // No hay suficientes características
-    }
-    
-    // Calcular amplitud promedio pico-valle
-    let sumAmplitude = 0;
-    const count = Math.min(peakIndices.length, valleyIndices.length);
-    for (let i = 0; i < count; i++) {
-      sumAmplitude += recentValues[peakIndices[i]] - recentValues[valleyIndices[i]];
-    }
-    const avgAmplitude = sumAmplitude / count;
-    
-    // Calcular variabilidad de la amplitud
-    let sumSqDiff = 0;
-    for (let i = 0; i < count; i++) {
-      sumSqDiff += Math.pow(recentValues[peakIndices[i]] - recentValues[valleyIndices[i]] - avgAmplitude, 2);
-    }
-    const amplitudeStdDev = Math.sqrt(sumSqDiff / count);
-    const amplitudeCV = amplitudeStdDev / avgAmplitude; // Coeficiente de variación
-    
-    // Estimación básica (NO USAR EN PRODUCCIÓN SIN VALIDACIÓN EXTENSIVA)
-    // Estos factores son heurísticos y no basados en modelos fisiológicos robustos
-    let systolicEstimate = 110 + avgAmplitude * 20 + perfusionIndex * 50;
-    let diastolicEstimate = 70 + avgAmplitude * 10 + perfusionIndex * 30;
-    
-    // Ajustar por variabilidad (señales más variables pueden indicar problemas)
-    systolicEstimate *= (1 + Math.min(0.1, amplitudeCV * 0.5)); 
-    diastolicEstimate *= (1 + Math.min(0.1, amplitudeCV * 0.5));
-    
-    // Limitar a rangos fisiológicos
-    systolicEstimate = Math.max(80, Math.min(180, systolicEstimate));
-    diastolicEstimate = Math.max(50, Math.min(120, diastolicEstimate));
-    
-    // Asegurar que sistólica > diastólica
-    if (systolicEstimate <= diastolicEstimate + 10) {
-      systolicEstimate = diastolicEstimate + 10;
-    }
-    */
-    
-    // Devolver 0/0 ya que la estimación no es fiable
-    const systolicEstimate = 0;
-    const diastolicEstimate = 0;
-    
-    // Actualizar buffers con el resultado (aunque sea 0)
-    this.systolicBuffer.push(systolicEstimate);
-    this.diastolicBuffer.push(diastolicEstimate);
-    
-    if (this.systolicBuffer.length > 15) {
+
+    return { systolic: smoothed.systolic, diastolic: smoothed.diastolic };
+  }
+  
+  private updateBuffers(systolic: number, diastolic: number): void {
+    this.systolicBuffer.push(systolic);
+    this.diastolicBuffer.push(diastolic);
+    if (this.systolicBuffer.length > this.BUFFER_SIZE) {
       this.systolicBuffer.shift();
+    }
+    if (this.diastolicBuffer.length > this.BUFFER_SIZE) {
       this.diastolicBuffer.shift();
     }
-    
-    // Calcular la mediana del buffer si hay suficientes datos
-    let finalSystolic = systolicEstimate;
-    let finalDiastolic = diastolicEstimate;
-    
-    if (this.systolicBuffer.length >= 5) { // Usar mediana si hay al menos 5 valores
-      finalSystolic = this.calculateMedian([...this.systolicBuffer]);
-      finalDiastolic = this.calculateMedian([...this.diastolicBuffer]);
-    }
-    
-    // Guardar últimos valores calculados (redondeados)
-    this.lastSystolic = Math.round(finalSystolic);
-    this.lastDiastolic = Math.round(finalDiastolic);
-    this.lastCalculationTime = now;
-    
-    // Devolver 0/0 para indicar falta de medición fiable
-    return { systolic: 0, diastolic: 0 };
   }
-  
-  /**
-   * Calcula mediana de un array
-   */
+
+  private getSmoothedPressure(): { systolic: number, diastolic: number } {
+    const smoothedSystolic = this.systolicBuffer.length > 0
+      ? this.systolicBuffer.reduce((a, b) => a + b, 0) / this.systolicBuffer.length
+      : NaN;
+    const smoothedDiastolic = this.diastolicBuffer.length > 0
+      ? this.diastolicBuffer.reduce((a, b) => a + b, 0) / this.diastolicBuffer.length
+      : NaN;
+    
+    // Use Math.round for final integer values
+    return {
+        systolic: Math.round(smoothedSystolic),
+        diastolic: Math.round(smoothedDiastolic)
+    };
+  }
+
+  // calculateMedian might not be needed if using array median logic directly
+  /*
   private calculateMedian(sortedArray: number[]): number {
-    if (sortedArray.length === 0) return 0;
-    
-    const medianIndex = Math.floor(sortedArray.length / 2);
-    return sortedArray.length % 2 === 0
-      ? (sortedArray[medianIndex - 1] + sortedArray[medianIndex]) / 2
-      : sortedArray[medianIndex];
+    // ... 
   }
-  
-  /**
-   * Reinicia el procesador de presión arterial
-   */
+  */
+
+  public getConfidence(): number {
+     return this.confidence;
+  }
+
   public reset(): void {
     this.systolicBuffer = [];
     this.diastolicBuffer = [];
-    this.lastSystolic = 0;
-    this.lastDiastolic = 0;
-    this.lastCalculationTime = 0;
-    console.log("BloodPressureProcessor: Reinicio completado");
+    this.lastSystolic = NaN; // Reset to NaN
+    this.lastDiastolic = NaN; // Reset to NaN
+    this.confidence = 0;
+    console.log("Blood Pressure Processor Reset");
   }
 }

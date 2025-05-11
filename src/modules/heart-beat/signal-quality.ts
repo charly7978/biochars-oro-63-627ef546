@@ -103,15 +103,6 @@ export function calculateSignalQuality(values: number[]): number {
 }
 
 /**
- * Assessment of signal quality for processor
- * @param values Array of signal values
- * @returns Quality 0-100
- */
-export function assessSignalQuality(values: number[]): number {
-  return calculateSignalQuality(values);
-}
-
-/**
  * Resets the signal quality state
  * @returns The reset value for signal quality counter (0)
  */
@@ -119,3 +110,4 @@ export function resetSignalQualityState(): number {
   // This function resets the signal quality tracking state to its initial value
   return 0;
 }
+

@@ -1,84 +1,109 @@
-import { ArrhythmiaStatus } from './types';
 
-interface ArrhythmiaWindow {
-  timestamp: number;
-  duration: number;
-  status: ArrhythmiaStatus;
-  intervals: number[];
-  probability: number;
-  details: Record<string, any>;
-}
+import { ArrhythmiaWindow } from '@/types/arrhythmia';
+import { ArrhythmiaListener } from './types';
+import { realAbs } from './utils';
 
 /**
- * Manager for arrhythmia detection windows
- * Tracks when arrhythmias occur and their duration
+ * Manages arrhythmia visualization windows and listeners
  */
 export class ArrhythmiaWindowManager {
-  private windows: ArrhythmiaWindow[] = [];
-  private maxWindows: number = 20;
+  private arrhythmiaWindows: ArrhythmiaWindow[] = [];
+  private arrhythmiaListeners: ArrhythmiaListener[] = [];
+  private windowGenerationCounter: number = 0;
 
-  constructor(maxWindows: number = 20) {
-    this.maxWindows = maxWindows;
+  /**
+   * Register for arrhythmia window notifications
+   */
+  public addArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.arrhythmiaListeners.push(listener);
   }
 
   /**
-   * Add a new arrhythmia window
+   * Remove arrhythmia listener
    */
-  public addArrhythmiaWindow(
-    timestamp: number,
-    duration: number,
-    status: ArrhythmiaStatus,
-    intervals: number[],
-    probability: number,
-    details: Record<string, any> = {}
-  ): void {
-    const window: ArrhythmiaWindow = {
-      timestamp,
-      duration,
-      status,
-      intervals: [...intervals],
-      probability,
-      details
-    };
-
-    this.windows.push(window);
-
-    // Keep only the latest windows
-    if (this.windows.length > this.maxWindows) {
-      this.windows = this.windows.slice(-this.maxWindows);
-    }
+  public removeArrhythmiaListener(listener: ArrhythmiaListener): void {
+    this.arrhythmiaListeners = this.arrhythmiaListeners.filter(l => l !== listener);
   }
 
   /**
-   * Get all arrhythmia windows
+   * Notify all listeners about a new arrhythmia window
    */
-  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
-    return [...this.windows];
-  }
-
-  /**
-   * Get windows that match a specific status
-   */
-  public getWindowsByStatus(status: ArrhythmiaStatus): ArrhythmiaWindow[] {
-    return this.windows.filter(window => window.status === status);
-  }
-
-  /**
-   * Get windows from a time range
-   */
-  public getWindowsInTimeRange(startTime: number, endTime: number): ArrhythmiaWindow[] {
-    return this.windows.filter(window => {
-      const windowEnd = window.timestamp + window.duration;
-      return (window.timestamp >= startTime && window.timestamp <= endTime) ||
-             (windowEnd >= startTime && windowEnd <= endTime) ||
-             (window.timestamp <= startTime && windowEnd >= endTime);
+  private notifyListeners(window: ArrhythmiaWindow): void {
+    this.arrhythmiaListeners.forEach(listener => {
+      try {
+        listener(window);
+      } catch (error) {
+        console.error("Error in arrhythmia listener:", error);
+      }
     });
   }
 
   /**
-   * Clear all windows
+   * Add a new arrhythmia window for visualization
    */
-  public clear(): void {
-    this.windows = [];
+  public addArrhythmiaWindow(window: ArrhythmiaWindow): void {
+    // Check if there's a similar recent window (within 500ms)
+    const hasRecentWindow = this.arrhythmiaWindows.some(existingWindow => 
+      realAbs(existingWindow.start - window.start) < 500 && 
+      realAbs(existingWindow.end - window.end) < 500
+    );
+    
+    if (hasRecentWindow) {
+      return; // Don't add duplicate windows
+    }
+    
+    // Add new arrhythmia window
+    this.arrhythmiaWindows.push(window);
+    
+    // Sort by time for consistent visualization
+    this.arrhythmiaWindows.sort((a, b) => b.start - a.start);
+    
+    // Limit to the 5 most recent windows
+    if (this.arrhythmiaWindows.length > 5) {
+      this.arrhythmiaWindows = this.arrhythmiaWindows.slice(0, 5);
+    }
+    
+    // Debug log
+    console.log("Arrhythmia window added for visualization", {
+      startTime: new Date(window.start).toISOString(),
+      endTime: new Date(window.end).toISOString(),
+      duration: window.end - window.start,
+      windowsCount: this.arrhythmiaWindows.length
+    });
+    
+    // Notify listeners about the new window
+    this.notifyListeners(window);
+  }
+
+  /**
+   * Get all current arrhythmia windows
+   */
+  public getArrhythmiaWindows(): ArrhythmiaWindow[] {
+    return [...this.arrhythmiaWindows];
+  }
+
+  /**
+   * Clear outdated arrhythmia windows
+   */
+  public cleanupOldWindows(): void {
+    const currentTime = Date.now();
+    // Filter only recent windows (less than 20 seconds)
+    const oldWindows = this.arrhythmiaWindows.filter(window => 
+      currentTime - window.end < 20000
+    );
+    
+    // Only update if there are changes
+    if (oldWindows.length !== this.arrhythmiaWindows.length) {
+      console.log(`Cleaned up old arrhythmia windows: removed ${this.arrhythmiaWindows.length - oldWindows.length} windows`);
+      this.arrhythmiaWindows = oldWindows;
+    }
+  }
+
+  /**
+   * Reset window state
+   */
+  public reset(): void {
+    this.arrhythmiaWindows = [];
+    this.windowGenerationCounter = 0;
   }
 }
