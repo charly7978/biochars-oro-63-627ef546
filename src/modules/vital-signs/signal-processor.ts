@@ -26,11 +26,11 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionStartTime: number | null = null;
   
   // Signal quality variables - more strict thresholds
-  private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
+  private readonly MIN_QUALITY_FOR_FINGER = 55; // Increased from 45
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Mantener por ahora
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.30; // Increased from 0.25
   private consecutiveConfirmationFrames: number = 0; // Nuevo: contador de frames de confirmación
-  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 15; // Nuevo: umbral de frames consecutivos
+  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 20; // Increased from 15
   
   constructor() {
     super();
