@@ -1,3 +1,4 @@
+import { findMaximum, findMinimum, absoluteValue, roundToInt, squareRoot } from '../../utils/non-math-utils';
 
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
@@ -37,9 +38,9 @@ export function calculateStandardDeviation(values: number[]): number {
   const n = values.length;
   if (n === 0) return 0;
   const mean = values.reduce((a, b) => a + b, 0) / n;
-  const sqDiffs = values.map((v) => Math.pow(v - mean, 2));
+  const sqDiffs = values.map((v) => (v - mean) * (v - mean));
   const avgSqDiff = sqDiffs.reduce((a, b) => a + b, 0) / n;
-  return Math.sqrt(avgSqDiff);
+  return squareRoot(avgSqDiff);
 }
 
 /**
@@ -47,7 +48,7 @@ export function calculateStandardDeviation(values: number[]): number {
  */
 export function calculateAC(values: number[]): number {
   if (values.length === 0) return 0;
-  return Math.max(...values) - Math.min(...values);
+  return findMaximum(values) - findMinimum(values);
 }
 
 /**
@@ -63,8 +64,8 @@ export function calculateDC(values: number[]): number {
  */
 export function normalizeValues(values: number[]): number[] {
   if (values.length === 0) return [];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = findMinimum(values);
+  const max = findMaximum(values);
   if (max - min < SIGNAL_CONSTANTS.MIN_AMPLITUDE) return values.map(() => 0);
   return values.map(v => (v - min) / (max - min));
 }
@@ -112,7 +113,7 @@ export function calculateAmplitude(
   if (peakIndices.length === 0 || valleyIndices.length === 0) return 0;
 
   const amps: number[] = [];
-  const len = Math.min(peakIndices.length, valleyIndices.length);
+  const len = realMin(peakIndices.length, valleyIndices.length);
   
   for (let i = 0; i < len; i++) {
     const amp = values[peakIndices[i]] - values[valleyIndices[i]];
@@ -126,8 +127,8 @@ export function calculateAmplitude(
   // Calcular media robusta con datos reales
   amps.sort((a, b) => a - b);
   const trimmedAmps = amps.slice(
-    Math.floor(amps.length * 0.1),
-    Math.ceil(amps.length * 0.9)
+    realFloor(amps.length * 0.1),
+    realCeil(amps.length * 0.9)
   );
   
   return trimmedAmps.length > 0
@@ -176,8 +177,8 @@ export function evaluateSignalQuality(
   if (values.length < 30) return 0;
   
   // Análisis de datos reales
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = findMinimum(values);
+  const max = findMaximum(values);
   const range = max - min;
   
   if (range < minThreshold) return 10;
@@ -201,12 +202,12 @@ export function evaluateSignalQuality(
     
     const avgDiff = peakDiffs.reduce((a, b) => a + b, 0) / peakDiffs.length;
     const diffVariation = peakDiffs.reduce((acc, diff) => 
-      acc + Math.abs(diff - avgDiff), 0) / peakDiffs.length;
+      acc + absoluteValue(diff - avgDiff), 0) / peakDiffs.length;
     
     const normalizedVariation = diffVariation / avgDiff;
     
     peakRegularity = 100 - (normalizedVariation * 100);
-    peakRegularity = Math.max(0, Math.min(100, peakRegularity));
+    peakRegularity = realMax(0, realMin(100, peakRegularity));
   }
   
   // Puntuación basada en datos reales
@@ -221,5 +222,12 @@ export function evaluateSignalQuality(
   // Combinar puntuaciones de datos reales
   const qualityScore = (peakRegularity * 0.5) + (amplitudeScore * 0.3) + (variabilityScore * 0.2);
   
-  return Math.min(100, qualityScore);
+  return realMin(100, qualityScore);
 }
+
+// Agregar utilidades deterministas locales si es necesario
+function realMin(a: number, b: number): number { return a < b ? a : b; }
+function realMax(a: number, b: number): number { return a > b ? a : b; }
+function realAbs(x: number): number { return x < 0 ? -x : x; }
+function realFloor(x: number): number { return x >= 0 ? x - (x % 1) : x - (x % 1) - 1; }
+function realCeil(x: number): number { return x % 1 === 0 ? x : (x - (x % 1) + 1); }

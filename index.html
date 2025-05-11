@@ -14,6 +14,10 @@
     <!-- High DPI display support -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, target-densitydpi=device-dpi" />
     <title>healthpulse-captain</title>
+    <!-- OpenCV initialization script - MUST come before opencv.js -->
+    <script src="/opencv/opencv-init.js"></script>
+    <!-- OpenCV.js with async loading -->
+    <script async src="/opencv/opencv.js"></script>
     <style>
       :root {
         --sat: env(safe-area-inset-top);
@@ -83,28 +87,6 @@
         image-rendering: crisp-edges;
         backface-visibility: hidden;
         -webkit-font-smoothing: subpixel-antialiased;
-      }
-      
-      @media screen and (min-width: 1024px) {
-        .high-res-interface {
-          transform: scale(1);
-        }
-      }
-      
-      @media screen and (min-width: 2048px) {
-        .high-res-interface {
-          transform: scale(0.5);
-          width: 200%;
-          height: 200%;
-        }
-      }
-      
-      @media screen and (min-width: 3840px) {
-        .high-res-interface {
-          transform: scale(0.25);
-          width: 400%;
-          height: 400%;
-        }
       }
       
       /* Improve text rendering */

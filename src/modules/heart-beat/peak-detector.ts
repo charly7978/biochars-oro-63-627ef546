@@ -1,4 +1,3 @@
-
 /**
  * Functions for detecting peaks in PPG signals
  */
@@ -22,8 +21,7 @@ export function detectPeak(
   isPeak: boolean;
   confidence: number;
 } {
-  // Check minimum time between peaks for physiological validity
-  // No human heart can beat faster than 220 bpm (273ms between beats)
+  // Check minimum time between peaks
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
     if (timeSinceLastPeak < config.minPeakTimeMs) {
@@ -31,35 +29,25 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic - improved for better reliability
+  // Peak detection logic
   const isPeak =
     derivative < config.derivativeThreshold &&
     normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.95; // Reduced from 0.98 for better sensitivity
+    lastValue > baseline * 0.98;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
     1
   );
 
-  // Combined confidence score with slight priority to amplitude
-  const confidence = (amplitudeConfidence * 0.6 + derivativeConfidence * 0.4);
-
-  // Log data for peaks with decent confidence
-  if (isPeak && confidence > 0.3) {
-    console.log("Heart peak detected:", {
-      normalizedValue,
-      derivative,
-      confidence,
-      timeSinceLastPeak: lastPeakTime ? currentTime - lastPeakTime : "none"
-    });
-  }
+  // Combined confidence score
+  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
 
   return { isPeak, confidence };
 }
@@ -94,15 +82,26 @@ export function confirmPeak(
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values (trending down)
-      // Relaxed condition to only require one decreasing step
-      const goingDown = updatedBuffer[len - 1] < updatedBuffer[len - 2];
+      // Confirmar pico si los valores posteriores descienden significativamente
+      const peakValue = updatedBuffer[len - 3]; // Asumiendo que el pico es el 3er último valor del buffer
+      const valueAfter1 = updatedBuffer[len - 2];
+      const valueAfter2 = updatedBuffer[len - 1];
+      
+      const drop1 = peakValue - valueAfter1;
+      const drop2 = valueAfter1 - valueAfter2;
 
-      if (goingDown) {
+      // Requerir una bajada clara y consistente
+      const MIN_DROP_RATIO = 0.15; // Exigir que la bajada sea al menos 15% del valor del pico normalizado
+      const isSignificantDrop = 
+        drop1 > peakValue * MIN_DROP_RATIO || 
+        drop2 > peakValue * MIN_DROP_RATIO;
+        
+      // Mantener la lógica anterior como respaldo si la señal es más ruidosa
+      const goingDownSimple = valueAfter2 < valueAfter1 || valueAfter1 < peakValue;
+
+      if (isSignificantDrop || goingDownSimple) { // Priorizar bajada significativa
         isConfirmedPeak = true;
         updatedLastConfirmedPeak = true;
-        
-        console.log("Confirmed heart peak with confidence:", confidence);
       }
     }
   } else if (!isPeak) {
