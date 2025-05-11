@@ -4,41 +4,7 @@
  */
 
 import { fingerDetectionManager } from '@/services/FingerDetectionService';
-
-// Define a simple signal-to-noise ratio calculation function
-function calculateSNR(signal: number[]): number {
-  if (signal.length < 10) return 0;
-  
-  const mean = signal.reduce((sum, val) => sum + val, 0) / signal.length;
-  
-  // Calculate variance (noise)
-  const variance = signal.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / signal.length;
-  
-  // Calculate power of signal
-  const signalPower = signal.reduce((sum, val) => sum + Math.pow(val, 2), 0) / signal.length;
-  
-  // SNR is signal power divided by noise power (variance)
-  return variance > 0 ? 10 * Math.log10(signalPower / variance) : 0;
-}
-
-// Define signal stability evaluation
-function evaluateSignalStability(signal: number[]): number {
-  if (signal.length < 10) return 0;
-  
-  const differences: number[] = [];
-  for (let i = 1; i < signal.length; i++) {
-    differences.push(Math.abs(signal[i] - signal[i-1]));
-  }
-  
-  // Average difference
-  const avgDiff = differences.reduce((sum, diff) => sum + diff, 0) / differences.length;
-  
-  // Max possible difference (empirical)
-  const maxExpectedDiff = 5.0; 
-  
-  // Stability score (1 is most stable)
-  return Math.max(0, Math.min(1, 1 - (avgDiff / maxExpectedDiff)));
-}
+import { calculateSNR } from '@/modules/vital-signs/utils/signal-analysis-utils';
 
 /**
  * Check for weak signal to detect finger removal - USANDO SOLO DATOS REALES
@@ -119,7 +85,7 @@ export function createWeakSignalResult(arrhythmiaCount: number = 0): {
   confidence: number;
   isPeak: boolean;
   arrhythmiaCount: number;
-  rrData: {
+  rrData?: {
     intervals: number[];
     lastPeakTime: number | null;
   };
@@ -144,6 +110,3 @@ export function resetSignalQualityState(): number {
   fingerDetectionManager.reset();
   return 0; // Reset weak signals counter to zero
 }
-
-// Export calculateSNR and evaluateSignalStability for use in FingerDetectionService
-export { calculateSNR, evaluateSignalStability };

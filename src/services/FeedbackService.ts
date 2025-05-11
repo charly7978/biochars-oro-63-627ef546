@@ -5,7 +5,6 @@
  */
 
 import { toast } from "@/hooks/use-toast";
-import AudioService from "./AudioService";
 
 // Configuración de sonidos
 const successSoundUrl = '/sounds/success.mp3';
@@ -107,23 +106,6 @@ export const FeedbackService = {
     } catch (error) {
       console.error('Error al reproducir sonido:', error);
     }
-  },
-
-  // Métodos específicos para reproducir cada tipo de sonido
-  playNotificationSound: (): void => {
-    AudioService.playNotificationSound();
-  },
-  
-  playHeartbeatSound: (): void => {
-    AudioService.playHeartbeatSound();
-  },
-  
-  playSuccessSound: (): void => {
-    AudioService.playSuccessSound();
-  },
-  
-  playErrorSound: (): void => {
-    AudioService.playErrorSound();
   },
 
   // Retroalimentación visual mediante notificaciones toast
