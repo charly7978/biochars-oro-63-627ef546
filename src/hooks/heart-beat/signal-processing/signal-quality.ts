@@ -3,64 +3,81 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
-// Remove or comment out the problematic import
-// import { isFingerDetectedByPattern } from '../../../modules/heart-beat/signal-quality';
-
-interface SignalQualityOptions {
-  lowSignalThreshold?: number;
-  maxWeakSignalCount?: number;
-}
-
 /**
- * Verifica si una señal es débil basándose en umbrales configurables
- * Solo procesamiento directo, sin simulaciones
+ * Check for weak signal to detect finger removal - USANDO SOLO DATOS REALES
  */
 export function checkWeakSignal(
   value: number,
-  currentWeakSignalCount: number,
-  options: SignalQualityOptions = {}
-): { isWeakSignal: boolean; updatedWeakSignalsCount: number } {
-  // Default thresholds
-  const LOW_SIGNAL_THRESHOLD = options.lowSignalThreshold || 0.05;
-  const MAX_WEAK_SIGNALS = options.maxWeakSignalCount || 10;
+  consecutiveWeakSignalsCount: number,
+  config: {
+    lowSignalThreshold: number;
+    maxWeakSignalCount: number;
+  }
+): {
+  isWeakSignal: boolean;
+  updatedWeakSignalsCount: number;
+} {
+  const { lowSignalThreshold, maxWeakSignalCount } = config;
   
-  const isCurrentValueWeak = Math.abs(value) < LOW_SIGNAL_THRESHOLD;
+  // Si la señal está por debajo del umbral mínimo, incrementar contador
+  if (Math.abs(value) < lowSignalThreshold) {
+    const updatedCount = consecutiveWeakSignalsCount + 1;
+    return {
+      isWeakSignal: updatedCount >= maxWeakSignalCount,
+      updatedWeakSignalsCount: updatedCount
+    };
+  }
   
-  // Update consecutive weak signals counter
-  let updatedWeakSignalsCount = isCurrentValueWeak 
-    ? currentWeakSignalCount + 1 
-    : 0;
-  
-  // Limit to max
-  updatedWeakSignalsCount = Math.min(MAX_WEAK_SIGNALS, updatedWeakSignalsCount);
-  
-  // Signal is considered weak if we have enough consecutive weak readings
-  const isWeakSignal = updatedWeakSignalsCount >= MAX_WEAK_SIGNALS;
-  
-  return { isWeakSignal, updatedWeakSignalsCount };
+  // Si la señal es suficientemente fuerte, resetear contador
+  return {
+    isWeakSignal: false,
+    updatedWeakSignalsCount: 0
+  };
 }
 
 /**
- * Verifica si se debe procesar una medición según la intensidad de la señal
+ * Determine if measurement should be processed based on signal quality
+ * SOLO DATOS REALES
  */
 export function shouldProcessMeasurement(
   value: number,
   weakSignalsCount: number = 0,
-  options: SignalQualityOptions = {}
+  options: {
+    lowSignalThreshold?: number;
+    maxWeakSignalCount?: number;
+  } = {}
 ): boolean {
-  const { isWeakSignal } = checkWeakSignal(value, weakSignalsCount, options);
-  return !isWeakSignal;
+  const threshold = options.lowSignalThreshold || 0.01;
+  const maxWeakCount = options.maxWeakSignalCount || 5;
+  
+  const { isWeakSignal } = checkWeakSignal(
+    value,
+    weakSignalsCount,
+    { lowSignalThreshold: threshold, maxWeakSignalCount: maxWeakCount }
+  );
+  
+  return !isWeakSignal && Math.abs(value) > threshold;
 }
 
 /**
- * Crea un resultado vacío para señales débiles
+ * Create a safe result object for weak signal scenarios
+ * SOLO DATOS REALES - SIN SIMULACIÓN
  */
-export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
+export function createWeakSignalResult(arrhythmiaCount: number = 0): {
+  bpm: number;
+  confidence: number;
+  isPeak: boolean;
+  arrhythmiaCount: number;
+  rrData?: {
+    intervals: number[];
+    lastPeakTime: number | null;
+  };
+} {
   return {
     bpm: 0,
     confidence: 0,
     isPeak: false,
-    arrhythmiaCount: arrhythmiaCounter,
+    arrhythmiaCount,
     rrData: {
       intervals: [],
       lastPeakTime: null
@@ -69,8 +86,8 @@ export function createWeakSignalResult(arrhythmiaCounter: number = 0): any {
 }
 
 /**
- * Restablece el estado de detección de señal
+ * Reset signal quality tracking state
  */
 export function resetSignalQualityState(): number {
-  return 0; // Reset the weak signals counter
+  return 0; // Reset weak signals counter to zero
 }
