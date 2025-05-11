@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -110,28 +111,4 @@ export function calculatePoincareSd1(intervals: number[]): number {
   }
   
   return sd1;
-}
-
-/**
- * Calculate standard deviation of NN intervals (SDNN)
- */
-export function calculateSDNN(intervals: number[]): number {
-  if (intervals.length < 2) return 0;
-
-  let sum = 0;
-  for (let i = 0; i < intervals.length; i++) {
-    sum += intervals[i];
-  }
-  const mean = sum / intervals.length;
-
-  let sumSqDev = 0;
-  for (let i = 0; i < intervals.length; i++) {
-    const dev = intervals[i] - mean;
-    sumSqDev += dev * dev;
-  }
-  const variance = sumSqDev / intervals.length; // Use N for population SD
-
-  // Use Math.sqrt now
-  if (variance === 0) return 0;
-  return Math.sqrt(variance);
 }
