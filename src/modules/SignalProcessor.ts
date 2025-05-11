@@ -1,6 +1,5 @@
+
 import { ProcessedSignal, ProcessingError, SignalProcessor } from '../types/signal';
-import { SignalOptimizerManager } from './signal-optimizer/SignalOptimizerManager';
-import { fingerDetectionManager } from '../services/FingerDetectionService';
 
 /**
  * Implementación del filtro de Kalman para suavizar señales
@@ -29,13 +28,6 @@ class KalmanFilter {
     this.P = 1;
   }
 }
-
-// Instancia global o de clase del optimizador para todos los canales relevantes
-const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
-});
 
 /**
  * Procesador de señales PPG (Fotopletismografía)
@@ -176,9 +168,7 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Procesa un frame para extraer información PPG de TODOS los canales
-   * Cada canal pasa primero por el optimizador de señal
-   * El feedback de calidad/confianza se enviará a cada canal tras el cálculo de métricas
+   * Procesa un frame para extraer información PPG
    */
   processFrame(imageData: ImageData): void {
     if (!this.isProcessing) {
@@ -186,51 +176,64 @@ export class PPGSignalProcessor implements SignalProcessor {
     }
 
     try {
+      // Control de frecuencia para evitar sobrecarga de procesamiento
       const now = Date.now();
       if (now - this.lastProcessedTime < this.MIN_PROCESS_INTERVAL) {
         return;
       }
       this.lastProcessedTime = now;
       
+      // Extraer canal rojo (principal para PPG)
       const redValue = this.extractRedChannel(imageData);
-      const irValue = this.extractIRChannel(imageData);
-      const greenValue = this.extractGreenChannel(imageData);
-
-      const detectionResult = fingerDetectionManager.processFrameAndSignal(imageData, redValue);
-
-      const redOptimized = optimizerManager.process('red', redValue);
-
-      this.lastValues.push(redOptimized);
+      
+      // Aplicar filtrado inicial para reducir ruido
+      const filtered = this.kalmanFilter.filter(redValue);
+      
+      // Almacenar para análisis
+      this.lastValues.push(filtered);
       if (this.lastValues.length > this.BUFFER_SIZE) {
         this.lastValues.shift();
       }
-
-      this.periodicityBuffer.push(redOptimized);
+      
+      // Análisis de periodicidad
+      this.periodicityBuffer.push(filtered);
       if (this.periodicityBuffer.length > this.PERIODICITY_BUFFER_SIZE) {
         this.periodicityBuffer.shift();
       }
       
+      // Calcular consistencia en el tiempo
+      this.updateConsistencyMetrics(filtered);
+      
+      // Calcular puntuación de movimiento (inestabilidad)
+      const movementScore = this.calculateMovementScore();
+      
+      // Analizar la señal para determinar calidad y presencia del dedo
+      const { isFingerDetected, quality } = this.analyzeSignal(filtered, redValue, movementScore);
+      
+      // Calcular índice de perfusión
       const perfusionIndex = this.calculatePerfusionIndex();
       
+      // Analizar periodicidad si tenemos suficientes datos
       if (this.periodicityBuffer.length > 30) {
         this.lastPeriodicityScore = this.analyzeSignalPeriodicity();
       }
       
+      // Calcular datos espectrales
       const spectrumData = this.calculateSpectrumData();
 
+      // Crear señal procesada
       const processedSignal: ProcessedSignal = {
         timestamp: now,
         rawValue: redValue,
-        filteredValue: redOptimized,
-        quality: detectionResult.quality,
-        fingerDetected: detectionResult.isFingerDetected,
-        roi: detectionResult.roi,
+        filteredValue: filtered,
+        quality: quality,
+        fingerDetected: isFingerDetected,
+        roi: this.detectROI(redValue),
         perfusionIndex,
-        spectrumData,
-        confidence: detectionResult.confidence,
-        feedback: detectionResult.feedback,
+        spectrumData
       };
 
+      // Enviar señal procesada
       this.onSignalReady?.(processedSignal);
 
     } catch (error) {
@@ -285,6 +288,83 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
   
   /**
+   * Actualiza métricas de consistencia
+   */
+  private updateConsistencyMetrics(value: number): void {
+    this.consistencyHistory.push(value);
+    if (this.consistencyHistory.length > this.CONSISTENCY_BUFFER_SIZE) {
+      this.consistencyHistory.shift();
+    }
+  }
+  
+  /**
+   * Calcula puntuación de movimiento (0-100, donde 0 es muy estable)
+   */
+  private calculateMovementScore(): number {
+    if (this.consistencyHistory.length < 4) {
+      return 100; // Máximo movimiento si no hay suficientes datos
+    }
+    
+    // Calcular variaciones entre muestras consecutivas
+    const variations: number[] = [];
+    for (let i = 1; i < this.consistencyHistory.length; i++) {
+      variations.push(Math.abs(this.consistencyHistory[i] - this.consistencyHistory[i-1]));
+    }
+    
+    // Calcular desviación estándar
+    const mean = variations.reduce((a, b) => a + b, 0) / variations.length;
+    const variance = variations.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / variations.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Calcular puntuación (normalizada a 0-100)
+    const score = Math.min(100, stdDev * 10);
+    
+    // Mantener historial para suavizado
+    this.movementScores.push(score);
+    if (this.movementScores.length > this.MOVEMENT_HISTORY_SIZE) {
+      this.movementScores.shift();
+    }
+    
+    // Retornar promedio ponderado (más peso a valores recientes)
+    let weightedSum = 0;
+    let weightSum = 0;
+    this.movementScores.forEach((s, i) => {
+      const weight = i + 1;
+      weightedSum += s * weight;
+      weightSum += weight;
+    });
+    
+    return weightSum > 0 ? weightedSum / weightSum : 100;
+  }
+
+  /**
+   * Extrae el canal rojo de un frame
+   * El canal rojo es el más sensible a cambios en volumen sanguíneo
+   */
+  private extractRedChannel(imageData: ImageData): number {
+    const data = imageData.data;
+    let redSum = 0;
+    let count = 0;
+    
+    // Analizar una parte más grande de la imagen (40% central)
+    const startX = Math.floor(imageData.width * 0.3);
+    const endX = Math.floor(imageData.width * 0.7);
+    const startY = Math.floor(imageData.height * 0.3);
+    const endY = Math.floor(imageData.height * 0.7);
+    
+    for (let y = startY; y < endY; y++) {
+      for (let x = startX; x < endX; x++) {
+        const i = (y * imageData.width + x) * 4;
+        redSum += data[i];  // Canal rojo
+        count++;
+      }
+    }
+    
+    const avgRed = redSum / count;
+    return avgRed;
+  }
+
+  /**
    * Calcula índice de perfusión
    */
   private calculatePerfusionIndex(): number {
@@ -299,6 +379,91 @@ export class PPGSignalProcessor implements SignalProcessor {
     const dc = (max + min) / 2;
     
     return dc > 0 ? ac / dc : 0;
+  }
+
+  /**
+   * Analiza la señal para determinar calidad y presencia de dedo
+   * Incluye análisis de movimiento y periodicidad como factores
+   */
+  private analyzeSignal(
+    filtered: number, 
+    rawValue: number, 
+    movementScore: number
+  ): { isFingerDetected: boolean, quality: number } {
+    // Verificación de umbrales básicos (más permisiva)
+    const isInRange = rawValue >= this.MIN_RED_THRESHOLD && rawValue <= this.MAX_RED_THRESHOLD;
+    
+    // Si está completamente fuera de rango, no hay dedo
+    if (!isInRange) {
+      // Reducir contador de estabilidad gradualmente en lugar de reiniciar
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.5);
+      return { isFingerDetected: this.stableFrameCount > 0, quality: Math.max(0, this.stableFrameCount * 10) };
+    }
+
+    // Verificar si tenemos suficientes muestras para analizar
+    if (this.lastValues.length < 3) {
+      return { isFingerDetected: false, quality: 0 };
+    }
+
+    // Analizar estabilidad de la señal (ahora más permisiva)
+    const recentValues = this.lastValues.slice(-this.STABILITY_WINDOW);
+    const avgValue = recentValues.reduce((sum, val) => sum + val, 0) / recentValues.length;
+    
+    // Evaluar variaciones entre muestras consecutivas
+    const variations = recentValues.map((val, i, arr) => {
+      if (i === 0) return 0;
+      return val - arr[i-1];
+    });
+
+    // Detectar estabilidad con umbral adaptativo
+    const maxVariation = Math.max(...variations.map(Math.abs));
+    const minVariation = Math.min(...variations);
+    
+    // Umbral adaptativo basado en promedio (más permisivo)
+    const adaptiveThreshold = Math.max(2.0, avgValue * 0.03);
+    
+    // Detección de estabilidad más permisiva
+    const isStable = maxVariation < adaptiveThreshold * 3 && 
+                    minVariation > -adaptiveThreshold * 3;
+    
+    // Ajustar contador de estabilidad
+    if (isStable) {
+      this.stableFrameCount = Math.min(this.stableFrameCount + 0.5, this.MIN_STABILITY_COUNT * 2);
+      this.lastStableValue = filtered;
+    } else {
+      // Reducción más gradual
+      this.stableFrameCount = Math.max(0, this.stableFrameCount - 0.2);
+    }
+    
+    // Factor de movimiento (permite más movimiento)
+    const movementFactor = Math.max(0, 1 - (movementScore / this.MAX_MOVEMENT_THRESHOLD));
+    
+    // Factor de periodicidad (buscar patrones cardíacos)
+    const periodicityFactor = Math.max(0.3, this.lastPeriodicityScore);
+    
+    // Calcular calidad ponderando múltiples factores
+    let quality = 0;
+    
+    // Siempre calcular calidad, incluso con estabilidad baja
+    const stabilityScore = Math.min(this.stableFrameCount / (this.MIN_STABILITY_COUNT * 1.5), 1);
+    const intensityScore = Math.min((rawValue - this.MIN_RED_THRESHOLD) / 
+                                  (this.MAX_RED_THRESHOLD - this.MIN_RED_THRESHOLD), 1);
+    const variationScore = Math.max(0, 1 - (maxVariation / (adaptiveThreshold * 4)));
+    
+    // Ponderación ajustada para ser más permisiva
+    quality = Math.round((stabilityScore * 0.4 + 
+                        intensityScore * 0.3 + 
+                        variationScore * 0.1 + 
+                        movementFactor * 0.1 + 
+                        periodicityFactor * 0.1) * 100);
+    
+    // Detección de dedo más permisiva
+    // Permitimos detección con calidad mínima más baja
+    const minQualityThreshold = 30; // Umbral de calidad reducido
+    const isFingerDetected = this.stableFrameCount >= this.MIN_STABILITY_COUNT * 0.7 && 
+                            quality >= minQualityThreshold;
+
+    return { isFingerDetected, quality };
   }
 
   /**
@@ -360,48 +525,15 @@ export class PPGSignalProcessor implements SignalProcessor {
   }
 
   /**
-   * Extrae el canal rojo de un frame
-   * El canal rojo es el más sensible a cambios en volumen sanguíneo
+   * Detecta región de interés para análisis
    */
-  private extractRedChannel(imageData: ImageData): number {
-    const data = imageData.data;
-    let redSum = 0;
-    let count = 0;
-    
-    // Analizar una parte más grande de la imagen (40% central)
-    const startX = Math.floor(imageData.width * 0.3);
-    const endX = Math.floor(imageData.width * 0.7);
-    const startY = Math.floor(imageData.height * 0.3);
-    const endY = Math.floor(imageData.height * 0.7);
-    
-    for (let y = startY; y < endY; y++) {
-      for (let x = startX; x < endX; x++) {
-        const i = (y * imageData.width + x) * 4;
-        redSum += data[i];  // Canal rojo
-        count++;
-      }
-    }
-    
-    const avgRed = redSum / count;
-    return avgRed;
-  }
-
-  /**
-   * Extrae el canal infrarrojo (IR) de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractIRChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal IR si el hardware lo soporta
-    return 0;
-  }
-
-  /**
-   * Extrae el canal verde de un frame.
-   * Debe implementarse según el hardware disponible.
-   */
-  private extractGreenChannel(imageData: ImageData): number {
-    // TODO: Implementar extracción real de canal verde si el hardware lo soporta
-    return 0;
+  private detectROI(redValue: number): ProcessedSignal['roi'] {
+    return {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100
+    };
   }
 
   /**

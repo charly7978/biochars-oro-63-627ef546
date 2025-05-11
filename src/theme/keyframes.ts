@@ -1,4 +1,3 @@
-
 export const keyframes = {
   "heart-beat": {
     "0%, 100%": { transform: "scale(1)" },
@@ -52,15 +51,18 @@ export const keyframes = {
     "0%, 100%": { opacity: "0.95" },
     "50%": { opacity: "1" }
   },
-  // New animation for display darkening when measurements complete
-  "display-darken": {
-    "0%": { backgroundColor: "rgba(243, 244, 246, 0.2)" },
-    "100%": { backgroundColor: "rgba(17, 24, 39, 0.8)" }
+  // Nueva animación para los resultados de las mediciones
+  "result-number-animation": {
+    "0%": { transform: "scale(1)", opacity: "0.8" },
+    "20%": { transform: "scale(1.05)", opacity: "1" },
+    "40%": { transform: "scale(1)", opacity: "0.95" },
+    "60%": { transform: "scale(1.02)", opacity: "1" },
+    "100%": { transform: "scale(1)", opacity: "1" }
   },
-  // New animation for number glow effect
-  "number-glow": {
+  "number-highlight": {
     "0%": { textShadow: "0 0 0px rgba(255,255,255,0)" },
-    "50%": { textShadow: "0 0 8px rgba(139,92,246,0.7), 0 0 15px rgba(30,174,219,0.5)" },
+    "30%": { textShadow: "0 0 8px rgba(59,130,246,0.7)" },
+    "70%": { textShadow: "0 0 4px rgba(59,130,246,0.4)" },
     "100%": { textShadow: "0 0 0px rgba(255,255,255,0)" }
   }
 };
