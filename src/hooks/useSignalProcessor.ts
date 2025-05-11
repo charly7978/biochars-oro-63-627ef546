@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,17 +5,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
+import { useSignalCore, SignalCoreResult } from './useSignalCore';
+
+interface SignalProcessorState {
+  processor: SignalCoreResult;
+  // Remove sessionId
+  // sessionId: string;
+  lastResult: any; // Consider using a more specific type
+}
 
 /**
  * Hook para el procesamiento de señales PPG reales
  * No se permite ninguna simulación o datos sintéticos
  */
 export const useSignalProcessor = () => {
+  const signalCore = useSignalCore();
+  // Remove sessionId state
+  // const [sessionId] = useState<string>(Math.random().toString(36).substring(2, 9));
+  const [lastResult, setLastResult] = useState<any>(null); // Consider type
+
   // Create processor instance
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
       timestamp: new Date().toISOString(),
-      sessionId: Math.random().toString(36).substring(2, 9)
+      // sessionId: Math.random().toString(36).substring(2, 9)
     });
     
     return new PPGSignalProcessor();

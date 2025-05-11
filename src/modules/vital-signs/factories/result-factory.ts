@@ -1,4 +1,3 @@
-
 import { VitalSignsResult } from '../types/vital-signs-result';
 
 /**
@@ -10,7 +9,6 @@ export class ResultFactory {
    */
   public static createResult(
     spo2: number,
-    heartRate: number,
     pressure: string,
     arrhythmiaStatus: string,
     glucose: number,
@@ -24,7 +22,6 @@ export class ResultFactory {
   ): VitalSignsResult {
     return {
       spo2,
-      heartRate,
       pressure,
       arrhythmiaStatus,
       glucose,
@@ -39,21 +36,24 @@ export class ResultFactory {
   }
 
   /**
-   * Creates an empty result with default values
+   * Creates an empty result with default values indicating unavailability.
    */
   public static createEmptyResults(): VitalSignsResult {
     return {
-      spo2: 0,
-      heartRate: 0,
-      pressure: "--/--",
-      arrhythmiaStatus: "--",
-      glucose: 0,
+      spo2: NaN,
+      pressure: "N/A",
+      arrhythmiaStatus: "N/A",
+      glucose: NaN,
       lipids: {
-        totalCholesterol: 0,
-        triglycerides: 0
+        totalCholesterol: NaN,
+        triglycerides: NaN
       },
-      hemoglobin: 0,
-      hydration: 0
+      hemoglobin: NaN,
+      hydration: NaN,
+      glucoseConfidence: 0,
+      lipidsConfidence: 0,
+      overallConfidence: 0,
+      lastArrhythmiaData: null
     };
   }
 }

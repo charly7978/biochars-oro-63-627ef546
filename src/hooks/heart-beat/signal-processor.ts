@@ -69,11 +69,13 @@ export function useSignalProcessor() {
         lastRRIntervalsRef.current = [...rrData.intervals];
       }
       
-      // Handle peak detection - fixed argument count
+      // Handle peak detection
       handlePeakDetection(
         result, 
         lastPeakTimeRef, 
-        isMonitoringRef
+        requestImmediateBeep, 
+        isMonitoringRef,
+        value
       );
       
       // Update last valid BPM if it's reasonable
@@ -81,10 +83,11 @@ export function useSignalProcessor() {
       
       lastSignalQualityRef.current = result.confidence;
 
-      // Process result - fixed argument count
+      // Process result
       return processLowConfidenceResult(
         result, 
-        currentBPM
+        currentBPM, 
+        processor.getArrhythmiaCounter()
       );
     } catch (error) {
       console.error('useHeartBeatProcessor: Error processing signal', error);
