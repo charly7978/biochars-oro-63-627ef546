@@ -29,6 +29,8 @@ export class SignalProcessor extends BaseProcessor {
   private readonly MIN_QUALITY_FOR_FINGER = 45; // Increased from default
   private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500; // Increased from 3000
   private readonly MIN_SIGNAL_AMPLITUDE = 0.25; // Increased from previous value
+  private consecutiveConfirmationFrames: number = 0; // Nuevo: contador de frames de confirmación
+  private readonly REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES: number = 15; // Nuevo: umbral de frames consecutivos
   
   constructor() {
     super();
@@ -104,8 +106,7 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // Check finger detection using pattern recognition with a higher quality threshold
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                           (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    const patternBasedFingerDetected = this.signalValidator.isFingerDetected();
     
     // Calculate signal amplitude
     let amplitude = 0;
@@ -116,52 +117,63 @@ export class SignalProcessor extends BaseProcessor {
     
     // Require minimum amplitude for detection (physiological requirement)
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
+    const hasValidQuality = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
     
-    // If finger is detected by pattern and has valid amplitude, confirm it
-    if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
+    // Logic for confirming finger detection
+    if (patternBasedFingerDetected && hasValidAmplitude && hasValidQuality) {
       const now = Date.now();
       
       if (!this.fingerDetectionStartTime) {
         this.fingerDetectionStartTime = now;
-        console.log("Signal processor: Potential finger detection started", {
+        this.consecutiveConfirmationFrames = 0; // Resetear frames al iniciar nueva posible detección
+        console.log("Signal processor: Potential finger detection sequence started", {
           time: new Date(now).toISOString(),
           quality: qualityValue,
           amplitude
         });
       }
       
-      // If finger detection has been consistent for required time period, confirm it
-      if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
+      this.consecutiveConfirmationFrames++;
+      
+      // Si la detección ha sido consistente por el tiempo Y número de frames requeridos, confirmarla
+      if (this.fingerDetectionStartTime &&
+          (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME) &&
+          this.consecutiveConfirmationFrames >= this.REQUIRED_CONSECUTIVE_CONFIRMATION_FRAMES &&
+          !this.fingerDetectionConfirmed // Solo confirmar una vez
+      ) {
         this.fingerDetectionConfirmed = true;
-        this.rhythmBasedFingerDetection = true;
-        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
+        this.rhythmBasedFingerDetection = true; // Mantener esto si es relevante para otras lógicas
+        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern and stability!", {
           time: new Date(now).toISOString(),
-          detectionMethod: "Rhythmic pattern detection",
+          detectionMethod: "Rhythmic pattern, amplitude, quality and stability",
           detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
+          confirmedFrames: this.consecutiveConfirmationFrames,
           quality: qualityValue,
           amplitude
         });
       }
-    } else if (!fingerDetected || !hasValidAmplitude) {
-      // Reset finger detection if lost or amplitude too low
-      if (this.fingerDetectionConfirmed) {
-        console.log("Signal processor: Finger detection lost", {
-          hasValidPattern: fingerDetected,
+    } else {
+      // Resetear si se pierde el patrón, la amplitud o la calidad
+      if (this.fingerDetectionConfirmed) { // Solo loguear si estaba confirmado
+        console.log("Signal processor: Finger detection lost or conditions not met", {
+          patternDetected: patternBasedFingerDetected,
           hasValidAmplitude,
-          amplitude,
-          quality: qualityValue
+          hasValidQuality,
+          currentAmplitude: amplitude,
+          currentQuality: qualityValue,
+          consecutiveFramesAchieved: this.consecutiveConfirmationFrames
         });
       }
-      
       this.fingerDetectionConfirmed = false;
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
+      this.consecutiveConfirmationFrames = 0; // Resetear frames
     }
     
     return { 
       filteredValue: smaFiltered,
       quality: qualityValue,
-      fingerDetected: (fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed
+      fingerDetected: this.fingerDetectionConfirmed // Devolver el estado confirmado
     };
   }
   
@@ -183,5 +195,6 @@ export class SignalProcessor extends BaseProcessor {
     this.fingerDetectionConfirmed = false;
     this.fingerDetectionStartTime = null;
     this.rhythmBasedFingerDetection = false;
+    this.consecutiveConfirmationFrames = 0; // Asegurar reseteo del nuevo contador
   }
 }
