@@ -16,6 +16,8 @@ import useFingerDetection from '../services/FingerDetectionService';
 export const useSignalProcessor = () => {
   // Acceso al servicio centralizado de detección de dedo
   const fingerDetection = useFingerDetection();
+  const cleanupCalledRef = useRef(false);
+  const processingActiveRef = useRef(false);
 
   // Create processor instance
   const [processor] = useState(() => {
@@ -43,6 +45,17 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
+      // Debug signal quality and processing
+      console.log("Signal processed:", { 
+        filteredValue: signal.filteredValue.toFixed(3),
+        rawValue: signal.rawValue.toFixed(2),
+        quality: signal.quality,
+        processingActive: processingActiveRef.current
+      });
+      
+      // Solo procesar si estamos activos
+      if (!processingActiveRef.current) return;
+      
       // Usar el detector centralizado para una detección más precisa
       const fingerStatus = fingerDetection.processSignal(signal.filteredValue, signal.quality);
       
@@ -80,9 +93,19 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
+      // Avoid multiple calls to cleanup functions that cause infinite loops
+      if (cleanupCalledRef.current) return;
+      cleanupCalledRef.current = true;
+      processingActiveRef.current = false;
+      
       processor.stop();
-      // Reset detector de dedo centralizado
-      fingerDetection.resetDetection();
+      
+      // Use setTimeout to prevent state update during unmount cleanup cycles
+      setTimeout(() => {
+        if (fingerDetection && fingerDetection.resetDetection) {
+          fingerDetection.resetDetection();
+        }
+      }, 20);
     };
   }, [processor, fingerDetection]);
 
@@ -93,6 +116,7 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Iniciando procesamiento");
     
     setIsProcessing(true);
+    processingActiveRef.current = true;
     setFramesProcessed(0);
     setSignalStats({
       minValue: Infinity,
@@ -101,8 +125,11 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
-    // Reset detector de dedo centralizado
-    fingerDetection.resetDetection();
+    // Reset finger detection status before starting
+    if (fingerDetection && fingerDetection.resetDetection) {
+      fingerDetection.resetDetection();
+    }
+    cleanupCalledRef.current = false;
     
     processor.start();
   }, [processor, fingerDetection]);
@@ -114,17 +141,22 @@ export const useSignalProcessor = () => {
     console.log("useSignalProcessor: Deteniendo procesamiento");
     
     setIsProcessing(false);
+    processingActiveRef.current = false;
     processor.stop();
     
-    // Reset detector de dedo centralizado
-    fingerDetection.resetDetection();
+    // Use setTimeout to prevent react update cycle issues
+    setTimeout(() => {
+      if (fingerDetection && fingerDetection.resetDetection) {
+        fingerDetection.resetDetection();
+      }
+    }, 20);
   }, [processor, fingerDetection]);
 
   /**
    * Process a frame from camera
    */
   const processFrame = useCallback((imageData: ImageData) => {
-    if (isProcessing) {
+    if (isProcessing && processingActiveRef.current) {
       try {
         processor.processFrame(imageData);
       } catch (err) {
