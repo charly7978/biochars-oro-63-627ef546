@@ -6,12 +6,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PPGSignalProcessor } from '../modules/SignalProcessor';
 import { ProcessedSignal, ProcessingError } from '../types/signal';
+import useFingerDetection from '../services/FingerDetectionService';
 
 /**
  * Hook para el procesamiento de señales PPG reales
  * No se permite ninguna simulación o datos sintéticos
+ * Ahora utiliza el servicio centralizado de detección de dedo
  */
 export const useSignalProcessor = () => {
+  // Acceso al servicio centralizado de detección de dedo
+  const fingerDetection = useFingerDetection();
+  const cleanupCalledRef = useRef(false);
+
   // Create processor instance
   const [processor] = useState(() => {
     console.log("useSignalProcessor: Creando nueva instancia", {
@@ -38,8 +44,16 @@ export const useSignalProcessor = () => {
   useEffect(() => {
     // Signal callback
     processor.onSignalReady = (signal: ProcessedSignal) => {
-      // Pass through without modifications - quality and detection handled by PPGSignalMeter
-      setLastSignal(signal);
+      // Usar el detector centralizado para una detección más precisa
+      const fingerStatus = fingerDetection.processSignal(signal.filteredValue, signal.quality);
+      
+      // Actualizar la señal con el estado de detección centralizado
+      const enhancedSignal = {
+        ...signal,
+        fingerDetected: fingerStatus
+      };
+      
+      setLastSignal(enhancedSignal);
       setError(null);
       setFramesProcessed(prev => prev + 1);
       
@@ -67,9 +81,18 @@ export const useSignalProcessor = () => {
 
     // Cleanup
     return () => {
+      // Avoid multiple calls to cleanup functions that cause infinite loops
+      if (cleanupCalledRef.current) return;
+      cleanupCalledRef.current = true;
+      
       processor.stop();
+      
+      // Use setTimeout to prevent state update during unmount cleanup cycles
+      setTimeout(() => {
+        fingerDetection.resetDetection();
+      }, 0);
     };
-  }, [processor]);
+  }, [processor, fingerDetection]);
 
   /**
    * Start processing signals
@@ -86,8 +109,12 @@ export const useSignalProcessor = () => {
       totalValues: 0
     });
     
+    // Reset finger detection status before starting
+    fingerDetection.resetDetection();
+    cleanupCalledRef.current = false;
+    
     processor.start();
-  }, [processor]);
+  }, [processor, fingerDetection]);
 
   /**
    * Stop processing signals
@@ -97,7 +124,12 @@ export const useSignalProcessor = () => {
     
     setIsProcessing(false);
     processor.stop();
-  }, [processor]);
+    
+    // Use setTimeout to prevent react update cycle issues
+    setTimeout(() => {
+      fingerDetection.resetDetection();
+    }, 0);
+  }, [processor, fingerDetection]);
 
   /**
    * Process a frame from camera
@@ -123,3 +155,5 @@ export const useSignalProcessor = () => {
     processFrame
   };
 };
+
+export default useSignalProcessor;

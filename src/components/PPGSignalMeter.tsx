@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useCallback, useState, memo } from 'react';
 import { Fingerprint, AlertCircle } from 'lucide-react';
 import { CircularBuffer, PPGDataPoint } from '../utils/CircularBuffer';
 import AppTitle from './AppTitle';
-import { useHeartbeatFeedback, HeartbeatFeedbackType } from '../hooks/useHeartbeatFeedback';
-import { SignalOptimizerManager } from '../modules/signal-optimizer/SignalOptimizerManager';
-import FeedbackService from '@/services/FeedbackService';
+import { useHeartbeatFeedback } from '../hooks/useHeartbeatFeedback';
+import useFingerDetection from '../services/FingerDetectionService';
+import { FeedbackService } from '../services/FeedbackService';
 
 interface ArrhythmiaSegment {
   startTime: number;
@@ -31,13 +31,6 @@ interface PPGSignalMeterProps {
 interface PPGDataPointExtended extends PPGDataPoint {
   isArrhythmia?: boolean;
 }
-
-// Instancia global del optimizador (solo lógica interna, sin UI manual)
-const optimizerManager = new SignalOptimizerManager({
-  red: { filterType: 'kalman', gain: 1.0 },
-  ir: { filterType: 'sma', gain: 1.0 },
-  green: { filterType: 'ema', gain: 1.0 }
-});
 
 const PPGSignalMeter = memo(({ 
   value, 
@@ -73,19 +66,19 @@ const PPGSignalMeter = memo(({
   const pendingBeepPeakIdRef = useRef<number | null>(null);
   const [resultsVisible, setResultsVisible] = useState(true);
 
-  const WINDOW_WIDTH_MS = 6500;
-  const CANVAS_WIDTH = 1000;
-  const CANVAS_HEIGHT = 1000;
+  const WINDOW_WIDTH_MS = 4500;
+  const CANVAS_WIDTH = 1100;
+  const CANVAS_HEIGHT = 1200;
   const GRID_SIZE_X = 5;
   const GRID_SIZE_Y = 5;
-  const verticalScale = 86.0;
-  const SMOOTHING_FACTOR = 0.7;
+  const verticalScale = 76.0;
+  const SMOOTHING_FACTOR = 1.6;
   const TARGET_FPS = 60;
   const FRAME_TIME = 1000 / TARGET_FPS;
-  const BUFFER_SIZE = 250;
+  const BUFFER_SIZE = 600;
   const PEAK_DETECTION_WINDOW = 8;
   const PEAK_THRESHOLD = 3;
-  const MIN_PEAK_DISTANCE_MS = 400;
+  const MIN_PEAK_DISTANCE_MS = 350;
   const IMMEDIATE_RENDERING = true;
   const MAX_PEAKS_TO_DISPLAY = 25;
   const QUALITY_HISTORY_SIZE = 9;
@@ -96,7 +89,16 @@ const PPGSignalMeter = memo(({
   const BEEP_SECONDARY_FREQUENCY = 440;
   const BEEP_DURATION = 80;
   const BEEP_VOLUME = 0.9;
-  const MIN_BEEP_INTERVAL_MS = 400;
+  const MIN_BEEP_INTERVAL_MS = 350;
+
+  const feedbackService = useRef<FeedbackService>(FeedbackService.getInstance());
+  
+  const fingerDetection = useFingerDetection();
+  const [fingerState, setFingerState] = useState({
+    isDetected: false,
+    quality: 0,
+    consecutive: 0
+  });
 
   const triggerHeartbeatFeedback = useHeartbeatFeedback();
 
@@ -117,6 +119,8 @@ const PPGSignalMeter = memo(({
           if (audioContextRef.current.state !== 'running') {
             await audioContextRef.current.resume();
           }
+          
+          await playBeep(0.01);
         }
       } catch (err) {
         console.error("PPGSignalMeter: Error inicializando audio context:", err);
@@ -139,20 +143,24 @@ const PPGSignalMeter = memo(({
     try {
       const now = Date.now();
       if (now - lastBeepTimeRef.current < MIN_BEEP_INTERVAL_MS) {
+        console.log("PPGSignalMeter: Beep bloqueado por intervalo mínimo", {
+          timeSinceLastBeep: now - lastBeepTimeRef.current,
+          minInterval: MIN_BEEP_INTERVAL_MS
+        });
         return false;
       }
-
-      triggerHeartbeatFeedback(isArrhythmia ? 'arrhythmia' : 'normal');
-
+      
+      feedbackService.current.triggerHeartbeatFeedback(isArrhythmia);
+      
       lastBeepTimeRef.current = now;
       pendingBeepPeakIdRef.current = null;
-
+      
       return true;
     } catch (err) {
-      console.error("PPGSignalMeter: Error reproduciendo beep/vibración:", err);
+      console.error("PPGSignalMeter: Error reproduciendo beep:", err);
       return false;
     }
-  }, [triggerHeartbeatFeedback]);
+  }, []);
 
   useEffect(() => {
     if (!dataBufferRef.current) {
@@ -223,21 +231,23 @@ const PPGSignalMeter = memo(({
 
   const getQualityColor = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
+    const isFingerDetected = fingerState.isDetected;
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'from-gray-400 to-gray-500';
+    if (!isFingerDetected && !preserveResults) return 'from-gray-400 to-gray-500';
     if (avgQuality > 65) return 'from-green-500 to-emerald-500';
     if (avgQuality > 40) return 'from-yellow-500 to-orange-500';
     return 'from-red-500 to-rose-500';
-  }, [getAverageQuality, preserveResults]);
+  }, [getAverageQuality, preserveResults, fingerState.isDetected]);
 
   const getQualityText = useCallback((q: number) => {
     const avgQuality = getAverageQuality();
+    const isFingerDetected = fingerState.isDetected;
     
-    if (!(consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES) && !preserveResults) return 'Sin detección';
+    if (!isFingerDetected && !preserveResults) return 'Sin detección';
     if (avgQuality > 65) return 'Señal óptima';
     if (avgQuality > 40) return 'Señal aceptable';
     return 'Señal débil';
-  }, [getAverageQuality, preserveResults]);
+  }, [getAverageQuality, preserveResults, fingerState.isDetected]);
 
   const smoothValue = useCallback((currentValue: number, previousValue: number | null): number => {
     if (previousValue === null) return currentValue;
@@ -428,6 +438,19 @@ const PPGSignalMeter = memo(({
       segment => now - (segment.endTime || now) < WINDOW_WIDTH_MS
     );
   }, [WINDOW_WIDTH_MS]);
+
+  useEffect(() => {
+    // Procesar la señal con nuestro detector centralizado
+    if (value !== 0) {
+      const isDetected = fingerDetection.processSignal(value, quality);
+      
+      setFingerState({
+        isDetected: isDetected || (preserveResults && fingerState.isDetected),
+        quality: quality,
+        consecutive: isDetected ? fingerState.consecutive + 1 : 0
+      });
+    }
+  }, [value, quality, preserveResults, fingerDetection]);
 
   const renderSignal = useCallback(() => {
     if (!canvasRef.current || !dataBufferRef.current) {
@@ -628,75 +651,76 @@ const PPGSignalMeter = memo(({
     currentArrhythmiaSegmentRef.current = null;
     lastArrhythmiaStateRef.current = false;
     pendingBeepPeakIdRef.current = null;
+    
+    fingerDetection.resetDetection();
+    
     onReset();
-  }, [onReset]);
+  }, [onReset, fingerDetection]);
 
   const displayQuality = getAverageQuality();
-  const displayFingerDetected = consecutiveFingerFramesRef.current >= REQUIRED_FINGER_FRAMES || preserveResults;
+  const displayFingerDetected = fingerState.isDetected || preserveResults;
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_WIDTH}
-          height={CANVAS_HEIGHT}
-          className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
-          style={{
-            transform: 'translate3d(0,0,0)',
-            backfaceVisibility: 'hidden',
-            contain: 'paint layout size',
-            imageRendering: 'crisp-edges'
-          }}
-        />
+    <div className="fixed inset-0 bg-black/5 backdrop-blur-[1px] flex flex-col transform-gpu will-change-transform">
+      <canvas
+        ref={canvasRef}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        className="w-full h-[100vh] absolute inset-0 z-0 object-cover performance-boost"
+        style={{
+          transform: 'translate3d(0,0,0)',
+          backfaceVisibility: 'hidden',
+          contain: 'paint layout size',
+          imageRendering: 'crisp-edges'
+        }}
+      />
 
-        <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
-          <div className="flex items-center gap-2 ml-2">
-            <span className="text-lg font-bold text-black/80">PPG</span>
-            <div className="w-[180px]">
-              <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
-                <div
-                  className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
-                  style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
-                />
-              </div>
-              <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
-                    style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
-                {getQualityText(quality)}
-              </span>
+      <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
+        <div className="flex items-center gap-2 ml-2">
+          <span className="text-lg font-bold text-black/80">PPG</span>
+          <div className="w-[180px]">
+            <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
+              <div
+                className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"
+                style={{ width: `${resultsVisible ? displayQuality : 0}%` }}
+              />
             </div>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <Fingerprint
-              className={`h-8 w-8 transition-colors duration-300 ${
-                !displayFingerDetected ? 'text-gray-400' :
-                displayQuality > 65 ? 'text-green-500' :
-                displayQuality > 40 ? 'text-yellow-500' :
-                'text-red-500'
-              }`}
-              strokeWidth={1.5}
-            />
-            <span className="text-[8px] text-center font-medium text-black/80">
-              {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+            <span className="text-[8px] text-center mt-0.5 font-medium transition-colors duration-700 block" 
+                  style={{ color: displayQuality > 60 ? '#0EA5E9' : '#F59E0B' }}>
+              {getQualityText(quality)}
             </span>
           </div>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
-          <button 
-            onClick={onStartMeasurement}
-            className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-          >
-            INICIAR
-          </button>
-          <button 
-            onClick={handleReset}
-            className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
-          >
-            RESET
-          </button>
+        <div className="flex flex-col items-center">
+          <Fingerprint
+            className={`h-8 w-8 transition-colors duration-300 ${
+              !displayFingerDetected ? 'text-gray-400' :
+              displayQuality > 65 ? 'text-green-500' :
+              displayQuality > 40 ? 'text-yellow-500' :
+              'text-red-500'
+            }`}
+            strokeWidth={1.5}
+          />
+          <span className="text-[8px] text-center font-medium text-black/80">
+            {displayFingerDetected ? "Dedo detectado" : "Ubique su dedo"}
+          </span>
         </div>
+      </div>
+
+      <div className="fixed bottom-0 left-0 right-0 h-[60px] grid grid-cols-2 bg-transparent z-10">
+        <button 
+          onClick={onStartMeasurement}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          INICIAR
+        </button>
+        <button 
+          onClick={handleReset}
+          className="bg-transparent text-black/80 hover:bg-white/5 active:bg-white/10 transition-colors duration-200 text-sm font-semibold"
+        >
+          RESET
+        </button>
       </div>
     </div>
   );

@@ -1,15 +1,26 @@
 
-import { createRoot } from 'react-dom/client'
-import App from './App.tsx'
-import './index.css'
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App.tsx';
+import './index.css';
 
-// Simple fullscreen request function that doesn't affect layout
+const rootElement = document.getElementById('root');
+if (!rootElement) throw new Error('Failed to find the root element');
+
+const root = createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+// Safer fullscreen request function
 const requestFullscreen = () => {
   const docEl = document.documentElement;
   
   try {
     if (docEl.requestFullscreen) {
-      docEl.requestFullscreen();
+      docEl.requestFullscreen().catch(e => console.log('Fullscreen request ignored:', e));
     } else if ((docEl as any).webkitRequestFullscreen) {
       (docEl as any).webkitRequestFullscreen();
     } else if ((docEl as any).mozRequestFullScreen) {
@@ -29,24 +40,18 @@ const requestFullscreen = () => {
   }
 };
 
-// Add fullscreen event listeners
-document.addEventListener('click', requestFullscreen, { once: true });
-document.addEventListener('touchstart', requestFullscreen, { once: true });
-
-// Enter fullscreen when document is loaded
-document.addEventListener('DOMContentLoaded', requestFullscreen);
-
-// Try entering fullscreen a few times with delays
-setTimeout(requestFullscreen, 1000);
-setTimeout(requestFullscreen, 2000);
-setTimeout(requestFullscreen, 3000);
-
-// Re-enter fullscreen if exited
-document.addEventListener('fullscreenchange', () => {
-  if (!document.fullscreenElement) {
-    setTimeout(requestFullscreen, 1000);
-  }
+// Add fullscreen event listeners (after DOM is loaded)
+document.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('click', requestFullscreen, { once: true });
+  document.addEventListener('touchstart', requestFullscreen, { once: true });
+  
+  setTimeout(requestFullscreen, 1000);
+  setTimeout(requestFullscreen, 2000);
+  
+  // Re-enter fullscreen if exited
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+      setTimeout(requestFullscreen, 1000);
+    }
+  });
 });
-
-// Render the app
-createRoot(document.getElementById("root")!).render(<App />);

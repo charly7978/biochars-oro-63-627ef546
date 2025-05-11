@@ -1,14 +1,19 @@
 
+import { RRAnalysisResult } from '../arrhythmia/types';
+
+export interface RRIntervalData {
+  intervals: number[];
+  lastPeakTime: number | null;
+}
+
 export interface HeartBeatResult {
   bpm: number;
   confidence: number;
   isPeak: boolean;
+  filteredValue?: number;
   arrhythmiaCount: number;
   isArrhythmia?: boolean;
-  rrData: {
-    intervals: number[];
-    lastPeakTime: number | null;
-  };
+  rrData?: RRIntervalData;
 }
 
 export interface UseHeartBeatReturn {
@@ -20,12 +25,5 @@ export interface UseHeartBeatReturn {
   requestBeep: (value: number) => boolean;
   startMonitoring: () => void;
   stopMonitoring: () => void;
-}
-
-export interface RRAnalysisResult {
-  isArrhythmia: boolean;
-  hrv: number;  // Heart Rate Variability
-  rmssd: number;  // Root Mean Square of Successive Differences
-  rrVariation: number;  // Porcentaje de variación RR
-  confidence: number;  // Confianza en la detección
+  arrhythmiaCount?: number;
 }

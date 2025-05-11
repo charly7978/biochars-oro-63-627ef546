@@ -1,5 +1,3 @@
-import { antiRedundancyGuard } from '../core/validation/CrossValidationSystem';
-
 export class HeartBeatProcessor {
   SAMPLE_RATE = 30;
   WINDOW_SIZE = 60;
@@ -53,7 +51,6 @@ export class HeartBeatProcessor {
   peakCandidateIndex = null;
   peakCandidateValue = 0;
   rrIntervals: number[] = [];
-  private readonly MAX_RR_HISTORY = 12;
 
   constructor() {
     this.initAudio();
@@ -105,8 +102,89 @@ export class HeartBeatProcessor {
   }
 
   async playBeep(volume = this.BEEP_VOLUME) {
-    // ELIMINADO: No reproducir beep aquí. El feedback se maneja en la UI.
-    return false;
+    // Si no está en modo de monitoreo, no reproducir beeps
+    if (!this.isMonitoring) return false;
+    
+    // Si estamos en el período de calentamiento, no reproducir beeps
+    if (this.isInWarmup()) return false;
+    
+    // Verificación básica de intervalo para evitar beeps demasiado frecuentes
+    const now = Date.now();
+    if (!this.SKIP_TIMING_VALIDATION && now - this.lastBeepTime < this.MIN_BEEP_INTERVAL_MS) {
+      return false;
+    }
+
+    try {
+      // Asegúrate de que el contexto de audio esté disponible y activo
+      if (!this.audioContext || this.audioContext.state !== 'running') {
+        await this.initAudio();
+        if (!this.audioContext || this.audioContext.state !== 'running') {
+          return false;
+        }
+      }
+
+      // Crea y configura osciladores para un sonido cardíaco más realista
+      const primaryOscillator = this.audioContext.createOscillator();
+      const primaryGain = this.audioContext.createGain();
+      
+      const secondaryOscillator = this.audioContext.createOscillator();
+      const secondaryGain = this.audioContext.createGain();
+
+      // Configuración de tono principal
+      primaryOscillator.type = "sine";
+      primaryOscillator.frequency.setValueAtTime(
+        this.BEEP_PRIMARY_FREQUENCY,
+        this.audioContext.currentTime
+      );
+
+      // Configuración de tono secundario
+      secondaryOscillator.type = "sine";
+      secondaryOscillator.frequency.setValueAtTime(
+        this.BEEP_SECONDARY_FREQUENCY,
+        this.audioContext.currentTime
+      );
+
+      // Envolvente de amplitud para tono principal (ataque rápido, decaimiento natural)
+      primaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      primaryGain.gain.linearRampToValueAtTime(
+        volume,
+        this.audioContext.currentTime + 0.01
+      );
+      primaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        this.audioContext.currentTime + this.BEEP_DURATION / 1000
+      );
+
+      // Envolvente de amplitud para tono secundario
+      secondaryGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      secondaryGain.gain.linearRampToValueAtTime(
+        volume * 0.4, // Volumen reducido para el secundario
+        this.audioContext.currentTime + 0.01
+      );
+      secondaryGain.gain.exponentialRampToValueAtTime(
+        0.01,
+        this.audioContext.currentTime + this.BEEP_DURATION / 1000
+      );
+
+      // Conecta osciladores y ganancias
+      primaryOscillator.connect(primaryGain);
+      secondaryOscillator.connect(secondaryGain);
+      primaryGain.connect(this.audioContext.destination);
+      secondaryGain.connect(this.audioContext.destination);
+
+      // Inicia y detiene los osciladores con timing preciso
+      primaryOscillator.start(this.audioContext.currentTime);
+      secondaryOscillator.start(this.audioContext.currentTime);
+      primaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.02);
+      secondaryOscillator.stop(this.audioContext.currentTime + this.BEEP_DURATION / 1000 + 0.02);
+
+      // Actualiza el tiempo del último beep
+      this.lastBeepTime = now;
+      return true;
+    } catch (err) {
+      console.error("HeartBeatProcessor: Error playing beep", err);
+      return false;
+    }
   }
 
   isInWarmup() {
@@ -227,8 +305,8 @@ export class HeartBeatProcessor {
         const rrInterval = this.lastPeakTime! - this.previousPeakTime;
         if (rrInterval > 300 && rrInterval < 2000) { // Filtrar valores fisiológicamente imposibles
           this.rrIntervals.push(rrInterval);
-          if (this.rrIntervals.length > this.MAX_RR_HISTORY) {
-            this.rrIntervals.shift(); // Mantener solo los últimos 12 intervalos
+          if (this.rrIntervals.length > 30) {
+            this.rrIntervals.shift(); // Mantener solo los últimos 30 intervalos
           }
         }
       }
@@ -330,59 +408,86 @@ export class HeartBeatProcessor {
   }
 
   private updateBPM(): void {
+    // Verificar si hay suficientes datos para calcular
     if (this.isInWarmup() || this.lastPeakTime === null || this.previousPeakTime === null) {
       return;
     }
+
+    // Calcular el intervalo actual en ms entre los dos últimos picos
     const currentInterval = this.lastPeakTime - this.previousPeakTime;
-    // Solo intervalos fisiológicos (300-2000 ms)
-    if (currentInterval < 300 || currentInterval > 2000) {
-      return;
+    
+    // Filtrar intervalos fisiológicamente improbables
+    if (currentInterval < 250 || currentInterval > 1500) {
+      return; // Ignorar intervalos fuera del rango fisiológico (40-240 BPM)
     }
-    this.rrIntervals.push(currentInterval);
-    if (this.rrIntervals.length > this.MAX_RR_HISTORY) {
-      this.rrIntervals.shift();
+    
+    // Calcular el BPM instantáneo a partir del intervalo
+    const instantBPM = 60000 / currentInterval;
+    
+    // Añadir al histórico para promediado
+    this.bpmHistory.push(instantBPM);
+    
+    // Mantener solo los últimos 5 valores para un promedio móvil
+    if (this.bpmHistory.length > 5) {
+      this.bpmHistory.shift();
     }
+    
+    // Actualizar BPM suavizado usando promedio ponderado
+    this.smoothBPM = this.getSmoothBPM();
   }
 
-  // Calcula el BPM robusto a partir de los RR intervals
-  private calculateRobustBPM(): number {
-    if (this.rrIntervals.length < 2) {
-      return 0;
+  private getSmoothBPM(): number {
+    if (this.bpmHistory.length === 0) {
+      return 75; // Valor por defecto si no hay datos
     }
-    // Convertir RR intervals a BPM
-    const bpmValues = this.rrIntervals.map(rr => 60000 / rr);
-    // Ordenar para recorte estadístico
-    const sorted = [...bpmValues].sort((a, b) => a - b);
-    if (sorted.length >= 6) {
-      // Recortar 10% arriba y abajo
-      const cut = Math.max(1, Math.floor(sorted.length * 0.1));
-      const trimmed = sorted.slice(cut, sorted.length - cut);
-      if (trimmed.length > 0) {
-        const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-        return Math.round(avg);
-      }
+    
+    // Ordenar valores para identificar posibles outliers
+    const sortedBPMs = [...this.bpmHistory].sort((a, b) => a - b);
+    
+    // Si hay suficientes valores, descartar el más alto y el más bajo para reducir ruido
+    let validBPMs = this.bpmHistory;
+    if (sortedBPMs.length >= 5) {
+      validBPMs = sortedBPMs.slice(1, -1); // Excluir valores extremos
     }
-    // Si pocos valores, usar mediana
-    const mid = Math.floor(sorted.length / 2);
-    if (sorted.length % 2 === 0) {
-      return Math.round((sorted[mid - 1] + sorted[mid]) / 2);
-    } else {
-      return Math.round(sorted[mid]);
+    
+    // Calcular media de los valores válidos
+    const sum = validBPMs.reduce((acc, val) => acc + val, 0);
+    const averageBPM = sum / validBPMs.length;
+    
+    // Asegurar que está en rango fisiológico
+    return Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, averageBPM));
+  }
+
+  private calculateCurrentBPM(): number {
+    // Si no hay suficientes datos, usar valor suavizado actual
+    if (this.bpmHistory.length < 2) {
+      return this.smoothBPM > 0 ? this.smoothBPM : 75;
     }
+    
+    // Aplicar EMA al BPM actual (suaviza aún más los cambios)
+    this.smoothBPM = this.smoothBPM * (1 - this.BPM_ALPHA) + 
+                   this.getSmoothBPM() * this.BPM_ALPHA;
+    
+    // Asegurar valor fisiológico razonable
+    return Math.max(this.MIN_BPM, Math.min(this.MAX_BPM, this.smoothBPM));
   }
 
   public getFinalBPM(): number {
-    if (this.isInWarmup() || this.rrIntervals.length < 2) {
-      return 0;
+    if (this.isInWarmup() || this.bpmHistory.length < 3) {
+      // Durante el período de calentamiento, mostrar un valor promedio base
+      return 75;
     }
-    // Si hace más de 3 segundos del último pico, degradar el valor
+    
+    // Verificar si ha pasado demasiado tiempo desde el último pico
     const timeSinceLastPeak = this.lastPeakTime ? (Date.now() - this.lastPeakTime) : 0;
-    let bpm = this.calculateRobustBPM();
+    
+    // Si no hay picos recientes (>3 segundos), reducir gradualmente la confianza
     if (timeSinceLastPeak > 3000) {
       const degradationFactor = Math.min(1, 3000 / timeSinceLastPeak);
-      bpm = Math.round(bpm * degradationFactor);
+      return this.calculateCurrentBPM() * degradationFactor + 75 * (1 - degradationFactor);
     }
-    return bpm;
+    
+    return this.calculateCurrentBPM();
   }
 
   reset() {
@@ -416,12 +521,8 @@ export class HeartBeatProcessor {
 
   getRRIntervals() {
     return {
-      intervals: [...this.rrIntervals],
+      intervals: [...this.bpmHistory],
       lastPeakTime: this.lastPeakTime
     };
   }
 }
-
-// Registrar el archivo y la tarea única globalmente (fuera de la clase)
-antiRedundancyGuard.registerFile('src/modules/HeartBeatProcessor.ts');
-antiRedundancyGuard.registerTask('HeartBeatProcessorSingleton');

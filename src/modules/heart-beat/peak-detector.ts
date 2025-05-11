@@ -22,8 +22,7 @@ export function detectPeak(
   isPeak: boolean;
   confidence: number;
 } {
-  // Check minimum time between peaks for physiological validity
-  // No human heart can beat faster than 220 bpm (273ms between beats)
+  // Check minimum time between peaks
   if (lastPeakTime !== null) {
     const timeSinceLastPeak = currentTime - lastPeakTime;
     if (timeSinceLastPeak < config.minPeakTimeMs) {
@@ -31,35 +30,25 @@ export function detectPeak(
     }
   }
 
-  // Peak detection logic - improved for better reliability
+  // Peak detection logic
   const isPeak =
     derivative < config.derivativeThreshold &&
     normalizedValue > config.signalThreshold &&
-    lastValue > baseline * 0.95; // Reduced from 0.98 for better sensitivity
+    lastValue > baseline * 0.98;
 
   // Calculate confidence based on signal characteristics
   const amplitudeConfidence = Math.min(
-    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.5), 0),
+    Math.max(Math.abs(normalizedValue) / (config.signalThreshold * 1.8), 0),
     1
   );
   
   const derivativeConfidence = Math.min(
-    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.7), 0),
+    Math.max(Math.abs(derivative) / Math.abs(config.derivativeThreshold * 0.8), 0),
     1
   );
 
-  // Combined confidence score with slight priority to amplitude
-  const confidence = (amplitudeConfidence * 0.6 + derivativeConfidence * 0.4);
-
-  // Log data for peaks with decent confidence
-  if (isPeak && confidence > 0.3) {
-    console.log("Heart peak detected:", {
-      normalizedValue,
-      derivative,
-      confidence,
-      timeSinceLastPeak: lastPeakTime ? currentTime - lastPeakTime : "none"
-    });
-  }
+  // Combined confidence score
+  const confidence = (amplitudeConfidence + derivativeConfidence) / 2;
 
   return { isPeak, confidence };
 }
@@ -94,15 +83,13 @@ export function confirmPeak(
     if (updatedBuffer.length >= 3) {
       const len = updatedBuffer.length;
       
-      // Confirm peak if followed by decreasing values (trending down)
-      // Relaxed condition to only require one decreasing step
-      const goingDown = updatedBuffer[len - 1] < updatedBuffer[len - 2];
+      // Confirm peak if followed by decreasing values
+      const goingDown1 = updatedBuffer[len - 1] < updatedBuffer[len - 2];
+      const goingDown2 = updatedBuffer[len - 2] < updatedBuffer[len - 3];
 
-      if (goingDown) {
+      if (goingDown1 || goingDown2) {
         isConfirmedPeak = true;
         updatedLastConfirmedPeak = true;
-        
-        console.log("Confirmed heart peak with confidence:", confidence);
       }
     }
   } else if (!isPeak) {

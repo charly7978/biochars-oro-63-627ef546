@@ -4,35 +4,48 @@
  */
 
 /**
- * Datos de intervalos RR calculados a partir de señal PPG
+ * Interface for R-R interval analysis results.
+ * Contains data about heart rate variability metrics and potential arrhythmia detection
+ * based on DIRECT measurements only.
  */
-export interface RRIntervalData {
+export interface RRAnalysisResult {
   /**
-   * Array de intervalos RR en milisegundos
+   * Root Mean Square of Successive Differences - a measure of heart rate variability
    */
-  intervals: number[];
+  rmssd: number;
   
   /**
-   * Timestamp del último pico detectado
+   * Relative variation in RR intervals
    */
+  rrVariation: number;
+  
+  /**
+   * Timestamp when the analysis was performed
+   */
+  timestamp: number;
+  
+  /**
+   * Boolean flag indicating whether an arrhythmia was detected
+   */
+  isArrhythmia: boolean;
+}
+
+/**
+ * Interface for RR interval data
+ */
+export interface RRIntervalData {
+  intervals: number[];
   lastPeakTime: number | null;
 }
 
 /**
- * Resultado de procesamiento de arritmias
+ * Interface for arrhythmia processing result
  */
 export interface ArrhythmiaProcessingResult {
-  /**
-   * Estado actual de detección de arritmias
-   */
   arrhythmiaStatus: string;
-  
-  /**
-   * Datos adicionales sobre la última arritmia detectada
-   */
-  lastArrhythmiaData: {
-    timestamp: number;
-    rmssd: number;
-    rrVariation: number;
+  lastArrhythmiaData: { 
+    timestamp: number; 
+    rmssd: number; 
+    rrVariation: number; 
   } | null;
 }
