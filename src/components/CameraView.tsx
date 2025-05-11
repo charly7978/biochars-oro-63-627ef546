@@ -110,10 +110,13 @@ const CameraView: React.FC<CameraViewProps> = ({
             }
           }
           
-          // Verificar si la linterna se activó
+          // Verificar si la linterna se activó - corregir error de TypeScript
           const settings = videoTrack.getSettings();
           console.log("CameraView: Applied camera settings", settings);
-          setTorchOn(!!settings.torch);
+          
+          // Verificar linterna de manera segura usando capabilities en lugar de settings
+          const torchEnabled = capabilities.torch ? true : false;
+          setTorchOn(torchEnabled);
 
           if (videoRef.current) {
             videoRef.current.style.transform = 'translateZ(0)';

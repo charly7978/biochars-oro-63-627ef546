@@ -102,7 +102,9 @@ export const useSignalProcessor = () => {
       
       // Use setTimeout to prevent state update during unmount cleanup cycles
       setTimeout(() => {
-        fingerDetection.resetDetection();
+        if (fingerDetection && fingerDetection.resetDetection) {
+          fingerDetection.resetDetection();
+        }
       }, 20);
     };
   }, [processor, fingerDetection]);
@@ -124,7 +126,9 @@ export const useSignalProcessor = () => {
     });
     
     // Reset finger detection status before starting
-    fingerDetection.resetDetection();
+    if (fingerDetection && fingerDetection.resetDetection) {
+      fingerDetection.resetDetection();
+    }
     cleanupCalledRef.current = false;
     
     processor.start();
@@ -142,7 +146,9 @@ export const useSignalProcessor = () => {
     
     // Use setTimeout to prevent react update cycle issues
     setTimeout(() => {
-      fingerDetection.resetDetection();
+      if (fingerDetection && fingerDetection.resetDetection) {
+        fingerDetection.resetDetection();
+      }
     }, 20);
   }, [processor, fingerDetection]);
 
