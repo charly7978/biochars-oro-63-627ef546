@@ -19,15 +19,15 @@ export class ArrhythmiaProcessor extends BaseProcessor {
   private lastArrhythmiaTime: number = 0;
   private patternDetector: ArrhythmiaPatternDetector;
   
-  // Umbrales para detección de arritmias con mayor sensibilidad
-  private readonly RR_VARIABILITY_THRESHOLD = 0.15; // Reducido para máxima sensibilidad
-  private readonly PNNX_THRESHOLD = 0.10; // Reducido para máxima sensibilidad
-  private readonly MIN_DETECTION_PERIOD = 1500; // Reducido - mínimo 1.5 segundos entre detecciones
+  // Umbrales calibrados para detección de arritmias
+  private readonly RR_VARIABILITY_THRESHOLD = 0.16;
+  private readonly PNNX_THRESHOLD = 0.11;
+  private readonly MIN_DETECTION_PERIOD = 1800; // 1.8 segundos entre detecciones
   
   constructor() {
     super();
     this.patternDetector = new ArrhythmiaPatternDetector();
-    console.log("ArrhythmiaProcessor: Initialized with maximum sensitivity");
+    console.log("ArrhythmiaProcessor: Initialized with optimal sensitivity");
   }
   
   /**
@@ -100,7 +100,7 @@ export class ArrhythmiaProcessor extends BaseProcessor {
     let arrhythmiaType = "Indeterminada";
     
     // Verificar variación RMSSD elevada (posible fibrilación auricular)
-    if (variabilityMetrics.rmssd > 80) { // Umbral reducido para mayor sensibilidad
+    if (variabilityMetrics.rmssd > 85) {
       arrhythmiaDetected = true;
       arrhythmiaType = "Posible fibrilación auricular";
     }
@@ -136,9 +136,9 @@ export class ArrhythmiaProcessor extends BaseProcessor {
           metricas: variabilityMetrics
         });
         
-        // Actualizar resultado con datos de arritmia
+        // Formato estandarizado: "ARRITMIA (Tipo)"
         result = {
-          arrhythmiaStatus: `ARRHYTHMIA DETECTED (${arrhythmiaType})`,
+          arrhythmiaStatus: `ARRITMIA (${arrhythmiaType})`,
           lastArrhythmiaData: {
             timestamp: now,
             rmssd: variabilityMetrics.rmssd,

@@ -328,6 +328,24 @@ const PPGSignalMeter = memo(({
         ctx.textAlign = 'left';
         const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
         ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
+      } else if (arrhythmiaStatus.includes("ARRITMIA")) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
+        ctx.fillRect(30, 70, 320, 40);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(30, 70, 320, 40);
+        
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 22px Inter';
+        ctx.textAlign = 'left';
+        
+        const arrhythmiaType = arrhythmiaStatus.match(/\(([^)]+)\)/);
+        const typeText = arrhythmiaType ? arrhythmiaType[1] : "Indeterminada";
+        ctx.fillText(`¡ARRITMIA DETECTADA! (${typeText})`, 45, 95);
+        
+        if (!showArrhythmiaAlert) {
+          setShowArrhythmiaAlert(true);
+        }
       }
     }
   }, [arrhythmiaStatus, showArrhythmiaAlert, CANVAS_HEIGHT, CANVAS_WIDTH, GRID_SIZE_X, GRID_SIZE_Y]);

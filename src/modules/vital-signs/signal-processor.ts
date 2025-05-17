@@ -26,10 +26,10 @@ export class SignalProcessor extends BaseProcessor {
   private fingerDetectionConfirmed: boolean = false;
   private fingerDetectionStartTime: number | null = null;
   
-  // Signal quality variables
-  private readonly MIN_QUALITY_FOR_FINGER = 45; 
-  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3500;
-  private readonly MIN_SIGNAL_AMPLITUDE = 0.25;
+  // Signal quality variables - Umbral reducido para mejor detección
+  private readonly MIN_QUALITY_FOR_FINGER = 35; 
+  private readonly MIN_PATTERN_CONFIRMATION_TIME = 3000;
+  private readonly MIN_SIGNAL_AMPLITUDE = 0.20; // Umbral reducido para mejor detección
   
   // Added properties for raw signal and DC baseline
   private rawSignalBuffer: number[] = [];
@@ -80,7 +80,7 @@ export class SignalProcessor extends BaseProcessor {
     // Usar la detección del validador basada en patrones
     const patternBasedDetection = this.signalValidator.isFingerDetected();
     
-    // SOLO para depuración - evidenciar falsos positivos
+    // Log para depuración
     if (patternBasedDetection) {
       console.log("SignalProcessor: Pattern-based finger detection is ACTIVE", {
         time: new Date().toISOString(),
@@ -116,9 +116,9 @@ export class SignalProcessor extends BaseProcessor {
     // Seguir la señal para detección de patrones
     this.signalValidator.trackSignalForPatternDetection(value);
     
-    // Aplicar filtros en serie
+    // Aplicar filtros en serie - optimizados para mejor señal
     const medianFiltered = this.applyMedianFilter(value);
-    const lowPassFiltered = this.applyEMAFilter(medianFiltered);
+    const lowPassFiltered = this.applyEMAFilter(medianFiltered, 0.18); // Optimizado - alpha más sensible
     const smaFiltered = this.applySMAFilter(lowPassFiltered);
     
     // Calcular nivel de ruido de la señal real
@@ -134,8 +134,8 @@ export class SignalProcessor extends BaseProcessor {
     }
     
     // Verificar detección de dedo usando detección de patrones
-    const fingerDetected = this.signalValidator.isFingerDetected() && 
-                        (qualityValue >= this.MIN_QUALITY_FOR_FINGER || this.fingerDetectionConfirmed);
+    const patternDetection = this.signalValidator.isFingerDetected();
+    const qualityDetection = qualityValue >= this.MIN_QUALITY_FOR_FINGER;
     
     // Calcular amplitud de señal
     let amplitude = 0;
@@ -147,7 +147,10 @@ export class SignalProcessor extends BaseProcessor {
     // Requerir amplitud mínima para detección
     const hasValidAmplitude = amplitude >= this.MIN_SIGNAL_AMPLITUDE;
     
-    // Si se detecta dedo por patrón y tiene amplitud válida, confirmarlo
+    // Detección mejorada: cualquier método de detección es válido
+    const fingerDetected = (patternDetection || qualityDetection) && hasValidAmplitude;
+    
+    // Si se detecta dedo y tiene amplitud válida, confirmarlo
     if (fingerDetected && hasValidAmplitude && !this.fingerDetectionConfirmed) {
       const now = Date.now();
       
@@ -156,7 +159,9 @@ export class SignalProcessor extends BaseProcessor {
         console.log("Signal processor: Potential finger detection started", {
           time: new Date(now).toISOString(),
           quality: qualityValue,
-          amplitude
+          amplitude,
+          byPattern: patternDetection,
+          byQuality: qualityDetection
         });
       }
       
@@ -164,9 +169,9 @@ export class SignalProcessor extends BaseProcessor {
       if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
         this.fingerDetectionConfirmed = true;
         this.rhythmBasedFingerDetection = true;
-        console.log("Signal processor: Finger detection CONFIRMED by rhythm pattern!", {
+        console.log("Signal processor: Finger detection CONFIRMED!", {
           time: new Date(now).toISOString(),
-          detectionMethod: "Rhythmic pattern detection",
+          detectionMethod: patternDetection ? "Pattern" : "Quality",
           detectionDuration: (now - this.fingerDetectionStartTime) / 1000,
           quality: qualityValue,
           amplitude
@@ -176,7 +181,8 @@ export class SignalProcessor extends BaseProcessor {
       // Reiniciar la detección de dedo si se pierde o la amplitud es demasiado baja
       if (this.fingerDetectionConfirmed) {
         console.log("Signal processor: Finger detection lost", {
-          hasValidPattern: fingerDetected,
+          hasValidPattern: patternDetection,
+          hasValidQuality: qualityDetection,
           hasValidAmplitude,
           amplitude,
           quality: qualityValue
@@ -188,11 +194,12 @@ export class SignalProcessor extends BaseProcessor {
       this.rhythmBasedFingerDetection = false;
     }
     
-    // IMPORTANTE: Agregar logs para identificar falsos positivos
+    // Log de detección de dedo
     if ((fingerDetected && hasValidAmplitude) || this.fingerDetectionConfirmed) {
       console.log("DETECCIÓN DE DEDO ACTIVA", {
         timestamp: new Date().toISOString(),
-        porPatrones: fingerDetected,
+        porPatrones: patternDetection,
+        porCalidad: qualityDetection,
         porAmplitud: hasValidAmplitude,
         confirmado: this.fingerDetectionConfirmed
       });
