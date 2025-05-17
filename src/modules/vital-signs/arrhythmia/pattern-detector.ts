@@ -12,13 +12,13 @@ export class ArrhythmiaPatternDetector {
   private patternBuffer: number[] = [];
   private readonly MAX_BUFFER_SIZE = 24; // Aumentado para mejor análisis
   
-  // Umbrales optimizados para detección de arritmias
-  private readonly PATTERN_THRESHOLD = 0.12; 
+  // Umbrales optimizados para detección de arritmias - REDUCIDOS para mayor sensibilidad
+  private readonly PATTERN_THRESHOLD = 0.10; // Reducido de 0.12
   private readonly MIN_PATTERN_COUNT = 1;
   
-  // Parámetros para análisis avanzado
-  private readonly HIGH_VARIANCE_THRESHOLD = 0.12;
-  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.18;
+  // Parámetros para análisis avanzado - AJUSTADOS para mayor sensibilidad
+  private readonly HIGH_VARIANCE_THRESHOLD = 0.09; // Reducido de 0.12
+  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.15; // Reducido de 0.18
   private readonly MIN_BUFFER_FOR_DETECTION = 5;
   
   /**
@@ -86,9 +86,9 @@ export class ArrhythmiaPatternDetector {
       }
     }
     
-    // 5. Decisión multi-criterio con umbrales calibrados
+    // 5. Decisión multi-criterio con umbrales REDUCIDOS para mayor sensibilidad
     const isAbnormal = 
-      abnormalRatio > 0.12 ||
+      abnormalRatio > 0.10 || // Reducido de 0.12
       variance > this.HIGH_VARIANCE_THRESHOLD ||
       sequentialAnomalies >= 1 ||
       alternatingPattern >= 1;

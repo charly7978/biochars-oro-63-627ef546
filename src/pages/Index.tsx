@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -69,14 +68,24 @@ const Index = () => {
 
   useEffect(() => {
     if (lastSignal && isMonitoring) {
-      const minQualityThreshold = 40;
+      // REDUCIDO umbral mínimo de calidad para permitir más detecciones
+      const minQualityThreshold = 30;
       
-      if (lastSignal.fingerDetected && lastSignal.quality >= minQualityThreshold) {
+      // Procesar señal incluso con menor calidad para detectar más arritmias
+      if (lastSignal.fingerDetected) {
         try {
           const vitals = processVitalSigns(lastSignal.filteredValue);
           if (vitals) {
+            // Log aumentado para diagnóstico
             console.log("Index: Actualizando vitalSigns en tiempo real", vitals);
-            setVitalSigns(vitals);
+            
+            // Siempre actualizar valores si hay frecuencia cardíaca
+            if (vitals.heartRate && vitals.heartRate > 0) {
+              setVitalSigns(vitals);
+            }
+            
+            // Mostrar resultados si hay detección de dedo
+            setShowResults(true);
           }
         } catch (error) {
           console.error("Error processing vital signs:", error);
@@ -86,10 +95,12 @@ const Index = () => {
       } else {
         setSignalQuality(lastSignal.quality);
       }
-    } else if (!isMonitoring) {
+    } else if (!isMonitoring && lastValidResults) {
+      // Mantener resultados al parar la medición
       setSignalQuality(0);
+      console.log("Index: Manteniendo últimos resultados válidos después de detener", lastValidResults);
     }
-  }, [lastSignal, isMonitoring, processVitalSigns]);
+  }, [lastSignal, isMonitoring, processVitalSigns, lastValidResults]);
 
   const startMonitoring = () => {
     if (isMonitoring) {

@@ -302,33 +302,9 @@ const PPGSignalMeter = memo(({
     ctx.setLineDash([]);
     
     if (arrhythmiaStatus) {
-      const [status, count] = arrhythmiaStatus.split('|');
-      
-      if (status.includes("ARRITMIA") && count === "1" && !showArrhythmiaAlert) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, 350, 40);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, 350, 40);
-        
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter';
-        ctx.textAlign = 'left';
-        ctx.fillText('¡PRIMERA ARRITMIA DETECTADA!', 45, 95);
-        setShowArrhythmiaAlert(true);
-      } else if (status.includes("ARRITMIA") && Number(count) > 1) {
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
-        ctx.fillRect(30, 70, 250, 40);
-        ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(30, 70, 250, 40);
-        
-        ctx.fillStyle = '#ef4444';
-        ctx.font = 'bold 24px Inter';
-        ctx.textAlign = 'left';
-        const redPeaksCount = peaksRef.current.filter(peak => peak.isArrhythmia).length;
-        ctx.fillText(`Arritmias detectadas: ${count}`, 45, 95);
-      } else if (arrhythmiaStatus.includes("ARRITMIA")) {
+      // Detectar arritmias directamente si el estado contiene la palabra "ARRITMIA"
+      if (arrhythmiaStatus.includes("ARRITMIA")) {
+        // Mostrar alerta de arritmia detectada
         ctx.fillStyle = 'rgba(239, 68, 68, 0.1)';
         ctx.fillRect(30, 70, 320, 40);
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
@@ -339,6 +315,7 @@ const PPGSignalMeter = memo(({
         ctx.font = 'bold 22px Inter';
         ctx.textAlign = 'left';
         
+        // Extraer el tipo de arritmia si está entre paréntesis
         const arrhythmiaType = arrhythmiaStatus.match(/\(([^)]+)\)/);
         const typeText = arrhythmiaType ? arrhythmiaType[1] : "Indeterminada";
         ctx.fillText(`¡ARRITMIA DETECTADA! (${typeText})`, 45, 95);
@@ -670,7 +647,7 @@ const PPGSignalMeter = memo(({
       <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-center bg-transparent z-10 pt-3">
         <div className="flex items-center gap-2 ml-2">
           <span className="text-lg font-bold text-black/80">PPG</span>
-          <div className="w-[180px]">
+          <div className={`w-[180px]`}>
             <div className={`h-1 w-full rounded-full bg-gradient-to-r ${getQualityColor(quality)} transition-all duration-1000 ease-in-out`}>
               <div
                 className="h-full rounded-full bg-white/20 animate-pulse transition-all duration-1000"

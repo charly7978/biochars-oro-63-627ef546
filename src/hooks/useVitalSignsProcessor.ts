@@ -71,7 +71,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Process signal directly - no simulation - fixed parameter count
       let result = processVitalSignal(value);
       
-      // Log detallado para supervisar resultados
+      // Log detallado SIEMPRE para supervisar resultados - no condicionado
       console.log("useVitalSignsProcessor: Resultado procesamiento:", {
         heartRate: result.heartRate ? Math.round(result.heartRate) : 0,
         spo2: result.spo2 ? Math.round(result.spo2) : 0,
@@ -105,6 +105,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           result.arrhythmiaStatus.includes("ARRITMIA") && 
           result.lastArrhythmiaData) {
         
+        // Agregar log adicional para confirmar detección de arritmia
         console.log("useVitalSignsProcessor: ¡ARRITMIA DETECTADA!", {
           status: result.arrhythmiaStatus,
           timestamp: result.lastArrhythmiaData.timestamp,
@@ -124,8 +125,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Actualizar lastValidResults solo si el resultado es válido
-      // Condición mejorada para actualización de resultados
+      // Actualizar lastValidResults SIEMPRE que haya un resultado con heartRate
       if (result && result.heartRate && result.heartRate > 0) {
         setLastValidResults(result);
       }

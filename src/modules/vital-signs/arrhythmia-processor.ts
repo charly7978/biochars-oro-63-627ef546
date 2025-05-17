@@ -19,10 +19,10 @@ export class ArrhythmiaProcessor extends BaseProcessor {
   private lastArrhythmiaTime: number = 0;
   private patternDetector: ArrhythmiaPatternDetector;
   
-  // Umbrales calibrados para detección de arritmias
-  private readonly RR_VARIABILITY_THRESHOLD = 0.16;
-  private readonly PNNX_THRESHOLD = 0.11;
-  private readonly MIN_DETECTION_PERIOD = 1800; // 1.8 segundos entre detecciones
+  // Umbrales REDUCIDOS para mayor sensibilidad en detección de arritmias
+  private readonly RR_VARIABILITY_THRESHOLD = 0.14; // Reducido de 0.16
+  private readonly PNNX_THRESHOLD = 0.09; // Reducido de 0.11
+  private readonly MIN_DETECTION_PERIOD = 1500; // Reducido de 1800 ms para detectar más eventos
   
   constructor() {
     super();
@@ -100,7 +100,7 @@ export class ArrhythmiaProcessor extends BaseProcessor {
     let arrhythmiaType = "Indeterminada";
     
     // Verificar variación RMSSD elevada (posible fibrilación auricular)
-    if (variabilityMetrics.rmssd > 85) {
+    if (variabilityMetrics.rmssd > 80) { // Reducido de 85
       arrhythmiaDetected = true;
       arrhythmiaType = "Posible fibrilación auricular";
     }
@@ -136,7 +136,7 @@ export class ArrhythmiaProcessor extends BaseProcessor {
           metricas: variabilityMetrics
         });
         
-        // Formato estandarizado: "ARRITMIA (Tipo)"
+        // Formato estandarizado: "ARRITMIA (Tipo)" - IMPORTANTE: Este es el formato que espera PPGSignalMeter
         result = {
           arrhythmiaStatus: `ARRITMIA (${arrhythmiaType})`,
           lastArrhythmiaData: {
