@@ -16,7 +16,7 @@ import { HeartRateDetector } from './processors/heart-rate-detector';
 import { RRIntervalData } from './arrhythmia/types';
 
 /**
- * Implementación unificada del procesador de signos vitales
+ * Implementación unificada del procesador de signos vitales - versión optimizada
  */
 export class VitalSignsProcessor {
   private signalProcessor: SignalProcessor;
@@ -35,8 +35,9 @@ export class VitalSignsProcessor {
   private signalBuffer: number[] = [];
   private readonly sampleRate = 30; // Assumed 30Hz for data collection
   
-  private readonly MIN_QUALITY_THRESHOLD = 45;
+  private readonly MIN_QUALITY_THRESHOLD = 40; // Reducido para mejor sensibilidad
   private readonly MAX_BUFFER_SIZE = 150;
+  private readonly LOG_INTERVAL = 15; // Intervalo para logging
   
   constructor() {
     this.signalProcessor = new SignalProcessor();
@@ -48,6 +49,8 @@ export class VitalSignsProcessor {
     this.hemoglobinProcessor = new HemoglobinEstimator();
     this.hydrationProcessor = new HydrationAnalyzer();
     this.heartRateDetector = new HeartRateDetector();
+    
+    console.log("VitalSignsProcessor: Inicializado con mayor sensibilidad");
   }
   
   /**
@@ -59,6 +62,11 @@ export class VitalSignsProcessor {
     try {
       // Procesar la señal directamente
       this.processedValues++;
+      
+      // Log periódico de entrada
+      if (this.processedValues % this.LOG_INTERVAL === 0) {
+        console.log(`VitalSignsProcessor: Procesando señal #${this.processedValues}, valor: ${value}`);
+      }
       
       // Aplicar filtrados y procesamiento de señal
       const processedResult = this.signalProcessor.applyFilters(value);
@@ -79,6 +87,11 @@ export class VitalSignsProcessor {
       
       // Si hay dedo detectado, procesar signos vitales
       if (fingerDetected && quality > this.MIN_QUALITY_THRESHOLD) {
+        // Log para confirmación de detección
+        if (this.processedValues % this.LOG_INTERVAL === 0) {
+          console.log(`VitalSignsProcessor: Dedo detectado, calidad: ${quality}, procesando mediciones...`);
+        }
+        
         this.signalBuffer.push(filteredValue);
         if (this.signalBuffer.length > this.MAX_BUFFER_SIZE) {
           this.signalBuffer.shift();
@@ -86,10 +99,12 @@ export class VitalSignsProcessor {
         
         // Calcular frecuencia cardíaca con el detector específico
         const bpm = Math.round(this.heartRateDetector.calculateHeartRate(this.signalBuffer, this.sampleRate));
-        console.log("BPM calculado:", bpm);
         
         // Obtener los intervalos RR para análisis de arritmias
         const rrData: RRIntervalData = this.heartRateDetector.getRRIntervals();
+        
+        // Procesamiento de arritmias con mayor sensibilidad
+        const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
         
         // Calcular saturación de oxígeno
         const rawSpo2 = this.spo2Processor.calculateSpO2(
@@ -106,18 +121,14 @@ export class VitalSignsProcessor {
           this.signalBuffer
         );
         
-        // Calcular arritmias con los intervalos RR
-        const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-        console.log("Resultado arritmias:", arrhythmiaResult);
-        
-        // Calcular glucosa
-        const glucose = this.glucoseProcessor.estimateGlucose(
+        // Calcular glucosa con redondeo a valor entero
+        const rawGlucose = this.glucoseProcessor.estimateGlucose(
           filteredValue,
           acSignalValue,
           dcBaseline,
           this.signalBuffer
         );
-        console.log("Glucosa estimada:", glucose);
+        const glucose = Math.round(rawGlucose);
         
         // Calcular lípidos
         const lipids = this.lipidProcessor.estimateLipids(
@@ -127,14 +138,13 @@ export class VitalSignsProcessor {
           this.signalBuffer
         );
         
-        // Calcular hemoglobina
+        // Calcular hemoglobina con un decimal
         const rawHemoglobin = this.hemoglobinProcessor.estimateHemoglobin(
           filteredValue,
           acSignalValue,
           dcBaseline,
           this.signalBuffer
         );
-        // Round to 1 decimal place
         const hemoglobin = Math.round(rawHemoglobin * 10) / 10;
         
         // Calcular hidratación
@@ -142,7 +152,6 @@ export class VitalSignsProcessor {
           filteredValue,
           this.signalBuffer
         );
-        // Round to 1 decimal place
         const hydration = Math.round(rawHydration * 10) / 10;
         
         // Crear resultado con BPM incluido
@@ -158,14 +167,35 @@ export class VitalSignsProcessor {
           },
           hemoglobin,
           hydration,
-          heartRate: bpm  // Incluir la frecuencia cardíaca en los resultados
+          heartRate: bpm
         };
+        
+        // Log periódico de resultados
+        if (this.processedValues % this.LOG_INTERVAL === 0) {
+          console.log("VitalSignsProcessor: Resultados calculados", {
+            bpm,
+            spo2,
+            pressure,
+            arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+            glucose,
+            totalCholesterol: Math.round(lipids.totalCholesterol),
+            triglycerides: Math.round(lipids.triglycerides),
+            hemoglobin,
+            hydration,
+            quality
+          });
+        }
         
         // Almacenar resultados válidos
         this.lastValidResult = result;
         
         return result;
       } else {
+        // Log periódico cuando no se detecta dedo
+        if (this.processedValues % this.LOG_INTERVAL === 0) {
+          console.log(`VitalSignsProcessor: Dedo no detectado o calidad insuficiente. Detected=${fingerDetected}, Quality=${quality}`);
+        }
+        
         // Si no hay dedo detectado o calidad insuficiente, devolver último resultado válido o valores vacíos
         return this.lastValidResult || {
           spo2: 0,
@@ -238,6 +268,7 @@ export class VitalSignsProcessor {
     this.processedValues = 0;
     this.noFingerDetectionCounter = 0;
     this.signalBuffer = [];
+    console.log("VitalSignsProcessor: Reset completo");
   }
   
   /**
@@ -246,5 +277,6 @@ export class VitalSignsProcessor {
   public fullReset(): void {
     this.reset();
     this.arrhythmiaProcessor.fullReset();
+    console.log("VitalSignsProcessor: Full reset completo");
   }
 }

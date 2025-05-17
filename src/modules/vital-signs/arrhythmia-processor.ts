@@ -3,243 +3,245 @@
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
+import { BaseProcessor } from './processors/base-processor';
 import { ArrhythmiaPatternDetector } from './arrhythmia/pattern-detector';
-import { calculateRMSSD, calculateRRVariation } from './arrhythmia/calculations';
-import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
+import { RRIntervalData } from './arrhythmia/types';
 
 /**
- * Consolidated arrhythmia detection system - versión mejorada
- * Using only real data without simulation
- * Optimizado para mayor sensibilidad y precisión
+ * Procesador para detección de arritmias cardíacas - versión mejorada
+ * Utiliza análisis de variabilidad de intervalos RR
+ * Sin simulación - solo análisis directo de la señal real
  */
-export class ArrhythmiaProcessor {
-  // Umbrales optimizados para detección mejorada
-  private readonly MIN_RR_INTERVALS = 8; // Reducido para mejor sensibilidad
-  private readonly MIN_INTERVAL_MS = 500; // Adaptado para rango fisiológico
-  private readonly MAX_INTERVAL_MS = 1300; // Adaptado para rango fisiológico
-  private readonly MIN_VARIATION_PERCENT = 28; // Umbral reducido para mejorar detección
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 8000; // Reducido para pruebas
-  
-  // Estado
+export class ArrhythmiaProcessor extends BaseProcessor {
   private rrIntervals: number[] = [];
-  private lastPeakTime: number | null = null;
-  private arrhythmiaDetected = false;
-  private arrhythmiaCount = 0;
+  private readonly MAX_RR_INTERVALS = 20;
+  private arrhythmiaCounter: number = 0;
   private lastArrhythmiaTime: number = 0;
-  private startTime: number = Date.now();
+  private patternDetector: ArrhythmiaPatternDetector;
   
-  // Secuencia de confirmación de arritmia
-  private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 4; // Reducido para mejorar sensibilidad
+  // Umbrales para detección de arritmias con mayor sensibilidad
+  private readonly RR_VARIABILITY_THRESHOLD = 0.18; // Reducido para mayor sensibilidad
+  private readonly PNNX_THRESHOLD = 0.12; // Reducido para mayor sensibilidad
+  private readonly MIN_DETECTION_PERIOD = 2000; // Reducido - mínimo 2 segundos entre detecciones
   
-  // Nuevo: historiales extendidos para análisis avanzado
-  private rrIntervalHistory: number[] = [];
-  private readonly MAX_HISTORY_LENGTH = 40;
-  private beatToNormalRatio: number = 0;
-  
-  // Detector de patrones
-  private patternDetector = new ArrhythmiaPatternDetector();
-
-  /**
-   * Process real RR data for arrhythmia detection
-   * No simulation is used
-   * Implementación mejorada con análisis multi-criterio
-   */
-  public processRRData(rrData?: RRIntervalData): ArrhythmiaProcessingResult {
-    const currentTime = Date.now();
-    
-    // Update RR intervals with real data
-    if (rrData?.intervals && rrData.intervals.length > 0) {
-      this.rrIntervals = [...this.rrIntervals, ...rrData.intervals];
-      // Keep only the last N intervals
-      if (this.rrIntervals.length > this.MIN_RR_INTERVALS * 2) {
-        this.rrIntervals = this.rrIntervals.slice(-this.MIN_RR_INTERVALS * 2);
-      }
-      
-      // Actualizar historial extendido para análisis avanzado
-      this.rrIntervalHistory = [...this.rrIntervalHistory, ...rrData.intervals];
-      if (this.rrIntervalHistory.length > this.MAX_HISTORY_LENGTH) {
-        this.rrIntervalHistory = this.rrIntervalHistory.slice(-this.MAX_HISTORY_LENGTH);
-      }
-      
-      this.lastPeakTime = rrData.lastPeakTime;
-      
-      // Print for debugging
-      console.log("ArrhythmiaProcessor: Received RR intervals", {
-        count: rrData.intervals.length,
-        total: this.rrIntervals.length,
-        intervals: rrData.intervals
-      });
-      
-      // Only proceed with sufficient real data
-      if (this.rrIntervals.length >= 3) {
-        this.detectArrhythmia(currentTime);
-      }
-    }
-
-    // Build status message
-    const arrhythmiaStatusMessage = 
-      this.arrhythmiaDetected 
-        ? `ARRHYTHMIA DETECTED|${this.arrhythmiaCount}` 
-        : `NO ARRHYTHMIAS|${this.arrhythmiaCount}`;
-    
-    // Additional information only if there's active arrhythmia
-    const lastArrhythmiaData = this.arrhythmiaDetected 
-      ? {
-          timestamp: currentTime,
-          rmssd: calculateRMSSD(this.rrIntervals.slice(-8)),
-          rrVariation: calculateRRVariation(this.rrIntervals.slice(-8))
-        } 
-      : null;
-    
-    return {
-      arrhythmiaStatus: arrhythmiaStatusMessage,
-      lastArrhythmiaData
-    };
+  constructor() {
+    super();
+    this.patternDetector = new ArrhythmiaPatternDetector();
+    console.log("ArrhythmiaProcessor: Initialized with enhanced sensitivity");
   }
-
+  
   /**
-   * Algoritmo optimizado para detección de arritmias en datos reales
-   * No se utiliza simulación ni valores de referencia
+   * Procesa datos RR para detectar arritmias
+   * @param rrData Datos de intervalos RR
+   * @returns Estado de detección de arritmias y datos asociados
    */
-  private detectArrhythmia(currentTime: number): void {
-    if (this.rrIntervals.length < 3) return;
+  public processRRData(rrData: RRIntervalData): {
+    arrhythmiaStatus: string;
+    lastArrhythmiaData: {
+      timestamp: number;
+      rmssd: number;
+      rrVariation: number;
+    } | null;
+  } {
+    const { intervals } = rrData;
     
-    // Tomar intervalos reales para análisis
-    const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
+    // Inicializar resultado
+    let result = {
+      arrhythmiaStatus: "Normal",
+      lastArrhythmiaData: null as {
+        timestamp: number;
+        rmssd: number;
+        rrVariation: number;
+      } | null
+    };
     
-    // Filtrar solo intervalos fisiológicamente válidos
-    const validIntervals = recentRR.filter(interval => 
-      interval >= 350 && interval <= 1600 // Rango expandido para detección mejorada
-    );
-    
-    // Require sufficient valid intervals
-    if (validIntervals.length < 3) {
-      this.consecutiveAbnormalBeats = 0;
-      return;
+    // Si no hay suficientes intervalos, no podemos analizar
+    if (!intervals || intervals.length < 3) {
+      return result;
     }
     
-    // Calcular promedio de intervalos reales
-    const avgRR = validIntervals.reduce((sum, val) => sum + val, 0) / validIntervals.length;
+    console.log("ArrhythmiaProcessor: Procesando datos RR", {
+      intervalosRecibidos: intervals.length,
+      intervalos: intervals
+    });
     
-    // Obtener el último intervalo real
-    const lastRR = validIntervals[validIntervals.length - 1];
+    // Actualizar nuestro buffer de intervalos RR
+    this.rrIntervals = [...this.rrIntervals, ...intervals].slice(-this.MAX_RR_INTERVALS);
     
-    // Calcular variación porcentual real
-    const variation = Math.abs(lastRR - avgRR) / avgRR * 100;
+    // Calcular métricas de variabilidad
+    const variabilityMetrics = this.calculateRRVariability();
     
-    // Actualizar buffer de patrones con datos reales
-    this.patternDetector.updatePatternBuffer(variation / 100);
-    
-    // Nuevo: detectar variabilidad absoluta
-    const absoluteVariation = Math.abs(lastRR - avgRR);
-    
-    // Detectar latido prematuro con criterio mejorado
-    const prematureBeat = variation > this.MIN_VARIATION_PERCENT || absoluteVariation > 200;
-    
-    // Actualizar contador de anomalías consecutivas
-    if (prematureBeat) {
-      this.consecutiveAbnormalBeats++;
-      
-      // Log detection
-      console.log("ArrhythmiaProcessor: Possible premature beat in real data", {
-        percentageVariation: variation,
-        absoluteVariation: absoluteVariation,
-        threshold: this.MIN_VARIATION_PERCENT,
-        consecutive: this.consecutiveAbnormalBeats,
-        avgRR,
-        lastRR,
-        timestamp: currentTime
-      });
-    } else {
-      this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 0.5); // Decaimiento más lento
-    }
-    
-    // Nuevo: Calcular pNN50 (porcentaje de diferencias sucesivas mayores a 50ms)
-    let nn50Count = 0;
-    if (this.rrIntervalHistory.length > 5) {
-      for (let i = 1; i < this.rrIntervalHistory.length; i++) {
-        if (Math.abs(this.rrIntervalHistory[i] - this.rrIntervalHistory[i-1]) > 50) {
-          nn50Count++;
+    // Calcular variaciones RR para el detector de patrones
+    if (intervals.length >= 2) {
+      for (let i = 1; i < intervals.length; i++) {
+        const interval1 = intervals[i-1];
+        const interval2 = intervals[i];
+        if (interval1 > 0 && interval2 > 0) {
+          const variation = Math.abs((interval2 - interval1) / interval1);
+          this.patternDetector.updatePatternBuffer(variation);
         }
       }
-      const pnn50 = (nn50Count / (this.rrIntervalHistory.length - 1)) * 100;
+    }
+    
+    // Detectar patrones usando el detector especializado
+    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
+    
+    console.log("ArrhythmiaProcessor: Métricas de variabilidad", {
+      rmssd: variabilityMetrics.rmssd,
+      sdnn: variabilityMetrics.sdnn,
+      pnn50: variabilityMetrics.pnn50,
+      maxRRRatio: variabilityMetrics.maxRRRatio,
+      minRRRatio: variabilityMetrics.minRRRatio,
+      patternDetected
+    });
+    
+    // Detectar arritmias basadas en variabilidad o patrones
+    let arrhythmiaDetected = false;
+    let arrhythmiaType = "Indeterminada";
+    
+    // Verificar variación RMSSD elevada (posible fibrilación auricular)
+    if (variabilityMetrics.rmssd > 100) {
+      arrhythmiaDetected = true;
+      arrhythmiaType = "Posible fibrilación auricular";
+    }
+    // Verificar variación extrema en intervalos consecutivos (arritmia)
+    else if (variabilityMetrics.maxRRRatio > (1 + this.RR_VARIABILITY_THRESHOLD) || 
+             variabilityMetrics.minRRRatio < (1 - this.RR_VARIABILITY_THRESHOLD)) {
+      arrhythmiaDetected = true;
+      arrhythmiaType = "Latidos irregulares";
+    }
+    // Verificar pNN50 elevado (alta variabilidad)
+    else if (variabilityMetrics.pnn50 > this.PNNX_THRESHOLD) {
+      arrhythmiaDetected = true;
+      arrhythmiaType = "Variabilidad elevada";
+    }
+    // Verificar detector de patrones
+    else if (patternDetected) {
+      arrhythmiaDetected = true;
+      arrhythmiaType = "Patrón arrítmico detectado";
+    }
+    
+    // Si se detectó arritmia
+    if (arrhythmiaDetected) {
+      const now = Date.now();
       
-      // Detección mejorada basada en pNN50
-      const highPNN50 = pnn50 > 25; // Indica alta variabilidad
-      
-      if (highPNN50) {
-        this.consecutiveAbnormalBeats = Math.min(this.consecutiveAbnormalBeats + 0.5, this.CONSECUTIVE_THRESHOLD + 1);
-        console.log("ArrhythmiaProcessor: High pNN50 detected", {
-          pnn50,
-          nn50Count,
-          totalIntervals: this.rrIntervalHistory.length - 1
+      // Incrementar contador si ha pasado suficiente tiempo desde la última detección
+      if (now - this.lastArrhythmiaTime > this.MIN_DETECTION_PERIOD) {
+        this.arrhythmiaCounter++;
+        this.lastArrhythmiaTime = now;
+        
+        console.log("ArrhythmiaProcessor: ¡ARRITMIA DETECTADA!", {
+          tipo: arrhythmiaType,
+          contador: this.arrhythmiaCounter,
+          metricas: variabilityMetrics
         });
+        
+        // Actualizar resultado con datos de arritmia
+        result = {
+          arrhythmiaStatus: `ARRHYTHMIA DETECTED (${arrhythmiaType})`,
+          lastArrhythmiaData: {
+            timestamp: now,
+            rmssd: variabilityMetrics.rmssd,
+            rrVariation: variabilityMetrics.maxRRRatio - variabilityMetrics.minRRRatio
+          }
+        };
       }
     }
     
-    // Comprobar si la arritmia está confirmada con datos reales
-    const timeSinceLastArrhythmia = currentTime - this.lastArrhythmiaTime;
-    const canDetectNewArrhythmia = timeSinceLastArrhythmia > this.MIN_ARRHYTHMIA_INTERVAL_MS;
-    const patternDetected = this.patternDetector.detectArrhythmiaPattern();
-    
-    if ((this.consecutiveAbnormalBeats >= this.CONSECUTIVE_THRESHOLD || patternDetected) && canDetectNewArrhythmia) {
-      this.arrhythmiaCount++;
-      this.arrhythmiaDetected = true;
-      this.lastArrhythmiaTime = currentTime;
-      this.consecutiveAbnormalBeats = 0;
-      this.patternDetector.resetPatternBuffer();
-      
-      console.log("ArrhythmiaProcessor: ARRHYTHMIA CONFIRMED in real data", {
-        arrhythmiaCount: this.arrhythmiaCount,
-        timeSinceLast: timeSinceLastArrhythmia,
-        patternDetected: patternDetected,
-        timestamp: currentTime
-      });
-    }
-  }
-
-  /**
-   * Reset the processor
-   * Ensures all measurements start from zero
-   */
-  public reset(): void {
-    this.rrIntervals = [];
-    this.rrIntervalHistory = [];
-    this.lastPeakTime = null;
-    this.arrhythmiaDetected = false;
-    this.arrhythmiaCount = 0;
-    this.lastArrhythmiaTime = 0;
-    this.startTime = Date.now();
-    this.consecutiveAbnormalBeats = 0;
-    this.patternDetector.resetPatternBuffer();
-    this.beatToNormalRatio = 0;
-    
-    console.log("ArrhythmiaProcessor: Processor reset", {
-      timestamp: new Date().toISOString()
-    });
+    return result;
   }
   
   /**
-   * Get current arrhythmia count
+   * Calcula métricas de variabilidad de intervalos RR
+   * @returns Métricas calculadas
+   */
+  private calculateRRVariability(): {
+    rmssd: number;
+    sdnn: number;
+    pnn50: number;
+    maxRRRatio: number;
+    minRRRatio: number;
+  } {
+    // Preparar resultado
+    const result = {
+      rmssd: 0,  // Root Mean Square of Successive Differences
+      sdnn: 0,   // Standard Deviation of NN intervals
+      pnn50: 0,  // Percentage of successive RR intervals > 50ms
+      maxRRRatio: 1.0, // Ratio máximo entre intervalos RR consecutivos
+      minRRRatio: 1.0  // Ratio mínimo entre intervalos RR consecutivos
+    };
+    
+    // Si hay menos de 2 intervalos, retornar valores por defecto
+    if (this.rrIntervals.length < 2) {
+      return result;
+    }
+    
+    // Calcular diferencias sucesivas
+    const diffs: number[] = [];
+    let nn50 = 0;
+    
+    let maxRatio = 0;
+    let minRatio = Number.MAX_VALUE;
+    
+    for (let i = 1; i < this.rrIntervals.length; i++) {
+      const diff = this.rrIntervals[i] - this.rrIntervals[i-1];
+      diffs.push(diff);
+      
+      // Contar intervalos > 50ms para pNN50
+      if (Math.abs(diff) > 50) {
+        nn50++;
+      }
+      
+      // Calcular ratio para detección de arritmias
+      const ratio = this.rrIntervals[i] / this.rrIntervals[i-1];
+      maxRatio = Math.max(maxRatio, ratio);
+      minRatio = Math.min(minRatio, ratio);
+    }
+    
+    // Calcular RMSSD
+    const squareDiffs = diffs.map(d => d * d);
+    const meanSquare = squareDiffs.reduce((sum, val) => sum + val, 0) / diffs.length;
+    result.rmssd = Math.sqrt(meanSquare);
+    
+    // Calcular SDNN
+    const mean = this.rrIntervals.reduce((sum, val) => sum + val, 0) / this.rrIntervals.length;
+    const variance = this.rrIntervals.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.rrIntervals.length;
+    result.sdnn = Math.sqrt(variance);
+    
+    // Calcular pNN50
+    result.pnn50 = nn50 / diffs.length;
+    
+    // Asignar ratios
+    result.maxRRRatio = maxRatio;
+    result.minRRRatio = minRatio;
+    
+    return result;
+  }
+  
+  /**
+   * Obtiene contador de arritmias
    */
   public getArrhythmiaCount(): number {
-    return this.arrhythmiaCount;
+    return this.arrhythmiaCounter;
   }
   
   /**
-   * Full reset of the processor including arrhythmia counter
-   * This method is added to match the interface expected by VitalSignsProcessor
+   * Reinicia el procesador
+   */
+  public reset(): void {
+    super.reset();
+    this.rrIntervals = [];
+    this.lastArrhythmiaTime = 0;
+    this.patternDetector.resetPatternBuffer();
+    console.log("ArrhythmiaProcessor: Reset complete");
+  }
+  
+  /**
+   * Reinicio completo incluyendo contador de arritmias
    */
   public fullReset(): void {
     this.reset();
-    this.arrhythmiaCount = 0;
-    this.consecutiveAbnormalBeats = 0;
-    this.lastArrhythmiaTime = 0;
-    this.patternDetector.resetPatternBuffer();
-    
-    console.log("ArrhythmiaProcessor: Full reset performed", {
-      timestamp: new Date().toISOString()
-    });
+    this.arrhythmiaCounter = 0;
+    console.log("ArrhythmiaProcessor: Full reset complete");
   }
 }

@@ -13,13 +13,13 @@ export class ArrhythmiaPatternDetector {
   private readonly MAX_BUFFER_SIZE = 24; // Aumentado para mejor análisis
   
   // Umbrales más sensibles para detección de arritmias
-  private readonly PATTERN_THRESHOLD = 0.20; // Reducido para mayor sensibilidad
-  private readonly MIN_PATTERN_COUNT = 2; // Reducido para más sensibilidad
+  private readonly PATTERN_THRESHOLD = 0.15; // Reducido para mayor sensibilidad
+  private readonly MIN_PATTERN_COUNT = 1; // Reducido para detectar incluso una sola arritmia
   
   // Nuevos parámetros para análisis avanzado
-  private readonly HIGH_VARIANCE_THRESHOLD = 0.18; // Umbral de varianza alta
-  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.30; // Umbral para anomalías secuenciales
-  private readonly MIN_BUFFER_FOR_DETECTION = 8; // Mínimo de muestras para detección
+  private readonly HIGH_VARIANCE_THRESHOLD = 0.15; // Umbral de varianza alta (reducido)
+  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.20; // Umbral para anomalías secuenciales (reducido)
+  private readonly MIN_BUFFER_FOR_DETECTION = 6; // Mínimo de muestras para detección (reducido)
   
   /**
    * Actualiza el buffer de patrones con nuevos valores
@@ -88,12 +88,12 @@ export class ArrhythmiaPatternDetector {
       }
     }
     
-    // 5. Decisión multi-criterio
+    // 5. Decisión multi-criterio con umbrales más sensibles
     const isAbnormal = 
-      abnormalRatio > 0.22 || // Frecuencia de anomalías
+      abnormalRatio > 0.15 || // Frecuencia de anomalías (reducido)
       variance > this.HIGH_VARIANCE_THRESHOLD || // Variabilidad excesiva
-      sequentialAnomalies >= 2 || // Anomalías en secuencia
-      alternatingPattern >= 3; // Patrón alternante significativo
+      sequentialAnomalies >= 1 || // Anomalías en secuencia (reducido)
+      alternatingPattern >= 2; // Patrón alternante significativo (reducido)
     
     console.log("ArrhythmiaPatternDetector: Pattern analysis mejorado", {
       abnormalCount,
