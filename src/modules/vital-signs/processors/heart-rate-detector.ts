@@ -18,18 +18,17 @@ export class HeartRateDetector {
   // Parámetros optimizados para detección robusta
   private readonly MIN_PEAK_DISTANCE_MS = 300; // Mínimo 30 BPM
   private readonly MAX_PEAK_DISTANCE_MS = 1500; // Máximo 200 BPM
-  private readonly MIN_PEAK_HEIGHT = 0.010; // Umbral adaptativo para detección (reducido)
-  private readonly MAX_BPM_CHANGE = 18; // Máximo cambio permitido entre mediciones (aumentado)
+  private readonly MIN_PEAK_HEIGHT = 0.012; // Umbral adaptativo para detección
+  private readonly MAX_BPM_CHANGE = 15; // Máximo cambio permitido entre mediciones
   
   // Nuevos parámetros para mejorar estabilidad
-  private readonly MIN_SAMPLES_FOR_VALID_MEASUREMENT = 25; // Reducido para respuesta más rápida
-  private readonly MIN_PEAKS_FOR_STABLE_BPM = 3;  // Mínimo de picos para calcular BPM estable (reducido)
-  private readonly PEAK_PROMINENCE_FACTOR = 0.30; // Factor para determinar prominencia de picos (reducido)
-  private readonly SMOOTHING_FACTOR = 0.35;       // Factor de suavizado para BPM (aumentado)
+  private readonly MIN_SAMPLES_FOR_VALID_MEASUREMENT = 30;
+  private readonly MIN_PEAKS_FOR_STABLE_BPM = 4;  // Mínimo de picos para calcular BPM estable
+  private readonly PEAK_PROMINENCE_FACTOR = 0.35; // Factor para determinar prominencia de picos
+  private readonly SMOOTHING_FACTOR = 0.3;       // Factor de suavizado para BPM
   
   constructor() {
     this.reset();
-    console.log("HeartRateDetector: Inicializado con parámetros mejorados");
   }
   
   /**
@@ -38,10 +37,6 @@ export class HeartRateDetector {
    */
   public calculateHeartRate(ppgValues: number[], sampleRate: number = 30): number {
     if (ppgValues.length < this.MIN_SAMPLES_FOR_VALID_MEASUREMENT) {
-      console.log("HeartRateDetector: Buffer insuficiente para análisis", {
-        valuesLength: ppgValues.length,
-        required: this.MIN_SAMPLES_FOR_VALID_MEASUREMENT
-      });
       return this.lastBpm > 0 ? this.lastBpm : 0;
     }
     
@@ -52,12 +47,11 @@ export class HeartRateDetector {
     // Detectar picos con algoritmo mejorado
     const peakIndices = this.detectPeaksRobust(this.filteredBuffer);
     
-    console.log("HeartRateDetector: Picos detectados", {
-      peakCount: peakIndices.length,
-      minNeeded: this.MIN_PEAKS_FOR_STABLE_BPM
-    });
-    
     if (peakIndices.length < this.MIN_PEAKS_FOR_STABLE_BPM) {
+      console.log("HeartRateDetector: Insuficientes picos detectados para BPM estable", {
+        peaksDetected: peakIndices.length,
+        requiredPeaks: this.MIN_PEAKS_FOR_STABLE_BPM
+      });
       return this.lastBpm > 0 ? this.lastBpm : 0;
     }
     
@@ -70,12 +64,11 @@ export class HeartRateDetector {
       }
     }
     
-    console.log("HeartRateDetector: Intervalos válidos", {
-      validIntervals: intervals.length,
-      requiredIntervals: this.MIN_PEAKS_FOR_STABLE_BPM - 1
-    });
-    
     if (intervals.length < this.MIN_PEAKS_FOR_STABLE_BPM - 1) {
+      console.log("HeartRateDetector: Insuficientes intervalos válidos para BPM", {
+        validIntervals: intervals.length,
+        requiredIntervals: this.MIN_PEAKS_FOR_STABLE_BPM - 1
+      });
       return this.lastBpm > 0 ? this.lastBpm : 0;
     }
     
@@ -90,48 +83,31 @@ export class HeartRateDetector {
     const avgInterval = filteredIntervals.reduce((sum, val) => sum + val, 0) / filteredIntervals.length;
     const currentBpm = Math.round(60000 / avgInterval);
     
-    console.log("HeartRateDetector: BPM calculado", {
-      avgInterval,
-      currentBpm,
-      lastBpm: this.lastBpm
-    });
-    
     // Actualizar BPM con suavizado para estabilidad
     let newBpm = currentBpm;
     if (this.lastBpm > 0) {
       // Si hay cambio extremo, verificar validez
       if (Math.abs(currentBpm - this.lastBpm) > this.MAX_BPM_CHANGE) {
         this.consecutiveValidBeats = 0;
-        
-        // Si el cambio es muy grande pero parece plausible, adaptar más lentamente
-        if (currentBpm >= 40 && currentBpm <= 200) {
-          // Adaptar en dirección al nuevo valor pero con más resistencia
-          const direction = currentBpm > this.lastBpm ? 1 : -1;
-          newBpm = this.lastBpm + (direction * this.MAX_BPM_CHANGE / 2);
-          console.log("HeartRateDetector: Cambio grande pero plausible, adaptando gradualmente", {
-            direction,
-            adjustment: direction * this.MAX_BPM_CHANGE / 2
-          });
-        } else {
-          // Si está fuera de rango fisiológico, mantener el último valor
-          newBpm = this.lastBpm;
-          console.log("HeartRateDetector: Cambio fuera de rango fisiológico, manteniendo último valor");
-        }
+        // Si el cambio es demasiado grande, mantener el último valor estable
+        newBpm = this.lastBpm;
+        console.log("HeartRateDetector: Cambio de BPM demasiado grande, manteniendo último valor", {
+          currentBpm,
+          lastBpm: this.lastBpm,
+          difference: Math.abs(currentBpm - this.lastBpm)
+        });
       } else {
         // Cambio válido, aplicar suavizado
         this.consecutiveValidBeats++;
-        // Usar suavizado exponencial con factor aumentado para respuesta más rápida
         newBpm = Math.round(this.lastBpm * (1 - this.SMOOTHING_FACTOR) + currentBpm * this.SMOOTHING_FACTOR);
         
-        console.log("HeartRateDetector: Cambio válido con suavizado", {
+        console.log("HeartRateDetector: BPM calculado correctamente", {
           currentBpm,
+          lastBpm: this.lastBpm,
           smoothedBpm: newBpm,
           consecutiveValidBeats: this.consecutiveValidBeats
         });
       }
-    } else {
-      // Primer valor válido
-      console.log("HeartRateDetector: Primer valor válido de BPM", { newBpm: currentBpm });
     }
     
     // Limitar BPM a rango fisiológico
@@ -192,6 +168,7 @@ export class HeartRateDetector {
       }
     }
     
+    console.log("HeartRateDetector: Picos detectados con algoritmo robusto:", peakIndices.length);
     return peakIndices;
   }
   
@@ -271,8 +248,7 @@ export class HeartRateDetector {
     const mad = deviations.sort((a, b) => a - b)[Math.floor(deviations.length / 2)];
     
     // Filtrar intervalos utilizando criterio MAD (más robusto que desviación estándar)
-    // Umbral aumentado para mayor sensibilidad
-    const madThreshold = 3.0; // Umbral aumentado para mayor tolerancia a variaciones
+    const madThreshold = 2.5; // Umbral de 2.5 MAD cubre ~99% de datos normales
     return intervals.filter(val => Math.abs(val - median) <= madThreshold * mad);
   }
   
@@ -289,11 +265,6 @@ export class HeartRateDetector {
     if (this.peakTimes.length > 0) {
       this.lastPeakTime = this.peakTimes[this.peakTimes.length - 1];
     }
-    
-    console.log("HeartRateDetector: Peak times actualizados", {
-      peakCount: this.peakTimes.length,
-      lastPeakTime: this.lastPeakTime
-    });
   }
   
   /**
@@ -314,16 +285,10 @@ export class HeartRateDetector {
     const intervals: number[] = [];
     for (let i = 1; i < this.peakTimes.length; i++) {
       const interval = this.peakTimes[i] - this.peakTimes[i-1];
-      // Validación fisiológica menos estricta: 35-220 BPM
-      if (interval >= 270 && interval <= 1700) {
+      if (interval >= 300 && interval <= 1500) { // Validación fisiológica: 40-200 BPM
         intervals.push(interval);
       }
     }
-    
-    console.log("HeartRateDetector: RR intervals generados", {
-      intervalCount: intervals.length,
-      lastPeakTime: this.lastPeakTime
-    });
     
     return {
       intervals,
@@ -341,6 +306,5 @@ export class HeartRateDetector {
     this.lastPeakTime = null;
     this.consecutiveValidBeats = 0;
     this.lastBpm = 0;
-    console.log("HeartRateDetector: Reset completo");
   }
 }
