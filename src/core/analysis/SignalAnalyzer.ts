@@ -14,11 +14,11 @@ export class SignalAnalyzer {
   constructor(userProfile?: UserProfile, settings?: AnalysisSettings) {
     // Default user profile if none provided
     this.userProfile = userProfile || {
+      id: 'default',
       age: 30,
-      gender: 'unknown',
+      gender: 'other',
       height: 170,
-      weight: 70,
-      activityLevel: 'moderate'
+      weight: 70
     };
     
     this.settings = settings;
