@@ -26,4 +26,6 @@ export interface VitalSignsResult {
   glucoseConfidence?: number;
   lipidsConfidence?: number;
   overallConfidence?: number;
+  signalReliability?: 'high' | 'medium' | 'low' | 'none';
+  isValid?: boolean;
 }

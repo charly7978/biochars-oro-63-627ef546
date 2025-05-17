@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import VitalSign from "@/components/VitalSign";
 import CameraView from "@/components/CameraView";
@@ -58,7 +59,9 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    // Esta es la parte clave: asegurar que los resultados se muestren al finalizar la medición
     if (lastValidResults && !isMonitoring) {
+      console.log("Index: Actualizando resultados finales desde lastValidResults", lastValidResults);
       setVitalSigns(lastValidResults);
       setShowResults(true);
     }
@@ -72,6 +75,7 @@ const Index = () => {
         try {
           const vitals = processVitalSigns(lastSignal.filteredValue);
           if (vitals) {
+            console.log("Index: Actualizando vitalSigns en tiempo real", vitals);
             setVitalSigns(vitals);
           }
         } catch (error) {
@@ -134,7 +138,12 @@ const Index = () => {
     
     const savedResults = resetVitalSigns();
     if (savedResults) {
+      console.log("Index: Guardando resultados finales", savedResults);
       setVitalSigns(savedResults);
+      setShowResults(true);
+    } else if (lastValidResults) {
+      console.log("Index: Usando lastValidResults como respaldo", lastValidResults);
+      setVitalSigns(lastValidResults);
       setShowResults(true);
     }
     
@@ -262,6 +271,15 @@ const Index = () => {
     return 'text-red-500';
   };
 
+  console.log("Index render - Estado actual:", { 
+    isMonitoring, 
+    showResults, 
+    vitalSigns, 
+    lastValidResults,
+    signalQuality,
+    fingerDetected: lastSignal?.fingerDetected
+  });
+
   return (
     <div className="fixed inset-0 flex flex-col bg-black" style={{ 
       height: '100vh',
@@ -365,7 +383,7 @@ const Index = () => {
               />
               <VitalSign 
                 label="HEMOGLOBINA"
-                value={Math.round(vitalSigns.hemoglobin) || "--"}
+                value={vitalSigns.hemoglobin || "--"}
                 unit="g/dL"
                 highlighted={showResults}
                 compact={false}
