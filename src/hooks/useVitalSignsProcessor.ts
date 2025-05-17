@@ -71,41 +71,26 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       // Process signal directly - no simulation - fixed parameter count
       let result = processVitalSignal(value);
       
-      // Log detallado SIEMPRE para supervisar resultados - no condicionado
+      // IMPORTANTE: Agregar debug para verificar resultados
       console.log("useVitalSignsProcessor: Resultado procesamiento:", {
-        heartRate: result.heartRate ? Math.round(result.heartRate) : 0,
-        spo2: result.spo2 ? Math.round(result.spo2) : 0,
+        heartRate: result.heartRate,
+        spo2: result.spo2,
         arrhythmiaStatus: result.arrhythmiaStatus,
-        hemoglobin: result.hemoglobin ? Math.round(result.hemoglobin * 10) / 10 : 0,
+        hemoglobin: result.hemoglobin,
         pressure: result.pressure,
-        glucose: result.glucose ? Math.round(result.glucose) : 0,
-        lipids: result.lipids ? {
-          totalCholesterol: Math.round(result.lipids.totalCholesterol),
-          triglycerides: Math.round(result.lipids.triglycerides)
-        } : { totalCholesterol: 0, triglycerides: 0 }
+        glucose: result.glucose,
+        lipids: result.lipids
       });
-      
-      // Redondeo numérico para visualización consistente
-      if (result.heartRate) result.heartRate = Math.round(result.heartRate);
-      if (result.spo2) result.spo2 = Math.round(result.spo2);
-      if (result.glucose) result.glucose = Math.round(result.glucose);
-      if (result.hemoglobin) result.hemoglobin = Math.round(result.hemoglobin * 10) / 10;
-      if (result.hydration) result.hydration = Math.round(result.hydration);
-      if (result.lipids) {
-        result.lipids.totalCholesterol = Math.round(result.lipids.totalCholesterol);
-        result.lipids.triglycerides = Math.round(result.lipids.triglycerides);
-      }
       
       const currentTime = Date.now();
       
-      // Verificar detección de arritmias - usando el formato estandarizado "ARRITMIA"
+      // Add safe null check for arrhythmiaStatus
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRITMIA") && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
         
-        // Agregar log adicional para confirmar detección de arritmia
         console.log("useVitalSignsProcessor: ¡ARRITMIA DETECTADA!", {
           status: result.arrhythmiaStatus,
           timestamp: result.lastArrhythmiaData.timestamp,
@@ -118,14 +103,13 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
         // Window based on real heart rate
         let windowWidth = 400;
         
-        // Agregar ventana visual para la arritmia
         addArrhythmiaWindow(arrhythmiaTime - windowWidth/2, arrhythmiaTime + windowWidth/2);
       }
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
       
-      // Actualizar lastValidResults SIEMPRE que haya un resultado con heartRate
+      // Actualizar lastValidResults solo si el resultado es válido
       if (result && result.heartRate && result.heartRate > 0) {
         setLastValidResults(result);
       }
@@ -184,7 +168,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults,
+    lastValidResults, // Devolver los últimos resultados válidos
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };

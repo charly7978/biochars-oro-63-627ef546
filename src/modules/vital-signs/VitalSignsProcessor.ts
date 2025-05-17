@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -34,9 +35,9 @@ export class VitalSignsProcessor {
   private signalBuffer: number[] = [];
   private readonly sampleRate = 30; // Assumed 30Hz for data collection
   
-  private readonly MIN_QUALITY_THRESHOLD = 30; // Reducido para mejor sensibilidad
+  private readonly MIN_QUALITY_THRESHOLD = 35; // Reducido para mejor sensibilidad
   private readonly MAX_BUFFER_SIZE = 150;
-  private readonly LOG_INTERVAL = 5; // Reducido para log más frecuente
+  private readonly LOG_INTERVAL = 15; // Intervalo para logging
   
   constructor() {
     this.signalProcessor = new SignalProcessor();
@@ -62,7 +63,7 @@ export class VitalSignsProcessor {
       // Procesar la señal directamente
       this.processedValues++;
       
-      // Log más frecuente para depuración
+      // Log periódico de entrada
       if (this.processedValues % this.LOG_INTERVAL === 0) {
         console.log(`VitalSignsProcessor: Procesando señal #${this.processedValues}, valor: ${value}`);
       }
@@ -105,7 +106,7 @@ export class VitalSignsProcessor {
         // Procesamiento de arritmias con mayor sensibilidad
         const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
         
-        // DEBUG ADICIONAL: Siempre registrar los resultados de arritmia
+        // IMPORTANTE: Agregar debug para ver por qué no se detecta la arritmia
         console.log("VitalSignsProcessor: Resultado arritmia", {
           status: arrhythmiaResult.arrhythmiaStatus,
           lastData: arrhythmiaResult.lastArrhythmiaData,
@@ -158,7 +159,7 @@ export class VitalSignsProcessor {
           filteredValue,
           this.signalBuffer
         );
-        const hydration = Math.round(rawHydration);
+        const hydration = Math.round(rawHydration * 10) / 10;
         
         // Crear resultado con BPM incluido
         const result: VitalSignsResult = {
@@ -176,27 +177,31 @@ export class VitalSignsProcessor {
           heartRate: bpm
         };
         
-        // Log SIEMPRE para todos los resultados (eliminada condición de log periódico)
-        console.log("VitalSignsProcessor: Resultados calculados", {
-          bpm,
-          spo2,
-          pressure,
-          arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
-          glucose,
-          totalCholesterol: Math.round(lipids.totalCholesterol),
-          triglycerides: Math.round(lipids.triglycerides),
-          hemoglobin,
-          hydration,
-          quality
-        });
+        // Log periódico de resultados
+        if (this.processedValues % this.LOG_INTERVAL === 0 || arrhythmiaResult.arrhythmiaStatus !== "Normal") {
+          console.log("VitalSignsProcessor: Resultados calculados", {
+            bpm,
+            spo2,
+            pressure,
+            arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+            glucose,
+            totalCholesterol: Math.round(lipids.totalCholesterol),
+            triglycerides: Math.round(lipids.triglycerides),
+            hemoglobin,
+            hydration,
+            quality
+          });
+        }
         
         // Almacenar resultados válidos
         this.lastValidResult = result;
         
         return result;
       } else {
-        // Log para cada caso sin detección de dedo (eliminada condición de log periódico)
-        console.log(`VitalSignsProcessor: Dedo no detectado o calidad insuficiente. Detected=${fingerDetected}, Quality=${quality}`);
+        // Log periódico cuando no se detecta dedo
+        if (this.processedValues % this.LOG_INTERVAL === 0) {
+          console.log(`VitalSignsProcessor: Dedo no detectado o calidad insuficiente. Detected=${fingerDetected}, Quality=${quality}`);
+        }
         
         // Si no hay dedo detectado o calidad insuficiente, devolver último resultado válido o valores vacíos
         return this.lastValidResult || {

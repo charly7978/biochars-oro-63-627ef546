@@ -12,14 +12,14 @@ export class ArrhythmiaPatternDetector {
   private patternBuffer: number[] = [];
   private readonly MAX_BUFFER_SIZE = 24; // Aumentado para mejor análisis
   
-  // Umbrales optimizados para detección de arritmias - REDUCIDOS para mayor sensibilidad
-  private readonly PATTERN_THRESHOLD = 0.10; // Reducido de 0.12
-  private readonly MIN_PATTERN_COUNT = 1;
+  // Umbrales más sensibles para detección de arritmias
+  private readonly PATTERN_THRESHOLD = 0.12; // Reducido para máxima sensibilidad
+  private readonly MIN_PATTERN_COUNT = 1; // Reducido para detectar incluso una sola arritmia
   
-  // Parámetros para análisis avanzado - AJUSTADOS para mayor sensibilidad
-  private readonly HIGH_VARIANCE_THRESHOLD = 0.09; // Reducido de 0.12
-  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.15; // Reducido de 0.18
-  private readonly MIN_BUFFER_FOR_DETECTION = 5;
+  // Nuevos parámetros para análisis avanzado
+  private readonly HIGH_VARIANCE_THRESHOLD = 0.12; // Umbral de varianza alta (reducido)
+  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.18; // Umbral para anomalías secuenciales (reducido)
+  private readonly MIN_BUFFER_FOR_DETECTION = 5; // Mínimo de muestras para detección (reducido)
   
   /**
    * Actualiza el buffer de patrones con nuevos valores
@@ -33,6 +33,7 @@ export class ArrhythmiaPatternDetector {
       this.patternBuffer.shift();
     }
     
+    // Log values for debugging
     console.log("ArrhythmiaPatternDetector: Updated pattern buffer", {
       newValue: value,
       bufferSize: this.patternBuffer.length,
@@ -42,6 +43,7 @@ export class ArrhythmiaPatternDetector {
   
   /**
    * Detecta patrones característicos de arritmias con análisis multifactorial mejorado
+   * Implementa métodos avanzados para detección de patrones irregulares
    * @returns true si se detecta un patrón de arritmia
    */
   public detectArrhythmiaPattern(): boolean {
@@ -86,12 +88,12 @@ export class ArrhythmiaPatternDetector {
       }
     }
     
-    // 5. Decisión multi-criterio con umbrales REDUCIDOS para mayor sensibilidad
+    // 5. Decisión multi-criterio con umbrales más sensibles
     const isAbnormal = 
-      abnormalRatio > 0.10 || // Reducido de 0.12
-      variance > this.HIGH_VARIANCE_THRESHOLD ||
-      sequentialAnomalies >= 1 ||
-      alternatingPattern >= 1;
+      abnormalRatio > 0.12 || // Frecuencia de anomalías (reducido aún más)
+      variance > this.HIGH_VARIANCE_THRESHOLD || // Variabilidad excesiva
+      sequentialAnomalies >= 1 || // Anomalías en secuencia (reducido)
+      alternatingPattern >= 1; // Patrón alternante significativo (reducido)
     
     console.log("ArrhythmiaPatternDetector: Pattern analysis resultado", {
       abnormalCount,

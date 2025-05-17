@@ -32,8 +32,8 @@ export const useSignalProcessing = () => {
     
     processedSignals.current++;
     
-    // Logging para diagnóstico - más frecuente para depuración
-    if (processedSignals.current % 3 === 0) {
+    // Logging for diagnostics - log more frequently for debugging
+    if (processedSignals.current % 5 === 0) {
       console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
@@ -45,25 +45,24 @@ export const useSignalProcessing = () => {
       // Process signal directly - no simulation
       let result = processorRef.current.processSignal(value);
       
-      // Log detallado para resultados de procesamiento
+      // Add console logs for debugging
       console.log("Signal processing result:", {
-        heartRate: result.heartRate ? Math.round(result.heartRate) : 0,
-        spo2: result.spo2 ? Math.round(result.spo2) : 0,
-        glucose: result.glucose ? Math.round(result.glucose) : 0,
+        heartRate: result.heartRate,
+        spo2: result.spo2,
+        glucose: result.glucose,
         arrhythmiaStatus: result.arrhythmiaStatus
       });
       
-      // Verificar detección de arritmias con el nuevo formato "ARRITMIA"
+      // Add null checks for arrhythmia status
       if (result && 
           result.arrhythmiaStatus && 
           typeof result.arrhythmiaStatus === 'string' && 
-          result.arrhythmiaStatus.includes("ARRITMIA") && 
+          result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         console.log("Arrhythmia detected:", {
           time: arrhythmiaTime,
-          status: result.arrhythmiaStatus,
           rmssd: result.lastArrhythmiaData.rmssd,
           rrVariation: result.lastArrhythmiaData.rrVariation
         });
