@@ -31,8 +31,8 @@ export const useSignalProcessing = () => {
     
     processedSignals.current++;
     
-    // Logging for diagnostics
-    if (processedSignals.current % 45 === 0) {
+    // Logging for diagnostics - log more frequently for debugging
+    if (processedSignals.current % 10 === 0) {
       console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
@@ -44,6 +44,14 @@ export const useSignalProcessing = () => {
       // Process signal directly - no simulation
       let result = processorRef.current.processSignal(value);
       
+      // Add console logs for debugging
+      console.log("Signal processing result:", {
+        heartRate: result.heartRate,
+        spo2: result.spo2,
+        glucose: result.glucose,
+        arrhythmiaStatus: result.arrhythmiaStatus
+      });
+      
       // Add null checks for arrhythmia status
       if (result && 
           result.arrhythmiaStatus && 
@@ -52,15 +60,11 @@ export const useSignalProcessing = () => {
           result.lastArrhythmiaData) {
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
-        // Window based on real heart rate
-        let windowWidth = 400;
-        
-        // Adjust based on real RR intervals
-        // if (rrData && rrData.intervals && rrData.intervals.length > 0) {
-        //   const lastIntervals = rrData.intervals.slice(-4);
-        //   const avgInterval = lastIntervals.reduce((sum, val) => sum + val, 0) / lastIntervals.length;
-        //   windowWidth = Math.max(300, Math.min(1000, avgInterval * 1.1));
-        // }
+        console.log("Arrhythmia detected:", {
+          time: arrhythmiaTime,
+          rmssd: result.lastArrhythmiaData.rmssd,
+          rrVariation: result.lastArrhythmiaData.rrVariation
+        });
       }
       
       // Log processed signals

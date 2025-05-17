@@ -1,4 +1,3 @@
-
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -29,7 +28,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 15;
+  private readonly CONSECUTIVE_THRESHOLD = 8; // Reduced threshold for testing
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
@@ -43,11 +42,23 @@ export class ArrhythmiaProcessor {
     
     // Update RR intervals with real data
     if (rrData?.intervals && rrData.intervals.length > 0) {
-      this.rrIntervals = rrData.intervals;
+      this.rrIntervals = [...this.rrIntervals, ...rrData.intervals];
+      // Keep only the last N intervals
+      if (this.rrIntervals.length > this.MIN_RR_INTERVALS * 2) {
+        this.rrIntervals = this.rrIntervals.slice(-this.MIN_RR_INTERVALS * 2);
+      }
+      
       this.lastPeakTime = rrData.lastPeakTime;
       
+      // Print for debugging
+      console.log("ArrhythmiaProcessor: Received RR intervals", {
+        count: rrData.intervals.length,
+        total: this.rrIntervals.length,
+        intervals: rrData.intervals
+      });
+      
       // Only proceed with sufficient real data
-      if (this.rrIntervals.length >= this.MIN_RR_INTERVALS) {
+      if (this.rrIntervals.length >= 5) { // Reduced for testing
         this.detectArrhythmia(currentTime);
       }
     }
@@ -78,18 +89,18 @@ export class ArrhythmiaProcessor {
    * No simulation or reference values are used
    */
   private detectArrhythmia(currentTime: number): void {
-    if (this.rrIntervals.length < this.MIN_RR_INTERVALS) return;
+    if (this.rrIntervals.length < 5) return; // Reduced for testing
     
     // Take real intervals for analysis
     const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
     
     // Filter only physiologically valid intervals
     const validIntervals = recentRR.filter(interval => 
-      interval >= this.MIN_INTERVAL_MS && interval <= this.MAX_INTERVAL_MS
+      interval >= 400 && interval <= 1500 // Expanded range for testing
     );
     
     // Require sufficient valid intervals
-    if (validIntervals.length < this.MIN_RR_INTERVALS * 0.8) {
+    if (validIntervals.length < 3) { // Reduced for testing
       this.consecutiveAbnormalBeats = 0;
       return;
     }
@@ -123,7 +134,7 @@ export class ArrhythmiaProcessor {
         timestamp: currentTime
       });
     } else {
-      this.consecutiveAbnormalBeats = 0;
+      this.consecutiveAbnormalBeats = Math.max(0, this.consecutiveAbnormalBeats - 1); // Decay counter
     }
     
     // Check if arrhythmia is confirmed with real data

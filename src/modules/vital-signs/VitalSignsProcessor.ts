@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -6,11 +7,13 @@ import { VitalSignsResult } from './types/vital-signs-result';
 import { SignalProcessor } from './processors/signal-processor';
 import { SPO2Processor } from './processors/spo2-processor';
 import { BloodPressureProcessor } from './processors/blood-pressure-processor';
-import { ArrhythmiaProcessor } from './processors/arrhythmia-processor';
+import { ArrhythmiaProcessor } from './arrhythmia-processor';
 import { GlucoseEstimator } from './processors/glucose-estimator';
 import { LipidEstimator } from './processors/lipid-estimator';
 import { HemoglobinEstimator } from './processors/hemoglobin-estimator';
 import { HydrationAnalyzer } from './processors/hydration-analyzer';
+import { HeartRateDetector } from './processors/heart-rate-detector';
+import { RRIntervalData } from './arrhythmia/types';
 
 /**
  * Implementación unificada del procesador de signos vitales
@@ -24,14 +27,16 @@ export class VitalSignsProcessor {
   private lipidProcessor: LipidEstimator;
   private hemoglobinProcessor: HemoglobinEstimator;
   private hydrationProcessor: HydrationAnalyzer;
+  private heartRateDetector: HeartRateDetector;
   
   private lastValidResult: VitalSignsResult | null = null;
   private processedValues: number = 0;
   private noFingerDetectionCounter: number = 0;
+  private signalBuffer: number[] = [];
+  private readonly sampleRate = 30; // Assumed 30Hz for data collection
   
   private readonly MIN_QUALITY_THRESHOLD = 45;
   private readonly MAX_BUFFER_SIZE = 150;
-  private signalBuffer: number[] = [];
   
   constructor() {
     this.signalProcessor = new SignalProcessor();
@@ -42,6 +47,7 @@ export class VitalSignsProcessor {
     this.lipidProcessor = new LipidEstimator();
     this.hemoglobinProcessor = new HemoglobinEstimator();
     this.hydrationProcessor = new HydrationAnalyzer();
+    this.heartRateDetector = new HeartRateDetector();
   }
   
   /**
@@ -78,8 +84,12 @@ export class VitalSignsProcessor {
           this.signalBuffer.shift();
         }
         
-        // Calcular frecuencia cardíaca
-        const bpm = this.signalProcessor.calculateHeartRate(30);
+        // Calcular frecuencia cardíaca con el detector específico
+        const bpm = this.heartRateDetector.calculateHeartRate(this.signalBuffer, this.sampleRate);
+        console.log("BPM calculado:", bpm);
+        
+        // Obtener los intervalos RR para análisis de arritmias
+        const rrData: RRIntervalData = this.heartRateDetector.getRRIntervals();
         
         // Calcular saturación de oxígeno
         const spo2 = this.spo2Processor.calculateSpO2(
@@ -94,9 +104,9 @@ export class VitalSignsProcessor {
           this.signalBuffer
         );
         
-        // Calcular arritmias
-        const { arrhythmiaStatus, lastArrhythmiaData } = 
-          this.arrhythmiaProcessor.detectArrhythmia(filteredValue);
+        // Calcular arritmias con los intervalos RR
+        const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
+        console.log("Resultado arritmias:", arrhythmiaResult);
         
         // Calcular glucosa
         const glucose = this.glucoseProcessor.estimateGlucose(
@@ -105,6 +115,7 @@ export class VitalSignsProcessor {
           dcBaseline,
           this.signalBuffer
         );
+        console.log("Glucosa estimada:", glucose);
         
         // Calcular lípidos
         const lipids = this.lipidProcessor.estimateLipids(
@@ -128,28 +139,17 @@ export class VitalSignsProcessor {
           this.signalBuffer
         );
         
-        // Obtener buffer bruto si está disponible
-        let rawBuffer: number[] = [];
-        if (typeof this.signalProcessor.getRawSignalBuffer === 'function') {
-          rawBuffer = this.signalProcessor.getRawSignalBuffer();
-        }
-        
-        // Obtener intervalos RR
-        let rrData = { intervals: [], lastPeakTime: null };
-        if (typeof this.signalProcessor.getRRIntervals === 'function') {
-          rrData = this.signalProcessor.getRRIntervals();
-        }
-        
-        // Crear resultado
+        // Crear resultado con BPM incluido
         const result: VitalSignsResult = {
           spo2,
           pressure,
-          arrhythmiaStatus,
-          lastArrhythmiaData,
+          arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
+          lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
           glucose,
           lipids,
           hemoglobin,
-          hydration
+          hydration,
+          heartRate: bpm  // Incluir la frecuencia cardíaca en los resultados
         };
         
         // Almacenar resultados válidos
@@ -168,7 +168,8 @@ export class VitalSignsProcessor {
             triglycerides: 0
           },
           hemoglobin: 0,
-          hydration: 0
+          hydration: 0,
+          heartRate: 0
         };
       }
     } catch (error) {
@@ -185,7 +186,8 @@ export class VitalSignsProcessor {
           triglycerides: 0
         },
         hemoglobin: 0,
-        hydration: 0
+        hydration: 0,
+        heartRate: 0
       };
     }
   }
