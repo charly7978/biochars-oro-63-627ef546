@@ -4,27 +4,42 @@
  */
 
 /**
- * Calculate RMSSD from real RR intervals
+ * Calcula RMSSD: Root Mean Square of Successive Differences
+ * Métrica utilizada para detectar arritmias
+ * @param intervals Intervalos RR en ms
+ * @returns Valor RMSSD
  */
 export function calculateRMSSD(intervals: number[]): number {
   if (intervals.length < 2) return 0;
   
   let sumSquaredDiff = 0;
+  let count = 0;
+  
   for (let i = 1; i < intervals.length; i++) {
-    sumSquaredDiff += Math.pow(intervals[i] - intervals[i-1], 2);
+    const diff = intervals[i] - intervals[i-1];
+    sumSquaredDiff += diff * diff;
+    count++;
   }
   
-  return Math.sqrt(sumSquaredDiff / (intervals.length - 1));
+  if (count === 0) return 0;
+  
+  return Math.sqrt(sumSquaredDiff / count);
 }
 
 /**
- * Calculate RR interval variation from real data
+ * Calcula la variación en intervalos RR
+ * @param intervals Intervalos RR en ms
+ * @returns Valor de variación RR
  */
 export function calculateRRVariation(intervals: number[]): number {
   if (intervals.length < 2) return 0;
   
-  const mean = intervals.reduce((sum, val) => sum + val, 0) / intervals.length;
-  const lastRR = intervals[intervals.length - 1];
+  const min = Math.min(...intervals);
+  const max = Math.max(...intervals);
   
-  return Math.abs(lastRR - mean) / mean;
+  // Evitar división por cero
+  if (min === 0) return 0;
+  
+  // Calcular variación normalizada
+  return (max - min) / min;
 }
