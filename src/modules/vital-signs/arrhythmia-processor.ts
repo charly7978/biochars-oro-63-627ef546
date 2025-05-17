@@ -8,7 +8,7 @@ import { ArrhythmiaPatternDetector } from './arrhythmia/pattern-detector';
 import { RRIntervalData } from './arrhythmia/types';
 
 /**
- * Procesador para detección de arritmias cardíacas - versión optimizada
+ * Procesador para detección de arritmias cardíacas - versión mejorada
  * Utiliza análisis de variabilidad de intervalos RR
  * Sin simulación - solo análisis directo de la señal real
  */
@@ -20,14 +20,14 @@ export class ArrhythmiaProcessor extends BaseProcessor {
   private patternDetector: ArrhythmiaPatternDetector;
   
   // Umbrales para detección de arritmias con mayor sensibilidad
-  private readonly RR_VARIABILITY_THRESHOLD = 0.15; // Reducido para máxima sensibilidad
-  private readonly PNNX_THRESHOLD = 0.10; // Reducido para máxima sensibilidad
-  private readonly MIN_DETECTION_PERIOD = 1500; // Reducido - mínimo 1.5 segundos entre detecciones
+  private readonly RR_VARIABILITY_THRESHOLD = 0.18; // Reducido para mayor sensibilidad
+  private readonly PNNX_THRESHOLD = 0.12; // Reducido para mayor sensibilidad
+  private readonly MIN_DETECTION_PERIOD = 2000; // Reducido - mínimo 2 segundos entre detecciones
   
   constructor() {
     super();
     this.patternDetector = new ArrhythmiaPatternDetector();
-    console.log("ArrhythmiaProcessor: Initialized with maximum sensitivity");
+    console.log("ArrhythmiaProcessor: Initialized with enhanced sensitivity");
   }
   
   /**
@@ -56,7 +56,7 @@ export class ArrhythmiaProcessor extends BaseProcessor {
     };
     
     // Si no hay suficientes intervalos, no podemos analizar
-    if (!intervals || intervals.length < 2) {
+    if (!intervals || intervals.length < 3) {
       return result;
     }
     
@@ -100,7 +100,7 @@ export class ArrhythmiaProcessor extends BaseProcessor {
     let arrhythmiaType = "Indeterminada";
     
     // Verificar variación RMSSD elevada (posible fibrilación auricular)
-    if (variabilityMetrics.rmssd > 80) { // Umbral reducido para mayor sensibilidad
+    if (variabilityMetrics.rmssd > 100) {
       arrhythmiaDetected = true;
       arrhythmiaType = "Posible fibrilación auricular";
     }

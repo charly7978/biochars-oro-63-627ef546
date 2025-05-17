@@ -33,7 +33,7 @@ export const useSignalProcessing = () => {
     processedSignals.current++;
     
     // Logging for diagnostics - log more frequently for debugging
-    if (processedSignals.current % 5 === 0) {
+    if (processedSignals.current % 10 === 0) {
       console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
         arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
@@ -100,14 +100,6 @@ export const useSignalProcessing = () => {
     
     // Create new instances for direct measurement
     processorRef.current = new VitalSignsProcessor();
-    
-    // Log para debugging
-    console.log("useVitalSignsProcessor: Initialized VitalSignsProcessor instance");
-    
-    // Verificar que el contador de arritmias está en cero
-    if (processorRef.current) {
-      console.log("ArrhythmiaCounter initial value:", processorRef.current.getArrhythmiaCount());
-    }
   }, []);
 
   /**
@@ -145,9 +137,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    const count = processorRef.current?.getArrhythmiaCount() || 0;
-    console.log("Getting arrhythmia counter:", count);
-    return count;
+    return processorRef.current?.getArrhythmiaCount() || 0;
   }, []);
 
   /**
@@ -156,8 +146,7 @@ export const useSignalProcessing = () => {
   const getDebugInfo = useCallback(() => {
     return {
       processedSignals: processedSignals.current,
-      signalLog: signalLog.current.slice(-10),
-      arrhythmiaCount: processorRef.current?.getArrhythmiaCount() || 0
+      signalLog: signalLog.current.slice(-10)
     };
   }, []);
 

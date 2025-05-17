@@ -35,7 +35,7 @@ export class VitalSignsProcessor {
   private signalBuffer: number[] = [];
   private readonly sampleRate = 30; // Assumed 30Hz for data collection
   
-  private readonly MIN_QUALITY_THRESHOLD = 35; // Reducido para mejor sensibilidad
+  private readonly MIN_QUALITY_THRESHOLD = 40; // Reducido para mejor sensibilidad
   private readonly MAX_BUFFER_SIZE = 150;
   private readonly LOG_INTERVAL = 15; // Intervalo para logging
   
@@ -50,7 +50,7 @@ export class VitalSignsProcessor {
     this.hydrationProcessor = new HydrationAnalyzer();
     this.heartRateDetector = new HeartRateDetector();
     
-    console.log("VitalSignsProcessor: Inicializado con máxima sensibilidad");
+    console.log("VitalSignsProcessor: Inicializado con mayor sensibilidad");
   }
   
   /**
@@ -105,13 +105,6 @@ export class VitalSignsProcessor {
         
         // Procesamiento de arritmias con mayor sensibilidad
         const arrhythmiaResult = this.arrhythmiaProcessor.processRRData(rrData);
-        
-        // IMPORTANTE: Agregar debug para ver por qué no se detecta la arritmia
-        console.log("VitalSignsProcessor: Resultado arritmia", {
-          status: arrhythmiaResult.arrhythmiaStatus,
-          lastData: arrhythmiaResult.lastArrhythmiaData,
-          contadorArritmias: this.arrhythmiaProcessor.getArrhythmiaCount()
-        });
         
         // Calcular saturación de oxígeno
         const rawSpo2 = this.spo2Processor.calculateSpO2(
@@ -178,7 +171,7 @@ export class VitalSignsProcessor {
         };
         
         // Log periódico de resultados
-        if (this.processedValues % this.LOG_INTERVAL === 0 || arrhythmiaResult.arrhythmiaStatus !== "Normal") {
+        if (this.processedValues % this.LOG_INTERVAL === 0) {
           console.log("VitalSignsProcessor: Resultados calculados", {
             bpm,
             spo2,

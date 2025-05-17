@@ -70,18 +70,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     try {
       // Process signal directly - no simulation - fixed parameter count
       let result = processVitalSignal(value);
-      
-      // IMPORTANTE: Agregar debug para verificar resultados
-      console.log("useVitalSignsProcessor: Resultado procesamiento:", {
-        heartRate: result.heartRate,
-        spo2: result.spo2,
-        arrhythmiaStatus: result.arrhythmiaStatus,
-        hemoglobin: result.hemoglobin,
-        pressure: result.pressure,
-        glucose: result.glucose,
-        lipids: result.lipids
-      });
-      
       const currentTime = Date.now();
       
       // Add safe null check for arrhythmiaStatus
@@ -90,14 +78,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
           typeof result.arrhythmiaStatus === 'string' && 
           result.arrhythmiaStatus.includes("ARRHYTHMIA DETECTED") && 
           result.lastArrhythmiaData) {
-        
-        console.log("useVitalSignsProcessor: ¡ARRITMIA DETECTADA!", {
-          status: result.arrhythmiaStatus,
-          timestamp: result.lastArrhythmiaData.timestamp,
-          rmssd: result.lastArrhythmiaData.rmssd,
-          rrVariation: result.lastArrhythmiaData.rrVariation
-        });
-        
         const arrhythmiaTime = result.lastArrhythmiaData.timestamp;
         
         // Window based on real heart rate
@@ -108,11 +88,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
       
       // Log processed signals
       logSignalData(value, result, processedSignals.current);
-      
-      // Actualizar lastValidResults solo si el resultado es válido
-      if (result && result.heartRate && result.heartRate > 0) {
-        setLastValidResults(result);
-      }
       
       // Always return real result
       return result;
@@ -142,14 +117,9 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   const reset = () => {
     resetProcessor();
     clearArrhythmiaWindows();
-    
-    // Almacenar el último resultado válido antes del reset
-    const result = lastValidResults;
-    
-    // Luego hacer el reset de UI
     setLastValidResults(null);
     
-    return result;
+    return null;
   };
   
   /**
@@ -168,7 +138,7 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
     reset,
     fullReset,
     arrhythmiaCounter: getArrhythmiaCounter(),
-    lastValidResults, // Devolver los últimos resultados válidos
+    lastValidResults: null, // Always return null to ensure measurements start from zero
     arrhythmiaWindows,
     debugInfo: getDebugInfo()
   };
