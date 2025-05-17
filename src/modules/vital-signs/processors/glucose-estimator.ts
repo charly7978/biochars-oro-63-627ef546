@@ -42,7 +42,7 @@ export class GlucoseEstimator extends BaseProcessor {
         bufferSize: buffer.length,
         required: this.MIN_BUFFER_SIZE
       });
-      return this.lastValidEstimate;
+      return Math.round(this.lastValidEstimate); // Ensure integer return
     }
     
     // Log for debugging
@@ -59,7 +59,7 @@ export class GlucoseEstimator extends BaseProcessor {
     // Si no se pudieron extraer características, usar último valor válido
     if (!waveformFeatures) {
       console.log("GlucoseEstimator: No se pudieron extraer características");
-      return this.lastValidEstimate;
+      return Math.round(this.lastValidEstimate); // Ensure integer return
     }
     
     // Calcular índice de absorción basado en componentes AC/DC
@@ -76,7 +76,7 @@ export class GlucoseEstimator extends BaseProcessor {
     // Aplicar factor de calibración si existe referencia
     const finalGlucose = this.referenceGlucose !== null 
       ? Math.round(estimatedGlucose * this.calibrationFactor)
-      : estimatedGlucose;
+      : Math.round(estimatedGlucose); // Always ensure integer
     
     // Actualizar último valor válido
     this.lastValidEstimate = finalGlucose;
@@ -267,7 +267,7 @@ export class GlucoseEstimator extends BaseProcessor {
     const adjustedGlucose = baseGlucose * absorbanceAdjustment;
     
     // Asegurar valores fisiológicos plausibles
-    return Math.min(250, Math.max(70, adjustedGlucose));
+    return Math.round(Math.min(250, Math.max(70, adjustedGlucose)));
   }
   
   /**

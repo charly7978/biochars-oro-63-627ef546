@@ -10,11 +10,11 @@
 export class ArrhythmiaPatternDetector {
   // Buffer para análisis de patrones rítmicos
   private patternBuffer: number[] = [];
-  private readonly MAX_BUFFER_SIZE = 25;
+  private readonly MAX_BUFFER_SIZE = 20;
   
   // Umbrales para detección de arritmias
-  private readonly PATTERN_THRESHOLD = 0.4;
-  private readonly MIN_PATTERN_COUNT = 3;
+  private readonly PATTERN_THRESHOLD = 0.25; // Reduced for better sensitivity
+  private readonly MIN_PATTERN_COUNT = 2; // Reduced for more sensitivity
   
   /**
    * Actualiza el buffer de patrones con nuevos valores
@@ -27,6 +27,13 @@ export class ArrhythmiaPatternDetector {
     if (this.patternBuffer.length > this.MAX_BUFFER_SIZE) {
       this.patternBuffer.shift();
     }
+    
+    // Log values for debugging
+    console.log("ArrhythmiaPatternDetector: Updated pattern buffer", {
+      newValue: value,
+      bufferSize: this.patternBuffer.length,
+      recentValues: this.patternBuffer.slice(-5)
+    });
   }
   
   /**
@@ -51,7 +58,15 @@ export class ArrhythmiaPatternDetector {
     const abnormalRatio = abnormalCount / this.patternBuffer.length;
     
     // Verificar si hay suficientes anomalías en el patrón
-    const isAbnormal = abnormalRatio > 0.3;
+    const isAbnormal = abnormalRatio > 0.25; // More sensitive threshold
+    
+    console.log("ArrhythmiaPatternDetector: Pattern analysis", {
+      abnormalCount,
+      totalValues: this.patternBuffer.length,
+      abnormalRatio,
+      isAbnormal,
+      threshold: 0.25
+    });
     
     return isAbnormal;
   }
@@ -61,5 +76,6 @@ export class ArrhythmiaPatternDetector {
    */
   public resetPatternBuffer(): void {
     this.patternBuffer = [];
+    console.log("ArrhythmiaPatternDetector: Pattern buffer reset");
   }
 }

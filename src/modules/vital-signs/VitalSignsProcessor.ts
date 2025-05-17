@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -84,17 +85,19 @@ export class VitalSignsProcessor {
         }
         
         // Calcular frecuencia cardíaca con el detector específico
-        const bpm = this.heartRateDetector.calculateHeartRate(this.signalBuffer, this.sampleRate);
+        const bpm = Math.round(this.heartRateDetector.calculateHeartRate(this.signalBuffer, this.sampleRate));
         console.log("BPM calculado:", bpm);
         
         // Obtener los intervalos RR para análisis de arritmias
         const rrData: RRIntervalData = this.heartRateDetector.getRRIntervals();
         
         // Calcular saturación de oxígeno
-        const spo2 = this.spo2Processor.calculateSpO2(
+        const rawSpo2 = this.spo2Processor.calculateSpO2(
           filteredValue,
           this.signalBuffer
         );
+        // Round to whole number
+        const spo2 = Math.round(rawSpo2);
         
         // Calcular presión arterial
         const pressure = this.bloodPressureProcessor.calculateBloodPressure(
@@ -125,18 +128,22 @@ export class VitalSignsProcessor {
         );
         
         // Calcular hemoglobina
-        const hemoglobin = this.hemoglobinProcessor.estimateHemoglobin(
+        const rawHemoglobin = this.hemoglobinProcessor.estimateHemoglobin(
           filteredValue,
           acSignalValue,
           dcBaseline,
           this.signalBuffer
         );
+        // Round to 1 decimal place
+        const hemoglobin = Math.round(rawHemoglobin * 10) / 10;
         
         // Calcular hidratación
-        const hydration = this.hydrationProcessor.calculateHydration(
+        const rawHydration = this.hydrationProcessor.calculateHydration(
           filteredValue,
           this.signalBuffer
         );
+        // Round to 1 decimal place
+        const hydration = Math.round(rawHydration * 10) / 10;
         
         // Crear resultado con BPM incluido
         const result: VitalSignsResult = {
@@ -145,7 +152,10 @@ export class VitalSignsProcessor {
           arrhythmiaStatus: arrhythmiaResult.arrhythmiaStatus,
           lastArrhythmiaData: arrhythmiaResult.lastArrhythmiaData,
           glucose,
-          lipids,
+          lipids: {
+            totalCholesterol: Math.round(lipids.totalCholesterol),
+            triglycerides: Math.round(lipids.triglycerides)
+          },
           hemoglobin,
           hydration,
           heartRate: bpm  // Incluir la frecuencia cardíaca en los resultados
@@ -235,6 +245,6 @@ export class VitalSignsProcessor {
    */
   public fullReset(): void {
     this.reset();
-    this.arrhythmiaProcessor.reset();
+    this.arrhythmiaProcessor.fullReset();
   }
 }

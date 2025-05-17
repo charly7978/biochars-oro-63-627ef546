@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -12,11 +13,11 @@ import { RRIntervalData, ArrhythmiaProcessingResult } from './arrhythmia/types';
  */
 export class ArrhythmiaProcessor {
   // Conservative thresholds for direct measurement
-  private readonly MIN_RR_INTERVALS = 20;
+  private readonly MIN_RR_INTERVALS = 10; // Reduced for better detection sensitivity
   private readonly MIN_INTERVAL_MS = 600;
   private readonly MAX_INTERVAL_MS = 1200;
-  private readonly MIN_VARIATION_PERCENT = 70;
-  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 20000;
+  private readonly MIN_VARIATION_PERCENT = 35; // Reduced threshold to improve detection
+  private readonly MIN_ARRHYTHMIA_INTERVAL_MS = 10000; // Reduced for testing
   
   // State
   private rrIntervals: number[] = [];
@@ -28,7 +29,7 @@ export class ArrhythmiaProcessor {
   
   // Arrhythmia confirmation sequence
   private consecutiveAbnormalBeats = 0;
-  private readonly CONSECUTIVE_THRESHOLD = 8; // Reduced threshold for testing
+  private readonly CONSECUTIVE_THRESHOLD = 5; // Reduced threshold for improved sensitivity
   
   // Pattern detector
   private patternDetector = new ArrhythmiaPatternDetector();
@@ -58,7 +59,7 @@ export class ArrhythmiaProcessor {
       });
       
       // Only proceed with sufficient real data
-      if (this.rrIntervals.length >= 5) { // Reduced for testing
+      if (this.rrIntervals.length >= 3) { // Reduced for better sensitivity
         this.detectArrhythmia(currentTime);
       }
     }
@@ -89,18 +90,18 @@ export class ArrhythmiaProcessor {
    * No simulation or reference values are used
    */
   private detectArrhythmia(currentTime: number): void {
-    if (this.rrIntervals.length < 5) return; // Reduced for testing
+    if (this.rrIntervals.length < 3) return; // Reduced for improved sensitivity
     
     // Take real intervals for analysis
     const recentRR = this.rrIntervals.slice(-this.MIN_RR_INTERVALS);
     
     // Filter only physiologically valid intervals
     const validIntervals = recentRR.filter(interval => 
-      interval >= 400 && interval <= 1500 // Expanded range for testing
+      interval >= 400 && interval <= 1500 // Expanded range for improved detection
     );
     
     // Require sufficient valid intervals
-    if (validIntervals.length < 3) { // Reduced for testing
+    if (validIntervals.length < 3) { // Reduced for better sensitivity
       this.consecutiveAbnormalBeats = 0;
       return;
     }
