@@ -182,4 +182,20 @@ export class ArrhythmiaProcessor {
   public getArrhythmiaCount(): number {
     return this.arrhythmiaCount;
   }
+  
+  /**
+   * Full reset of the processor including arrhythmia counter
+   * This method is added to match the interface expected by VitalSignsProcessor
+   */
+  public fullReset(): void {
+    this.reset();
+    this.arrhythmiaCount = 0;
+    this.consecutiveAbnormalBeats = 0;
+    this.lastArrhythmiaTime = 0;
+    this.patternDetector.resetPatternBuffer();
+    
+    console.log("ArrhythmiaProcessor: Full reset performed", {
+      timestamp: new Date().toISOString()
+    });
+  }
 }
