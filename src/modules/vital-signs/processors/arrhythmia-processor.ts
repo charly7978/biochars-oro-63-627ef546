@@ -35,8 +35,8 @@ export class ArrhythmiaProcessor extends BaseProcessor {
     arrhythmiaStatus: string;
     lastArrhythmiaData: {
       timestamp: number;
-      type: string;
-      confidence: number;
+      rmssd: number;
+      rrVariation: number;
     } | null;
   } {
     // Inicializar resultado
@@ -44,8 +44,8 @@ export class ArrhythmiaProcessor extends BaseProcessor {
       arrhythmiaStatus: "Normal",
       lastArrhythmiaData: null as {
         timestamp: number;
-        type: string;
-        confidence: number;
+        rmssd: number;
+        rrVariation: number;
       } | null
     };
     
@@ -117,12 +117,14 @@ export class ArrhythmiaProcessor extends BaseProcessor {
         this.arrhythmiaCounter++;
         this.lastArrhythmiaTime = now;
         
+        // Aquí está la modificación clave: cambiar el formato de los datos de arritmia
+        // para incluir rmssd y rrVariation en vez de type y confidence
         result = {
           arrhythmiaStatus: `ARRHYTHMIA DETECTED (${arrhythmiaType})`,
           lastArrhythmiaData: {
             timestamp: now,
-            type: arrhythmiaType,
-            confidence: confidence
+            rmssd: variabilityMetrics.rmssd,
+            rrVariation: variabilityMetrics.maxRRRatio - variabilityMetrics.minRRRatio
           }
         };
         
