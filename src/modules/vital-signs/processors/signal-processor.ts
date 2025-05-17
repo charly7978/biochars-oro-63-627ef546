@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -122,29 +123,16 @@ export class SignalProcessor extends BaseProcessor {
       const now = Date.now();
       if (!this.fingerDetectionStartTime) {
         this.fingerDetectionStartTime = now;
-        // console.log("Signal processor: Potential finger detection started", {
-        //   time: new Date(now).toISOString(), quality: qualityValue, amplitude: amplitudeAC
-        // });
       }
       if (this.fingerDetectionStartTime && (now - this.fingerDetectionStartTime >= this.MIN_PATTERN_CONFIRMATION_TIME)) {
         this.fingerDetectionConfirmed = true;
         this.rhythmBasedFingerDetection = true; 
-        // console.log("Signal processor: Finger detection CONFIRMED!", {
-        //   time: new Date(now).toISOString(), detectionDuration: (now - this.fingerDetectionStartTime) / 1000, quality: qualityValue, amplitude: amplitudeAC
-        // });
       }
     } else if (!finalFingerDetected && this.fingerDetectionConfirmed) {
-      // console.log("Signal processor: Finger detection lost", { patternFingerDetected, hasValidAmplitude, quality: qualityValue, amplitude: amplitudeAC });
       this.fingerDetectionConfirmed = false;
       this.fingerDetectionStartTime = null;
       this.rhythmBasedFingerDetection = false;
     }
-
-    // if (finalFingerDetected) {
-    //   console.log("DETECCIÓN DE DEDO ACTIVA (SignalProcessor.applyFilters)", {
-    //     timestamp: new Date().toISOString(), patternFingerDetected, fingerDetectedByQuality, hasValidAmplitude, amplitudeAC, confirmed: this.fingerDetectionConfirmed
-    //   });
-    // }
 
     return { 
       filteredValue: smaFiltered, 

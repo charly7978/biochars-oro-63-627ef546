@@ -21,11 +21,6 @@ export const useVitalSignsProcessor = (): UseVitalSignsProcessorReturn => {
   // Session tracking
   const sessionId = useRef<string>(Math.random().toString(36).substring(2, 9));
   
-  // Signal quality tracking - Esta lógica se moverá o se considerará cubierta por SignalValidator
-  // const weakSignalsCountRef = useRef<number>(0); 
-  // const LOW_SIGNAL_THRESHOLD = 0.05;
-  // const MAX_WEAK_SIGNALS = 10;
-  
   const { 
     arrhythmiaWindows, 
     addArrhythmiaWindow, 

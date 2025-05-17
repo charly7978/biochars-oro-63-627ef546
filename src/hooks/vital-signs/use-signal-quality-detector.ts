@@ -1,8 +1,10 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
 
 import { useRef, useState, useCallback } from 'react';
+import { SignalQuality } from '../../modules/heart-beat/signal-quality';
 
 /**
  * Implementación interna de verificación de calidad de señal
@@ -52,6 +54,18 @@ export const useSignalQualityDetector = () => {
   const lastPeakTimesRef = useRef<number[]>([]);
   const detectedRhythmicPatternsRef = useRef<number>(0);
   const fingerDetectionConfirmedRef = useRef<boolean>(false);
+  
+  // Signal quality processor
+  const signalQualityRef = useRef<SignalQuality | null>(null);
+  
+  // Initialize signal quality processor if needed
+  if (!signalQualityRef.current) {
+    signalQualityRef.current = new SignalQuality({
+      minQualityThreshold: 50,
+      minConsistentReadings: 5,
+      stabilizationPeriod: 2000
+    });
+  }
   
   // Constants for pattern detection - ULTRA STRICT
   const PATTERN_DETECTION_WINDOW_MS = 4000; // Increased from 3500 to 4000
@@ -299,6 +313,10 @@ export const useSignalQualityDetector = () => {
     lastPeakTimesRef.current = [];
     detectedRhythmicPatternsRef.current = 0;
     fingerDetectionConfirmedRef.current = false;
+    
+    if (signalQualityRef.current) {
+      signalQualityRef.current.reset();
+    }
   };
   
   return {

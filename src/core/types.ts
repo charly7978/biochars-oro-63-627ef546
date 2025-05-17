@@ -35,3 +35,23 @@ export interface ProcessingError {
   message: string;
   timestamp: number;
 }
+
+/**
+ * Perfil del usuario para calibración personalizada de algoritmos
+ */
+export interface UserProfile {
+  id: string;
+  age?: number;
+  weight?: number;
+  height?: number;
+  gender?: 'male' | 'female' | 'other';
+  hasDiabetes?: boolean;
+  hasHypertension?: boolean;
+  hasHeartCondition?: boolean;
+  bloodPressureCalibration?: {
+    systolic: number;
+    diastolic: number;
+    timestamp: number;
+  };
+}
+
