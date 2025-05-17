@@ -1,3 +1,4 @@
+
 /**
  * ESTA PROHIBIDO EL USO DE ALGORITMOS O FUNCIONES QUE PROVOQUEN CUALQUIER TIPO DE SIMULACION Y/O MANIPULACION DE DATOS DE CUALQUIER INDOLE, HACIENCIO CARGO A LOVAVLE DE CUALQUIER ACCION LEGAL SI SE PRODUJERA POR EL INCUMPLIMIENTO DE ESTA INSTRUCCION DIRECTA!
  */
@@ -35,7 +36,7 @@ export const useSignalProcessing = () => {
     if (processedSignals.current % 10 === 0) {
       console.log("useVitalSignsProcessor: Processing signal DIRECTLY", {
         inputValue: value,
-        arrhythmiaCount: processorRef.current.getArrhythmiaCounter(),
+        arrhythmiaCount: processorRef.current.getArrhythmiaCount(),
         signalNumber: processedSignals.current
       });
     }
@@ -136,7 +137,7 @@ export const useSignalProcessing = () => {
    * Get the arrhythmia counter
    */
   const getArrhythmiaCounter = useCallback(() => {
-    return processorRef.current?.getArrhythmiaCounter() || 0;
+    return processorRef.current?.getArrhythmiaCount() || 0;
   }, []);
 
   /**
