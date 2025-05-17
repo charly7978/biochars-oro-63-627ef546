@@ -5,16 +5,21 @@
 
 /**
  * Clase especializada para detección de patrones de arritmia en señales PPG reales
- * No utiliza simulación ni datos de prueba
+ * Versión mejorada con mayor sensibilidad y robustez
  */
 export class ArrhythmiaPatternDetector {
   // Buffer para análisis de patrones rítmicos
   private patternBuffer: number[] = [];
-  private readonly MAX_BUFFER_SIZE = 20;
+  private readonly MAX_BUFFER_SIZE = 24; // Aumentado para mejor análisis
   
-  // Umbrales para detección de arritmias
-  private readonly PATTERN_THRESHOLD = 0.25; // Reduced for better sensitivity
-  private readonly MIN_PATTERN_COUNT = 2; // Reduced for more sensitivity
+  // Umbrales más sensibles para detección de arritmias
+  private readonly PATTERN_THRESHOLD = 0.20; // Reducido para mayor sensibilidad
+  private readonly MIN_PATTERN_COUNT = 2; // Reducido para más sensibilidad
+  
+  // Nuevos parámetros para análisis avanzado
+  private readonly HIGH_VARIANCE_THRESHOLD = 0.18; // Umbral de varianza alta
+  private readonly SEQUENTIAL_ANOMALY_THRESHOLD = 0.30; // Umbral para anomalías secuenciales
+  private readonly MIN_BUFFER_FOR_DETECTION = 8; // Mínimo de muestras para detección
   
   /**
    * Actualiza el buffer de patrones con nuevos valores
@@ -37,16 +42,16 @@ export class ArrhythmiaPatternDetector {
   }
   
   /**
-   * Detecta patrones característicos de arritmias
-   * Busca secuencias de variaciones rítmicas significativas
+   * Detecta patrones característicos de arritmias con análisis multifactorial mejorado
+   * Implementa métodos avanzados para detección de patrones irregulares
    * @returns true si se detecta un patrón de arritmia
    */
   public detectArrhythmiaPattern(): boolean {
-    if (this.patternBuffer.length < this.MIN_PATTERN_COUNT) {
+    if (this.patternBuffer.length < this.MIN_BUFFER_FOR_DETECTION) {
       return false;
     }
     
-    // Contar eventos por encima del umbral
+    // 1. Análisis de frecuencia de anomalías
     let abnormalCount = 0;
     for (const value of this.patternBuffer) {
       if (value > this.PATTERN_THRESHOLD) {
@@ -54,18 +59,50 @@ export class ArrhythmiaPatternDetector {
       }
     }
     
-    // Verificar presencia de suficientes anomalías
+    // Calcular ratio de anomalías
     const abnormalRatio = abnormalCount / this.patternBuffer.length;
     
-    // Verificar si hay suficientes anomalías en el patrón
-    const isAbnormal = abnormalRatio > 0.25; // More sensitive threshold
+    // 2. Análisis de varianza - detectar inestabilidad global
+    const mean = this.patternBuffer.reduce((sum, val) => sum + val, 0) / this.patternBuffer.length;
+    const variance = this.patternBuffer.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / this.patternBuffer.length;
     
-    console.log("ArrhythmiaPatternDetector: Pattern analysis", {
+    // 3. Análisis de anomalías secuenciales
+    let sequentialAnomalies = 0;
+    for (let i = 1; i < this.patternBuffer.length; i++) {
+      if (this.patternBuffer[i] > this.SEQUENTIAL_ANOMALY_THRESHOLD &&
+          this.patternBuffer[i-1] > this.SEQUENTIAL_ANOMALY_THRESHOLD) {
+        sequentialAnomalies++;
+      }
+    }
+    
+    // 4. Análisis de patrones alternantes (latidos prematuros intercalados)
+    let alternatingPattern = 0;
+    for (let i = 1; i < this.patternBuffer.length - 1; i++) {
+      if ((this.patternBuffer[i] > this.PATTERN_THRESHOLD && 
+           this.patternBuffer[i-1] < this.PATTERN_THRESHOLD && 
+           this.patternBuffer[i+1] < this.PATTERN_THRESHOLD) ||
+          (this.patternBuffer[i] < this.PATTERN_THRESHOLD && 
+           this.patternBuffer[i-1] > this.PATTERN_THRESHOLD && 
+           this.patternBuffer[i+1] > this.PATTERN_THRESHOLD)) {
+        alternatingPattern++;
+      }
+    }
+    
+    // 5. Decisión multi-criterio
+    const isAbnormal = 
+      abnormalRatio > 0.22 || // Frecuencia de anomalías
+      variance > this.HIGH_VARIANCE_THRESHOLD || // Variabilidad excesiva
+      sequentialAnomalies >= 2 || // Anomalías en secuencia
+      alternatingPattern >= 3; // Patrón alternante significativo
+    
+    console.log("ArrhythmiaPatternDetector: Pattern analysis mejorado", {
       abnormalCount,
-      totalValues: this.patternBuffer.length,
       abnormalRatio,
+      variance,
+      sequentialAnomalies,
+      alternatingPattern,
       isAbnormal,
-      threshold: 0.25
+      bufferSize: this.patternBuffer.length
     });
     
     return isAbnormal;
